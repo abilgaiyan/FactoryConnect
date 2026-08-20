@@ -2,9 +2,9 @@ using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core.Machines;
 
-public sealed class MachineStateEvaluator
+public static class MachineStateEvaluator
 {
-    public MachineState Evaluate(MachineSignalSnapshot snapshot)
+    public static MachineState Evaluate(MachineSignalSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
