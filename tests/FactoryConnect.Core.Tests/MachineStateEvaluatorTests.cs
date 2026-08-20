@@ -10,6 +10,7 @@ public sealed class MachineStateEvaluatorTests
     {
         var snapshot = CreateSnapshot(
             Signal("Running", true),
+            Signal("Idle", true),
             Signal("Fault", true));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
@@ -22,6 +23,7 @@ public sealed class MachineStateEvaluatorTests
     {
         var snapshot = CreateSnapshot(
             Signal("Running", true),
+            Signal("Idle", false),
             Signal("Fault", false));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
@@ -30,10 +32,24 @@ public sealed class MachineStateEvaluatorTests
     }
 
     [Fact]
-    public void EvaluateReturnsStoppedWhenRunningSignalIsInactive()
+    public void EvaluateReturnsIdleWhenIdleSignalIsActive()
     {
         var snapshot = CreateSnapshot(
             Signal("Running", false),
+            Signal("Idle", true),
+            Signal("Fault", false));
+
+        var state = MachineStateEvaluator.Evaluate(snapshot);
+
+        Assert.Equal(MachineState.Idle, state);
+    }
+
+    [Fact]
+    public void EvaluateReturnsStoppedWhenRunningSignalIsInactiveAndIdleIsInactive()
+    {
+        var snapshot = CreateSnapshot(
+            Signal("Running", false),
+            Signal("Idle", false),
             Signal("Fault", false));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
@@ -44,7 +60,9 @@ public sealed class MachineStateEvaluatorTests
     [Fact]
     public void EvaluateReturnsUnknownWhenRunningSignalIsUnavailable()
     {
-        var snapshot = CreateSnapshot(Signal("Fault", false));
+        var snapshot = CreateSnapshot(
+            Signal("Idle", false),
+            Signal("Fault", false));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
 
