@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>FactoryConnect.Api</RootNamespace>
+    <AssemblyName>FactoryConnect.Api</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
+    <ProjectReference Include="../FactoryConnect.Core/FactoryConnect.Core.csproj" />
+    <ProjectReference Include="../FactoryConnect.Infrastructure/FactoryConnect.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

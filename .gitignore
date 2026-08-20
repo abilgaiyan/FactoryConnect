@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+coverage/
+*.coverage
+.DS_Store
+Thumbs.db
+appsettings.Local.json
+*.local.json
+.env
+.env.*

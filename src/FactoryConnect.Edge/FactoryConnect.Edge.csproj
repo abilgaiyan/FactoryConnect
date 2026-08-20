@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <RootNamespace>FactoryConnect.Edge</RootNamespace>
+    <AssemblyName>FactoryConnect.Edge</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
+    <ProjectReference Include="../FactoryConnect.Core/FactoryConnect.Core.csproj" />
+    <ProjectReference Include="../FactoryConnect.Infrastructure/FactoryConnect.Infrastructure.csproj" />
+    <ProjectReference Include="../FactoryConnect.Protocols.Modbus/FactoryConnect.Protocols.Modbus.csproj" />
+  </ItemGroup>
+</Project>
