@@ -5,8 +5,6 @@ namespace FactoryConnect.Core.Tests;
 
 public sealed class MachineStateEvaluatorTests
 {
-    private readonly MachineStateEvaluator _evaluator = new();
-
     [Fact]
     public void EvaluateReturnsFaultWhenFaultSignalIsActive()
     {
@@ -14,7 +12,7 @@ public sealed class MachineStateEvaluatorTests
             Signal("Running", true),
             Signal("Fault", true));
 
-        var state = _evaluator.Evaluate(snapshot);
+        var state = MachineStateEvaluator.Evaluate(snapshot);
 
         Assert.Equal(MachineState.Fault, state);
     }
@@ -26,7 +24,7 @@ public sealed class MachineStateEvaluatorTests
             Signal("Running", true),
             Signal("Fault", false));
 
-        var state = _evaluator.Evaluate(snapshot);
+        var state = MachineStateEvaluator.Evaluate(snapshot);
 
         Assert.Equal(MachineState.Running, state);
     }
@@ -38,7 +36,7 @@ public sealed class MachineStateEvaluatorTests
             Signal("Running", false),
             Signal("Fault", false));
 
-        var state = _evaluator.Evaluate(snapshot);
+        var state = MachineStateEvaluator.Evaluate(snapshot);
 
         Assert.Equal(MachineState.Stopped, state);
     }
@@ -48,7 +46,7 @@ public sealed class MachineStateEvaluatorTests
     {
         var snapshot = CreateSnapshot(Signal("Fault", false));
 
-        var state = _evaluator.Evaluate(snapshot);
+        var state = MachineStateEvaluator.Evaluate(snapshot);
 
         Assert.Equal(MachineState.Unknown, state);
     }
