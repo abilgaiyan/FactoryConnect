@@ -5,7 +5,7 @@ namespace FactoryConnect.Core.Tests;
 public sealed class MachineModelTests
 {
     [Fact]
-    public void MachineDefinition_CanDescribeCanonicalSignals()
+    public void MachineDefinitionCanDescribeCanonicalSignals()
     {
         var machine = new MachineDefinition
         {
@@ -44,7 +44,7 @@ public sealed class MachineModelTests
     }
 
     [Fact]
-    public void FactoryDefinition_CanRepresentPilotHierarchy()
+    public void FactoryDefinitionCanRepresentPilotHierarchy()
     {
         var line1 = new ProductionLineDefinition
         {
@@ -88,7 +88,7 @@ public sealed class MachineModelTests
     }
 
     [Fact]
-    public void SignalMapping_UsesCanonicalSignalKeyAndOpaqueSource()
+    public void SignalMappingUsesCanonicalSignalKeyAndOpaqueSource()
     {
         var mapping = new MachineSignalMapping
         {
