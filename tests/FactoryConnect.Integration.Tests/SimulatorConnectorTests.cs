@@ -6,7 +6,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SimulatorConnectorTests
 {
     [Fact]
-    public async Task ReadSignalsAsync_ReturnsCanonicalMachineSignals()
+    public async Task ReadSignalsAsyncReturnsCanonicalMachineSignals()
     {
         var machineId = MachineId.New();
         var connector = new SimulatedMachineConnector(machineId);
