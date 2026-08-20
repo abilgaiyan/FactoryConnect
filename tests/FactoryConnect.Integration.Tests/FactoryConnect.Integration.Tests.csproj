@@ -8,5 +8,6 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/FactoryConnect.Api/FactoryConnect.Api.csproj" />
+    <ProjectReference Include="../../samples/FactoryConnect.Simulator/FactoryConnect.Simulator.csproj" />
   </ItemGroup>
 </Project>

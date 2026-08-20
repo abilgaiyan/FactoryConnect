@@ -3,7 +3,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class FoundationSmokeTests
 {
     [Fact]
-    public void Foundation_is_ready()
+    public void FoundationIsReady()
     {
         Assert.True(true);
     }

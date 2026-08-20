@@ -5,7 +5,7 @@ namespace FactoryConnect.Core.Tests;
 public sealed class MachineIdTests
 {
     [Fact]
-    public void New_creates_non_empty_id()
+    public void NewCreatesNonEmptyId()
     {
         var id = MachineId.New();
 

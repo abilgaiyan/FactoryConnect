@@ -2,6 +2,8 @@ namespace FactoryConnect.Abstractions;
 
 public interface IMachineConnector
 {
-    ValueTask<IReadOnlyDictionary<string, object?>> ReadSignalsAsync(
+    MachineId MachineId { get; }
+
+    ValueTask<MachineSignalSnapshot> ReadSignalsAsync(
         CancellationToken cancellationToken = default);
 }
