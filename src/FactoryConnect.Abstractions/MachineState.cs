@@ -4,6 +4,7 @@ public enum MachineState
 {
     Unknown = 0,
     Stopped = 1,
-    Running = 2,
-    Fault = 3,
+    Idle = 2,
+    Running = 3,
+    Fault = 4,
 }

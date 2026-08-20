@@ -13,11 +13,19 @@ public static class MachineStateEvaluator
             return MachineState.Fault;
         }
 
-        if (TryGetDigitalSignal(snapshot, "Running", out var running))
+        if (TryGetDigitalSignal(snapshot, "Running", out var running) && running)
         {
-            return running
-                ? MachineState.Running
-                : MachineState.Stopped;
+            return MachineState.Running;
+        }
+
+        if (TryGetDigitalSignal(snapshot, "Idle", out var idle) && idle)
+        {
+            return MachineState.Idle;
+        }
+
+        if (TryGetDigitalSignal(snapshot, "Running", out _))
+        {
+            return MachineState.Stopped;
         }
 
         return MachineState.Unknown;
