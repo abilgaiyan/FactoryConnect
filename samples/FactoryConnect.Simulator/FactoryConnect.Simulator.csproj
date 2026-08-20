@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>FactoryConnect.Simulator</RootNamespace>
+    <AssemblyName>FactoryConnect.Simulator</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
+    <ProjectReference Include="../../src/FactoryConnect.Core/FactoryConnect.Core.csproj" />
+  </ItemGroup>
+</Project>
