@@ -2,6 +2,7 @@ namespace FactoryConnect.Abstractions;
 
 public static class CanonicalSignalKeys
 {
+    public const string PowerOn = "state.power-on";
     public const string Running = "state.running";
     public const string Idle = "state.idle";
     public const string Fault = "state.fault";

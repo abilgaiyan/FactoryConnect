@@ -26,11 +26,12 @@ Metric Result
 
 ## Canonical Metric Inputs
 
-The first typed calculation vocabulary includes:
+The typed calculation vocabulary includes:
 
 - `apt` - Actual Production Time
 - `pot` - Planned Operating Time
-- `pnot` - Production Reference Time
+- `not` - Production Reference Time
+- `machine-power-on-time` - Tmton / Machine Power-On Time
 - `produced-quantity`
 - `good-quantity`
 - `availability`
@@ -41,20 +42,23 @@ Time-based ratio inputs must use the same unit within one calculation. The engin
 
 ## Built-in Strategies
 
-### Availability
+### Availability / ELR
 
 Strategy: `apt-over-pot`
 
 ```text
 Availability = APT / POT
+ELR          = APT / POT
 ```
+
+Availability and ELR remain distinct canonical business metrics even though the current approved formulas are identical.
 
 ### Performance
 
 Strategy: `reference-time-over-apt`
 
 ```text
-Performance = PNOT / APT
+Performance = NOT / APT
 ```
 
 ### Quality
@@ -64,6 +68,16 @@ Strategy: `good-over-produced`
 ```text
 Quality = Good Quantity / Produced Quantity
 ```
+
+### ELRE
+
+Strategy: `apt-over-machine-power-on-time`
+
+```text
+ELRE = APT / Tmton
+```
+
+`Tmton` is represented by the normalized input `machine-power-on-time`.
 
 ### OEE Composition
 
@@ -89,13 +103,12 @@ This allows different sites to calculate the same canonical metric with differen
 
 ## Deferred
 
-This slice deliberately does not introduce:
+The calculation engine itself deliberately does not introduce:
 
 - free-form expression execution
 - report aggregation
-- automatic derivation of metric inputs from stored activity/production facts
 - persistence
 - publishing workflow enforcement
 - report rendering
 
-Those concerns build on top of this calculation boundary.
+Input derivation and machine-shift orchestration are separate layers built above this calculation boundary.
