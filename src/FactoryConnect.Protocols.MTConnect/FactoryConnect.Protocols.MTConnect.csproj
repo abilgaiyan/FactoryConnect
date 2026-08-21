@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FactoryConnect.Protocols.MTConnect</RootNamespace>
+    <AssemblyName>FactoryConnect.Protocols.MTConnect</AssemblyName>
+  </PropertyGroup>
+</Project>
