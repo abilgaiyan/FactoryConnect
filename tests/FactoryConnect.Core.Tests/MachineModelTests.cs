@@ -5,7 +5,7 @@ namespace FactoryConnect.Core.Tests;
 public sealed class MachineModelTests
 {
     [Fact]
-    public void MachineDefinitionCanDescribeCanonicalSignals()
+    public void MachineDefinitionCanDescribeCanonicalSignalsAndCapabilities()
     {
         var machine = new MachineDefinition
         {
@@ -16,31 +16,42 @@ public sealed class MachineModelTests
             [
                 new MachineSignalDefinition
                 {
-                    Key = "Running",
+                    Key = CanonicalSignalKeys.Running,
                     Name = "Machine Running",
                     Type = SignalType.Digital,
+                    Category = SignalCategory.State,
                     IsRequired = true
                 },
                 new MachineSignalDefinition
                 {
-                    Key = "Fault",
-                    Name = "Machine Fault",
-                    Type = SignalType.Digital,
-                    IsRequired = true
-                },
-                new MachineSignalDefinition
+                    Key = CanonicalSignalKeys.PartCount,
+                    Name = "Part Count",
+                    Type = SignalType.Counter,
+                    Category = SignalCategory.Production
+                }
+            ],
+            Capabilities =
+            [
+                new MachineCapabilityDefinition
                 {
-                    Key = "Cycle",
-                    Name = "Production Cycle",
-                    Type = SignalType.Digital
+                    Key = CanonicalSignalKeys.Running,
+                    Name = "Running State"
+                },
+                new MachineCapabilityDefinition
+                {
+                    Key = CanonicalSignalKeys.PartCount,
+                    Name = "Part Count"
                 }
             ]
         };
 
         Assert.False(machine.Id.IsEmpty);
         Assert.Equal("L1", machine.LineId.Value);
-        Assert.Equal(3, machine.Signals.Count);
-        Assert.Equal("Running", machine.Signals[0].Key);
+        Assert.Equal(2, machine.Signals.Count);
+        Assert.Equal(CanonicalSignalKeys.Running, machine.Signals[0].Key);
+        Assert.Equal(SignalCategory.State, machine.Signals[0].Category);
+        Assert.Equal(2, machine.Capabilities.Count);
+        Assert.Equal(CanonicalSignalKeys.PartCount, machine.Capabilities[1].Key);
     }
 
     [Fact]
@@ -92,11 +103,11 @@ public sealed class MachineModelTests
     {
         var mapping = new MachineSignalMapping
         {
-            SignalKey = "Running",
+            SignalKey = CanonicalSignalKeys.Running,
             Source = "DI0"
         };
 
-        Assert.Equal("Running", mapping.SignalKey);
+        Assert.Equal(CanonicalSignalKeys.Running, mapping.SignalKey);
         Assert.Equal("DI0", mapping.Source);
     }
 }
