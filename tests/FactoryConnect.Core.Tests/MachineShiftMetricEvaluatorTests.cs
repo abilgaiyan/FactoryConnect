@@ -138,7 +138,7 @@ public sealed class MachineShiftMetricEvaluatorTests
 
     private static MachineShiftMetricEvaluationRequest CreateRequest(
         IReadOnlyDictionary<string, decimal>? additionalInputs = null,
-        IReadOnlyCollection<MetricPolicyDefinition>? policies = null)
+        IReadOnlyList<MetricPolicyDefinition>? policies = null)
     {
         var companyId = new CompanyId("COMP-1");
         var siteId = new SiteId("SITE-1");
