@@ -29,7 +29,13 @@ Derivation is performed for one Company + Site + Machine + Shift + Production Da
 
 ## Production Reference Time
 
-`pnot` is deliberately not derived in FC-009. Its business definition can vary by company/site and requires a production-standard/reference-time source. It remains an extensible metric input rather than an assumed formula.
+`not` is the production reference time used by the Gajra report formula `Performance = NOT / APT`. It is deliberately not derived in FC-009 because it requires a production-standard/reference-time source and may vary by company/site. It remains an extensible metric input rather than an assumed formula.
+
+## Machine Power-On Time
+
+`machine-power-on-time` represents `Tmton` from the Gajra equipment-utilization report: accumulated time during which the machine is energized/control power is on. It is not derived by FC-009. Its source can be a configured canonical `state.power-on` signal supplied by a machine-specific adapter or signal mapping.
+
+Hardware terminals such as DIN4 are not assigned a universal meaning by the domain model. Physical terminal-to-signal mapping remains machine configuration.
 
 ## Architectural Boundary
 
