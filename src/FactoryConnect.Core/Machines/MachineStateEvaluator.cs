@@ -8,22 +8,22 @@ public static class MachineStateEvaluator
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (TryGetDigitalSignal(snapshot, "Fault", out var fault) && fault)
+        if (TryGetDigitalSignal(snapshot, CanonicalSignalKeys.Fault, out var fault) && fault)
         {
             return MachineState.Fault;
         }
 
-        if (TryGetDigitalSignal(snapshot, "Running", out var running) && running)
+        if (TryGetDigitalSignal(snapshot, CanonicalSignalKeys.Running, out var running) && running)
         {
             return MachineState.Running;
         }
 
-        if (TryGetDigitalSignal(snapshot, "Idle", out var idle) && idle)
+        if (TryGetDigitalSignal(snapshot, CanonicalSignalKeys.Idle, out var idle) && idle)
         {
             return MachineState.Idle;
         }
 
-        if (TryGetDigitalSignal(snapshot, "Running", out _))
+        if (TryGetDigitalSignal(snapshot, CanonicalSignalKeys.Running, out _))
         {
             return MachineState.Stopped;
         }
@@ -37,10 +37,11 @@ public static class MachineStateEvaluator
         out bool value)
     {
         var signal = snapshot.Signals.FirstOrDefault(
-            candidate => string.Equals(
-                candidate.Key,
-                key,
-                StringComparison.OrdinalIgnoreCase));
+            candidate => candidate.Quality == ObservationQuality.Good &&
+                string.Equals(
+                    candidate.Key,
+                    key,
+                    StringComparison.OrdinalIgnoreCase));
 
         if (signal is { Type: SignalType.Digital, Value: bool digitalValue })
         {
