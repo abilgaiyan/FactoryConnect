@@ -2,9 +2,9 @@ using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core.Metrics;
 
-public sealed class MetricInputDeriver
+public static class MetricInputDeriver
 {
-    public MetricInputDerivationResult Derive(
+    public static MetricInputDerivationResult Derive(
         MetricInputDerivationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
