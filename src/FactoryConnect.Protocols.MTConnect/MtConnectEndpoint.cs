@@ -6,6 +6,8 @@ public sealed record MtConnectEndpoint
 
     public Uri ProbeUri => new(BaseUri, "probe");
 
+    public Uri CurrentUri => new(BaseUri, "current");
+
     public MtConnectEndpoint(Uri baseUri)
     {
         ArgumentNullException.ThrowIfNull(baseUri);
