@@ -83,6 +83,7 @@ public sealed class MetricCalculationEngineTests
 
         Assert.False(result.IsAvailable);
         Assert.Null(result.Value);
+        Assert.NotNull(result.Reason);
         Assert.Contains(MetricInputKeys.PlannedOperatingTime, result.Reason);
     }
 
@@ -110,6 +111,7 @@ public sealed class MetricCalculationEngineTests
             Policy(CanonicalMetricKeys.Availability, "custom-strategy"));
 
         Assert.False(result.IsAvailable);
+        Assert.NotNull(result.Reason);
         Assert.Contains("custom-strategy", result.Reason);
     }
 
