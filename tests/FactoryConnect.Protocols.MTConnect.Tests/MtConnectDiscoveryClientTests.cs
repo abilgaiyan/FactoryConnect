@@ -38,7 +38,8 @@ public sealed class MtConnectDiscoveryClientTests
             new MtConnectEndpoint(new Uri("http://localhost:5000")));
 
         var execution = Assert.Single(
-            result.Devices[0].DataItems.Where(item => item.Type == "EXECUTION"));
+            result.Devices[0].DataItems,
+            item => item.Type == "EXECUTION");
 
         Assert.Equal("controller-1", execution.ComponentId);
         Assert.Equal("Controller", execution.ComponentType);
