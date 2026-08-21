@@ -25,7 +25,7 @@ public sealed record MtConnectEndpoint
                 nameof(baseUri));
         }
 
-        var normalized = baseUri.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        var normalized = baseUri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? baseUri.AbsoluteUri
             : $"{baseUri.AbsoluteUri}/";
 
