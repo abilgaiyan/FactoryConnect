@@ -3,4 +3,7 @@
     <RootNamespace>FactoryConnect.Protocols.MTConnect</RootNamespace>
     <AssemblyName>FactoryConnect.Protocols.MTConnect</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
+  </ItemGroup>
 </Project>
