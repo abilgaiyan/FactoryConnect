@@ -78,7 +78,7 @@ public sealed class ObservationSignalMapperTests
         };
         var definition = CreateDefinition(
             CanonicalSignalKeys.SpindleSpeed,
-            SignalType.Integer);
+            SignalType.WholeNumber);
 
         var signal = ObservationSignalMapper.Map(
             observation,
