@@ -12,5 +12,5 @@ public sealed record MachineShiftMetricEvaluationRequest
     public required IReadOnlyCollection<ProductionEntry> ProductionEntries { get; init; }
     public IReadOnlyDictionary<string, decimal> AdditionalInputs { get; init; } =
         new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-    public required IReadOnlyCollection<MetricPolicyDefinition> MetricPolicies { get; init; }
+    public required IReadOnlyList<MetricPolicyDefinition> MetricPolicies { get; init; }
 }
