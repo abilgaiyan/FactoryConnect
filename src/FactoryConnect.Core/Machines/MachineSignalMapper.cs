@@ -2,9 +2,9 @@ using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core.Machines;
 
-public sealed class MachineSignalMapper
+public static class MachineSignalMapper
 {
-    public bool TryMap(
+    public static bool TryMap(
         MachineObservation observation,
         MachineSignalMappingConfiguration configuration,
         out MappedMachineObservation? mappedObservation)
