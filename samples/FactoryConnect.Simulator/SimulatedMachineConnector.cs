@@ -19,29 +19,40 @@ public sealed class SimulatedMachineConnector : IMachineConnector
         cancellationToken.ThrowIfCancellationRequested();
 
         var cycle = Interlocked.Increment(ref _readCount);
-        var running = cycle % 4 is 1 or 2;
         var fault = cycle % 10 == 0;
-        var cyclePulse = cycle % 4 == 2;
+        var running = cycle % 4 is 1 or 2;
+        var idle = !fault && !running && cycle % 4 == 3;
+        var cycleCount = cycle / 4;
 
         var signals = new[]
         {
             new MachineSignalValue
             {
-                Key = "Running",
+                Key = CanonicalSignalKeys.Running,
                 Type = SignalType.Digital,
-                Value = running && !fault
+                Value = running && !fault,
+                Source = "simulator"
             },
             new MachineSignalValue
             {
-                Key = "Fault",
+                Key = CanonicalSignalKeys.Idle,
                 Type = SignalType.Digital,
-                Value = fault
+                Value = idle,
+                Source = "simulator"
             },
             new MachineSignalValue
             {
-                Key = "Cycle",
+                Key = CanonicalSignalKeys.Fault,
                 Type = SignalType.Digital,
-                Value = cyclePulse
+                Value = fault,
+                Source = "simulator"
+            },
+            new MachineSignalValue
+            {
+                Key = CanonicalSignalKeys.CycleCount,
+                Type = SignalType.Counter,
+                Value = cycleCount,
+                Source = "simulator"
             }
         };
 
