@@ -4,7 +4,8 @@ public static class MetricInputKeys
 {
     public const string ActualProductionTime = "apt";
     public const string PlannedOperatingTime = "pot";
-    public const string ProductionReferenceTime = "pnot";
+    public const string ProductionReferenceTime = "not";
+    public const string MachinePowerOnTime = "machine-power-on-time";
     public const string ProducedQuantity = "produced-quantity";
     public const string GoodQuantity = "good-quantity";
     public const string Availability = "availability";
