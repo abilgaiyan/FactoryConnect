@@ -9,9 +9,9 @@ public sealed class MachineStateEvaluatorTests
     public void EvaluateReturnsFaultWhenFaultSignalIsActive()
     {
         var snapshot = CreateSnapshot(
-            Signal("Running", true),
-            Signal("Idle", true),
-            Signal("Fault", true));
+            Signal(CanonicalSignalKeys.Running, true),
+            Signal(CanonicalSignalKeys.Idle, true),
+            Signal(CanonicalSignalKeys.Fault, true));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
 
@@ -22,9 +22,9 @@ public sealed class MachineStateEvaluatorTests
     public void EvaluateReturnsRunningWhenRunningSignalIsActive()
     {
         var snapshot = CreateSnapshot(
-            Signal("Running", true),
-            Signal("Idle", false),
-            Signal("Fault", false));
+            Signal(CanonicalSignalKeys.Running, true),
+            Signal(CanonicalSignalKeys.Idle, false),
+            Signal(CanonicalSignalKeys.Fault, false));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
 
@@ -35,9 +35,9 @@ public sealed class MachineStateEvaluatorTests
     public void EvaluateReturnsIdleWhenIdleSignalIsActive()
     {
         var snapshot = CreateSnapshot(
-            Signal("Running", false),
-            Signal("Idle", true),
-            Signal("Fault", false));
+            Signal(CanonicalSignalKeys.Running, false),
+            Signal(CanonicalSignalKeys.Idle, true),
+            Signal(CanonicalSignalKeys.Fault, false));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
 
@@ -48,9 +48,9 @@ public sealed class MachineStateEvaluatorTests
     public void EvaluateReturnsStoppedWhenRunningSignalIsInactiveAndIdleIsInactive()
     {
         var snapshot = CreateSnapshot(
-            Signal("Running", false),
-            Signal("Idle", false),
-            Signal("Fault", false));
+            Signal(CanonicalSignalKeys.Running, false),
+            Signal(CanonicalSignalKeys.Idle, false),
+            Signal(CanonicalSignalKeys.Fault, false));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
 
@@ -61,8 +61,19 @@ public sealed class MachineStateEvaluatorTests
     public void EvaluateReturnsUnknownWhenRunningSignalIsUnavailable()
     {
         var snapshot = CreateSnapshot(
-            Signal("Idle", false),
-            Signal("Fault", false));
+            Signal(CanonicalSignalKeys.Idle, false),
+            Signal(CanonicalSignalKeys.Fault, false));
+
+        var state = MachineStateEvaluator.Evaluate(snapshot);
+
+        Assert.Equal(MachineState.Unknown, state);
+    }
+
+    [Fact]
+    public void EvaluateIgnoresBadQualitySignals()
+    {
+        var snapshot = CreateSnapshot(
+            Signal(CanonicalSignalKeys.Running, true, ObservationQuality.Bad));
 
         var state = MachineStateEvaluator.Evaluate(snapshot);
 
@@ -73,11 +84,15 @@ public sealed class MachineStateEvaluatorTests
         params MachineSignalValue[] signals) =>
         new(MachineId.New(), signals, DateTimeOffset.UtcNow);
 
-    private static MachineSignalValue Signal(string key, bool value) =>
+    private static MachineSignalValue Signal(
+        string key,
+        bool value,
+        ObservationQuality quality = ObservationQuality.Good) =>
         new()
         {
             Key = key,
             Type = SignalType.Digital,
             Value = value,
+            Quality = quality,
         };
 }

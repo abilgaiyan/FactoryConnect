@@ -14,9 +14,10 @@ public sealed class SimulatorConnectorTests
         var snapshot = await connector.ReadSignalsAsync();
 
         Assert.Equal(machineId, snapshot.MachineId);
-        Assert.Equal(3, snapshot.Signals.Count);
-        Assert.Contains(snapshot.Signals, signal => signal.Key == "Running");
-        Assert.Contains(snapshot.Signals, signal => signal.Key == "Fault");
-        Assert.Contains(snapshot.Signals, signal => signal.Key == "Cycle");
+        Assert.Equal(4, snapshot.Signals.Count);
+        Assert.Contains(snapshot.Signals, signal => signal.Key == CanonicalSignalKeys.Running);
+        Assert.Contains(snapshot.Signals, signal => signal.Key == CanonicalSignalKeys.Idle);
+        Assert.Contains(snapshot.Signals, signal => signal.Key == CanonicalSignalKeys.Fault);
+        Assert.Contains(snapshot.Signals, signal => signal.Key == CanonicalSignalKeys.CycleCount);
     }
 }
