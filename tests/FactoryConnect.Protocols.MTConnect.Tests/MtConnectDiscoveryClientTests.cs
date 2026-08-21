@@ -1,4 +1,5 @@
 using System.Net;
+using Xunit;
 
 namespace FactoryConnect.Protocols.MTConnect.Tests;
 
