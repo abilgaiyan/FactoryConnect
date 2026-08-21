@@ -32,7 +32,7 @@ public sealed class MetricInputDeriverTests
                 CreateEntry(companyId, siteId, machineId, shiftId, date, 40, 3),
             ]);
 
-        var result = new MetricInputDeriver().Derive(request);
+        var result = MetricInputDeriver.Derive(request);
 
         Assert.Equal(5m, result.Inputs[MetricInputKeys.ActualProductionTime]);
         Assert.Equal(8m, result.Inputs[MetricInputKeys.PlannedOperatingTime]);
@@ -47,7 +47,7 @@ public sealed class MetricInputDeriverTests
         var request = CreateRequestWithSingleMachine(
             [MachineState.Running, MachineState.Idle, MachineState.Fault]);
 
-        var result = new MetricInputDeriver().Derive(request);
+        var result = MetricInputDeriver.Derive(request);
 
         Assert.Equal(1m, result.Inputs[MetricInputKeys.ActualProductionTime]);
     }
@@ -70,7 +70,7 @@ public sealed class MetricInputDeriverTests
             [CreateEntry(companyId, siteId, MachineId.New(), shiftId, date, 10, 0)]);
 
         Assert.Throws<ArgumentException>(
-            () => new MetricInputDeriver().Derive(request));
+            () => MetricInputDeriver.Derive(request));
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class MetricInputDeriverTests
     {
         var request = CreateRequestWithSingleMachine([]);
 
-        var result = new MetricInputDeriver().Derive(request);
+        var result = MetricInputDeriver.Derive(request);
 
         Assert.Equal(0m, result.Inputs[MetricInputKeys.ProducedQuantity]);
         Assert.Equal(0m, result.Inputs[MetricInputKeys.GoodQuantity]);
