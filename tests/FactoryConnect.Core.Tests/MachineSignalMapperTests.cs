@@ -21,7 +21,7 @@ public sealed class MachineSignalMapperTests
             machineId,
             Mapping("tcp-v", "TR.1.DIN.4", CanonicalSignalKeys.PowerOn));
 
-        var mapped = new MachineSignalMapper().TryMap(
+        var mapped = MachineSignalMapper.TryMap(
             observation,
             configuration,
             out var result);
@@ -41,16 +41,15 @@ public sealed class MachineSignalMapperTests
     {
         var firstMachine = MachineId.New();
         var secondMachine = MachineId.New();
-        var mapper = new MachineSignalMapper();
 
-        var firstMapped = mapper.TryMap(
+        var firstMapped = MachineSignalMapper.TryMap(
             Observation(firstMachine, "modbus", "DI1", SignalType.Digital, true),
             Configuration(
                 firstMachine,
                 Mapping("modbus", "DI1", CanonicalSignalKeys.Running)),
             out var firstResult);
 
-        var secondMapped = mapper.TryMap(
+        var secondMapped = MachineSignalMapper.TryMap(
             Observation(secondMachine, "modbus", "DI1", SignalType.Digital, true),
             Configuration(
                 secondMachine,
@@ -77,7 +76,7 @@ public sealed class MachineSignalMapperTests
                 CanonicalSignalKeys.Fault,
                 invert: true));
 
-        var mapped = new MachineSignalMapper().TryMap(
+        var mapped = MachineSignalMapper.TryMap(
             Observation(machineId, "modbus", "DI2", SignalType.Digital, false),
             configuration,
             out var result);
@@ -101,7 +100,7 @@ public sealed class MachineSignalMapperTests
             machineId,
             Mapping("tcp-v", "TR.1.DIN.1", CanonicalSignalKeys.Running));
 
-        var mapped = new MachineSignalMapper().TryMap(
+        var mapped = MachineSignalMapper.TryMap(
             observation,
             configuration,
             out var result);
@@ -120,7 +119,7 @@ public sealed class MachineSignalMapperTests
             Mapping("modbus", "DI1", CanonicalSignalKeys.Running));
 
         Assert.Throws<ArgumentException>(
-            () => new MachineSignalMapper().TryMap(
+            () => MachineSignalMapper.TryMap(
                 Observation(otherMachine, "modbus", "DI1", SignalType.Digital, true),
                 configuration,
                 out _));
@@ -136,7 +135,7 @@ public sealed class MachineSignalMapperTests
             Mapping("modbus", "DI1", CanonicalSignalKeys.PowerOn));
 
         Assert.Throws<InvalidOperationException>(
-            () => new MachineSignalMapper().TryMap(
+            () => MachineSignalMapper.TryMap(
                 Observation(machineId, "modbus", "DI1", SignalType.Digital, true),
                 configuration,
                 out _));
