@@ -4,7 +4,7 @@ namespace FactoryConnect.Core.Metrics;
 
 public sealed class MetricCalculationEngine
 {
-    private readonly IReadOnlyDictionary<string, IMetricCalculationStrategy> _strategies;
+    private readonly Dictionary<string, IMetricCalculationStrategy> _strategies;
 
     public MetricCalculationEngine(
         IEnumerable<IMetricCalculationStrategy> strategies)
