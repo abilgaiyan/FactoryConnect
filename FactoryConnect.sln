@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Core", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Protocols.Modbus", "src\FactoryConnect.Protocols.Modbus\FactoryConnect.Protocols.Modbus.csproj", "{502AA8A8-6A07-468A-8552-59723380E992}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Protocols.MTConnect", "src\FactoryConnect.Protocols.MTConnect\FactoryConnect.Protocols.MTConnect.csproj", "{C8C0B7C6-8E5E-4EE4-A1B8-9387D7F6CE72}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Infrastructure", "src\FactoryConnect.Infrastructure\FactoryConnect.Infrastructure.csproj", "{613F7301-0E6D-4F43-A425-7F9958E80078}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Edge", "src\FactoryConnect.Edge\FactoryConnect.Edge.csproj", "{F47C701F-CED5-4054-A26A-D8DEB7F26930}"
@@ -17,6 +19,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Core.Tests", "tests\FactoryConnect.Core.Tests\FactoryConnect.Core.Tests.csproj", "{B498C7A0-7996-4823-9469-144662965291}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Protocols.Modbus.Tests", "tests\FactoryConnect.Protocols.Modbus.Tests\FactoryConnect.Protocols.Modbus.Tests.csproj", "{58ACB1AD-AD26-4D72-BF49-22C864139B7D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Protocols.MTConnect.Tests", "tests\FactoryConnect.Protocols.MTConnect.Tests\FactoryConnect.Protocols.MTConnect.Tests.csproj", "{E5A2789A-9894-4E4D-A8A4-875B3600A90E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Integration.Tests", "tests\FactoryConnect.Integration.Tests\FactoryConnect.Integration.Tests.csproj", "{34789EBF-E165-4FFB-B49B-90F9AE61D27C}"
 EndProject
@@ -40,6 +44,10 @@ Global
 		{502AA8A8-6A07-468A-8552-59723380E992}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{502AA8A8-6A07-468A-8552-59723380E992}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{502AA8A8-6A07-468A-8552-59723380E992}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8C0B7C6-8E5E-4EE4-A1B8-9387D7F6CE72}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8C0B7C6-8E5E-4EE4-A1B8-9387D7F6CE72}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8C0B7C6-8E5E-4EE4-A1B8-9387D7F6CE72}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8C0B7C6-8E5E-4EE4-A1B8-9387D7F6CE72}.Release|Any CPU.Build.0 = Release|Any CPU
 		{613F7301-0E6D-4F43-A425-7F9958E80078}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{613F7301-0E6D-4F43-A425-7F9958E80078}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{613F7301-0E6D-4F43-A425-7F9958E80078}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -60,6 +68,10 @@ Global
 		{58ACB1AD-AD26-4D72-BF49-22C864139B7D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{58ACB1AD-AD26-4D72-BF49-22C864139B7D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{58ACB1AD-AD26-4D72-BF49-22C864139B7D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5A2789A-9894-4E4D-A8A4-875B3600A90E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5A2789A-9894-4E4D-A8A4-875B3600A90E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5A2789A-9894-4E4D-A8A4-875B3600A90E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5A2789A-9894-4E4D-A8A4-875B3600A90E}.Release|Any CPU.Build.0 = Release|Any CPU
 		{34789EBF-E165-4FFB-B49B-90F9AE61D27C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{34789EBF-E165-4FFB-B49B-90F9AE61D27C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{34789EBF-E165-4FFB-B49B-90F9AE61D27C}.Release|Any CPU.ActiveCfg = Release|Any CPU
