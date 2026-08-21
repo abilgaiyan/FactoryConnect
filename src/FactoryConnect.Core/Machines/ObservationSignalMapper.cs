@@ -29,6 +29,11 @@ public static class ObservationSignalMapper
             return null;
         }
 
+        if (observation.Type != definition.Type)
+        {
+            return null;
+        }
+
         return new MachineSignalValue
         {
             Key = definition.Key,
