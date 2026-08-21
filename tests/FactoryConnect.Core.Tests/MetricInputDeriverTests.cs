@@ -9,10 +9,10 @@ public sealed class MetricInputDeriverTests
     [Fact]
     public void DeriveBuildsInputsFromActivityScheduleAndProduction()
     {
-        var companyId = CompanyId.New();
-        var siteId = SiteId.New();
+        var companyId = new CompanyId("COMP-1");
+        var siteId = new SiteId("SITE-1");
         var machineId = MachineId.New();
-        var shiftId = ShiftId.New();
+        var shiftId = new ShiftId("SHIFT-1");
         var date = new DateOnly(2026, 8, 21);
         var start = new DateTimeOffset(2026, 8, 21, 6, 0, 0, TimeSpan.Zero);
 
@@ -55,10 +55,10 @@ public sealed class MetricInputDeriverTests
     [Fact]
     public void DeriveRejectsProductionEntriesOutsideRequestedScope()
     {
-        var companyId = CompanyId.New();
-        var siteId = SiteId.New();
+        var companyId = new CompanyId("COMP-1");
+        var siteId = new SiteId("SITE-1");
         var machineId = MachineId.New();
-        var shiftId = ShiftId.New();
+        var shiftId = new ShiftId("SHIFT-1");
         var date = new DateOnly(2026, 8, 21);
         var request = CreateRequest(
             companyId,
@@ -87,10 +87,10 @@ public sealed class MetricInputDeriverTests
     private static MetricInputDerivationRequest CreateRequestWithSingleMachine(
         IReadOnlyCollection<MachineState> states)
     {
-        var companyId = CompanyId.New();
-        var siteId = SiteId.New();
+        var companyId = new CompanyId("COMP-1");
+        var siteId = new SiteId("SITE-1");
         var machineId = MachineId.New();
-        var shiftId = ShiftId.New();
+        var shiftId = new ShiftId("SHIFT-1");
         var date = new DateOnly(2026, 8, 21);
         var start = new DateTimeOffset(2026, 8, 21, 6, 0, 0, TimeSpan.Zero);
         var periods = states
@@ -154,7 +154,7 @@ public sealed class MetricInputDeriverTests
             SiteId = siteId,
             MachineId = machineId,
             ShiftId = shiftId,
-            PartId = PartId.New(),
+            PartId = new PartId("PART-1"),
             ProductionDate = date,
             ProducedQuantity = producedQuantity,
             InProcessRejectedQuantity = rejectedQuantity,
