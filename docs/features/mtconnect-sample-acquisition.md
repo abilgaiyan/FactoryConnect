@@ -206,16 +206,17 @@ MtConnectObservationParser
 
 The parser owns:
 
-DeviceStream selection
-dataItemId extraction
-timestamp parsing
-MTConnect category to SignalType conversion
-numeric value conversion
-UNAVAILABLE handling
-MachineObservation creation
+- DeviceStream selection
+- dataItemId extraction
+- timestamp parsing
+- MTConnect category to SignalType conversion
+- numeric value conversion
+- UNAVAILABLE handling
+- MachineObservation creation
 
 The two acquisition paths therefore share the same raw observation semantics:
 
+```text
                  MTConnectStreams
                        │
           ┌────────────┴────────────┐
@@ -227,6 +228,8 @@ The two acquisition paths therefore share the same raw observation semantics:
             MtConnectObservationParser
                        ↓
               MachineObservation
+
+```              
 
 This prevents /current and /sample from developing different interpretation rules for the same MTConnect values.
 
@@ -356,6 +359,7 @@ Those concerns remain outside the protocol acquisition slice.
 
 FC-014 establishes sequence-aware MTConnect acquisition while preserving FactoryConnect's protocol-neutral observation model.
 
+```text
 MTConnect
    │
    ├── /current ──────────────┐
@@ -372,5 +376,6 @@ MTConnect
                          signal model
 
 FactoryConnect can now acquire both the latest MTConnect state and incremental MTConnect observations.
+```
 
 The next acquisition layer can build continuous operation on top of this boundary without placing polling, cursor ownership, or recovery policy inside the MTConnect protocol client.
