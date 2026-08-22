@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace FactoryConnect.Protocols.MTConnect;
 
 public sealed record MtConnectEndpoint
@@ -32,5 +34,12 @@ public sealed record MtConnectEndpoint
             : $"{baseUri.AbsoluteUri}/";
 
         BaseUri = new Uri(normalized, UriKind.Absolute);
+    }
+
+    public Uri SampleUri(ulong fromSequence)
+    {
+        return new Uri(
+            BaseUri,
+            $"sample?from={fromSequence.ToString(CultureInfo.InvariantCulture)}");
     }
 }
