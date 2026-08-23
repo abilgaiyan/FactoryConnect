@@ -160,12 +160,16 @@ public sealed class MtConnectAcquisitionSessionTests
             MachineId.New(),
             "CNC-01");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => session.AcquireNextAsync(
-                Endpoint(),
-                MachineId.New(),
-                "CNC-01"));
+        var exception =
+            await Assert.ThrowsAsync<MtConnectInstanceChangedException>(
+                () => session.AcquireNextAsync(
+                    Endpoint(),
+                    MachineId.New(),
+                    "CNC-01"));
 
+        Assert.Equal(42UL, exception.PreviousInstanceId);
+        Assert.Equal(43UL, exception.CurrentInstanceId);
+        Assert.Equal(1UL, exception.FirstSequence);
         Assert.Equal(42UL, session.InstanceId);
         Assert.Equal(111UL, session.NextSequence);
     }

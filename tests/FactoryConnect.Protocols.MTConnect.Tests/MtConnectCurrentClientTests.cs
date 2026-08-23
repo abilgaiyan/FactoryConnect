@@ -44,6 +44,61 @@ public sealed class MtConnectCurrentClientTests
         Assert.Equal(42.5m, load.Value);
     }
 
+
+    [Fact]
+    public async Task AcquireResultAsyncPreservesHeaderMetadata()
+    {
+        var result = await CreateClient(CurrentXml())
+            .AcquireResultAsync(
+                new MtConnectEndpoint(
+                    new Uri("http://localhost:5000")),
+                MachineId.New(),
+                "CNC-01");
+
+        Assert.Equal(42UL, result.InstanceId);
+        Assert.Equal(1UL, result.FirstSequence);
+        Assert.Equal(100UL, result.LastSequence);
+        Assert.Equal(101UL, result.NextSequence);
+        Assert.Equal(2, result.Observations.Count);
+    }
+
+    [Fact]
+    public async Task AcquireResultAsyncRequiresHeader()
+    {
+        const string xml = """
+            <MTConnectStreams xmlns="urn:mtconnect.org:MTConnectStreams:2.5">
+              <Streams />
+            </MTConnectStreams>
+            """;
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => CreateClient(xml).AcquireResultAsync(
+                new MtConnectEndpoint(
+                    new Uri("http://localhost:5000")),
+                MachineId.New(),
+                "CNC-01"));
+    }
+
+    [Fact]
+    public async Task AcquireResultAsyncRequiresSequenceMetadata()
+    {
+        const string xml = """
+            <MTConnectStreams xmlns="urn:mtconnect.org:MTConnectStreams:2.5">
+              <Header instanceId="42"
+                      firstSequence="1"
+                      lastSequence="100" />
+              <Streams />
+            </MTConnectStreams>
+            """;
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => CreateClient(xml).AcquireResultAsync(
+                new MtConnectEndpoint(
+                    new Uri("http://localhost:5000")),
+                MachineId.New(),
+                "CNC-01"));
+    }
+
     [Fact]
     public async Task AcquireAsyncMarksUnavailableValuesAsUncertain()
     {
