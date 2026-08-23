@@ -28,10 +28,22 @@ public sealed class MtConnectSampleClient
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
 
-        response.EnsureSuccessStatusCode();
-
         var xml = await response.Content
             .ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            if (MtConnectErrorParser.TryParse(
+                    xml,
+                    out var errorResult))
+            {
+                throw new MtConnectProtocolException(
+                    response.StatusCode,
+                    errorResult!);
+            }
+
+            response.EnsureSuccessStatusCode();
+        }
 
         return MtConnectSampleParser.Parse(
             xml,
