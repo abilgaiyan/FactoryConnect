@@ -1,6 +1,7 @@
 using System.Net;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Protocols.MTConnect;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace FactoryConnect.Edge.Tests;
@@ -95,6 +96,53 @@ public sealed class MtConnectAcquisitionRuntimeTests
         Assert.Empty(sink.Results);
     }
 
+
+    [Fact]
+    public async Task RunCycleAsyncRetriesSameCursorBeforePublishing()
+    {
+        var handler = new SequenceHandler(
+            new HttpResponseMessage(
+                HttpStatusCode.ServiceUnavailable),
+            SampleResponse(42, 110, 111));
+
+        using var httpClient = new HttpClient(handler);
+        var sink = new RecordingSink();
+        var runtime = CreateRuntime(
+            httpClient,
+            sink,
+            101,
+            maxAttempts: 2);
+
+        await runtime.RunCycleAsync();
+
+        Assert.Equal(2, handler.RequestUris.Count);
+        Assert.All(
+            handler.RequestUris,
+            uri => Assert.Equal(
+                "http://localhost:5000/sample?from=101",
+                uri.AbsoluteUri));
+        Assert.Single(sink.Results);
+    }
+
+    [Fact]
+    public async Task RunCycleAsyncDoesNotRetrySinkFailure()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(42, 110, 111));
+
+        using var httpClient = new HttpClient(handler);
+        var runtime = CreateRuntime(
+            httpClient,
+            new FailingSink(),
+            101,
+            maxAttempts: 3);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runtime.RunCycleAsync());
+
+        Assert.Single(handler.RequestUris);
+    }
+
     [Fact]
     public async Task RunCycleAsyncPropagatesAcquisitionCancellation()
     {
@@ -133,7 +181,8 @@ public sealed class MtConnectAcquisitionRuntimeTests
         HttpClient httpClient,
         IMtConnectObservationSink sink,
         ulong fromSequence,
-        TimeSpan? pollingInterval = null)
+        TimeSpan? pollingInterval = null,
+        int maxAttempts = 1)
     {
         return new MtConnectAcquisitionRuntime(
             new MtConnectAcquisitionSession(
@@ -143,6 +192,15 @@ public sealed class MtConnectAcquisitionRuntimeTests
                 new Uri("http://localhost:5000")),
             MachineId.New(),
             "CNC-01",
+            new MtConnectTransientRetryPolicy(
+                new MtConnectRetryOptions(
+                    maxAttempts,
+                    TimeSpan.FromMilliseconds(1),
+                    TimeSpan.FromMilliseconds(1),
+                    0),
+                new ImmediateRetryDelay(),
+                new FixedJitterSource(),
+                NullLogger<MtConnectTransientRetryPolicy>.Instance),
             sink,
             pollingInterval ?? TimeSpan.FromMilliseconds(1));
     }
@@ -192,6 +250,38 @@ public sealed class MtConnectAcquisitionRuntimeTests
             onWrite?.Invoke();
 
             return ValueTask.CompletedTask;
+        }
+    }
+
+
+    private sealed class ImmediateRetryDelay :
+        IMtConnectRetryDelay
+    {
+        public Task DelayAsync(
+            TimeSpan delay,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FixedJitterSource :
+        IMtConnectJitterSource
+    {
+        public double NextDouble() => 0.5;
+    }
+
+    private sealed class FailingSink :
+        IMtConnectObservationSink
+    {
+        public ValueTask WriteAsync(
+            MtConnectSampleResult result,
+            CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException(
+                "Sink failed.");
         }
     }
 
