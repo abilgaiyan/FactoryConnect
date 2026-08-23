@@ -14,6 +14,7 @@ public sealed class FactoryConnectWorkerTests
             NullLogger<FactoryConnectWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await runtime.Started.WaitAsync(TimeSpan.FromSeconds(1));
         await worker.StopAsync(CancellationToken.None);
 
         Assert.Equal(1, runtime.RunCount);
@@ -23,6 +24,11 @@ public sealed class FactoryConnectWorkerTests
     private sealed class RecordingRuntime :
         IMtConnectAcquisitionRuntime
     {
+        private readonly TaskCompletionSource _started =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => _started.Task;
+
         public int RunCount { get; private set; }
 
         public bool ObservedCancellation { get; private set; }
@@ -31,6 +37,7 @@ public sealed class FactoryConnectWorkerTests
             CancellationToken cancellationToken = default)
         {
             RunCount++;
+            _started.TrySetResult();
 
             try
             {
