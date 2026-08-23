@@ -99,6 +99,64 @@ public sealed class MtConnectCurrentClientTests
                 "CNC-01"));
     }
 
+
+    [Fact]
+    public async Task AcquireResultAsyncPreservesMtConnectProtocolError()
+    {
+        var client = CreateClient(
+            MtConnectErrorXml(42, "OUT_OF_RANGE", "Sequence is outside the buffer."),
+            HttpStatusCode.NotFound);
+
+        var exception =
+            await Assert.ThrowsAsync<MtConnectProtocolException>(
+                () => client.AcquireResultAsync(
+                    new MtConnectEndpoint(new Uri("http://localhost:5000")),
+                    MachineId.New(),
+                    "CNC-01"));
+
+        Assert.Equal(HttpStatusCode.NotFound, exception.StatusCode);
+        Assert.Equal(42UL, exception.ErrorResult.InstanceId);
+        var error = Assert.Single(exception.ErrorResult.Errors);
+        Assert.Equal("OUT_OF_RANGE", error.Code);
+        Assert.Equal("Sequence is outside the buffer.", error.Message);
+    }
+
+    [Fact]
+    public async Task AcquireAsyncPreservesMtConnectProtocolError()
+    {
+        var client = CreateClient(
+            MtConnectErrorXml(42, "NO_DEVICE", "Device was not found."),
+            HttpStatusCode.NotFound);
+
+        var exception =
+            await Assert.ThrowsAsync<MtConnectProtocolException>(
+                () => client.AcquireAsync(
+                    new MtConnectEndpoint(new Uri("http://localhost:5000")),
+                    MachineId.New(),
+                    "CNC-01"));
+
+        Assert.Equal(
+            "NO_DEVICE",
+            Assert.Single(exception.ErrorResult.Errors).Code);
+    }
+
+    [Fact]
+    public async Task AcquireResultAsyncPreservesOrdinaryHttpFailure()
+    {
+        var client = CreateClient(
+            "Service unavailable.",
+            HttpStatusCode.ServiceUnavailable);
+
+        var exception =
+            await Assert.ThrowsAsync<HttpRequestException>(
+                () => client.AcquireResultAsync(
+                    new MtConnectEndpoint(new Uri("http://localhost:5000")),
+                    MachineId.New(),
+                    "CNC-01"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+    }
+
     [Fact]
     public async Task AcquireAsyncMarksUnavailableValuesAsUncertain()
     {
@@ -161,11 +219,31 @@ public sealed class MtConnectCurrentClientTests
                 "CNC-01"));
     }
 
-    private static MtConnectCurrentClient CreateClient(string xml)
+    private static MtConnectCurrentClient CreateClient(
+        string xml,
+        HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var httpClient = new HttpClient(
-            new StubHandler(HttpStatusCode.OK, xml));
+            new StubHandler(statusCode, xml));
+
         return new MtConnectCurrentClient(httpClient);
+    }
+
+    private static string MtConnectErrorXml(
+        ulong instanceId,
+        string errorCode,
+        string message)
+    {
+        return $"""
+            <MTConnectError xmlns="urn:mtconnect.org:MTConnectError:2.5">
+              <Header instanceId="{instanceId}" />
+              <Errors>
+                <Error errorCode="{errorCode}">
+                  {message}
+                </Error>
+              </Errors>
+            </MTConnectError>
+            """;
     }
 
     private static string CurrentXml() => """

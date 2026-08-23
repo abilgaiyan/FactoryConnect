@@ -59,9 +59,23 @@ public sealed class MtConnectCurrentClient
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
 
-        response.EnsureSuccessStatusCode();
-
-        return await response.Content
+        var xml = await response.Content
             .ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            if (MtConnectErrorParser.TryParse(
+                    xml,
+                    out var errorResult))
+            {
+                throw new MtConnectProtocolException(
+                    response.StatusCode,
+                    errorResult!);
+            }
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        return xml;
     }
 }
