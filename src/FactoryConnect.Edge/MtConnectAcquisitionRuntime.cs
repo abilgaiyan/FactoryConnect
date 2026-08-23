@@ -3,7 +3,8 @@ using FactoryConnect.Protocols.MTConnect;
 
 namespace FactoryConnect.Edge;
 
-public sealed class MtConnectAcquisitionRuntime
+public sealed class MtConnectAcquisitionRuntime :
+    IMtConnectAcquisitionRuntime
 {
     private readonly MtConnectAcquisitionSession _session;
     private readonly MtConnectEndpoint _endpoint;

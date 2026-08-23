@@ -1,6 +1,9 @@
 namespace FactoryConnect.Edge;
 
-public sealed class FactoryConnectWorker(ILogger<FactoryConnectWorker> logger) : BackgroundService
+public sealed class FactoryConnectWorker(
+    IMtConnectAcquisitionRuntime runtime,
+    ILogger<FactoryConnectWorker> logger)
+    : BackgroundService
 {
     private static readonly Action<ILogger, Exception?> EdgeStarting =
         LoggerMessage.Define(
@@ -8,13 +11,11 @@ public sealed class FactoryConnectWorker(ILogger<FactoryConnectWorker> logger) :
             new EventId(1, nameof(EdgeStarting)),
             "FactoryConnect Edge starting.");
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(
+        CancellationToken stoppingToken)
     {
         EdgeStarting(logger, null);
 
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
-        }
+        return runtime.RunAsync(stoppingToken);
     }
 }
