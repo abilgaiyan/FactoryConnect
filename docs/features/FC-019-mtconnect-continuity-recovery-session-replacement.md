@@ -162,6 +162,36 @@ Recovery never invents a cursor when the Agent does not provide valid sequence m
 
 ---
 
+## Current Structured-Error Consistency
+
+Both `MtConnectCurrentClient` operations now preserve the same non-success response semantics established for `/sample`.
+
+```text
+/current non-success
+        ↓
+read response body
+        ↓
+valid MTConnectError
+        → MtConnectProtocolException
+
+recognized but malformed MTConnectError
+        → InvalidDataException
+
+ordinary non-MTConnect response
+        → HttpRequestException
+```
+
+This applies to both:
+
+- observation-only `AcquireAsync()`
+- metadata-rich `AcquireResultAsync()`
+
+Continuity recovery therefore receives structured `OUT_OF_RANGE` facts instead of a generic HTTP failure.
+
+The malformed-error behavior is verified explicitly at the current-client boundary rather than relying only on parser-level tests.
+
+---
+
 ## Typed Instance Discontinuity
 
 FC-015 originally raised a generic `InvalidOperationException` when the Agent `InstanceId` changed.
@@ -551,6 +581,10 @@ FC-019 verifies:
 - observation-only current acquisition remains compatible
 - missing current headers are rejected
 - missing sequence metadata is rejected
+- current acquisition preserves structured MTConnect protocol errors
+- both current APIs preserve MTConnect error codes
+- malformed current error documents raise `InvalidDataException`
+- ordinary current HTTP failures remain `HttpRequestException`
 - private current parsing uses a concrete observation array
 - changed Agent instances raise a typed exception
 - typed exceptions preserve old and new instance identifiers
@@ -571,8 +605,8 @@ FC-019 verifies:
 The FactoryConnect test suite after FC-019 contains:
 
 ```text
-Total Tests: 143
-Passed: 143
+Total Tests: 147
+Passed: 147
 Failed: 0
 Skipped: 0
 Result: SUCCEEDED
