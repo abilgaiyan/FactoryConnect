@@ -63,7 +63,7 @@ internal static class MtConnectCurrentParser
             deviceKey);
     }
 
-    private static IReadOnlyList<MachineObservation> ParseObservations(
+    private static MachineObservation[] ParseObservations(
         XDocument document,
         MachineId machineId,
         string deviceKey)
