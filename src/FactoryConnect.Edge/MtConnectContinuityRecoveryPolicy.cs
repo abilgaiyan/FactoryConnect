@@ -27,6 +27,18 @@ public sealed class MtConnectContinuityRecoveryPolicy
         _reporter = reporter;
     }
 
+    public static bool CanRecoverOutOfRange(
+        MtConnectProtocolException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        return exception.ErrorResult.Errors.Any(
+            error => string.Equals(
+                error.Code,
+                "OUT_OF_RANGE",
+                StringComparison.OrdinalIgnoreCase));
+    }
+
     public async Task<MtConnectAcquisitionSession>
         RecoverOutOfRangeAsync(
             MtConnectProtocolException exception,
@@ -41,11 +53,7 @@ public sealed class MtConnectContinuityRecoveryPolicy
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
 
-        if (!exception.ErrorResult.Errors.Any(
-                error => string.Equals(
-                    error.Code,
-                    "OUT_OF_RANGE",
-                    StringComparison.OrdinalIgnoreCase)))
+        if (!CanRecoverOutOfRange(exception))
         {
             throw new ArgumentException(
                 "The MTConnect protocol exception does not contain " +

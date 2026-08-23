@@ -61,10 +61,14 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(retryOptions);
 builder.Services.AddSingleton<HttpClient>();
 builder.Services.AddSingleton<MtConnectSampleClient>();
+builder.Services.AddSingleton<MtConnectCurrentClient>();
+builder.Services.AddSingleton<
+    IMtConnectAcquisitionSessionFactory,
+    MtConnectAcquisitionSessionFactory>();
 builder.Services.AddSingleton(
-    services => new MtConnectAcquisitionSession(
-        services.GetRequiredService<MtConnectSampleClient>(),
-        options.FromSequence));
+    services => services
+        .GetRequiredService<IMtConnectAcquisitionSessionFactory>()
+        .Create(options.FromSequence));
 builder.Services.AddSingleton<
     IMtConnectRetryDelay,
     SystemMtConnectRetryDelay>();
@@ -72,6 +76,10 @@ builder.Services.AddSingleton<
     IMtConnectJitterSource,
     SystemMtConnectJitterSource>();
 builder.Services.AddSingleton<MtConnectTransientRetryPolicy>();
+builder.Services.AddSingleton<
+    IMtConnectContinuityReporter,
+    LoggingMtConnectContinuityReporter>();
+builder.Services.AddSingleton<MtConnectContinuityRecoveryPolicy>();
 builder.Services.AddSingleton<
     IMtConnectObservationSink,
     LoggingMtConnectObservationSink>();
@@ -82,6 +90,7 @@ builder.Services.AddSingleton<IMtConnectAcquisitionRuntime>(
         options.MachineId,
         options.DeviceKey,
         services.GetRequiredService<MtConnectTransientRetryPolicy>(),
+        services.GetRequiredService<MtConnectContinuityRecoveryPolicy>(),
         services.GetRequiredService<IMtConnectObservationSink>(),
         options.PollingInterval));
 builder.Services.AddHostedService<FactoryConnectWorker>();
