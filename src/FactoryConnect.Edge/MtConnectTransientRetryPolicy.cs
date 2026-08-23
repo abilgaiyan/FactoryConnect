@@ -15,7 +15,7 @@ public sealed class MtConnectTransientRetryPolicy
                 LogLevel.Warning,
                 new EventId(3, nameof(RetryScheduled)),
                 "MTConnect acquisition attempt {Attempt} of {MaxAttempts} " +
-                "failed with {Failure}; retrying in {DelayMilliseconds} ms.");
+                "will retry in {DelayMilliseconds} ms after {Failure}.");
 
     private readonly MtConnectRetryOptions _options;
     private readonly IMtConnectRetryDelay _delay;
