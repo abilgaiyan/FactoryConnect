@@ -201,6 +201,20 @@ public sealed class MtConnectAcquisitionRuntimeTests
                 new ImmediateRetryDelay(),
                 new FixedJitterSource(),
                 NullLogger<MtConnectTransientRetryPolicy>.Instance),
+            new MtConnectContinuityRecoveryPolicy(
+                new MtConnectAcquisitionSessionFactory(
+                    new MtConnectSampleClient(httpClient)),
+                new MtConnectCurrentClient(httpClient),
+                new MtConnectTransientRetryPolicy(
+                    new MtConnectRetryOptions(
+                        1,
+                        TimeSpan.FromMilliseconds(1),
+                        TimeSpan.FromMilliseconds(1),
+                        0),
+                    new ImmediateRetryDelay(),
+                    new FixedJitterSource(),
+                    NullLogger<MtConnectTransientRetryPolicy>.Instance),
+                new IgnoringContinuityReporter()),
             sink,
             pollingInterval ?? TimeSpan.FromMilliseconds(1));
     }
@@ -253,6 +267,19 @@ public sealed class MtConnectAcquisitionRuntimeTests
         }
     }
 
+
+    private sealed class IgnoringContinuityReporter :
+        IMtConnectContinuityReporter
+    {
+        public ValueTask ReportAsync(
+            MtConnectContinuityLoss continuityLoss,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class ImmediateRetryDelay :
         IMtConnectRetryDelay

@@ -6,11 +6,12 @@ namespace FactoryConnect.Edge;
 public sealed class MtConnectAcquisitionRuntime :
     IMtConnectAcquisitionRuntime
 {
-    private readonly MtConnectAcquisitionSession _session;
+    private MtConnectAcquisitionSession _session;
     private readonly MtConnectEndpoint _endpoint;
     private readonly MachineId _machineId;
     private readonly string _deviceKey;
     private readonly MtConnectTransientRetryPolicy _retryPolicy;
+    private readonly MtConnectContinuityRecoveryPolicy _recoveryPolicy;
     private readonly IMtConnectObservationSink _sink;
     private readonly TimeSpan _pollingInterval;
 
@@ -20,6 +21,7 @@ public sealed class MtConnectAcquisitionRuntime :
         MachineId machineId,
         string deviceKey,
         MtConnectTransientRetryPolicy retryPolicy,
+        MtConnectContinuityRecoveryPolicy recoveryPolicy,
         IMtConnectObservationSink sink,
         TimeSpan pollingInterval)
     {
@@ -27,6 +29,7 @@ public sealed class MtConnectAcquisitionRuntime :
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
         ArgumentNullException.ThrowIfNull(retryPolicy);
+        ArgumentNullException.ThrowIfNull(recoveryPolicy);
         ArgumentNullException.ThrowIfNull(sink);
 
         if (machineId.IsEmpty)
@@ -49,6 +52,7 @@ public sealed class MtConnectAcquisitionRuntime :
         _machineId = machineId;
         _deviceKey = deviceKey;
         _retryPolicy = retryPolicy;
+        _recoveryPolicy = recoveryPolicy;
         _sink = sink;
         _pollingInterval = pollingInterval;
     }
@@ -56,13 +60,7 @@ public sealed class MtConnectAcquisitionRuntime :
     public async Task<MtConnectSampleResult> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await _retryPolicy.ExecuteAsync(
-            retryCancellationToken =>
-                _session.AcquireNextAsync(
-                    _endpoint,
-                    _machineId,
-                    _deviceKey,
-                    retryCancellationToken),
+        var result = await AcquireWithRecoveryAsync(
             cancellationToken);
 
         await _sink.WriteAsync(result, cancellationToken);
@@ -92,6 +90,56 @@ public sealed class MtConnectAcquisitionRuntime :
                 when (cancellationToken.IsCancellationRequested)
             {
                 break;
+            }
+        }
+    }
+
+    private async Task<MtConnectSampleResult>
+        AcquireWithRecoveryAsync(
+            CancellationToken cancellationToken)
+    {
+        var recoveryAttempted = false;
+
+        while (true)
+        {
+            try
+            {
+                return await _retryPolicy.ExecuteAsync(
+                    retryCancellationToken =>
+                        _session.AcquireNextAsync(
+                            _endpoint,
+                            _machineId,
+                            _deviceKey,
+                            retryCancellationToken),
+                    cancellationToken);
+            }
+            catch (MtConnectProtocolException exception)
+                when (!recoveryAttempted &&
+                      MtConnectContinuityRecoveryPolicy
+                          .CanRecoverOutOfRange(exception))
+            {
+                _session =
+                    await _recoveryPolicy.RecoverOutOfRangeAsync(
+                        exception,
+                        _session,
+                        _endpoint,
+                        _machineId,
+                        _deviceKey,
+                        cancellationToken);
+
+                recoveryAttempted = true;
+            }
+            catch (MtConnectInstanceChangedException exception)
+                when (!recoveryAttempted)
+            {
+                _session =
+                    await _recoveryPolicy.RecoverInstanceChangeAsync(
+                        exception,
+                        _session,
+                        _machineId,
+                        cancellationToken);
+
+                recoveryAttempted = true;
             }
         }
     }

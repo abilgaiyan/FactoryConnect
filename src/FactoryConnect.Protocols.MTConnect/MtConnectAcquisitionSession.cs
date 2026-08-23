@@ -42,9 +42,10 @@ public sealed class MtConnectAcquisitionSession
         if (_instanceId is not null &&
             _instanceId.Value != result.InstanceId)
         {
-            throw new InvalidOperationException(
-                $"MTConnect Agent instance changed from " +
-                $"'{_instanceId.Value}' to '{result.InstanceId}'.");
+            throw new MtConnectInstanceChangedException(
+                _instanceId.Value,
+                result.InstanceId,
+                result.FirstSequence);
         }
 
         _instanceId ??= result.InstanceId;

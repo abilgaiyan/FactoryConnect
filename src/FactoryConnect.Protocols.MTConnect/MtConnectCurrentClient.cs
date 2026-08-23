@@ -18,6 +18,39 @@ public sealed class MtConnectCurrentClient
         string deviceKey,
         CancellationToken cancellationToken = default)
     {
+        var xml = await AcquireDocumentAsync(
+            endpoint,
+            deviceKey,
+            cancellationToken);
+
+        return MtConnectCurrentParser.ParseObservations(
+            xml,
+            machineId,
+            deviceKey);
+    }
+
+    public async Task<MtConnectCurrentResult> AcquireResultAsync(
+        MtConnectEndpoint endpoint,
+        MachineId machineId,
+        string deviceKey,
+        CancellationToken cancellationToken = default)
+    {
+        var xml = await AcquireDocumentAsync(
+            endpoint,
+            deviceKey,
+            cancellationToken);
+
+        return MtConnectCurrentParser.ParseResult(
+            xml,
+            machineId,
+            deviceKey);
+    }
+
+    private async Task<string> AcquireDocumentAsync(
+        MtConnectEndpoint endpoint,
+        string deviceKey,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
 
@@ -26,9 +59,23 @@ public sealed class MtConnectCurrentClient
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
 
-        response.EnsureSuccessStatusCode();
+        var xml = await response.Content
+            .ReadAsStringAsync(cancellationToken);
 
-        var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-        return MtConnectCurrentParser.Parse(xml, machineId, deviceKey);
+        if (!response.IsSuccessStatusCode)
+        {
+            if (MtConnectErrorParser.TryParse(
+                    xml,
+                    out var errorResult))
+            {
+                throw new MtConnectProtocolException(
+                    response.StatusCode,
+                    errorResult!);
+            }
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        return xml;
     }
 }
