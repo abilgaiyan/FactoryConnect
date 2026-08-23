@@ -140,6 +140,33 @@ public sealed class MtConnectCurrentClientTests
             Assert.Single(exception.ErrorResult.Errors).Code);
     }
 
+
+    [Fact]
+    public async Task AcquireResultAsyncRejectsMalformedMtConnectProtocolError()
+    {
+        const string xml = """
+            <MTConnectError xmlns="urn:mtconnect.org:MTConnectError:2.5">
+              <Header instanceId="42" />
+              <Errors>
+                <Error>
+                  Missing error code.
+                </Error>
+              </Errors>
+            </MTConnectError>
+            """;
+
+        var client = CreateClient(
+            xml,
+            HttpStatusCode.BadRequest);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.AcquireResultAsync(
+                new MtConnectEndpoint(
+                    new Uri("http://localhost:5000")),
+                MachineId.New(),
+                "CNC-01"));
+    }
+
     [Fact]
     public async Task AcquireResultAsyncPreservesOrdinaryHttpFailure()
     {
