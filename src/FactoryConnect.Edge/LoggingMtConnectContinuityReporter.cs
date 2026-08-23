@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace FactoryConnect.Edge;
 
 public sealed class LoggingMtConnectContinuityReporter(
@@ -39,7 +41,8 @@ public sealed class LoggingMtConnectContinuityReporter(
             logger,
             continuityLoss.MachineId.ToString(),
             continuityLoss.Reason.ToString(),
-            continuityLoss.PreviousInstanceId?.ToString() ?? "unknown",
+            continuityLoss.PreviousInstanceId?.ToString(
+                CultureInfo.InvariantCulture) ?? "unknown",
             continuityLoss.CurrentInstanceId,
             continuityLoss.PreviousSequence,
             continuityLoss.RecoverySequence,
