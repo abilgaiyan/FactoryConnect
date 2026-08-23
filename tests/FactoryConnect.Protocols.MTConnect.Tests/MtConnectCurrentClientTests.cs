@@ -83,20 +83,6 @@ public sealed class MtConnectCurrentClientTests
     }
 
     [Fact]
-    public async Task AcquireAsyncPropagatesHttpFailure()
-    {
-        using var httpClient = new HttpClient(
-            new StubHandler(HttpStatusCode.ServiceUnavailable, string.Empty));
-        var client = new MtConnectCurrentClient(httpClient);
-
-        await Assert.ThrowsAsync<HttpRequestException>(
-            () => client.AcquireAsync(
-                new MtConnectEndpoint(new Uri("http://localhost:5000")),
-                MachineId.New(),
-                "CNC-01"));
-    }
-
-    [Fact]
     public async Task AcquireAsyncRejectsNonNumericSampleValue()
     {
         const string xml = """

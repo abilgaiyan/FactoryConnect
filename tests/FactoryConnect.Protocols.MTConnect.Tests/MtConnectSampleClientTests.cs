@@ -298,6 +298,144 @@ public sealed class MtConnectSampleClientTests
                 100UL));
     }
 
+    [Fact]
+    public async Task AcquireAsyncThrowsProtocolExceptionForMtConnectErrorResponse()
+    {
+        const string xml = """
+            <MTConnectError xmlns="urn:mtconnect.org:MTConnectError:2.5">
+            <Header instanceId="42" />
+            <Errors>
+                <Error errorCode="OUT_OF_RANGE">
+                Requested sequence is outside the available range.
+                </Error>
+            </Errors>
+            </MTConnectError>
+            """;
+
+        using var httpClient = new HttpClient(
+            new StubHandler(
+                HttpStatusCode.NotFound,
+                xml));
+
+        var client = new MtConnectSampleClient(httpClient);
+
+        var exception =
+            await Assert.ThrowsAsync<MtConnectProtocolException>(
+                () => client.AcquireAsync(
+                    new MtConnectEndpoint(
+                        new Uri("http://localhost:5000")),
+                    MachineId.New(),
+                    "CNC-01",
+                    100));
+
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            exception.StatusCode);
+
+        Assert.Equal(
+            42UL,
+            exception.ErrorResult.InstanceId);
+
+        var error = Assert.Single(
+            exception.ErrorResult.Errors);
+
+        Assert.Equal(
+            "OUT_OF_RANGE",
+            error.Code);
+    }
+
+    [Fact]
+    public async Task AcquireAsyncPreservesMtConnectErrorMessage()
+    {
+        const string xml = """
+            <MTConnectError xmlns="urn:mtconnect.org:MTConnectError:2.5">
+            <Header instanceId="42" />
+            <Errors>
+                <Error errorCode="NO_DEVICE">
+                Device CNC-99 was not found.
+                </Error>
+            </Errors>
+            </MTConnectError>
+            """;
+
+        using var httpClient = new HttpClient(
+            new StubHandler(
+                HttpStatusCode.NotFound,
+                xml));
+
+        var client = new MtConnectSampleClient(httpClient);
+
+        var exception =
+            await Assert.ThrowsAsync<MtConnectProtocolException>(
+                () => client.AcquireAsync(
+                    new MtConnectEndpoint(
+                        new Uri("http://localhost:5000")),
+                    MachineId.New(),
+                    "CNC-99",
+                    100));
+
+        var error = Assert.Single(
+            exception.ErrorResult.Errors);
+
+        Assert.Equal("NO_DEVICE", error.Code);
+        Assert.Equal(
+            "Device CNC-99 was not found.",
+            error.Message);
+    }
+
+    [Fact]
+    public async Task AcquireAsyncPreservesHttpFailureForNonMtConnectErrorResponse()
+    {
+        const string content = """
+            Service temporarily unavailable.
+            """;
+
+        using var httpClient = new HttpClient(
+            new StubHandler(
+                HttpStatusCode.ServiceUnavailable,
+                content));
+
+        var client = new MtConnectSampleClient(httpClient);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => client.AcquireAsync(
+                new MtConnectEndpoint(
+                    new Uri("http://localhost:5000")),
+                MachineId.New(),
+                "CNC-01",
+                100));
+    }
+
+    [Fact]
+    public async Task AcquireAsyncRejectsMalformedMtConnectErrorResponse()
+    {
+        const string xml = """
+            <MTConnectError xmlns="urn:mtconnect.org:MTConnectError:2.5">
+            <Header instanceId="42" />
+            <Errors>
+                <Error>
+                Missing error code.
+                </Error>
+            </Errors>
+            </MTConnectError>
+            """;
+
+        using var httpClient = new HttpClient(
+            new StubHandler(
+                HttpStatusCode.BadRequest,
+                xml));
+
+        var client = new MtConnectSampleClient(httpClient);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.AcquireAsync(
+                new MtConnectEndpoint(
+                    new Uri("http://localhost:5000")),
+                MachineId.New(),
+                "CNC-01",
+                100));
+    }
+
     private static MtConnectSampleClient CreateClient(
         string xml)
     {

@@ -251,6 +251,98 @@ public sealed class MtConnectAcquisitionSessionTests
         Assert.Equal(111UL, session.NextSequence);
     }
 
+    [Fact]
+    public async Task ProtocolErrorDoesNotAdvanceInitialSession()
+    {
+        var handler = new SequenceHandler(
+            MtConnectErrorResponse(
+                HttpStatusCode.NotFound,
+                instanceId: 42,
+                errorCode: "OUT_OF_RANGE",
+                message: "Requested sequence is outside the available range."));
+
+        using var httpClient = new HttpClient(handler);
+
+        var session = new MtConnectAcquisitionSession(
+            new MtConnectSampleClient(httpClient),
+            101);
+
+        await Assert.ThrowsAsync<MtConnectProtocolException>(
+            () => session.AcquireNextAsync(
+                Endpoint(),
+                MachineId.New(),
+                "CNC-01"));
+
+        Assert.Null(session.InstanceId);
+        Assert.Equal(101UL, session.NextSequence);
+    }
+
+    [Fact]
+    public async Task ProtocolErrorDoesNotAdvanceEstablishedSession()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(
+                instanceId: 42,
+                firstSequence: 1,
+                lastSequence: 110,
+                nextSequence: 111),
+            MtConnectErrorResponse(
+                HttpStatusCode.NotFound,
+                instanceId: 42,
+                errorCode: "OUT_OF_RANGE",
+                message: "Requested sequence is outside the available range."));
+
+        using var httpClient = new HttpClient(handler);
+
+        var session = new MtConnectAcquisitionSession(
+            new MtConnectSampleClient(httpClient),
+            101);
+
+        await session.AcquireNextAsync(
+            Endpoint(),
+            MachineId.New(),
+            "CNC-01");
+
+        Assert.Equal(42UL, session.InstanceId);
+        Assert.Equal(111UL, session.NextSequence);
+
+        await Assert.ThrowsAsync<MtConnectProtocolException>(
+            () => session.AcquireNextAsync(
+                Endpoint(),
+                MachineId.New(),
+                "CNC-01"));
+
+        Assert.Equal(42UL, session.InstanceId);
+        Assert.Equal(111UL, session.NextSequence);
+    }
+
+    private static HttpResponseMessage MtConnectErrorResponse(
+        HttpStatusCode statusCode,
+        ulong? instanceId,
+        string errorCode,
+        string message)
+    {
+        var instanceIdAttribute = instanceId is null
+            ? string.Empty
+            : $" instanceId=\"{instanceId.Value}\"";
+
+        var xml = $"""
+            <MTConnectError xmlns="urn:mtconnect.org:MTConnectError:2.5">
+            <Header{instanceIdAttribute} />
+            <Errors>
+                <Error errorCode="{errorCode}">
+                {message}
+                </Error>
+            </Errors>
+            </MTConnectError>
+            """;
+
+        return new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent(xml),
+        };
+    }
+
     private sealed class CancellingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
