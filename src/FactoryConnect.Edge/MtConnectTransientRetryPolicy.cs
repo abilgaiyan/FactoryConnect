@@ -4,22 +4,39 @@ namespace FactoryConnect.Edge;
 
 public sealed class MtConnectTransientRetryPolicy
 {
+    private static readonly Action<
+        ILogger,
+        int,
+        int,
+        double,
+        string,
+        Exception?> RetryScheduled =
+            LoggerMessage.Define<int, int, double, string>(
+                LogLevel.Warning,
+                new EventId(3, nameof(RetryScheduled)),
+                "MTConnect acquisition attempt {Attempt} of {MaxAttempts} " +
+                "failed with {Failure}; retrying in {DelayMilliseconds} ms.");
+
     private readonly MtConnectRetryOptions _options;
     private readonly IMtConnectRetryDelay _delay;
     private readonly IMtConnectJitterSource _jitter;
+    private readonly ILogger<MtConnectTransientRetryPolicy> _logger;
 
     public MtConnectTransientRetryPolicy(
         MtConnectRetryOptions options,
         IMtConnectRetryDelay delay,
-        IMtConnectJitterSource jitter)
+        IMtConnectJitterSource jitter,
+        ILogger<MtConnectTransientRetryPolicy> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(delay);
         ArgumentNullException.ThrowIfNull(jitter);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _options = options;
         _delay = delay;
         _jitter = jitter;
+        _logger = logger;
     }
 
     public async Task<T> ExecuteAsync<T>(
@@ -39,6 +56,16 @@ public sealed class MtConnectTransientRetryPolicy
                       IsTransient(exception))
             {
                 var retryDelay = CalculateDelay(attempt);
+                var failure = exception.StatusCode?.ToString()
+                    ?? "transport failure";
+
+                RetryScheduled(
+                    _logger,
+                    attempt,
+                    _options.MaxAttempts,
+                    retryDelay.TotalMilliseconds,
+                    failure,
+                    exception);
 
                 await _delay.DelayAsync(
                     retryDelay,

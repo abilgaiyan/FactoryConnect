@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace FactoryConnect.Edge.Tests;
@@ -224,7 +225,8 @@ public sealed class MtConnectTransientRetryPolicyTests
                 maximumDelay ?? TimeSpan.FromSeconds(30),
                 jitterRatio),
             delay,
-            new SequenceJitterSource(jitterValues));
+            new SequenceJitterSource(jitterValues),
+            NullLogger<MtConnectTransientRetryPolicy>.Instance);
     }
 
     private sealed class RecordingDelay :

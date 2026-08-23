@@ -10,6 +10,7 @@ public sealed class MtConnectAcquisitionRuntime :
     private readonly MtConnectEndpoint _endpoint;
     private readonly MachineId _machineId;
     private readonly string _deviceKey;
+    private readonly MtConnectTransientRetryPolicy _retryPolicy;
     private readonly IMtConnectObservationSink _sink;
     private readonly TimeSpan _pollingInterval;
 
@@ -18,12 +19,14 @@ public sealed class MtConnectAcquisitionRuntime :
         MtConnectEndpoint endpoint,
         MachineId machineId,
         string deviceKey,
+        MtConnectTransientRetryPolicy retryPolicy,
         IMtConnectObservationSink sink,
         TimeSpan pollingInterval)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
+        ArgumentNullException.ThrowIfNull(retryPolicy);
         ArgumentNullException.ThrowIfNull(sink);
 
         if (machineId.IsEmpty)
@@ -45,6 +48,7 @@ public sealed class MtConnectAcquisitionRuntime :
         _endpoint = endpoint;
         _machineId = machineId;
         _deviceKey = deviceKey;
+        _retryPolicy = retryPolicy;
         _sink = sink;
         _pollingInterval = pollingInterval;
     }
@@ -52,10 +56,13 @@ public sealed class MtConnectAcquisitionRuntime :
     public async Task<MtConnectSampleResult> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await _session.AcquireNextAsync(
-            _endpoint,
-            _machineId,
-            _deviceKey,
+        var result = await _retryPolicy.ExecuteAsync(
+            retryCancellationToken =>
+                _session.AcquireNextAsync(
+                    _endpoint,
+                    _machineId,
+                    _deviceKey,
+                    retryCancellationToken),
             cancellationToken);
 
         await _sink.WriteAsync(result, cancellationToken);
