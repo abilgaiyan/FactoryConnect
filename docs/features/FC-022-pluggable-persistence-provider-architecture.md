@@ -112,6 +112,20 @@ with configuration:
 
 The in-memory provider key belongs to `FactoryConnect.Infrastructure`, not to `FactoryConnect.Persistence`.
 
+## Composition-Root Invariant
+
+`AddFactoryConnectPersistence` must be the final persistence-related composition operation.
+
+`IServiceCollection` remains mutable after this call. Microsoft DI does not provide a mechanism for an extension method to seal the collection or prevent arbitrary later registrations.
+
+A direct `IObservationIngestionStore` registration made after persistence finalization is therefore outside the supported composition lifecycle and may override the selected provider.
+
+FC-022 enforces every boundary it owns:
+
+- direct store registrations present during finalization are rejected;
+- provider registrations through `AddPersistenceProvider` after finalization are rejected;
+- the composition root is responsible for performing no persistence-related mutations after finalization.
+
 ## Failure Semantics
 
 FC-022 fails explicitly when:
@@ -124,7 +138,7 @@ FC-022 fails explicitly when:
 - provider registration is attempted through the persistence registration API after finalization;
 - an activated provider factory returns no store.
 
-These failures prevent ambiguous persistence ownership.
+These failures prevent ambiguous persistence ownership within the supported composition lifecycle.
 
 ## Exactly-One Activation
 
@@ -208,7 +222,7 @@ Included in FC-022:
 - duplicate-key validation;
 - configured-provider selection;
 - exactly-one lazy store activation;
-- rejection of direct competing store registration;
+- rejection of direct competing store registrations present at finalization;
 - in-memory provider registration through the new model;
 - Edge composition through `Persistence:Provider`;
 - analyzer-safe test naming;
