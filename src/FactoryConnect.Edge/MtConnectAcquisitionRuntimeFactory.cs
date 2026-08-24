@@ -16,8 +16,11 @@ public sealed class MtConnectAcquisitionRuntimeFactory(
             options,
             cancellationToken);
 
-        var session = sessionFactory.Create(
-            startupState.FromSequence);
+        var session = startupState.Checkpoint is null
+            ? sessionFactory.Create(startupState.FromSequence)
+            : sessionFactory.Restore(
+                startupState.Checkpoint.InstanceId,
+                startupState.Checkpoint.NextSequence);
 
         return new MtConnectAcquisitionRuntime(
             session,

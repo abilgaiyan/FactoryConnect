@@ -40,7 +40,7 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
     }
 
     [Fact]
-    public async Task CreateAsyncRestoresSessionAndRuntimeCheckpoint()
+    public async Task CreateAsyncRestoresSessionAndContinuesSameInstance()
     {
         var handler = new SequenceHandler(
             SampleResponse(instanceId: 42, nextSequence: 511));
@@ -78,13 +78,84 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
 
         await runtime.RunCycleAsync();
 
-        Assert.Equal(500UL, Assert.Single(sessionFactory.Sequences));
+        Assert.Empty(sessionFactory.Sequences);
+        Assert.Equal(
+            (42UL, 500UL),
+            Assert.Single(sessionFactory.RestoredStates));
         Assert.Equal(
             checkpoint,
             Assert.Single(sink.ExpectedCheckpoints));
         Assert.Equal(
             "http://localhost:5000/sample?from=500",
             Assert.Single(handler.RequestUris).AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task CreateAsyncDetectsChangedInstanceAndRecovers()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(instanceId: 43, nextSequence: 2),
+            SampleResponse(instanceId: 43, nextSequence: 11));
+
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var options = Options(machineId, fromSequence: 101);
+        var checkpoint = new ObservationCheckpoint(
+            MtConnectObservationStreamId.Create(
+                machineId,
+                options.DeviceKey),
+            instanceId: 42,
+            nextSequence: 500);
+        var store = new InMemoryObservationIngestionStore();
+
+        await store.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                checkpoint,
+                []));
+
+        var sink = new RecordingSink();
+        var reporter = new RecordingContinuityReporter();
+        var sessionFactory = new RecordingSessionFactory(
+            new MtConnectSampleClient(httpClient));
+        var factory = CreateFactory(
+            httpClient,
+            store,
+            sessionFactory,
+            sink,
+            options,
+            reporter);
+
+        var runtime = Assert.IsType<MtConnectAcquisitionRuntime>(
+            await factory.CreateAsync());
+
+        var result = await runtime.RunCycleAsync();
+
+        Assert.Equal(43UL, result.InstanceId);
+        Assert.Equal(
+            (42UL, 500UL),
+            Assert.Single(sessionFactory.RestoredStates));
+        Assert.Equal(1UL, Assert.Single(sessionFactory.Sequences));
+
+        var continuityLoss = Assert.Single(reporter.Losses);
+
+        Assert.Equal(
+            MtConnectContinuityLossReason.InstanceChanged,
+            continuityLoss.Reason);
+        Assert.Equal(42UL, continuityLoss.PreviousInstanceId);
+        Assert.Equal(43UL, continuityLoss.CurrentInstanceId);
+        Assert.Equal(500UL, continuityLoss.PreviousSequence);
+        Assert.Equal(1UL, continuityLoss.RecoverySequence);
+        Assert.Equal(
+            checkpoint,
+            Assert.Single(sink.ExpectedCheckpoints));
+        Assert.Equal(2, handler.RequestUris.Count);
+        Assert.Equal(
+            "http://localhost:5000/sample?from=500",
+            handler.RequestUris[0].AbsoluteUri);
+        Assert.Equal(
+            "http://localhost:5000/sample?from=1",
+            handler.RequestUris[1].AbsoluteUri);
     }
 
     private static MtConnectAcquisitionRuntimeFactory CreateFactory(
@@ -107,7 +178,8 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
         IObservationIngestionStore store,
         IMtConnectAcquisitionSessionFactory sessionFactory,
         IMtConnectObservationSink sink,
-        MtConnectAcquisitionOptions options)
+        MtConnectAcquisitionOptions options,
+        IMtConnectContinuityReporter? reporter = null)
     {
         var retryPolicy = new MtConnectTransientRetryPolicy(
             new MtConnectRetryOptions(
@@ -128,7 +200,7 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
                 sessionFactory,
                 new MtConnectCurrentClient(httpClient),
                 retryPolicy,
-                new IgnoringContinuityReporter()),
+                reporter ?? new RecordingContinuityReporter()),
             sink);
     }
 
@@ -171,6 +243,9 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
     {
         public List<ulong> Sequences { get; } = [];
 
+        public List<(ulong InstanceId, ulong NextSequence)>
+            RestoredStates { get; } = [];
+
         public MtConnectAcquisitionSession Create(ulong fromSequence)
         {
             Sequences.Add(fromSequence);
@@ -178,6 +253,18 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
             return new MtConnectAcquisitionSession(
                 client,
                 fromSequence);
+        }
+
+        public MtConnectAcquisitionSession Restore(
+            ulong instanceId,
+            ulong nextSequence)
+        {
+            RestoredStates.Add((instanceId, nextSequence));
+
+            return new MtConnectAcquisitionSession(
+                client,
+                instanceId,
+                nextSequence);
         }
     }
 
@@ -197,14 +284,17 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
         }
     }
 
-    private sealed class IgnoringContinuityReporter :
+    private sealed class RecordingContinuityReporter :
         IMtConnectContinuityReporter
     {
+        public List<MtConnectContinuityLoss> Losses { get; } = [];
+
         public ValueTask ReportAsync(
             MtConnectContinuityLoss continuityLoss,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Losses.Add(continuityLoss);
 
             return ValueTask.CompletedTask;
         }
