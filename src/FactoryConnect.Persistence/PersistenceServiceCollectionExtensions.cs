@@ -43,7 +43,8 @@ public static class PersistenceServiceCollectionExtensions
         ValidateUniqueProviderKeys(registrations);
 
         var selected = registrations.SingleOrDefault(
-            registration => registration.ProviderKey == options.Provider);
+            registration => PersistenceProviderKey.Normalize(
+                registration.ProviderKey) == options.Provider);
 
         if (selected is null)
         {
@@ -101,7 +102,8 @@ public static class PersistenceServiceCollectionExtensions
     {
         var duplicate = registrations
             .GroupBy(
-                registration => registration.ProviderKey,
+                registration => PersistenceProviderKey.Normalize(
+                    registration.ProviderKey),
                 StringComparer.Ordinal)
             .FirstOrDefault(group => group.Count() > 1);
 
