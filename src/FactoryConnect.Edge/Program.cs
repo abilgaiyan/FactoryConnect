@@ -83,8 +83,8 @@ builder.Services.AddSingleton<
     LoggingMtConnectContinuityReporter>();
 builder.Services.AddSingleton<MtConnectContinuityRecoveryPolicy>();
 
-builder.Services.AddFactoryConnectPersistence(builder.Configuration);
 builder.Services.AddInMemoryPersistenceProvider();
+builder.Services.AddFactoryConnectPersistence(builder.Configuration);
 
 builder.Services.AddSingleton<MtConnectStartupCheckpointResolver>();
 builder.Services.AddSingleton<IMtConnectObservationSink>(
