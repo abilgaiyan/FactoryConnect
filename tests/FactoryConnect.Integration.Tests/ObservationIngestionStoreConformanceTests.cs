@@ -1,15 +1,20 @@
 using FactoryConnect.Abstractions;
-using FactoryConnect.Infrastructure;
 using Xunit;
 
-namespace FactoryConnect.Edge.Tests;
+namespace FactoryConnect.Integration.Tests;
 
-public sealed class InMemoryObservationIngestionStoreTests
+public abstract class ObservationIngestionStoreConformanceTests
 {
+    protected abstract IObservationIngestionStore CreateStore();
+
+    protected abstract int ReadObservationCount(
+        IObservationIngestionStore store,
+        ObservationStreamId streamId);
+
     [Fact]
     public async Task CommitAsyncStoresObservationsAndCheckpointTogether()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var batch = InitialBatch(streamId);
 
@@ -18,13 +23,13 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             batch.Checkpoint,
             await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(2, store.ReadObservations(streamId).Length);
+        Assert.Equal(2, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task FirstCommitRejectsNonNullExpectedCheckpoint()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var expected = new ObservationCheckpoint(streamId, 42, 100);
         var checkpoint = InitialCheckpoint(streamId);
@@ -37,13 +42,13 @@ public sealed class InMemoryObservationIngestionStoreTests
             () => store.CommitAsync(batch).AsTask());
 
         Assert.Null(await store.ReadCheckpointAsync(streamId));
-        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(0, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncAdvancesMatchingCheckpointWithNewObservations()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var current = InitialCheckpoint(streamId);
         var next = new ObservationCheckpoint(streamId, 42, 105);
@@ -63,20 +68,20 @@ public sealed class InMemoryObservationIngestionStoreTests
         await store.CommitAsync(continuation);
 
         Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(4, store.ReadObservations(streamId).Length);
+        Assert.Equal(4, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncIsIdempotentAfterUncertainAcknowledgement()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var batch = InitialBatch(streamId);
 
         await store.CommitAsync(batch);
         await store.CommitAsync(batch);
 
-        Assert.Equal(2, store.ReadObservations(streamId).Length);
+        Assert.Equal(2, ReadObservationCount(store, streamId));
         Assert.Equal(
             batch.Checkpoint,
             await store.ReadCheckpointAsync(streamId));
@@ -85,7 +90,7 @@ public sealed class InMemoryObservationIngestionStoreTests
     [Fact]
     public async Task IdempotentReplayCannotAddObservationAtCommittedCheckpoint()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var current = InitialCheckpoint(streamId);
         var augmentedReplay = new ObservationIngestionBatch(
@@ -103,13 +108,13 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             current,
             await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(2, store.ReadObservations(streamId).Length);
+        Assert.Equal(2, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncRejectsCheckpointRegressionWithoutChangingState()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var current = InitialCheckpoint(streamId);
 
@@ -126,13 +131,13 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             current,
             await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(2, store.ReadObservations(streamId).Length);
+        Assert.Equal(2, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncRejectsInvalidObservationWithoutPartialWrite()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var otherMachineObservation = Observation(
             MachineId.New(),
@@ -146,13 +151,13 @@ public sealed class InMemoryObservationIngestionStoreTests
             () => store.CommitAsync(batch).AsTask());
 
         Assert.Null(await store.ReadCheckpointAsync(streamId));
-        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(0, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncAllowsEmptyBatchToAdvanceCheckpoint()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var current = InitialCheckpoint(streamId);
         var next = new ObservationCheckpoint(streamId, 42, 111);
@@ -162,13 +167,13 @@ public sealed class InMemoryObservationIngestionStoreTests
             new ObservationIngestionBatch(current, next, []));
 
         Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(2, store.ReadObservations(streamId).Length);
+        Assert.Equal(2, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncRejectsConflictingDuplicateAtomically()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var checkpoint = new ObservationCheckpoint(streamId, 42, 102);
         var batch = new ObservationIngestionBatch(
@@ -187,13 +192,13 @@ public sealed class InMemoryObservationIngestionStoreTests
             () => store.CommitAsync(batch).AsTask());
 
         Assert.Null(await store.ReadCheckpointAsync(streamId));
-        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(0, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncKeepsStreamsIsolated()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var machineId = MachineId.New();
         var first = new ObservationStreamId(
             machineId,
@@ -205,8 +210,8 @@ public sealed class InMemoryObservationIngestionStoreTests
         await store.CommitAsync(InitialBatch(first));
         await store.CommitAsync(InitialBatch(second));
 
-        Assert.Equal(2, store.ReadObservations(first).Length);
-        Assert.Equal(2, store.ReadObservations(second).Length);
+        Assert.Equal(2, ReadObservationCount(store, first));
+        Assert.Equal(2, ReadObservationCount(store, second));
         Assert.NotEqual(
             await store.ReadCheckpointAsync(first),
             await store.ReadCheckpointAsync(second));
@@ -215,7 +220,7 @@ public sealed class InMemoryObservationIngestionStoreTests
     [Fact]
     public async Task CommitAsyncHonorsPreCanceledTokenWithoutChangingState()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
@@ -226,13 +231,13 @@ public sealed class InMemoryObservationIngestionStoreTests
                 cancellation.Token).AsTask());
 
         Assert.Null(await store.ReadCheckpointAsync(streamId));
-        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(0, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncRejectsSequenceEqualToNextSequence()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var checkpoint = new ObservationCheckpoint(streamId, 42, 102);
         var batch = new ObservationIngestionBatch(
@@ -246,13 +251,13 @@ public sealed class InMemoryObservationIngestionStoreTests
             () => store.CommitAsync(batch).AsTask());
 
         Assert.Null(await store.ReadCheckpointAsync(streamId));
-        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(0, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncRejectsStaleExpectedCheckpointAtomically()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var current = InitialCheckpoint(streamId);
         var stale = new ObservationCheckpoint(streamId, 42, 102);
@@ -272,13 +277,13 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             current,
             await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(2, store.ReadObservations(streamId).Length);
+        Assert.Equal(2, ReadObservationCount(store, streamId));
     }
 
     [Fact]
     public async Task CommitAsyncAllowsExplicitInstanceTransition()
     {
-        var store = new InMemoryObservationIngestionStore();
+        var store = CreateStore();
         var streamId = StreamId();
         var current = InitialCheckpoint(streamId);
         var replacement = new ObservationCheckpoint(streamId, 43, 2);
@@ -295,7 +300,7 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             replacement,
             await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(3, store.ReadObservations(streamId).Length);
+        Assert.Equal(3, ReadObservationCount(store, streamId));
     }
 
     private static ObservationIngestionBatch InitialBatch(
