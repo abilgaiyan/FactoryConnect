@@ -31,9 +31,29 @@ public static class PersistenceServiceCollectionExtensions
         }
 
         var options = new PersistenceOptions(provider);
+        var registrations = GetRegistrations(services);
+
+        if (registrations.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "At least one persistence provider must be registered " +
+                "before persistence finalization.");
+        }
+
+        ValidateUniqueProviderKeys(registrations);
+
+        var selected = registrations.SingleOrDefault(
+            registration => registration.ProviderKey == options.Provider);
+
+        if (selected is null)
+        {
+            throw new InvalidOperationException(
+                $"Persistence provider '{options.Provider}' is not registered.");
+        }
 
         services.AddSingleton(options);
-        services.AddSingleton<IObservationIngestionStore>(ActivateProvider);
+        services.AddSingleton<IObservationIngestionStore>(
+            serviceProvider => selected.Create(serviceProvider));
 
         return services;
     }
@@ -45,24 +65,43 @@ public static class PersistenceServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(registration);
 
+        if (services.Any(
+                descriptor => descriptor.ServiceType ==
+                    typeof(PersistenceOptions)))
+        {
+            throw new InvalidOperationException(
+                "Persistence has already been finalized. " +
+                "Register providers before AddFactoryConnectPersistence.");
+        }
+
         services.AddSingleton<IPersistenceProviderRegistration>(
             registration);
 
         return services;
     }
 
-    private static IObservationIngestionStore ActivateProvider(
-        IServiceProvider services)
+    private static IPersistenceProviderRegistration[] GetRegistrations(
+        IServiceCollection services)
     {
-        var options = services.GetRequiredService<PersistenceOptions>();
-        var registrations = services
-            .GetServices<IPersistenceProviderRegistration>()
+        return services
+            .Where(
+                descriptor => descriptor.ServiceType ==
+                    typeof(IPersistenceProviderRegistration))
+            .Select(
+                descriptor => descriptor.ImplementationInstance as
+                    IPersistenceProviderRegistration
+                    ?? throw new InvalidOperationException(
+                        "Persistence providers must be registered through " +
+                        "AddPersistenceProvider before persistence finalization."))
             .ToArray();
+    }
 
+    private static void ValidateUniqueProviderKeys(
+        IReadOnlyCollection<IPersistenceProviderRegistration> registrations)
+    {
         var duplicate = registrations
             .GroupBy(
-                registration => PersistenceProviderKey.Normalize(
-                    registration.ProviderKey),
+                registration => registration.ProviderKey,
                 StringComparer.Ordinal)
             .FirstOrDefault(group => group.Count() > 1);
 
@@ -72,17 +111,5 @@ public static class PersistenceServiceCollectionExtensions
                 $"Persistence provider key '{duplicate.Key}' is registered " +
                 "more than once.");
         }
-
-        var selected = registrations.SingleOrDefault(
-            registration => PersistenceProviderKey.Normalize(
-                registration.ProviderKey) == options.Provider);
-
-        if (selected is null)
-        {
-            throw new InvalidOperationException(
-                $"Persistence provider '{options.Provider}' is not registered.");
-        }
-
-        return selected.Create(services);
     }
 }
