@@ -12,6 +12,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Protocols.MT
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Infrastructure", "src\FactoryConnect.Infrastructure\FactoryConnect.Infrastructure.csproj", "{613F7301-0E6D-4F43-A425-7F9958E80078}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Persistence", "src\FactoryConnect.Persistence\FactoryConnect.Persistence.csproj", "{6D94120F-81A5-4BCF-B549-70223B315D01}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Edge", "src\FactoryConnect.Edge\FactoryConnect.Edge.csproj", "{F47C701F-CED5-4054-A26A-D8DEB7F26930}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Api", "src\FactoryConnect.Api\FactoryConnect.Api.csproj", "{4C037379-1F01-4B7F-915D-3369805A436B}"
@@ -54,6 +56,10 @@ Global
 		{613F7301-0E6D-4F43-A425-7F9958E80078}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{613F7301-0E6D-4F43-A425-7F9958E80078}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{613F7301-0E6D-4F43-A425-7F9958E80078}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D94120F-81A5-4BCF-B549-70223B315D01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D94120F-81A5-4BCF-B549-70223B315D01}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D94120F-81A5-4BCF-B549-70223B315D01}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D94120F-81A5-4BCF-B549-70223B315D01}.Release|Any CPU.Build.0 = Release|Any CPU
 		{F47C701F-CED5-4054-A26A-D8DEB7F26930}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{F47C701F-CED5-4054-A26A-D8DEB7F26930}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F47C701F-CED5-4054-A26A-D8DEB7F26930}.Release|Any CPU.ActiveCfg = Release|Any CPU
