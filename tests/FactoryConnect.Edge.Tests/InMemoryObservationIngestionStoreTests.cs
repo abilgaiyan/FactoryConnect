@@ -18,7 +18,7 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             batch.Checkpoint,
             await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(2, store.ReadObservations(streamId).Count);
+        Assert.Equal(2, store.ReadObservations(streamId).Length);
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public sealed class InMemoryObservationIngestionStoreTests
         await store.CommitAsync(batch);
         await store.CommitAsync(batch);
 
-        Assert.Equal(2, store.ReadObservations(streamId).Count);
+        Assert.Equal(2, store.ReadObservations(streamId).Length);
         Assert.Equal(
             103UL,
             (await store.ReadCheckpointAsync(streamId))?.NextSequence);
@@ -56,7 +56,7 @@ public sealed class InMemoryObservationIngestionStoreTests
         Assert.Equal(
             103UL,
             (await store.ReadCheckpointAsync(streamId))?.NextSequence);
-        Assert.Equal(2, store.ReadObservations(streamId).Count);
+        Assert.Equal(2, store.ReadObservations(streamId).Length);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public sealed class InMemoryObservationIngestionStoreTests
 
         Assert.Equal(43UL, checkpoint?.InstanceId);
         Assert.Equal(2UL, checkpoint?.NextSequence);
-        Assert.Equal(3, store.ReadObservations(streamId).Count);
+        Assert.Equal(3, store.ReadObservations(streamId).Length);
     }
 
     private static ObservationIngestionBatch Batch(
