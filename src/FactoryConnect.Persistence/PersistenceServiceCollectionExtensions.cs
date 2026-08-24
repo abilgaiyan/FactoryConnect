@@ -97,7 +97,7 @@ public static class PersistenceServiceCollectionExtensions
     }
 
     private static void ValidateUniqueProviderKeys(
-        IReadOnlyCollection<IPersistenceProviderRegistration> registrations)
+        IPersistenceProviderRegistration[] registrations)
     {
         var duplicate = registrations
             .GroupBy(
