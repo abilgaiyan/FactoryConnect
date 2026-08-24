@@ -144,6 +144,31 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncRetriesSameCursorAfterSinkFailure()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(42, 110, 111),
+            SampleResponse(42, 110, 111));
+
+        using var httpClient = new HttpClient(handler);
+        var sink = new FailOnceSink();
+        var runtime = CreateRuntime(httpClient, sink, 101);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runtime.RunCycleAsync());
+
+        await runtime.RunCycleAsync();
+
+        Assert.Equal(2, handler.RequestUris.Count);
+        Assert.All(
+            handler.RequestUris,
+            uri => Assert.Equal(
+                "http://localhost:5000/sample?from=101",
+                uri.AbsoluteUri));
+        Assert.Equal(2, sink.WriteCount);
+    }
+
+    [Fact]
     public async Task RunCycleAsyncPropagatesAcquisitionCancellation()
     {
         using var httpClient = new HttpClient(
@@ -257,6 +282,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -305,10 +331,36 @@ public sealed class MtConnectAcquisitionRuntimeTests
     {
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
             CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException(
                 "Sink failed.");
+        }
+    }
+
+    private sealed class FailOnceSink :
+        IMtConnectObservationSink
+    {
+        public int WriteCount { get; private set; }
+
+        public ValueTask WriteAsync(
+            MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            WriteCount++;
+
+            if (WriteCount == 1)
+            {
+                throw new InvalidOperationException(
+                    "Sink failed.");
+            }
+
+            Assert.Null(expectedCheckpoint);
+
+            return ValueTask.CompletedTask;
         }
     }
 

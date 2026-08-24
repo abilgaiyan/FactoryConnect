@@ -29,6 +29,23 @@ public sealed class MtConnectAcquisitionSession
         string deviceKey,
         CancellationToken cancellationToken = default)
     {
+        var result = await PrepareNextAsync(
+            endpoint,
+            machineId,
+            deviceKey,
+            cancellationToken);
+
+        Advance(result);
+
+        return result;
+    }
+
+    public async Task<MtConnectSampleResult> PrepareNextAsync(
+        MtConnectEndpoint endpoint,
+        MachineId machineId,
+        string deviceKey,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(endpoint);
         ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
 
@@ -39,6 +56,22 @@ public sealed class MtConnectAcquisitionSession
             _nextSequence,
             cancellationToken);
 
+        ValidateInstance(result);
+
+        return result;
+    }
+
+    public void Advance(MtConnectSampleResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ValidateInstance(result);
+
+        _instanceId ??= result.InstanceId;
+        _nextSequence = result.NextSequence;
+    }
+
+    private void ValidateInstance(MtConnectSampleResult result)
+    {
         if (_instanceId is not null &&
             _instanceId.Value != result.InstanceId)
         {
@@ -47,10 +80,5 @@ public sealed class MtConnectAcquisitionSession
                 result.InstanceId,
                 result.FirstSequence);
         }
-
-        _instanceId ??= result.InstanceId;
-        _nextSequence = result.NextSequence;
-
-        return result;
     }
 }

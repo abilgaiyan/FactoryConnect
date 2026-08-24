@@ -1,3 +1,4 @@
+using FactoryConnect.Abstractions;
 using FactoryConnect.Protocols.MTConnect;
 
 namespace FactoryConnect.Edge;
@@ -16,6 +17,7 @@ public sealed class LoggingMtConnectObservationSink(
 
     public ValueTask WriteAsync(
         MtConnectSampleResult result,
+        ObservationCheckpoint? expectedCheckpoint,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(result);
