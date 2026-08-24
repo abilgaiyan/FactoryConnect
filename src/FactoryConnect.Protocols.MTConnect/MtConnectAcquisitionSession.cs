@@ -12,11 +12,28 @@ public sealed class MtConnectAcquisitionSession
     public MtConnectAcquisitionSession(
         MtConnectSampleClient client,
         ulong fromSequence)
+        : this(client, null, fromSequence)
+    {
+    }
+
+    public MtConnectAcquisitionSession(
+        MtConnectSampleClient client,
+        ulong instanceId,
+        ulong nextSequence)
+        : this(client, (ulong?)instanceId, nextSequence)
+    {
+    }
+
+    private MtConnectAcquisitionSession(
+        MtConnectSampleClient client,
+        ulong? instanceId,
+        ulong nextSequence)
     {
         ArgumentNullException.ThrowIfNull(client);
 
         _client = client;
-        _nextSequence = fromSequence;
+        _instanceId = instanceId;
+        _nextSequence = nextSequence;
     }
 
     public ulong? InstanceId => _instanceId;

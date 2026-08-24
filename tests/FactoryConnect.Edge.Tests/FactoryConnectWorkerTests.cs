@@ -6,19 +6,37 @@ namespace FactoryConnect.Edge.Tests;
 public sealed class FactoryConnectWorkerTests
 {
     [Fact]
-    public async Task WorkerDelegatesExecutionToAcquisitionRuntime()
+    public async Task WorkerCreatesAndRunsAcquisitionRuntime()
     {
         var runtime = new RecordingRuntime();
+        var factory = new RecordingRuntimeFactory(runtime);
         var worker = new FactoryConnectWorker(
-            runtime,
+            factory,
             NullLogger<FactoryConnectWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await runtime.Started.WaitAsync(TimeSpan.FromSeconds(1));
         await worker.StopAsync(CancellationToken.None);
 
+        Assert.Equal(1, factory.CreateCount);
         Assert.Equal(1, runtime.RunCount);
         Assert.True(runtime.ObservedCancellation);
+    }
+
+    private sealed class RecordingRuntimeFactory(
+        IMtConnectAcquisitionRuntime runtime)
+        : IMtConnectAcquisitionRuntimeFactory
+    {
+        public int CreateCount { get; private set; }
+
+        public ValueTask<IMtConnectAcquisitionRuntime> CreateAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreateCount++;
+
+            return ValueTask.FromResult(runtime);
+        }
     }
 
     private sealed class RecordingRuntime :

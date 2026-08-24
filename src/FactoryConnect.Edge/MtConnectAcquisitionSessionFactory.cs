@@ -13,4 +13,14 @@ public sealed class MtConnectAcquisitionSessionFactory(
             client,
             fromSequence);
     }
+
+    public MtConnectAcquisitionSession Restore(
+        ulong instanceId,
+        ulong nextSequence)
+    {
+        return new MtConnectAcquisitionSession(
+            client,
+            instanceId,
+            nextSequence);
+    }
 }
