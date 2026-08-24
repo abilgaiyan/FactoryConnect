@@ -10,34 +10,39 @@ The central invariant is:
 available providers != active provider
 ```
 
-A provider package may make a persistence implementation available without registering `IObservationIngestionStore` directly. The neutral persistence layer selects exactly one configured provider and owns the single active store registration.
+A provider package may make a persistence implementation available without registering `IObservationIngestionStore` directly. The neutral persistence layer finalizes selection after providers are registered and owns the single active store registration.
 
 ## Architecture
 
 ```text
 composition root
     |
-    +-- AddFactoryConnectPersistence(configuration)
-    |
     +-- register available provider factories
+    |       |
+    |       +-- InMemory
+    |       +-- future SqlServer
+    |       +-- future PostgreSql
+    |       +-- future MongoDb
+    |
+    +-- AddFactoryConnectPersistence(configuration)
             |
-            +-- InMemory
-            +-- future SqlServer
-            +-- future PostgreSql
-            +-- future MongoDb
-
-                    |
-                    v
-          validate unique provider keys
-                    |
-                    v
-          select Persistence:Provider
-                    |
-                    v
-          activate exactly one factory
-                    |
-                    v
-        IObservationIngestionStore
+            v
+   validate available providers
+            |
+            v
+   validate unique provider keys
+            |
+            v
+   select Persistence:Provider
+            |
+            v
+   install one store descriptor
+            |
+            v
+   activate selected provider lazily
+            |
+            v
+ IObservationIngestionStore
 ```
 
 `FactoryConnect.Persistence` is provider-neutral. It does not contain a switch statement and does not know concrete provider names.
@@ -68,15 +73,19 @@ Registration does not activate the provider.
 The supported lifecycle is:
 
 ```text
-register neutral persistence selection
-        |
 register provider factories
         |
-resolve IObservationIngestionStore
+finalize neutral persistence selection
+        |
+validate available providers
         |
 validate unique normalized keys
         |
 select configured key
+        |
+register one IObservationIngestionStore
+        |
+resolve store
         |
 activate exactly one provider
 ```
@@ -84,8 +93,9 @@ activate exactly one provider
 Example:
 
 ```csharp
-builder.Services.AddFactoryConnectPersistence(builder.Configuration);
 builder.Services.AddInMemoryPersistenceProvider();
+builder.Services.AddFactoryConnectPersistence(
+    builder.Configuration);
 ```
 
 with configuration:
@@ -98,6 +108,8 @@ with configuration:
 }
 ```
 
+`AddFactoryConnectPersistence` is the persistence finalization boundary. Provider registrations must already be present before it is called. Direct `IObservationIngestionStore` registrations are rejected before the selector installs the final store descriptor.
+
 The in-memory provider key belongs to `FactoryConnect.Infrastructure`, not to `FactoryConnect.Persistence`.
 
 ## Failure Semantics
@@ -105,9 +117,11 @@ The in-memory provider key belongs to `FactoryConnect.Infrastructure`, not to `F
 FC-022 fails explicitly when:
 
 - `Persistence:Provider` is missing or whitespace;
+- no provider has been registered before persistence finalization;
 - the configured provider key has no registration;
 - two available providers normalize to the same key;
 - another component has already registered `IObservationIngestionStore` directly;
+- provider registration is attempted through the persistence registration API after finalization;
 - an activated provider factory returns no store.
 
 These failures prevent ambiguous persistence ownership.
@@ -116,7 +130,9 @@ These failures prevent ambiguous persistence ownership.
 
 Only the selected registration's factory is invoked.
 
-Registering multiple available providers does not instantiate them, and unselected providers remain inactive. The active `IObservationIngestionStore` is registered as a singleton, so repeated resolution returns the same activated store.
+Registering multiple available providers does not instantiate them. Finalization validates and selects a registration but still does not create the concrete store. The selected provider is activated only when `IObservationIngestionStore` is resolved.
+
+The active `IObservationIngestionStore` is registered as a singleton, so repeated resolution returns the same activated store.
 
 ## Current Provider
 
@@ -125,6 +141,42 @@ FC-022 keeps the existing `InMemoryObservationIngestionStore` as the initial pro
 `AddInMemoryPersistenceProvider()` registers only its provider factory. It does not directly register `IObservationIngestionStore`.
 
 This preserves existing FC-020/FC-021 ingestion and checkpoint behavior while moving persistence choice to composition time.
+
+## Store Conformance Suite
+
+FC-022 extracts the FC-020 durable-ingestion behavior into a reusable provider conformance suite:
+
+```csharp
+public abstract class ObservationIngestionStoreConformanceTests
+{
+    protected abstract IObservationIngestionStore CreateStore();
+
+    protected abstract int ReadObservationCount(
+        IObservationIngestionStore store,
+        ObservationStreamId streamId);
+}
+```
+
+The behavioral scenarios remain shared, while provider-specific subclasses supply store creation and a test-only observation-count inspection hook.
+
+`InMemoryObservationIngestionStoreConformanceTests` runs the complete FC-020 behavior against the current in-memory provider. FC-023 can derive a SQL Server implementation from the same suite and implement the observation inspection hook through provider-specific test infrastructure.
+
+The shared behavior covers:
+
+- atomic observation and checkpoint commit;
+- expected-checkpoint concurrency guards;
+- same-instance checkpoint advancement;
+- idempotent replay;
+- prevention of replay augmentation;
+- checkpoint-regression rejection;
+- invalid-observation atomicity;
+- empty-batch checkpoint advancement;
+- conflicting duplicate rejection;
+- stream isolation;
+- cancellation semantics;
+- sequence-bound validation;
+- stale expected-checkpoint rejection;
+- explicit MTConnect instance transition.
 
 ## Extension Model
 
@@ -148,14 +200,19 @@ A future provider package can therefore be added through normal composition-root
 Included in FC-022:
 
 - neutral `FactoryConnect.Persistence` project;
+- persistence project included as a first-class solution project;
 - persistence provider options and key normalization;
 - provider registration/factory contract;
+- provider-before-finalization composition order;
+- available-provider validation during finalization;
 - duplicate-key validation;
 - configured-provider selection;
-- exactly-one store activation;
+- exactly-one lazy store activation;
 - rejection of direct competing store registration;
 - in-memory provider registration through the new model;
 - Edge composition through `Persistence:Provider`;
+- analyzer-safe test naming;
+- reusable FC-020 store conformance suite;
 - tests proving provider-selection invariants.
 
 Not included:
