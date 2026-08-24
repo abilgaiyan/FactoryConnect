@@ -22,6 +22,51 @@ public sealed class InMemoryObservationIngestionStoreTests
     }
 
     [Fact]
+    public async Task FirstCommitRejectsNonNullExpectedCheckpoint()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var expected = new ObservationCheckpoint(streamId, 42, 100);
+        var checkpoint = InitialCheckpoint(streamId);
+        var batch = new ObservationIngestionBatch(
+            expected,
+            checkpoint,
+            []);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CommitAsync(batch).AsTask());
+
+        Assert.Null(await store.ReadCheckpointAsync(streamId));
+        Assert.Empty(store.ReadObservations(streamId));
+    }
+
+    [Fact]
+    public async Task CommitAsyncAdvancesMatchingCheckpointWithNewObservations()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var current = InitialCheckpoint(streamId);
+        var next = new ObservationCheckpoint(streamId, 42, 105);
+        var continuation = new ObservationIngestionBatch(
+            current,
+            next,
+            [
+                new SequencedMachineObservation(
+                    103,
+                    Observation(streamId.MachineId, "execution")),
+                new SequencedMachineObservation(
+                    104,
+                    Observation(streamId.MachineId, "load")),
+            ]);
+
+        await store.CommitAsync(InitialBatch(streamId));
+        await store.CommitAsync(continuation);
+
+        Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(4, store.ReadObservations(streamId).Length);
+    }
+
+    [Fact]
     public async Task CommitAsyncIsIdempotentAfterUncertainAcknowledgement()
     {
         var store = new InMemoryObservationIngestionStore();
