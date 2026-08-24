@@ -104,6 +104,25 @@ public sealed class PersistenceProviderSelectionTests
     }
 
     [Fact]
+    public void CustomProviderWithUnnormalizedKeyCanBeSelected()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("SqlServer");
+
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                " sqlserver ",
+                static _ => new InMemoryObservationIngestionStore()));
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var store = provider.GetRequiredService<IObservationIngestionStore>();
+
+        Assert.IsType<InMemoryObservationIngestionStore>(store);
+    }
+
+    [Fact]
     public void FinalizationRejectsUnknownProvider()
     {
         ServiceCollection services = new();
@@ -139,6 +158,29 @@ public sealed class PersistenceProviderSelectionTests
 
         Assert.Equal(
             "Persistence provider key 'PRIMARY' is registered more than once.",
+            exception.Message);
+    }
+
+    [Fact]
+    public void FinalizationRejectsEquivalentCustomProviderKeys()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("SqlServer");
+
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                "SqlServer",
+                static _ => new InMemoryObservationIngestionStore()));
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                " sqlserver ",
+                static _ => new InMemoryObservationIngestionStore()));
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Equal(
+            "Persistence provider key 'SQLSERVER' is registered more than once.",
             exception.Message);
     }
 
@@ -210,5 +252,26 @@ public sealed class PersistenceProviderSelectionTests
         return new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();
+    }
+
+    private sealed class CustomPersistenceProviderRegistration :
+        IPersistenceProviderRegistration
+    {
+        private readonly Func<
+            IServiceProvider,
+            IObservationIngestionStore> _factory;
+
+        public string ProviderKey { get; }
+
+        public CustomPersistenceProviderRegistration(
+            string providerKey,
+            Func<IServiceProvider, IObservationIngestionStore> factory)
+        {
+            ProviderKey = providerKey;
+            _factory = factory;
+        }
+
+        public IObservationIngestionStore Create(IServiceProvider services) =>
+            _factory(services);
     }
 }
