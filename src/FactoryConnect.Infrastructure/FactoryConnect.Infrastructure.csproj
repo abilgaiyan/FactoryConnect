@@ -6,5 +6,6 @@
   <ItemGroup>
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
     <ProjectReference Include="../FactoryConnect.Core/FactoryConnect.Core.csproj" />
+    <ProjectReference Include="../FactoryConnect.Persistence/FactoryConnect.Persistence.csproj" />
   </ItemGroup>
 </Project>
