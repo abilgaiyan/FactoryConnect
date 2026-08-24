@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Infrastructure;
+using Xunit;
 
 namespace FactoryConnect.Integration.Tests;
 
