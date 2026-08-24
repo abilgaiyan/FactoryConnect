@@ -73,6 +73,11 @@ public sealed class InMemoryObservationIngestionStore :
         StageObservations(ObservationIngestionBatch batch)
     {
         Dictionary<ObservationKey, SequencedMachineObservation> pending = [];
+        var isIdempotentReplay =
+            _checkpoints.TryGetValue(
+                batch.Checkpoint.StreamId,
+                out var current) &&
+            current == batch.Checkpoint;
 
         foreach (var item in batch.Observations)
         {
@@ -91,6 +96,14 @@ public sealed class InMemoryObservationIngestionStore :
                     "at the same instance and sequence.");
             }
 
+            if (isIdempotentReplay &&
+                !_observations.ContainsKey(key))
+            {
+                throw new InvalidOperationException(
+                    "An idempotent replay cannot add observations to an " +
+                    "already committed checkpoint.");
+            }
+
             pending.TryAdd(key, item);
         }
 
@@ -99,13 +112,23 @@ public sealed class InMemoryObservationIngestionStore :
 
     private void ValidateBatch(ObservationIngestionBatch batch)
     {
-        var checkpoint = batch.Checkpoint;
+        _checkpoints.TryGetValue(
+            batch.Checkpoint.StreamId,
+            out var current);
 
-        if (_checkpoints.TryGetValue(
-                checkpoint.StreamId,
-                out var previous) &&
-            previous.InstanceId == checkpoint.InstanceId &&
-            checkpoint.NextSequence < previous.NextSequence)
+        var isIdempotentReplay = current == batch.Checkpoint;
+
+        if (!isIdempotentReplay &&
+            current != batch.ExpectedCheckpoint)
+        {
+            throw new InvalidOperationException(
+                "The durable checkpoint no longer matches the expected state.");
+        }
+
+        if (!isIdempotentReplay &&
+            current is not null &&
+            current.InstanceId == batch.Checkpoint.InstanceId &&
+            batch.Checkpoint.NextSequence < current.NextSequence)
         {
             throw new InvalidOperationException(
                 "A checkpoint cannot move backwards within an Agent instance.");
@@ -114,13 +137,13 @@ public sealed class InMemoryObservationIngestionStore :
         foreach (var item in batch.Observations)
         {
             if (item.Observation.MachineId !=
-                checkpoint.StreamId.MachineId)
+                batch.Checkpoint.StreamId.MachineId)
             {
                 throw new InvalidOperationException(
                     "Every observation must belong to the checkpoint machine.");
             }
 
-            if (item.Sequence >= checkpoint.NextSequence)
+            if (item.Sequence >= batch.Checkpoint.NextSequence)
             {
                 throw new InvalidOperationException(
                     "Every observation sequence must precede the checkpoint.");

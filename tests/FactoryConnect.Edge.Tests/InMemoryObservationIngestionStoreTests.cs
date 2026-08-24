@@ -11,7 +11,7 @@ public sealed class InMemoryObservationIngestionStoreTests
     {
         var store = new InMemoryObservationIngestionStore();
         var streamId = StreamId();
-        var batch = Batch(streamId, instanceId: 42, nextSequence: 103);
+        var batch = InitialBatch(streamId);
 
         await store.CommitAsync(batch);
 
@@ -22,19 +22,43 @@ public sealed class InMemoryObservationIngestionStoreTests
     }
 
     [Fact]
-    public async Task CommitAsyncIsIdempotent()
+    public async Task CommitAsyncIsIdempotentAfterUncertainAcknowledgement()
     {
         var store = new InMemoryObservationIngestionStore();
         var streamId = StreamId();
-        var batch = Batch(streamId, instanceId: 42, nextSequence: 103);
+        var batch = InitialBatch(streamId);
 
         await store.CommitAsync(batch);
         await store.CommitAsync(batch);
 
         Assert.Equal(2, store.ReadObservations(streamId).Length);
         Assert.Equal(
-            103UL,
-            (await store.ReadCheckpointAsync(streamId))?.NextSequence);
+            batch.Checkpoint,
+            await store.ReadCheckpointAsync(streamId));
+    }
+
+    [Fact]
+    public async Task IdempotentReplayCannotAddObservationAtCommittedCheckpoint()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var current = InitialCheckpoint(streamId);
+        var augmentedReplay = new ObservationIngestionBatch(
+            null,
+            current,
+            [new SequencedMachineObservation(
+                100,
+                Observation(streamId.MachineId, "availability"))]);
+
+        await store.CommitAsync(InitialBatch(streamId));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CommitAsync(augmentedReplay).AsTask());
+
+        Assert.Equal(
+            current,
+            await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(2, store.ReadObservations(streamId).Length);
     }
 
     [Fact]
@@ -42,11 +66,12 @@ public sealed class InMemoryObservationIngestionStoreTests
     {
         var store = new InMemoryObservationIngestionStore();
         var streamId = StreamId();
+        var current = InitialCheckpoint(streamId);
 
-        await store.CommitAsync(
-            Batch(streamId, instanceId: 42, nextSequence: 103));
+        await store.CommitAsync(InitialBatch(streamId));
 
         var regressingBatch = new ObservationIngestionBatch(
+            current,
             new ObservationCheckpoint(streamId, 42, 102),
             []);
 
@@ -54,8 +79,8 @@ public sealed class InMemoryObservationIngestionStoreTests
             () => store.CommitAsync(regressingBatch).AsTask());
 
         Assert.Equal(
-            103UL,
-            (await store.ReadCheckpointAsync(streamId))?.NextSequence);
+            current,
+            await store.ReadCheckpointAsync(streamId));
         Assert.Equal(2, store.ReadObservations(streamId).Length);
     }
 
@@ -68,6 +93,7 @@ public sealed class InMemoryObservationIngestionStoreTests
             MachineId.New(),
             "execution");
         var batch = new ObservationIngestionBatch(
+            null,
             new ObservationCheckpoint(streamId, 42, 102),
             [new SequencedMachineObservation(101, otherMachineObservation)]);
 
@@ -79,37 +105,160 @@ public sealed class InMemoryObservationIngestionStoreTests
     }
 
     [Fact]
-    public async Task CommitAsyncAllowsNewInstanceToStartAtLowerSequence()
+    public async Task CommitAsyncAllowsEmptyBatchToAdvanceCheckpoint()
     {
         var store = new InMemoryObservationIngestionStore();
         var streamId = StreamId();
+        var current = InitialCheckpoint(streamId);
+        var next = new ObservationCheckpoint(streamId, 42, 111);
 
+        await store.CommitAsync(InitialBatch(streamId));
         await store.CommitAsync(
-            Batch(streamId, instanceId: 42, nextSequence: 103));
+            new ObservationIngestionBatch(current, next, []));
+
+        Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(2, store.ReadObservations(streamId).Length);
+    }
+
+    [Fact]
+    public async Task CommitAsyncRejectsConflictingDuplicateAtomically()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var checkpoint = new ObservationCheckpoint(streamId, 42, 102);
+        var batch = new ObservationIngestionBatch(
+            null,
+            checkpoint,
+            [
+                new SequencedMachineObservation(
+                    101,
+                    Observation(streamId.MachineId, "execution")),
+                new SequencedMachineObservation(
+                    101,
+                    Observation(streamId.MachineId, "load")),
+            ]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CommitAsync(batch).AsTask());
+
+        Assert.Null(await store.ReadCheckpointAsync(streamId));
+        Assert.Empty(store.ReadObservations(streamId));
+    }
+
+    [Fact]
+    public async Task CommitAsyncKeepsStreamsIsolated()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var machineId = MachineId.New();
+        var first = new ObservationStreamId(
+            machineId,
+            "MTConnect:CNC-01");
+        var second = new ObservationStreamId(
+            machineId,
+            "MTConnect:CNC-02");
+
+        await store.CommitAsync(InitialBatch(first));
+        await store.CommitAsync(InitialBatch(second));
+
+        Assert.Equal(2, store.ReadObservations(first).Length);
+        Assert.Equal(2, store.ReadObservations(second).Length);
+        Assert.NotEqual(
+            await store.ReadCheckpointAsync(first),
+            await store.ReadCheckpointAsync(second));
+    }
+
+    [Fact]
+    public async Task CommitAsyncHonorsPreCanceledTokenWithoutChangingState()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.CommitAsync(
+                InitialBatch(streamId),
+                cancellation.Token).AsTask());
+
+        Assert.Null(await store.ReadCheckpointAsync(streamId));
+        Assert.Empty(store.ReadObservations(streamId));
+    }
+
+    [Fact]
+    public async Task CommitAsyncRejectsSequenceEqualToNextSequence()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var checkpoint = new ObservationCheckpoint(streamId, 42, 102);
+        var batch = new ObservationIngestionBatch(
+            null,
+            checkpoint,
+            [new SequencedMachineObservation(
+                102,
+                Observation(streamId.MachineId, "execution"))]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CommitAsync(batch).AsTask());
+
+        Assert.Null(await store.ReadCheckpointAsync(streamId));
+        Assert.Empty(store.ReadObservations(streamId));
+    }
+
+    [Fact]
+    public async Task CommitAsyncRejectsStaleExpectedCheckpointAtomically()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var current = InitialCheckpoint(streamId);
+        var stale = new ObservationCheckpoint(streamId, 42, 102);
+        var replacement = new ObservationCheckpoint(streamId, 43, 2);
+        var staleBatch = new ObservationIngestionBatch(
+            stale,
+            replacement,
+            [new SequencedMachineObservation(
+                1,
+                Observation(streamId.MachineId, "availability"))]);
+
+        await store.CommitAsync(InitialBatch(streamId));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.CommitAsync(staleBatch).AsTask());
+
+        Assert.Equal(
+            current,
+            await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(2, store.ReadObservations(streamId).Length);
+    }
+
+    [Fact]
+    public async Task CommitAsyncAllowsExplicitInstanceTransition()
+    {
+        var store = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var current = InitialCheckpoint(streamId);
+        var replacement = new ObservationCheckpoint(streamId, 43, 2);
+
+        await store.CommitAsync(InitialBatch(streamId));
         await store.CommitAsync(
             new ObservationIngestionBatch(
-                new ObservationCheckpoint(streamId, 43, 2),
+                current,
+                replacement,
                 [new SequencedMachineObservation(
                     1,
                     Observation(streamId.MachineId, "availability"))]));
 
-        var checkpoint = await store.ReadCheckpointAsync(streamId);
-
-        Assert.Equal(43UL, checkpoint?.InstanceId);
-        Assert.Equal(2UL, checkpoint?.NextSequence);
+        Assert.Equal(
+            replacement,
+            await store.ReadCheckpointAsync(streamId));
         Assert.Equal(3, store.ReadObservations(streamId).Length);
     }
 
-    private static ObservationIngestionBatch Batch(
-        ObservationStreamId streamId,
-        ulong instanceId,
-        ulong nextSequence)
+    private static ObservationIngestionBatch InitialBatch(
+        ObservationStreamId streamId)
     {
         return new ObservationIngestionBatch(
-            new ObservationCheckpoint(
-                streamId,
-                instanceId,
-                nextSequence),
+            null,
+            InitialCheckpoint(streamId),
             [
                 new SequencedMachineObservation(
                     101,
@@ -119,6 +268,10 @@ public sealed class InMemoryObservationIngestionStoreTests
                     Observation(streamId.MachineId, "load")),
             ]);
     }
+
+    private static ObservationCheckpoint InitialCheckpoint(
+        ObservationStreamId streamId) =>
+        new(streamId, 42, 103);
 
     private static ObservationStreamId StreamId() =>
         new(MachineId.New(), "MTConnect:CNC-01");
@@ -132,7 +285,7 @@ public sealed class InMemoryObservationIngestionStoreTests
             MachineId = machineId,
             Source = "MTConnect",
             Address = address,
-            Type = SignalType.String,
+            Type = SignalType.Text,
             Value = "ACTIVE",
             Timestamp = DateTimeOffset.UnixEpoch,
         };
