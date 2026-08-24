@@ -1,6 +1,7 @@
 using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
+using FactoryConnect.Infrastructure;
 using FactoryConnect.Protocols.MTConnect;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -57,6 +58,10 @@ var retryOptions = new MtConnectRetryOptions(
     TimeSpan.Parse(maximumDelay, CultureInfo.InvariantCulture),
     double.Parse(jitterRatio, CultureInfo.InvariantCulture));
 
+var streamId = MtConnectObservationStreamId.Create(
+    options.MachineId,
+    options.DeviceKey);
+
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(retryOptions);
 builder.Services.AddSingleton<HttpClient>();
@@ -81,8 +86,12 @@ builder.Services.AddSingleton<
     LoggingMtConnectContinuityReporter>();
 builder.Services.AddSingleton<MtConnectContinuityRecoveryPolicy>();
 builder.Services.AddSingleton<
-    IMtConnectObservationSink,
-    LoggingMtConnectObservationSink>();
+    IObservationIngestionStore,
+    InMemoryObservationIngestionStore>();
+builder.Services.AddSingleton<IMtConnectObservationSink>(
+    services => new MtConnectDurableObservationSink(
+        services.GetRequiredService<IObservationIngestionStore>(),
+        streamId));
 builder.Services.AddSingleton<IMtConnectAcquisitionRuntime>(
     services => new MtConnectAcquisitionRuntime(
         services.GetRequiredService<MtConnectAcquisitionSession>(),

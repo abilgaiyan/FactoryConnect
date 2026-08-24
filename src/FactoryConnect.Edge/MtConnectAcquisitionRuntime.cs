@@ -14,6 +14,7 @@ public sealed class MtConnectAcquisitionRuntime :
     private readonly MtConnectContinuityRecoveryPolicy _recoveryPolicy;
     private readonly IMtConnectObservationSink _sink;
     private readonly TimeSpan _pollingInterval;
+    private ObservationCheckpoint? _checkpoint;
 
     public MtConnectAcquisitionRuntime(
         MtConnectAcquisitionSession session,
@@ -23,7 +24,8 @@ public sealed class MtConnectAcquisitionRuntime :
         MtConnectTransientRetryPolicy retryPolicy,
         MtConnectContinuityRecoveryPolicy recoveryPolicy,
         IMtConnectObservationSink sink,
-        TimeSpan pollingInterval)
+        TimeSpan pollingInterval,
+        ObservationCheckpoint? initialCheckpoint = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(endpoint);
@@ -47,6 +49,18 @@ public sealed class MtConnectAcquisitionRuntime :
                 "Polling interval must be greater than zero.");
         }
 
+        var streamId = MtConnectObservationStreamId.Create(
+            machineId,
+            deviceKey);
+
+        if (initialCheckpoint is not null &&
+            initialCheckpoint.StreamId != streamId)
+        {
+            throw new ArgumentException(
+                "Initial checkpoint must identify the runtime stream.",
+                nameof(initialCheckpoint));
+        }
+
         _session = session;
         _endpoint = endpoint;
         _machineId = machineId;
@@ -55,6 +69,7 @@ public sealed class MtConnectAcquisitionRuntime :
         _recoveryPolicy = recoveryPolicy;
         _sink = sink;
         _pollingInterval = pollingInterval;
+        _checkpoint = initialCheckpoint;
     }
 
     public async Task<MtConnectSampleResult> RunCycleAsync(
@@ -63,7 +78,18 @@ public sealed class MtConnectAcquisitionRuntime :
         var result = await AcquireWithRecoveryAsync(
             cancellationToken);
 
-        await _sink.WriteAsync(result, cancellationToken);
+        await _sink.WriteAsync(
+            result,
+            _checkpoint,
+            cancellationToken);
+
+        _session.Advance(result);
+        _checkpoint = new ObservationCheckpoint(
+            MtConnectObservationStreamId.Create(
+                _machineId,
+                _deviceKey),
+            result.InstanceId,
+            result.NextSequence);
 
         return result;
     }
@@ -106,7 +132,7 @@ public sealed class MtConnectAcquisitionRuntime :
             {
                 return await _retryPolicy.ExecuteAsync(
                     retryCancellationToken =>
-                        _session.AcquireNextAsync(
+                        _session.PrepareNextAsync(
                             _endpoint,
                             _machineId,
                             _deviceKey,

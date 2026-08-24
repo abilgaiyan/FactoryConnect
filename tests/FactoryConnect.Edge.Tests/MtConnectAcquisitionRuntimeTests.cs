@@ -1,5 +1,6 @@
 using System.Net;
 using FactoryConnect.Abstractions;
+using FactoryConnect.Infrastructure;
 using FactoryConnect.Protocols.MTConnect;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -144,6 +145,73 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncRetriesSameCursorAfterSinkFailure()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(42, 110, 111),
+            SampleResponse(42, 110, 111));
+
+        using var httpClient = new HttpClient(handler);
+        var sink = new FailOnceSink();
+        var runtime = CreateRuntime(httpClient, sink, 101);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runtime.RunCycleAsync());
+
+        await runtime.RunCycleAsync();
+
+        Assert.Equal(2, handler.RequestUris.Count);
+        Assert.All(
+            handler.RequestUris,
+            uri => Assert.Equal(
+                "http://localhost:5000/sample?from=101",
+                uri.AbsoluteUri));
+        Assert.Equal(2, sink.WriteCount);
+    }
+
+    [Fact]
+    public async Task RunCycleAsyncReacquiresAndCommitsAfterStoreFailure()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(42, 110, 111),
+            SampleResponse(42, 110, 111));
+
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var store = new FailOnceObservationIngestionStore();
+        var streamId = MtConnectObservationStreamId.Create(
+            machineId,
+            "CNC-01");
+        var sink = new MtConnectDurableObservationSink(
+            store,
+            streamId);
+        var runtime = CreateRuntime(
+            httpClient,
+            sink,
+            101,
+            machineId: machineId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runtime.RunCycleAsync());
+
+        await runtime.RunCycleAsync();
+
+        Assert.Equal(2, handler.RequestUris.Count);
+        Assert.All(
+            handler.RequestUris,
+            uri => Assert.Equal(
+                "http://localhost:5000/sample?from=101",
+                uri.AbsoluteUri));
+
+        var checkpoint =
+            await store.Inner.ReadCheckpointAsync(streamId);
+
+        Assert.Equal(42UL, checkpoint?.InstanceId);
+        Assert.Equal(111UL, checkpoint?.NextSequence);
+        Assert.Single(store.Inner.ReadObservations(streamId));
+    }
+
+    [Fact]
     public async Task RunCycleAsyncPropagatesAcquisitionCancellation()
     {
         using var httpClient = new HttpClient(
@@ -182,15 +250,18 @@ public sealed class MtConnectAcquisitionRuntimeTests
         IMtConnectObservationSink sink,
         ulong fromSequence,
         TimeSpan? pollingInterval = null,
-        int maxAttempts = 1)
+        int maxAttempts = 1,
+        MachineId? machineId = null)
     {
+        var runtimeMachineId = machineId ?? MachineId.New();
+
         return new MtConnectAcquisitionRuntime(
             new MtConnectAcquisitionSession(
                 new MtConnectSampleClient(httpClient),
                 fromSequence),
             new MtConnectEndpoint(
                 new Uri("http://localhost:5000")),
-            MachineId.New(),
+            runtimeMachineId,
             "CNC-01",
             new MtConnectTransientRetryPolicy(
                 new MtConnectRetryOptions(
@@ -257,6 +328,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -305,10 +377,72 @@ public sealed class MtConnectAcquisitionRuntimeTests
     {
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
             CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException(
                 "Sink failed.");
+        }
+    }
+
+    private sealed class FailOnceSink :
+        IMtConnectObservationSink
+    {
+        public int WriteCount { get; private set; }
+
+        public ValueTask WriteAsync(
+            MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            WriteCount++;
+
+            if (WriteCount == 1)
+            {
+                throw new InvalidOperationException(
+                    "Sink failed.");
+            }
+
+            Assert.Null(expectedCheckpoint);
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailOnceObservationIngestionStore :
+        IObservationIngestionStore
+    {
+        private bool _failNextCommit = true;
+
+        public InMemoryObservationIngestionStore Inner { get; } = new();
+
+        public ValueTask<ObservationCheckpoint?> ReadCheckpointAsync(
+            ObservationStreamId streamId,
+            CancellationToken cancellationToken = default)
+        {
+            return Inner.ReadCheckpointAsync(
+                streamId,
+                cancellationToken);
+        }
+
+        public ValueTask CommitAsync(
+            ObservationIngestionBatch batch,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (_failNextCommit)
+            {
+                _failNextCommit = false;
+
+                throw new InvalidOperationException(
+                    "Store commit failed.");
+            }
+
+            return Inner.CommitAsync(
+                batch,
+                cancellationToken);
         }
     }
 

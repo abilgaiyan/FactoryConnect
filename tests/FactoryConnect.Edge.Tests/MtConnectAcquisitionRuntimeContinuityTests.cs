@@ -54,6 +54,9 @@ public sealed class MtConnectAcquisitionRuntimeContinuityTests
 
         Assert.Equal(521UL, recovered.NextSequence);
         Assert.Equal(2, sink.Results.Count);
+        Assert.Null(sink.ExpectedCheckpoints[0]);
+        Assert.Equal(42UL, sink.ExpectedCheckpoints[1]?.InstanceId);
+        Assert.Equal(111UL, sink.ExpectedCheckpoints[1]?.NextSequence);
 
         var loss = Assert.Single(reporter.Losses);
         Assert.Equal(
@@ -219,12 +222,16 @@ public sealed class MtConnectAcquisitionRuntimeContinuityTests
     {
         public List<MtConnectSampleResult> Results { get; } = [];
 
+        public List<ObservationCheckpoint?> ExpectedCheckpoints { get; } = [];
+
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Results.Add(result);
+            ExpectedCheckpoints.Add(expectedCheckpoint);
 
             return ValueTask.CompletedTask;
         }
