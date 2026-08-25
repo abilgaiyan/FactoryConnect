@@ -5,6 +5,8 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal static class SqlServerObservationValueCodec
 {
+    private const string DecimalFormat = "G29";
+
     public static string? Serialize(
         SignalType type,
         object? value)
@@ -18,19 +20,27 @@ internal static class SqlServerObservationValueCodec
         };
     }
 
-    public static bool AreEquivalent(
+    public static object? Deserialize(
         SignalType type,
-        object? left,
-        object? right)
+        string? persistedValue)
     {
         return type switch
         {
-            SignalType.Numeric => NumericEquivalent(left, right),
-            SignalType.Enumeration => StringEquivalent(type, left, right),
-            SignalType.Text => StringEquivalent(type, left, right),
-            _ => throw Unsupported(type, left),
+            SignalType.Numeric => DeserializeNumeric(persistedValue),
+            SignalType.Enumeration => persistedValue,
+            SignalType.Text => persistedValue,
+            _ => throw Unsupported(type, persistedValue),
         };
     }
+
+    public static bool AreEquivalent(
+        SignalType type,
+        object? left,
+        object? right) =>
+        string.Equals(
+            Serialize(type, left),
+            Serialize(type, right),
+            StringComparison.Ordinal);
 
     private static string? SerializeNumeric(object? value)
     {
@@ -41,10 +51,33 @@ internal static class SqlServerObservationValueCodec
 
         if (value is decimal numeric)
         {
-            return numeric.ToString(CultureInfo.InvariantCulture);
+            return numeric.ToString(
+                DecimalFormat,
+                CultureInfo.InvariantCulture);
         }
 
         throw Unsupported(SignalType.Numeric, value);
+    }
+
+    private static object? DeserializeNumeric(string? persistedValue)
+    {
+        if (persistedValue is null)
+        {
+            return null;
+        }
+
+        if (decimal.TryParse(
+                persistedValue,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var numeric))
+        {
+            return numeric;
+        }
+
+        throw new InvalidDataException(
+            $"Persisted SQL Server numeric observation value " +
+            $"'{persistedValue}' is invalid.");
     }
 
     private static string? SerializeString(
@@ -62,60 +95,6 @@ internal static class SqlServerObservationValueCodec
         }
 
         throw Unsupported(type, value);
-    }
-
-    private static bool NumericEquivalent(
-        object? left,
-        object? right)
-    {
-        ValidateNumeric(left);
-        ValidateNumeric(right);
-
-        return left switch
-        {
-            null => right is null,
-            decimal leftValue when right is decimal rightValue =>
-                leftValue == rightValue,
-            _ => false,
-        };
-    }
-
-    private static bool StringEquivalent(
-        SignalType type,
-        object? left,
-        object? right)
-    {
-        ValidateString(type, left);
-        ValidateString(type, right);
-
-        return left switch
-        {
-            null => right is null,
-            string leftValue when right is string rightValue =>
-                string.Equals(
-                    leftValue,
-                    rightValue,
-                    StringComparison.Ordinal),
-            _ => false,
-        };
-    }
-
-    private static void ValidateNumeric(object? value)
-    {
-        if (value is not null && value is not decimal)
-        {
-            throw Unsupported(SignalType.Numeric, value);
-        }
-    }
-
-    private static void ValidateString(
-        SignalType type,
-        object? value)
-    {
-        if (value is not null && value is not string)
-        {
-            throw Unsupported(type, value);
-        }
     }
 
     private static InvalidOperationException Unsupported(
