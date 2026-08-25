@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
@@ -10,15 +11,41 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerPersistenceProviderRegistrationTests
 {
     [Fact]
-    public void RegistrationRequiresConnectionString()
+    public void UnselectedSqlServerProviderDoesNotRequireConfiguration()
     {
         ServiceCollection services = new();
-        var configuration = BuildConfiguration(" ");
+        var configuration = BuildConfiguration(
+            selectedProvider: "InMemory");
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(
+                SqlServerPersistenceOptions.SectionName));
+        services.AddInMemoryPersistenceProvider();
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var store = provider.GetRequiredService<IObservationIngestionStore>();
+
+        Assert.IsType<InMemoryObservationIngestionStore>(store);
+    }
+
+    [Fact]
+    public void SelectedSqlServerProviderRequiresConnectionString()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration(
+            selectedProvider: "SqlServer");
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(
+                SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
 
         var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddSqlServerPersistenceProvider(
-                configuration.GetRequiredSection(
-                    SqlServerPersistenceOptions.SectionName)));
+            () => provider.GetRequiredService<IObservationIngestionStore>());
 
         Assert.Equal(
             "PersistenceProviders:SqlServer:ConnectionString is required.",
@@ -26,10 +53,34 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
     }
 
     [Fact]
+    public void SelectedSqlServerProviderCreatesStoreWithConfiguredConnectionString()
+    {
+        const string connectionString = "Server=test;Database=test;";
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration(
+            selectedProvider: "SqlServer",
+            connectionString);
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetRequiredSection(
+                SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var store = Assert.IsType<SqlServerObservationIngestionStore>(
+            provider.GetRequiredService<IObservationIngestionStore>());
+
+        Assert.Equal(connectionString, store.ConnectionString);
+    }
+
+    [Fact]
     public void RegistrationDoesNotActivateStore()
     {
         ServiceCollection services = new();
-        var configuration = BuildConfiguration("Server=test;Database=test;");
+        var configuration = BuildConfiguration(
+            selectedProvider: "SqlServer",
+            connectionString: "Server=test;Database=test;");
 
         services.AddSqlServerPersistenceProvider(
             configuration.GetRequiredSection(
@@ -41,31 +92,14 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
                 typeof(IObservationIngestionStore));
     }
 
-    [Fact]
-    public void SqlServerProviderIsSelectedThroughNeutralPersistence()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("Server=test;Database=test;");
-
-        services.AddSqlServerPersistenceProvider(
-            configuration.GetRequiredSection(
-                SqlServerPersistenceOptions.SectionName));
-        services.AddFactoryConnectPersistence(configuration);
-
-        using var provider = services.BuildServiceProvider();
-
-        var store = provider.GetRequiredService<IObservationIngestionStore>();
-
-        Assert.Equal("SqlServerObservationIngestionStore", store.GetType().Name);
-    }
-
     private static IConfiguration BuildConfiguration(
+        string selectedProvider,
         string? connectionString = null)
     {
         Dictionary<string, string?> values =
             new()
             {
-                ["Persistence:Provider"] = "SqlServer",
+                ["Persistence:Provider"] = selectedProvider,
             };
 
         if (connectionString is not null)
