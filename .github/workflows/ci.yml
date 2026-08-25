@@ -25,5 +25,55 @@ jobs:
       - name: Build
         run: dotnet build FactoryConnect.sln --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test FactoryConnect.sln --configuration Release --no-build
+      - name: Test ordinary suite
+        run: >-
+          dotnet test FactoryConnect.sln
+          --configuration Release
+          --no-build
+          --filter "Category!=SqlServerIntegration"
+
+  sql-server-integration:
+    runs-on: ubuntu-latest
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: FactoryConnect_CI_2026!
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'FactoryConnect_CI_2026!' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      FACTORYCONNECT_SQLSERVER_TEST_CONNECTION_STRING: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=FactoryConnect_CI_2026!;Encrypt=True;TrustServerCertificate=True
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Restore
+        run: dotnet restore FactoryConnect.sln
+
+      - name: Build integration tests
+        run: >-
+          dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Test SQL Server integration suite
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "Category=SqlServerIntegration"
