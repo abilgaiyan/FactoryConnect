@@ -15,14 +15,18 @@ public static class SqlServerPersistenceServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var options = new SqlServerPersistenceOptions();
-        configuration.Bind(options);
-        var connectionString = options.GetRequiredConnectionString();
-
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
-                _ => new SqlServerObservationIngestionStore(
-                    connectionString)));
+                _ =>
+                {
+                    var options = new SqlServerPersistenceOptions();
+                    configuration.Bind(options);
+                    var connectionString =
+                        options.GetRequiredConnectionString();
+
+                    return new SqlServerObservationIngestionStore(
+                        connectionString);
+                }));
     }
 }
