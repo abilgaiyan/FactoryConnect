@@ -26,7 +26,9 @@ internal static class SqlServerObservationValueCodec
     {
         return type switch
         {
-            SignalType.Numeric => DeserializeNumeric(persistedValue),
+            SignalType.Numeric => persistedValue is null
+                ? null
+                : DeserializeNumeric(persistedValue),
             SignalType.Enumeration => persistedValue,
             SignalType.Text => persistedValue,
             _ => throw Unsupported(type, persistedValue),
@@ -59,13 +61,8 @@ internal static class SqlServerObservationValueCodec
         throw Unsupported(SignalType.Numeric, value);
     }
 
-    private static object? DeserializeNumeric(string? persistedValue)
+    private static decimal DeserializeNumeric(string persistedValue)
     {
-        if (persistedValue is null)
-        {
-            return null;
-        }
-
         if (decimal.TryParse(
                 persistedValue,
                 NumberStyles.Float,
