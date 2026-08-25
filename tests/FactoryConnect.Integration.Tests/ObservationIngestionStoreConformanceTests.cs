@@ -171,6 +171,27 @@ public abstract class ObservationIngestionStoreConformanceTests
     }
 
     [Fact]
+    public async Task CommitAsyncAcceptsIdenticalDuplicateWithinBatchOnce()
+    {
+        var store = CreateStore();
+        var streamId = StreamId();
+        var checkpoint = new ObservationCheckpoint(streamId, 42, 102);
+        var observation = Observation(streamId.MachineId, "execution");
+        var batch = new ObservationIngestionBatch(
+            null,
+            checkpoint,
+            [
+                new SequencedMachineObservation(101, observation),
+                new SequencedMachineObservation(101, observation),
+            ]);
+
+        await store.CommitAsync(batch);
+
+        Assert.Equal(checkpoint, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(1, ReadObservationCount(store, streamId));
+    }
+
+    [Fact]
     public async Task CommitAsyncRejectsConflictingDuplicateAtomically()
     {
         var store = CreateStore();
