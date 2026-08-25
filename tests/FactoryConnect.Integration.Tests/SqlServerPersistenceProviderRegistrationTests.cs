@@ -13,7 +13,7 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
     public void RegistrationRequiresConnectionString()
     {
         ServiceCollection services = new();
-        var configuration = BuildConfiguration();
+        var configuration = BuildConfiguration(" ");
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => services.AddSqlServerPersistenceProvider(
