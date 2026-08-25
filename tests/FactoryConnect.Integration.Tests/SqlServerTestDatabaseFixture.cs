@@ -11,6 +11,7 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
 
     private string? _adminConnectionString;
     private string? _databaseName;
+    private bool _databaseCreated;
 
     public string ConnectionString { get; private set; } = string.Empty;
 
@@ -45,35 +46,56 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
 
         _adminConnectionString = adminBuilder.ConnectionString;
 
-        await using (var adminConnection = new SqlConnection(
-            _adminConnectionString))
+        try
         {
-            await adminConnection.OpenAsync();
-            await using var createCommand = adminConnection.CreateCommand();
-            createCommand.CommandText =
-                $"CREATE DATABASE [{EscapeIdentifier(_databaseName)}]";
-            await createCommand.ExecuteNonQueryAsync();
+            await CreateDatabaseAsync();
+
+            var databaseBuilder = new SqlConnectionStringBuilder(
+                sourceBuilder.ConnectionString)
+            {
+                InitialCatalog = _databaseName,
+            };
+
+            ConnectionString = databaseBuilder.ConnectionString;
+
+            await using var databaseConnection = new SqlConnection(
+                ConnectionString);
+            await databaseConnection.OpenAsync();
+            await using var schemaCommand = databaseConnection.CreateCommand();
+            schemaCommand.CommandText = SqlServerSchema.ReadInitialSchema();
+            await schemaCommand.ExecuteNonQueryAsync();
         }
-
-        var databaseBuilder = new SqlConnectionStringBuilder(
-            sourceBuilder.ConnectionString)
+        catch
         {
-            InitialCatalog = _databaseName,
-        };
-
-        ConnectionString = databaseBuilder.ConnectionString;
-
-        await using var databaseConnection = new SqlConnection(
-            ConnectionString);
-        await databaseConnection.OpenAsync();
-        await using var schemaCommand = databaseConnection.CreateCommand();
-        schemaCommand.CommandText = SqlServerSchema.ReadInitialSchema();
-        await schemaCommand.ExecuteNonQueryAsync();
+            await DropDatabaseIfCreatedAsync();
+            throw;
+        }
     }
 
     public async Task DisposeAsync()
     {
-        if (_databaseName is null || _adminConnectionString is null)
+        await DropDatabaseIfCreatedAsync();
+    }
+
+    public SqlConnection CreateConnection() => new(ConnectionString);
+
+    private async Task CreateDatabaseAsync()
+    {
+        await using var adminConnection = new SqlConnection(
+            _adminConnectionString);
+        await adminConnection.OpenAsync();
+        await using var createCommand = adminConnection.CreateCommand();
+        createCommand.CommandText =
+            $"CREATE DATABASE [{EscapeIdentifier(_databaseName!)}]";
+        await createCommand.ExecuteNonQueryAsync();
+        _databaseCreated = true;
+    }
+
+    private async Task DropDatabaseIfCreatedAsync()
+    {
+        if (!_databaseCreated ||
+            _databaseName is null ||
+            _adminConnectionString is null)
         {
             return;
         }
@@ -84,14 +106,19 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
         await using var command = connection.CreateCommand();
         var escapedName = EscapeIdentifier(_databaseName);
         command.CommandText =
+            $"IF DB_ID(N'{EscapeLiteral(_databaseName)}') IS NOT NULL " +
+            "BEGIN " +
             $"ALTER DATABASE [{escapedName}] SET SINGLE_USER " +
             "WITH ROLLBACK IMMEDIATE; " +
-            $"DROP DATABASE [{escapedName}];";
+            $"DROP DATABASE [{escapedName}]; " +
+            "END";
         await command.ExecuteNonQueryAsync();
+        _databaseCreated = false;
     }
-
-    public SqlConnection CreateConnection() => new(ConnectionString);
 
     private static string EscapeIdentifier(string value) =>
         value.Replace("]", "]]", StringComparison.Ordinal);
+
+    private static string EscapeLiteral(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
 }
