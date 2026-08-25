@@ -88,6 +88,12 @@ For SQL Server, provider-specific configuration is supplied separately:
 
 Provider registration remains separate from provider activation. SQL Server configuration is validated only when SQL Server is selected.
 
+## SQL Server Deployment Prerequisite
+
+A production SQL Server database must be provisioned before starting FactoryConnect Edge. Apply the provider-owned `001_InitialObservationIngestion.sql` schema to that database, then supply its connection string through normal .NET configuration or a secret store.
+
+The runtime does not create production databases and FC-023 does not introduce an automatic migration framework. Database provisioning and credentials remain deployment/infrastructure responsibilities.
+
 ## Initial Deployment Scope
 
 The first deployment scope targets industrial machine connectivity through Ethernet-capable controllers and retrofit I/O gateways, with MTConnect and Modbus TCP feeding the same canonical FactoryConnect model.
