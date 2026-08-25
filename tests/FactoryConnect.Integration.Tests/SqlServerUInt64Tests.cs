@@ -12,7 +12,7 @@ public sealed class SqlServerUInt64Tests
     [InlineData(ulong.MaxValue)]
     public void ParameterUsesDecimalTwentyZeroMapping(ulong value)
     {
-        using var parameter = SqlServerUInt64.CreateParameter(
+        var parameter = SqlServerUInt64.CreateParameter(
             "@Value",
             value);
 
