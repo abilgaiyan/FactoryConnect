@@ -134,9 +134,9 @@ internal sealed class SqlServerObservationIngestionStore :
         for (var index = 0; index < batch.Observations.Count; index++)
         {
             var item = batch.Observations[index];
+            var observation = item.Observation;
 
-            if (item.Observation.MachineId !=
-                checkpoint.StreamId.MachineId)
+            if (observation.MachineId != checkpoint.StreamId.MachineId)
             {
                 throw new InvalidOperationException(
                     "Every observation must belong to the checkpoint machine.");
@@ -148,12 +148,24 @@ internal sealed class SqlServerObservationIngestionStore :
                     "Every observation sequence must precede the checkpoint.");
             }
 
+            if (!Enum.IsDefined(observation.Type))
+            {
+                throw new InvalidOperationException(
+                    $"Observation signal type '{observation.Type}' is unsupported.");
+            }
+
+            if (!Enum.IsDefined(observation.Quality))
+            {
+                throw new InvalidOperationException(
+                    $"Observation quality '{observation.Quality}' is unsupported.");
+            }
+
             result[index] = new StagedObservation(
                 item.Sequence,
-                item.Observation,
+                observation,
                 SqlServerObservationValueCodec.Serialize(
-                    item.Observation.Type,
-                    item.Observation.Value));
+                    observation.Type,
+                    observation.Value));
         }
 
         return result;
