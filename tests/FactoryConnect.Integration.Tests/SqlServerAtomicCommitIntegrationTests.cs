@@ -9,6 +9,8 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerAtomicCommitIntegrationTests :
     IClassFixture<SqlServerTestDatabaseFixture>
 {
+    private const string FailureAddress = "force-db-failure";
+
     private readonly SqlServerTestDatabaseFixture _fixture;
 
     public SqlServerAtomicCommitIntegrationTests(
@@ -87,21 +89,71 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
         var streamId = CreateStreamId();
         var checkpoint = new ObservationCheckpoint(streamId, 10, 2);
         var store = CreateStore();
-        var invalidObservation = CreateObservation(
-            streamId.MachineId,
-            1,
-            42.5m,
-            (ObservationQuality)99);
 
-        await Assert.ThrowsAsync<SqlException>(
-            async () => await store.CommitAsync(
-                new ObservationIngestionBatch(
-                    null,
-                    checkpoint,
-                    [invalidObservation])));
+        await AddFailureConstraintAsync();
+        try
+        {
+            await Assert.ThrowsAsync<SqlException>(
+                async () => await store.CommitAsync(
+                    new ObservationIngestionBatch(
+                        null,
+                        checkpoint,
+                        [CreateObservation(
+                            streamId.MachineId,
+                            1,
+                            42.5m,
+                            address: FailureAddress)])));
+        }
+        finally
+        {
+            await DropFailureConstraintAsync();
+        }
 
         Assert.Null(await store.ReadCheckpointAsync(streamId));
         Assert.Equal(0, await CountObservationsAsync(streamId));
+    }
+
+    [Fact]
+    public async Task ContinuationFailureRollsBackCheckpointUpdateAndEarlierInsert()
+    {
+        var streamId = CreateStreamId();
+        var initial = new ObservationCheckpoint(streamId, 10, 2);
+        var proposed = new ObservationCheckpoint(streamId, 10, 4);
+        var store = CreateStore();
+
+        await store.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                initial,
+                [CreateObservation(streamId.MachineId, 1, 10m)]));
+
+        await AddFailureConstraintAsync();
+        try
+        {
+            await Assert.ThrowsAsync<SqlException>(
+                async () => await store.CommitAsync(
+                    new ObservationIngestionBatch(
+                        initial,
+                        proposed,
+                        [
+                            CreateObservation(
+                                streamId.MachineId,
+                                2,
+                                20m),
+                            CreateObservation(
+                                streamId.MachineId,
+                                3,
+                                30m,
+                                address: FailureAddress),
+                        ])));
+        }
+        finally
+        {
+            await DropFailureConstraintAsync();
+        }
+
+        Assert.Equal(initial, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(1, await CountObservationsAsync(streamId));
     }
 
     [Fact]
@@ -140,14 +192,15 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
         MachineId machineId,
         ulong sequence,
         decimal value,
-        ObservationQuality quality = ObservationQuality.Good) =>
+        ObservationQuality quality = ObservationQuality.Good,
+        string? address = null) =>
         new(
             sequence,
             new MachineObservation
             {
                 MachineId = machineId,
                 Source = "mtconnect",
-                Address = $"load-{sequence}",
+                Address = address ?? $"load-{sequence}",
                 Type = SignalType.Numeric,
                 Value = value,
                 Quality = quality,
@@ -176,5 +229,35 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(),
             System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task AddFailureConstraintAsync()
+    {
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            ALTER TABLE dbo.MachineObservation
+            ADD CONSTRAINT CK_MachineObservation_TestFailureAddress
+            CHECK (Address <> N'force-db-failure');
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task DropFailureConstraintAsync()
+    {
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            IF OBJECT_ID(
+                N'dbo.CK_MachineObservation_TestFailureAddress',
+                N'C') IS NOT NULL
+            BEGIN
+                ALTER TABLE dbo.MachineObservation
+                DROP CONSTRAINT CK_MachineObservation_TestFailureAddress;
+            END;
+            """;
+        await command.ExecuteNonQueryAsync();
     }
 }
