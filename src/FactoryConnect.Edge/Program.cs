@@ -1,8 +1,6 @@
 using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
-using FactoryConnect.Infrastructure;
-using FactoryConnect.Persistence;
 using FactoryConnect.Protocols.MTConnect;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -83,8 +81,8 @@ builder.Services.AddSingleton<
     LoggingMtConnectContinuityReporter>();
 builder.Services.AddSingleton<MtConnectContinuityRecoveryPolicy>();
 
-builder.Services.AddInMemoryPersistenceProvider();
-builder.Services.AddFactoryConnectPersistence(builder.Configuration);
+builder.Services.AddFactoryConnectEdgePersistence(
+    builder.Configuration);
 
 builder.Services.AddSingleton<MtConnectStartupCheckpointResolver>();
 builder.Services.AddSingleton<IMtConnectObservationSink>(

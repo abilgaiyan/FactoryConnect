@@ -10,6 +10,7 @@
     <ProjectReference Include="../../src/FactoryConnect.Api/FactoryConnect.Api.csproj" />
     <ProjectReference Include="../../src/FactoryConnect.Infrastructure/FactoryConnect.Infrastructure.csproj" />
     <ProjectReference Include="../../src/FactoryConnect.Persistence/FactoryConnect.Persistence.csproj" />
+    <ProjectReference Include="../../src/FactoryConnect.Persistence.SqlServer/FactoryConnect.Persistence.SqlServer.csproj" />
     <ProjectReference Include="../../samples/FactoryConnect.Simulator/FactoryConnect.Simulator.csproj" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>FactoryConnect.Persistence.SqlServer</RootNamespace>
+    <AssemblyName>FactoryConnect.Persistence.SqlServer</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Sql\001_InitialObservationIngestion.sql"
+                      LogicalName="FactoryConnect.Persistence.SqlServer.Sql.001_InitialObservationIngestion.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
+    <ProjectReference Include="../FactoryConnect.Persistence/FactoryConnect.Persistence.csproj" />
+  </ItemGroup>
+</Project>
