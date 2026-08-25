@@ -36,16 +36,7 @@ internal sealed class SqlServerObservationIngestionStore :
               AND StreamKeyBinary = @StreamKeyBinary;
             """;
 
-        command.Parameters.Add(
-            new SqlParameter("@MachineId", SqlDbType.UniqueIdentifier)
-            {
-                Value = streamId.MachineId.Value,
-            });
-        command.Parameters.Add(
-            new SqlParameter("@StreamKeyBinary", SqlDbType.VarBinary, 512)
-            {
-                Value = streamKeyBinary,
-            });
+        AddStreamIdentityParameters(command, streamId, streamKeyBinary);
 
         await using var reader = await command.ExecuteReaderAsync(
             CommandBehavior.SingleRow,
@@ -56,15 +47,10 @@ internal sealed class SqlServerObservationIngestionStore :
             return null;
         }
 
-        var instanceId = SqlServerUInt64.Materialize(
-            reader.GetDecimal(0));
-        var nextSequence = SqlServerUInt64.Materialize(
-            reader.GetDecimal(1));
-
         return new ObservationCheckpoint(
             streamId,
-            instanceId,
-            nextSequence);
+            SqlServerUInt64.Materialize(reader.GetDecimal(0)),
+            SqlServerUInt64.Materialize(reader.GetDecimal(1)));
     }
 
     public async ValueTask CommitAsync(
@@ -88,24 +74,40 @@ internal sealed class SqlServerObservationIngestionStore :
 
         try
         {
-            var current = await ReadCheckpointAsync(
+            var current = await ReadCheckpointForUpdateAsync(
                 connection,
                 transaction,
                 streamId,
                 streamKeyBinary,
                 cancellationToken);
 
-            ValidateCheckpointTransition(batch, current);
+            var isIdempotentReplay = current == batch.Checkpoint;
+            ValidateCheckpointTransition(
+                batch,
+                current,
+                isIdempotentReplay);
 
-            await PersistCheckpointAsync(
+            var pending = await ReconcileObservationsAsync(
                 connection,
                 transaction,
                 batch.Checkpoint,
                 streamKeyBinary,
-                current is null,
+                staged,
+                isIdempotentReplay,
                 cancellationToken);
 
-            foreach (var observation in staged)
+            if (!isIdempotentReplay)
+            {
+                await PersistCheckpointAsync(
+                    connection,
+                    transaction,
+                    batch.Checkpoint,
+                    streamKeyBinary,
+                    current is null,
+                    cancellationToken);
+            }
+
+            foreach (var observation in pending)
             {
                 await InsertObservationAsync(
                     connection,
@@ -129,11 +131,10 @@ internal sealed class SqlServerObservationIngestionStore :
         ObservationIngestionBatch batch)
     {
         var checkpoint = batch.Checkpoint;
-        var result = new StagedObservation[batch.Observations.Count];
+        Dictionary<ulong, StagedObservation> staged = [];
 
-        for (var index = 0; index < batch.Observations.Count; index++)
+        foreach (var item in batch.Observations)
         {
-            var item = batch.Observations[index];
             var observation = item.Observation;
 
             if (observation.MachineId != checkpoint.StreamId.MachineId)
@@ -160,23 +161,38 @@ internal sealed class SqlServerObservationIngestionStore :
                     $"Observation quality '{observation.Quality}' is unsupported.");
             }
 
-            result[index] = new StagedObservation(
+            var candidate = new StagedObservation(
                 item.Sequence,
                 observation,
                 SqlServerObservationValueCodec.Serialize(
                     observation.Type,
                     observation.Value));
+
+            if (staged.TryGetValue(item.Sequence, out var existing))
+            {
+                if (!SqlServerObservationEquivalence.AreEquivalent(
+                        existing.Observation,
+                        candidate.Observation))
+                {
+                    throw new InvalidOperationException(
+                        "The batch contains different observations at the " +
+                        "same instance and sequence.");
+                }
+
+                continue;
+            }
+
+            staged.Add(item.Sequence, candidate);
         }
 
-        return result;
+        return [.. staged.Values];
     }
 
     private static void ValidateCheckpointTransition(
         ObservationIngestionBatch batch,
-        ObservationCheckpoint? current)
+        ObservationCheckpoint? current,
+        bool isIdempotentReplay)
     {
-        var isIdempotentReplay = current == batch.Checkpoint;
-
         if (!isIdempotentReplay &&
             current != batch.ExpectedCheckpoint)
         {
@@ -194,32 +210,24 @@ internal sealed class SqlServerObservationIngestionStore :
         }
     }
 
-    private static async Task<ObservationCheckpoint?> ReadCheckpointAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        ObservationStreamId streamId,
-        byte[] streamKeyBinary,
-        CancellationToken cancellationToken)
+    private static async Task<ObservationCheckpoint?>
+        ReadCheckpointForUpdateAsync(
+            SqlConnection connection,
+            SqlTransaction transaction,
+            ObservationStreamId streamId,
+            byte[] streamKeyBinary,
+            CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             SELECT InstanceId, NextSequence
-            FROM dbo.ObservationStreamCheckpoint
+            FROM dbo.ObservationStreamCheckpoint WITH (UPDLOCK, HOLDLOCK)
             WHERE MachineId = @MachineId
               AND StreamKeyBinary = @StreamKeyBinary;
             """;
 
-        command.Parameters.Add(
-            new SqlParameter("@MachineId", SqlDbType.UniqueIdentifier)
-            {
-                Value = streamId.MachineId.Value,
-            });
-        command.Parameters.Add(
-            new SqlParameter("@StreamKeyBinary", SqlDbType.VarBinary, 512)
-            {
-                Value = streamKeyBinary,
-            });
+        AddStreamIdentityParameters(command, streamId, streamKeyBinary);
 
         await using var reader = await command.ExecuteReaderAsync(
             CommandBehavior.SingleRow,
@@ -234,6 +242,121 @@ internal sealed class SqlServerObservationIngestionStore :
             streamId,
             SqlServerUInt64.Materialize(reader.GetDecimal(0)),
             SqlServerUInt64.Materialize(reader.GetDecimal(1)));
+    }
+
+    private static async Task<StagedObservation[]> ReconcileObservationsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        ObservationCheckpoint checkpoint,
+        byte[] streamKeyBinary,
+        IReadOnlyList<StagedObservation> staged,
+        bool isIdempotentReplay,
+        CancellationToken cancellationToken)
+    {
+        List<StagedObservation> pending = [];
+
+        foreach (var candidate in staged)
+        {
+            var existing = await ReadObservationAsync(
+                connection,
+                transaction,
+                checkpoint,
+                streamKeyBinary,
+                candidate.Sequence,
+                cancellationToken);
+
+            if (existing is null)
+            {
+                if (isIdempotentReplay)
+                {
+                    throw new InvalidOperationException(
+                        "An idempotent replay cannot add observations to an " +
+                        "already committed checkpoint.");
+                }
+
+                pending.Add(candidate);
+                continue;
+            }
+
+            if (!SqlServerObservationEquivalence.AreEquivalent(
+                    existing,
+                    candidate.Observation))
+            {
+                throw new InvalidOperationException(
+                    "The stream already contains a different observation " +
+                    "at the same instance and sequence.");
+            }
+        }
+
+        return [.. pending];
+    }
+
+    private static async Task<MachineObservation?> ReadObservationAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        ObservationCheckpoint checkpoint,
+        byte[] streamKeyBinary,
+        ulong sequence,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT Source, Address, SignalType, ObservationValue,
+                   Quality, ObservedAt
+            FROM dbo.MachineObservation
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND InstanceId = @InstanceId
+              AND Sequence = @Sequence;
+            """;
+
+        AddStreamIdentityParameters(
+            command,
+            checkpoint.StreamId,
+            streamKeyBinary);
+        command.Parameters.Add(
+            SqlServerUInt64.CreateParameter(
+                "@InstanceId",
+                checkpoint.InstanceId));
+        command.Parameters.Add(
+            SqlServerUInt64.CreateParameter(
+                "@Sequence",
+                sequence));
+
+        await using var reader = await command.ExecuteReaderAsync(
+            CommandBehavior.SingleRow,
+            cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var type = (SignalType)reader.GetByte(2);
+        var quality = (ObservationQuality)reader.GetByte(4);
+        var persistedValue = reader.IsDBNull(3)
+            ? null
+            : reader.GetString(3);
+
+        if (!Enum.IsDefined(type) || !Enum.IsDefined(quality))
+        {
+            throw new InvalidDataException(
+                "Persisted observation contains an unsupported enum value.");
+        }
+
+        return new MachineObservation
+        {
+            MachineId = checkpoint.StreamId.MachineId,
+            Source = reader.GetString(0),
+            Address = reader.GetString(1),
+            Type = type,
+            Value = SqlServerObservationValueCodec.Deserialize(
+                type,
+                persistedValue),
+            Quality = quality,
+            Timestamp = reader.GetDateTimeOffset(5),
+        };
     }
 
     private static async Task PersistCheckpointAsync(
@@ -263,16 +386,10 @@ internal sealed class SqlServerObservationIngestionStore :
                   AND StreamKeyBinary = @StreamKeyBinary;
                 """;
 
-        command.Parameters.Add(
-            new SqlParameter("@MachineId", SqlDbType.UniqueIdentifier)
-            {
-                Value = checkpoint.StreamId.MachineId.Value,
-            });
-        command.Parameters.Add(
-            new SqlParameter("@StreamKeyBinary", SqlDbType.VarBinary, 512)
-            {
-                Value = streamKeyBinary,
-            });
+        AddStreamIdentityParameters(
+            command,
+            checkpoint.StreamId,
+            streamKeyBinary);
         command.Parameters.Add(
             new SqlParameter("@StreamKey", SqlDbType.NVarChar, 256)
             {
@@ -311,16 +428,10 @@ internal sealed class SqlServerObservationIngestionStore :
                  @Quality, @ObservedAt);
             """;
 
-        command.Parameters.Add(
-            new SqlParameter("@MachineId", SqlDbType.UniqueIdentifier)
-            {
-                Value = checkpoint.StreamId.MachineId.Value,
-            });
-        command.Parameters.Add(
-            new SqlParameter("@StreamKeyBinary", SqlDbType.VarBinary, 512)
-            {
-                Value = streamKeyBinary,
-            });
+        AddStreamIdentityParameters(
+            command,
+            checkpoint.StreamId,
+            streamKeyBinary);
         command.Parameters.Add(
             SqlServerUInt64.CreateParameter(
                 "@InstanceId",
@@ -363,6 +474,23 @@ internal sealed class SqlServerObservationIngestionStore :
             });
 
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static void AddStreamIdentityParameters(
+        SqlCommand command,
+        ObservationStreamId streamId,
+        byte[] streamKeyBinary)
+    {
+        command.Parameters.Add(
+            new SqlParameter("@MachineId", SqlDbType.UniqueIdentifier)
+            {
+                Value = streamId.MachineId.Value,
+            });
+        command.Parameters.Add(
+            new SqlParameter("@StreamKeyBinary", SqlDbType.VarBinary, 512)
+            {
+                Value = streamKeyBinary,
+            });
     }
 
     private sealed record StagedObservation(
