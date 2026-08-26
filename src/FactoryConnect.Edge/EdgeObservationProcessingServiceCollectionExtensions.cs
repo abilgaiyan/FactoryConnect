@@ -133,21 +133,16 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     pipelines,
                     pollingInterval);
             });
-        services.AddSingleton(
-            static provider =>
-            {
-                var pipelines = provider.GetRequiredService<
-                    DurableObservationProcessingPipelineSet>();
 
-                if (pipelines.Pipelines.Count != 1)
-                {
-                    throw new InvalidOperationException(
-                        "A singular durable observation processing pipeline " +
-                        "can only be resolved when exactly one stream is configured.");
-                }
+        if (streams.Length == 1)
+        {
+            services.AddSingleton(
+                static provider =>
+                    provider.GetRequiredService<
+                        DurableObservationProcessingPipelineSet>()
+                        .Pipelines[0]);
+        }
 
-                return pipelines.Pipelines[0];
-            });
         services.AddHostedService<DurableObservationProcessingWorker>();
 
         return services;
