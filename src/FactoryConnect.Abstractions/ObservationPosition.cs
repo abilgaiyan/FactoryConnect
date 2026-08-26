@@ -20,6 +20,43 @@ public sealed record ObservationPosition :
     public int CompareTo(ObservationPosition? other) =>
         other is null ? 1 : Value.CompareTo(other.Value);
 
+    public static bool operator <(
+        ObservationPosition? left,
+        ObservationPosition? right) =>
+        Compare(left, right) < 0;
+
+    public static bool operator <=(
+        ObservationPosition? left,
+        ObservationPosition? right) =>
+        Compare(left, right) <= 0;
+
+    public static bool operator >(
+        ObservationPosition? left,
+        ObservationPosition? right) =>
+        Compare(left, right) > 0;
+
+    public static bool operator >=(
+        ObservationPosition? left,
+        ObservationPosition? right) =>
+        Compare(left, right) >= 0;
+
     public override string ToString() => Value.ToString(
         System.Globalization.CultureInfo.InvariantCulture);
+
+    private static int Compare(
+        ObservationPosition? left,
+        ObservationPosition? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return 0;
+        }
+
+        if (left is null)
+        {
+            return -1;
+        }
+
+        return right is null ? 1 : left.Value.CompareTo(right.Value);
+    }
 }
