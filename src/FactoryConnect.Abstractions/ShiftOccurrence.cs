@@ -3,6 +3,7 @@ namespace FactoryConnect.Abstractions;
 public sealed record ShiftOccurrence
 {
     public required ShiftScheduleAssignmentId SourceAssignmentId { get; init; }
+    public required CompanyId CompanyId { get; init; }
     public required ShiftId ShiftId { get; init; }
     public required SiteId SiteId { get; init; }
     public ProductionLineId? ProductionLineId { get; init; }
