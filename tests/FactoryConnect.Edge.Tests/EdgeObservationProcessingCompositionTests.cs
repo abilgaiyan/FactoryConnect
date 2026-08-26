@@ -103,6 +103,51 @@ public sealed class EdgeObservationProcessingCompositionTests
     }
 
     [Fact]
+    public void EmptySingleStreamMappingsComposeWithoutStateDerivation()
+    {
+        var streamId = new ObservationStreamId(
+            MachineId.New(),
+            "mtconnect:CNC-01");
+        var configuration = EmptyMappingConfiguration();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddFactoryConnectEdgePersistence(configuration);
+
+        services.AddFactoryConnectObservationProcessing(
+            configuration,
+            streamId);
+
+        using var provider = services.BuildServiceProvider();
+        Assert.NotNull(
+            provider.GetRequiredService<
+                DurableObservationProcessingPipeline>());
+    }
+
+    [Fact]
+    public void NonDigitalStateDrivingMappingFailsAtComposition()
+    {
+        var streamId = new ObservationStreamId(
+            MachineId.New(),
+            "mtconnect:CNC-01");
+        var configuration = NonDigitalStateMappingConfiguration();
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => services.AddFactoryConnectObservationProcessing(
+                configuration,
+                streamId));
+
+        Assert.Contains(
+            CanonicalSignalKeys.Running,
+            exception.Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Digital Boolean",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProviderWithoutProcessingCapabilitiesFailsClearly()
     {
         var machineId = MachineId.New();
@@ -172,6 +217,40 @@ public sealed class EdgeObservationProcessingCompositionTests
             values["PersistenceProviders:SqlServer:ConnectionString"] =
                 connectionString;
         }
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+    }
+
+    private static IConfiguration EmptyMappingConfiguration()
+    {
+        Dictionary<string, string?> values = new()
+        {
+            ["Persistence:Provider"] = "InMemory",
+            ["ObservationProcessing:BatchSize"] = "10",
+            ["ObservationProcessing:PollingInterval"] = "00:00:01",
+        };
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build();
+    }
+
+    private static IConfiguration NonDigitalStateMappingConfiguration()
+    {
+        Dictionary<string, string?> values = new()
+        {
+            ["Persistence:Provider"] = "InMemory",
+            ["ObservationProcessing:BatchSize"] = "10",
+            ["ObservationProcessing:PollingInterval"] = "00:00:01",
+            ["ObservationProcessing:Mappings:0:Source"] = "MTConnect",
+            ["ObservationProcessing:Mappings:0:Address"] = "execution",
+            ["ObservationProcessing:Mappings:0:SignalKey"] =
+                CanonicalSignalKeys.Running,
+            ["ObservationProcessing:Mappings:0:Type"] = "Enumeration",
+            ["ObservationProcessing:Mappings:0:Invert"] = "false",
+        };
 
         return new ConfigurationBuilder()
             .AddInMemoryCollection(values)
