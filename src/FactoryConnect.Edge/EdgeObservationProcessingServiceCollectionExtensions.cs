@@ -170,13 +170,13 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         ObservationStreamId,
         MachineSignalMappingConfiguration> ReadMappingConfigurations(
             IConfigurationSection section,
-            IReadOnlyList<ObservationStreamId> streamIds)
+            ObservationStreamId[] streamIds)
     {
         var streamSections = section.GetSection("Streams").GetChildren().ToArray();
 
         if (streamSections.Length == 0)
         {
-            if (streamIds.Count != 1)
+            if (streamIds.Length != 1)
             {
                 throw new InvalidOperationException(
                     "ObservationProcessing:Streams is required when multiple " +
