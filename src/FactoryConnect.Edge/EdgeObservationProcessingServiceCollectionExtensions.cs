@@ -15,12 +15,35 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
     public static IServiceCollection AddFactoryConnectObservationProcessing(
         this IServiceCollection services,
         IConfiguration configuration,
-        ObservationStreamId streamId)
+        ObservationStreamId streamId) =>
+        services.AddFactoryConnectObservationProcessing(
+            configuration,
+            [streamId]);
+
+    public static IServiceCollection AddFactoryConnectObservationProcessing(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IReadOnlyList<ObservationStreamId> streamIds)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentNullException.ThrowIfNull(streamId);
+        ArgumentNullException.ThrowIfNull(streamIds);
 
+        if (streamIds.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one observation stream is required.",
+                nameof(streamIds));
+        }
+
+        if (streamIds.Distinct().Count() != streamIds.Count)
+        {
+            throw new ArgumentException(
+                "Observation processing streams must be unique.",
+                nameof(streamIds));
+        }
+
+        var streams = streamIds.ToArray();
         var section = configuration.GetRequiredSection(SectionName);
         var batchSize = int.Parse(
             section["BatchSize"] ??
@@ -35,16 +58,9 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         var options = new ObservationProcessingRuntimeOptions(
             batchSize,
             pollingInterval);
-        var mappingConfiguration =
-            new MachineSignalMappingConfiguration
-            {
-                MachineId = streamId.MachineId,
-                Mappings = ReadMappings(
-                    section.GetRequiredSection("Mappings")),
-            };
+        var mappings = ReadMappingConfigurations(section, streams);
 
         services.AddSingleton(options);
-        services.AddSingleton(mappingConfiguration);
         services.AddSingleton<InMemoryMappedMachineObservationSink>();
         services.AddSingleton<IMappedMachineObservationSink>(
             static provider =>
@@ -69,52 +85,69 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                 RequireCapability<
                     IObservationProcessingCheckpointStore>(provider));
 
-        services.AddSingleton<IObservationProcessor>(
-            static provider =>
-                new MachineSignalMappingProcessor(
-                    new ObservationProcessorId("canonical-mapping"),
-                    provider.GetRequiredService<
-                        MachineSignalMappingConfiguration>(),
-                    provider.GetRequiredService<
-                        IMappedMachineObservationSink>()));
-        services.AddSingleton<IMappedMachineObservationProcessor>(
-            static provider =>
-                new MachineStateActivityProcessor(
-                    new ObservationProcessorId("machine-state-activity"),
-                    provider.GetRequiredService<
-                        IMachineStateActivityProjectionStore>()));
+        services.AddSingleton(
+            provider =>
+            {
+                var rawReader = provider.GetRequiredService<
+                    IDurableObservationReader>();
+                var checkpoints = provider.GetRequiredService<
+                    IObservationProcessingCheckpointStore>();
+                var mappedSink = provider.GetRequiredService<
+                    IMappedMachineObservationSink>();
+                var mappedReader = provider.GetRequiredService<
+                    IDurableMappedObservationReader>();
+                var projectionStore = provider.GetRequiredService<
+                    IMachineStateActivityProjectionStore>();
+                List<DurableObservationProcessingPipeline> pipelines = [];
 
+                foreach (var streamId in streams)
+                {
+                    var mappingProcessor = new MachineSignalMappingProcessor(
+                        new ObservationProcessorId("canonical-mapping"),
+                        mappings[streamId],
+                        mappedSink);
+                    var stateActivityProcessor =
+                        new MachineStateActivityProcessor(
+                            new ObservationProcessorId(
+                                "machine-state-activity"),
+                            projectionStore);
+
+                    pipelines.Add(
+                        new DurableObservationProcessingPipeline(
+                            new ObservationProcessingRuntime(
+                                rawReader,
+                                checkpoints,
+                                mappingProcessor,
+                                streamId,
+                                options),
+                            new MappedObservationProcessingRuntime(
+                                mappedReader,
+                                projectionStore,
+                                stateActivityProcessor,
+                                streamId,
+                                options),
+                            pollingInterval));
+                }
+
+                return new DurableObservationProcessingPipelineSet(
+                    pipelines,
+                    pollingInterval);
+            });
         services.AddSingleton(
-            provider =>
-                new ObservationProcessingRuntime(
-                    provider.GetRequiredService<
-                        IDurableObservationReader>(),
-                    provider.GetRequiredService<
-                        IObservationProcessingCheckpointStore>(),
-                    provider.GetRequiredService<IObservationProcessor>(),
-                    streamId,
-                    provider.GetRequiredService<
-                        ObservationProcessingRuntimeOptions>()));
-        services.AddSingleton(
-            provider =>
-                new MappedObservationProcessingRuntime(
-                    provider.GetRequiredService<
-                        IDurableMappedObservationReader>(),
-                    provider.GetRequiredService<
-                        IMachineStateActivityProjectionStore>(),
-                    provider.GetRequiredService<
-                        IMappedMachineObservationProcessor>(),
-                    streamId,
-                    provider.GetRequiredService<
-                        ObservationProcessingRuntimeOptions>()));
-        services.AddSingleton(
-            provider =>
-                new DurableObservationProcessingPipeline(
-                    provider.GetRequiredService<
-                        ObservationProcessingRuntime>(),
-                    provider.GetRequiredService<
-                        MappedObservationProcessingRuntime>(),
-                    pollingInterval));
+            static provider =>
+            {
+                var pipelines = provider.GetRequiredService<
+                    DurableObservationProcessingPipelineSet>();
+
+                if (pipelines.Pipelines.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        "A singular durable observation processing pipeline " +
+                        "can only be resolved when exactly one stream is configured.");
+                }
+
+                return pipelines.Pipelines[0];
+            });
         services.AddHostedService<DurableObservationProcessingWorker>();
 
         return services;
@@ -131,6 +164,84 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             throw new InvalidOperationException(
                 $"The selected persistence provider does not support " +
                 $"required processing capability '{typeof(TCapability).Name}'.");
+    }
+
+    private static Dictionary<
+        ObservationStreamId,
+        MachineSignalMappingConfiguration> ReadMappingConfigurations(
+            IConfigurationSection section,
+            IReadOnlyList<ObservationStreamId> streamIds)
+    {
+        var streamSections = section.GetSection("Streams").GetChildren().ToArray();
+
+        if (streamSections.Length == 0)
+        {
+            if (streamIds.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "ObservationProcessing:Streams is required when multiple " +
+                    "observation streams are configured.");
+            }
+
+            var streamId = streamIds[0];
+            return new Dictionary<
+                ObservationStreamId,
+                MachineSignalMappingConfiguration>
+            {
+                [streamId] = new MachineSignalMappingConfiguration
+                {
+                    MachineId = streamId.MachineId,
+                    Mappings = ReadMappings(
+                        section.GetRequiredSection("Mappings")),
+                },
+            };
+        }
+
+        Dictionary<
+            ObservationStreamId,
+            MachineSignalMappingConfiguration> configured = [];
+
+        foreach (var streamSection in streamSections)
+        {
+            var machineId = new MachineId(
+                Guid.Parse(Required(streamSection, "MachineId")));
+            var streamId = new ObservationStreamId(
+                machineId,
+                Required(streamSection, "StreamKey"));
+
+            if (!configured.TryAdd(
+                    streamId,
+                    new MachineSignalMappingConfiguration
+                    {
+                        MachineId = machineId,
+                        Mappings = ReadMappings(
+                            streamSection.GetRequiredSection("Mappings")),
+                    }))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate observation processing stream '{streamId.StreamKey}'.");
+            }
+        }
+
+        foreach (var streamId in streamIds)
+        {
+            if (!configured.ContainsKey(streamId))
+            {
+                throw new InvalidOperationException(
+                    $"No observation processing mapping configuration exists " +
+                    $"for machine '{streamId.MachineId}' and stream " +
+                    $"'{streamId.StreamKey}'.");
+            }
+        }
+
+        if (configured.Keys.Any(streamId => !streamIds.Contains(streamId)))
+        {
+            throw new InvalidOperationException(
+                "ObservationProcessing:Streams contains a stream that is not " +
+                "registered for processing.");
+        }
+
+        return configured;
     }
 
     private static MachineSignalMappingDefinition[] ReadMappings(
