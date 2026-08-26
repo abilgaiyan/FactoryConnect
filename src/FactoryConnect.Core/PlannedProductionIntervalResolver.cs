@@ -47,6 +47,7 @@ public sealed class PlannedProductionIntervalResolver
         var overrides = await _reader.ReadOverridesAsync(
             siteId, factoryDateFrom, factoryDateTo, cancellationToken);
 
+        var assignmentIds = new HashSet<PlannedProductionScheduleAssignmentId>();
         foreach (var assignment in assignments)
         {
             ArgumentNullException.ThrowIfNull(assignment);
@@ -54,6 +55,19 @@ public sealed class PlannedProductionIntervalResolver
             if (assignment.SiteId != siteId)
             {
                 throw new InvalidOperationException("Planned production provider returned an assignment for another site.");
+            }
+
+            if (!assignmentIds.Add(assignment.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Planned production provider returned duplicate assignment ID '{assignment.Id}'.");
+            }
+
+            if (assignment.EffectiveFrom >= factoryDateTo ||
+                (assignment.EffectiveTo is not null && assignment.EffectiveTo.Value <= factoryDateFrom))
+            {
+                throw new InvalidOperationException(
+                    "Planned production provider returned an assignment outside the requested effective interval.");
             }
         }
 
