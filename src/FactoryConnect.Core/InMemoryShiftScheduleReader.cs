@@ -5,11 +5,11 @@ namespace FactoryConnect.Core;
 public sealed class InMemoryShiftScheduleReader : IShiftScheduleReader
 {
     private readonly List<ShiftScheduleAssignment> _assignments = [];
-    private readonly List<ShiftCalendarException> _exceptions = [];
+    private readonly List<ShiftCalendarOverride> _exceptions = [];
 
     public InMemoryShiftScheduleReader(
         IEnumerable<ShiftScheduleAssignment>? assignments = null,
-        IEnumerable<ShiftCalendarException>? exceptions = null)
+        IEnumerable<ShiftCalendarOverride>? exceptions = null)
     {
         if (assignments is not null)
         {
@@ -58,7 +58,7 @@ public sealed class InMemoryShiftScheduleReader : IShiftScheduleReader
         _assignments.Add(assignment);
     }
 
-    public void AddException(ShiftCalendarException calendarException)
+    public void AddException(ShiftCalendarOverride calendarException)
     {
         ArgumentNullException.ThrowIfNull(calendarException);
         calendarException.Validate();
@@ -87,7 +87,7 @@ public sealed class InMemoryShiftScheduleReader : IShiftScheduleReader
         return Task.FromResult(result);
     }
 
-    public Task<IReadOnlyList<ShiftCalendarException>> ReadExceptionsAsync(
+    public Task<IReadOnlyList<ShiftCalendarOverride>> ReadExceptionsAsync(
         SiteId siteId,
         DateOnly factoryDateFrom,
         DateOnly factoryDateTo,
@@ -96,7 +96,7 @@ public sealed class InMemoryShiftScheduleReader : IShiftScheduleReader
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
 
-        IReadOnlyList<ShiftCalendarException> result = _exceptions
+        IReadOnlyList<ShiftCalendarOverride> result = _exceptions
             .Where(calendarException =>
                 calendarException.SiteId == siteId &&
                 calendarException.FactoryDate >= factoryDateFrom &&
