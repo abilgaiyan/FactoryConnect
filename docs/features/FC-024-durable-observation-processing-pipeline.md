@@ -64,6 +64,30 @@ Configuration changes do not implicitly replay earlier filtered observations.
 Historical reinterpretation requires an explicit processor identity or
 checkpoint reset policy.
 
+## Canonical state-value semantics
+
+`MachineStateActivityProcessor` evaluates the canonical state-driving signals
+`state.running`, `state.idle`, and `state.fault` only when they carry
+`SignalType.Digital` Boolean values. FC-024 does not normalize protocol-specific
+enumerations into those Boolean semantics.
+
+Therefore a mapping such as:
+
+```text
+MTConnect execution = "ACTIVE"
+    → state.running / Enumeration
+```
+
+is invalid for state projection and is rejected during Edge composition.
+State-driving mappings must already provide normalized Digital Boolean values,
+for example from a digital input or a future normalization stage.
+
+The checked-in MTConnect Edge configuration intentionally contains no default
+state-driving mapping. MTConnect execution-state normalization, such as
+`ACTIVE → true` and `STOPPED/READY → false`, is deferred to a later slice rather
+than silently acknowledging a canonical value that the state evaluator cannot
+interpret.
+
 ## Delivery and replay
 
 Delivery between stages is at least once.
@@ -167,6 +191,8 @@ The in-memory conformance scenario proves:
 - projection commit failure followed by equivalent retry
 - independent mappings and progress across machines and streams
 - a valid multi-stream service graph without a singular pipeline registration
+- empty mapping configuration is valid when no canonical derivation is intended
+- non-Digital state-driving mappings fail clearly at composition time
 
 ## Deferred boundaries
 
@@ -179,5 +205,7 @@ FC-024 intentionally excludes:
 - downtime reason classification
 - implicit historical reprocessing
 - multi-acquisition executable-host composition
+- protocol-specific canonical value normalization such as MTConnect execution
+  enumeration to Digital running state
 
 These belong to subsequent provider and factory-domain slices.
