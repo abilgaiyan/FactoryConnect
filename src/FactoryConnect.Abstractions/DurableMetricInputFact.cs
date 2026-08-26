@@ -13,11 +13,15 @@ public sealed record DurableMetricInputFact
     public ProductionLineId? ProductionLineId { get; init; }
     public required MachineId MachineId { get; init; }
     public required ShiftId ShiftId { get; init; }
+    public ShiftScheduleAssignmentId? ShiftScheduleAssignmentId { get; init; }
     public ProductionContextAssignmentId? ProductionContextAssignmentId { get; init; }
     public ProductionOrderId? ProductionOrderId { get; init; }
     public OperationId? OperationId { get; init; }
     public PartId? PartId { get; init; }
     public OperatorId? OperatorId { get; init; }
+    public bool? IsPlannedProductionTime { get; init; }
+    public PlannedProductionScheduleAssignmentId? PlannedProductionScheduleAssignmentId { get; init; }
+    public ContextualizedActivityIntervalId? SourceContextualizedActivityIntervalId { get; init; }
     public ProductionTimeEligibilityIntervalId? SourceEligibilityIntervalId { get; init; }
     public ProductionQuantityEvidenceId? SourceQuantityEvidenceId { get; init; }
 }
