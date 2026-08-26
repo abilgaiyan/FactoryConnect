@@ -25,6 +25,12 @@ public sealed class InMemoryProductionContextReader : IProductionContextReader
         ArgumentNullException.ThrowIfNull(assignment);
         assignment.Validate();
 
+        if (_assignments.Any(existing => existing.Id == assignment.Id))
+        {
+            throw new InvalidOperationException(
+                $"Production context assignment '{assignment.Id}' already exists.");
+        }
+
         foreach (var existing in _assignments)
         {
             if (existing.MachineId != assignment.MachineId)
