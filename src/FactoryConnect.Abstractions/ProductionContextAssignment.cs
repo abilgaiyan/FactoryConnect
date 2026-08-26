@@ -53,6 +53,34 @@ public sealed record ProductionContextAssignment
             throw new ArgumentException("Machine ID is required.", nameof(MachineId));
         }
 
+        if (ProductionOrderId is { IsEmpty: true })
+        {
+            throw new ArgumentException(
+                "Production order ID cannot be empty when specified.",
+                nameof(ProductionOrderId));
+        }
+
+        if (OperationId is { IsEmpty: true })
+        {
+            throw new ArgumentException(
+                "Operation ID cannot be empty when specified.",
+                nameof(OperationId));
+        }
+
+        if (PartId is { IsEmpty: true })
+        {
+            throw new ArgumentException(
+                "Part ID cannot be empty when specified.",
+                nameof(PartId));
+        }
+
+        if (OperatorId is { IsEmpty: true })
+        {
+            throw new ArgumentException(
+                "Operator ID cannot be empty when specified.",
+                nameof(OperatorId));
+        }
+
         if (EffectiveTo is not null && EffectiveTo.Value <= EffectiveFrom)
         {
             throw new ArgumentException(
