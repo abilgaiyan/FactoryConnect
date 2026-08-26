@@ -15,7 +15,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var shift = CreateShift("S1", start.AddHours(-2), start.AddHours(6));
         var context = CreateContext("C1", machineId, start.AddHours(-1), start.AddHours(3));
 
-        var result = new ActivityContextIntervalAllocator().Allocate(source, [shift], [context]);
+        var result = ActivityContextIntervalAllocator.Allocate(source, [shift], [context]);
 
         var interval = Assert.Single(result);
         Assert.Equal(start, interval.StartsAtUtc);
@@ -35,7 +35,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var first = CreateContext("C1", machineId, start, start.AddHours(3));
         var second = CreateContext("C2", machineId, start.AddHours(3), start.AddHours(6));
 
-        var result = new ActivityContextIntervalAllocator().Allocate(source, [shift], [first, second]);
+        var result = ActivityContextIntervalAllocator.Allocate(source, [shift], [first, second]);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(start.AddHours(3), result[0].EndsAtUtc);
@@ -54,7 +54,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var second = CreateShift("S2", start.AddHours(1), start.AddHours(9));
         var context = CreateContext("C1", machineId, start.AddHours(-1), start.AddHours(3));
 
-        var result = new ActivityContextIntervalAllocator().Allocate(source, [first, second], [context]);
+        var result = ActivityContextIntervalAllocator.Allocate(source, [first, second], [context]);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(first.ShiftId, result[0].ShiftId);
@@ -74,7 +74,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var firstContext = CreateContext("C1", machineId, start, start.AddHours(3));
         var secondContext = CreateContext("C2", machineId, start.AddHours(3), start.AddHours(8));
 
-        var result = new ActivityContextIntervalAllocator().Allocate(
+        var result = ActivityContextIntervalAllocator.Allocate(
             source,
             [firstShift, secondShift],
             [firstContext, secondContext]);
@@ -94,7 +94,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var shift = CreateShift("S1", start, start.AddHours(4));
         var context = CreateContext("C1", machineId, start.AddHours(2), start.AddHours(4));
 
-        var result = new ActivityContextIntervalAllocator().Allocate(source, [shift], [context]);
+        var result = ActivityContextIntervalAllocator.Allocate(source, [shift], [context]);
 
         Assert.Equal(2, result.Count);
         Assert.Null(result[0].ProductionContextAssignmentId);
@@ -112,7 +112,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var second = CreateShift("S2", start.AddHours(2), start.AddHours(4));
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ActivityContextIntervalAllocator().Allocate(source, [first, second], []));
+            ActivityContextIntervalAllocator.Allocate(source, [first, second], []));
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         var second = CreateShift("S2", start.AddHours(2), start.AddHours(4));
 
         Assert.Throws<InvalidOperationException>(() =>
-            new ActivityContextIntervalAllocator().Allocate(source, [first, second], []));
+            ActivityContextIntervalAllocator.Allocate(source, [first, second], []));
     }
 
     [Fact]
@@ -137,10 +137,9 @@ public sealed class ActivityContextIntervalAllocatorTests
         var shift = CreateShift("S1", start, start.AddHours(4));
         var firstContext = CreateContext("C1", machineId, start, start.AddHours(2));
         var secondContext = CreateContext("C2", machineId, start.AddHours(2), start.AddHours(4));
-        var allocator = new ActivityContextIntervalAllocator();
 
-        var first = allocator.Allocate(source, [shift], [firstContext, secondContext]);
-        var second = allocator.Allocate(source, [shift], [firstContext, secondContext]);
+        var first = ActivityContextIntervalAllocator.Allocate(source, [shift], [firstContext, secondContext]);
+        var second = ActivityContextIntervalAllocator.Allocate(source, [shift], [firstContext, secondContext]);
 
         Assert.Equal(first.Select(static item => item.Id), second.Select(static item => item.Id));
         Assert.Equal(source.Period.Duration, first.Aggregate(TimeSpan.Zero, static (total, item) => total + item.Duration));
