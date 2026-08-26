@@ -29,15 +29,11 @@ public sealed record PlannedProductionCalendarOverride
                 nameof(ReplacementPlannedWindows));
         }
 
-        if (ReplacementPlannedWindows is null)
+        if (ReplacementPlannedWindows is not null)
         {
-            return;
-        }
-
-        foreach (var window in ReplacementPlannedWindows)
-        {
-            ArgumentNullException.ThrowIfNull(window);
-            window.Validate();
+            PlannedProductionWindow.ValidateNonOverlapping(
+                ReplacementPlannedWindows,
+                nameof(ReplacementPlannedWindows));
         }
     }
 }
