@@ -76,13 +76,19 @@ public sealed class PlannedProductionIntervalResolver
             cancellationToken.ThrowIfCancellationRequested();
 
             var assignment = SelectAssignment(assignments, productionLineId, date);
-            if (assignment is null || !assignment.ActiveDays.Contains(date.DayOfWeek))
+            if (assignment is null)
             {
                 continue;
             }
 
             var calendarOverride = SelectOverride(overrides, productionLineId, date);
             if (calendarOverride?.IsShutdown == true)
+            {
+                continue;
+            }
+
+            var hasReplacement = calendarOverride?.ReplacementPlannedWindows is not null;
+            if (!hasReplacement && !assignment.ActiveDays.Contains(date.DayOfWeek))
             {
                 continue;
             }
@@ -104,7 +110,7 @@ public sealed class PlannedProductionIntervalResolver
                     SourceAssignmentId = assignment.Id,
                     CompanyId = assignment.CompanyId,
                     SiteId = assignment.SiteId,
-                    ProductionLineId = assignment.ProductionLineId,
+                    ProductionLineId = productionLineId ?? assignment.ProductionLineId,
                     FactoryDate = date,
                     StartsAtUtc = interval.Start,
                     EndsAtUtc = interval.End,
