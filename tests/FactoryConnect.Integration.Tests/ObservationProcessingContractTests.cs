@@ -13,6 +13,20 @@ public sealed class ObservationProcessingContractTests
     }
 
     [Fact]
+    public void ObservationPositionDefinesCompleteOrdering()
+    {
+        var first = new ObservationPosition(1);
+        var second = new ObservationPosition(2);
+
+        Assert.True(first < second);
+        Assert.True(first <= second);
+        Assert.True(second > first);
+        Assert.True(second >= first);
+        Assert.True(first <= first);
+        Assert.True(first >= first);
+    }
+
+    [Fact]
     public void ObservationProcessorIdPreservesOrdinalIdentity()
     {
         var upper = new ObservationProcessorId("Machine-State");
