@@ -13,11 +13,15 @@ I/O Gateway / Industrial Protocol
   ↓
 FactoryConnect Edge
   ↓
+Durable Raw Observations
+  ↓
 Canonical Observations
   ↓
-Durable Ingestion + Continuity Checkpoint
+Durable Machine State / Activity
   ↓
-Factory Data
+Historical Production Context + Shift + Planned Production
+  ↓
+Durable Metric-Input Facts
   ↓
 Applications / Analytics / AI
 ```
@@ -32,7 +36,16 @@ Applications / Analytics / AI
 - Pluggable persistence-provider selection
 - In-memory persistence provider
 - SQL Server persistence provider with transactional commits, idempotent replay, exact stream identity, and same-stream concurrency protection
-- Shared persistence conformance tests across providers
+- Durable raw-to-canonical observation processing with independent checkpoints
+- Durable machine state changes and activity-period projection
+- Effective-dated production context with company, site, line, machine, order, operation, part, and operator dimensions
+- Flexible recurring shift schedules with overnight shifts, calendar overrides, line precedence, and deterministic DST handling
+- Context/shift interval allocation with deterministic lineage and duration conservation
+- Planned-production windows, breaks, shutdowns, and replacement overrides
+- Durable planned-production eligibility facts
+- Durable duration and explicit quantity metric-input facts with replay-stable identity
+- Independent activity and quantity processors with atomic output/checkpoint commits and restart/replay conformance
+- Shared persistence and processing conformance tests
 
 ## Technology
 
@@ -53,11 +66,14 @@ Applications / Analytics / AI
 2. Protocols are adapters and must not leak into the domain model.
 3. Machine signals are translated into canonical observations and machine state.
 4. Acquisition continuity and durable persistence are explicit architectural boundaries.
-5. Persistence providers are replaceable; available providers are not automatically active providers.
-6. The Edge runtime must operate independently of the dashboard UI.
-7. Hardware is replaceable through connector abstractions.
-8. The software must be testable without physical factory hardware.
-9. PulseStackAI is a separate platform and may consume FactoryConnect data for AI orchestration.
+5. Production context is resolved historically for the interval being processed, not from current configuration.
+6. Temporal allocation uses deterministic half-open intervals and preserves duration and lineage.
+7. Metric inputs are durable evidence facts; final KPI percentages and downtime classification are downstream concerns.
+8. Persistence providers are replaceable; available providers are not automatically active providers.
+9. The Edge runtime must operate independently of the dashboard UI.
+10. Hardware is replaceable through connector abstractions.
+11. The software must be testable without physical factory hardware.
+12. PulseStackAI is a separate platform and may consume FactoryConnect data for AI orchestration.
 
 ## Persistence
 
@@ -100,7 +116,11 @@ The first deployment scope targets industrial machine connectivity through Ether
 
 ## Project Status
 
-FactoryConnect has progressed through **FC-023 — SQL Server Persistence Provider**. The current foundation includes continuous MTConnect acquisition, continuity recovery, durable observation ingestion, pluggable persistence, and SQL Server durability with shared provider conformance coverage.
+FactoryConnect has progressed through **FC-025 — Durable Production Context and Metric Input Derivation**. The durable pipeline now spans acquisition, canonical signal processing, machine state/activity history, historically effective production and shift context, planned-production eligibility, and durable duration/quantity metric-input facts with independent processor checkpoints and restart/replay conformance.
+
+Final KPI aggregation, OEE/utilization evaluation, downtime reason classification, reporting queries, and SQL persistence for FC-025 projection outputs remain downstream work.
+
+See `docs/features/FC-025-durable-production-context-metric-input.md` for the FC-025 architecture and conformance model.
 
 ## License
 
