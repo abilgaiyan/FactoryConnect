@@ -50,6 +50,31 @@ public sealed record ProductionQuantityEvidence
             throw new ArgumentException("Shift ID is required.", nameof(ShiftId));
         }
 
+        if (ProductionContextAssignmentId is { IsEmpty: true })
+        {
+            throw new ArgumentException("Production context assignment ID cannot be empty when specified.", nameof(ProductionContextAssignmentId));
+        }
+
+        if (ProductionOrderId is { IsEmpty: true })
+        {
+            throw new ArgumentException("Production order ID cannot be empty when specified.", nameof(ProductionOrderId));
+        }
+
+        if (OperationId is { IsEmpty: true })
+        {
+            throw new ArgumentException("Operation ID cannot be empty when specified.", nameof(OperationId));
+        }
+
+        if (PartId is { IsEmpty: true })
+        {
+            throw new ArgumentException("Part ID cannot be empty when specified.", nameof(PartId));
+        }
+
+        if (OperatorId is { IsEmpty: true })
+        {
+            throw new ArgumentException("Operator ID cannot be empty when specified.", nameof(OperatorId));
+        }
+
         ValidateNonNegative(PartCountIncrement, nameof(PartCountIncrement));
         ValidateNonNegative(GoodQuantity, nameof(GoodQuantity));
         ValidateNonNegative(RejectedQuantity, nameof(RejectedQuantity));
