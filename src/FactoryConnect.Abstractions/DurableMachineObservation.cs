@@ -9,6 +9,7 @@ public sealed record DurableMachineObservation
         ulong sequence,
         MachineObservation observation)
     {
+        ArgumentNullException.ThrowIfNull(position);
         ArgumentNullException.ThrowIfNull(streamId);
         ArgumentNullException.ThrowIfNull(observation);
 

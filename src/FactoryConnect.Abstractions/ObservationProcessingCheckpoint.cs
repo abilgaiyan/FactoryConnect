@@ -9,6 +9,7 @@ public sealed record ObservationProcessingCheckpoint
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(streamId);
+        ArgumentNullException.ThrowIfNull(position);
 
         ProcessorId = processorId;
         StreamId = streamId;

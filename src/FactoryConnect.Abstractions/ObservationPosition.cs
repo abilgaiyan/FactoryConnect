@@ -1,6 +1,6 @@
 namespace FactoryConnect.Abstractions;
 
-public readonly record struct ObservationPosition :
+public sealed record ObservationPosition :
     IComparable<ObservationPosition>
 {
     public ObservationPosition(ulong value)
@@ -17,8 +17,8 @@ public readonly record struct ObservationPosition :
 
     public ulong Value { get; }
 
-    public int CompareTo(ObservationPosition other) =>
-        Value.CompareTo(other.Value);
+    public int CompareTo(ObservationPosition? other) =>
+        other is null ? 1 : Value.CompareTo(other.Value);
 
     public override string ToString() => Value.ToString(
         System.Globalization.CultureInfo.InvariantCulture);
