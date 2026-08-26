@@ -66,37 +66,37 @@ public static class DurableMetricInputFactDeriver
         IReadOnlyList<ProductionQuantityEvidence> quantityEvidence)
     {
         var eligibilityIds = new HashSet<ProductionTimeEligibilityIntervalId>();
+        var machineTimelines = new Dictionary<MachineId, List<ProductionTimeEligibilityInterval>>();
+
         foreach (var interval in eligibilityIntervals)
         {
+            ArgumentNullException.ThrowIfNull(interval);
             ValidateEligibility(interval);
+
             if (!eligibilityIds.Add(interval.Id))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate production-time eligibility interval '{interval.Id}'.");
+                throw new InvalidOperationException($"Eligibility interval '{interval.Id}' is duplicated.");
             }
+
+            if (!machineTimelines.TryGetValue(interval.MachineId, out var timeline))
+            {
+                timeline = [];
+                machineTimelines.Add(interval.MachineId, timeline);
+            }
+
+            timeline.Add(interval);
         }
 
-        var orderedEligibility = eligibilityIntervals
-            .OrderBy(static item => item.StartsAtUtc)
-            .ThenBy(static item => item.EndsAtUtc)
-            .ThenBy(static item => item.Id.Value, StringComparer.Ordinal)
-            .ToArray();
-
-        for (var leftIndex = 0; leftIndex < orderedEligibility.Length; leftIndex++)
+        foreach (var timeline in machineTimelines.Values)
         {
-            var left = orderedEligibility[leftIndex];
-            for (var rightIndex = leftIndex + 1; rightIndex < orderedEligibility.Length; rightIndex++)
-            {
-                var right = orderedEligibility[rightIndex];
-                if (right.StartsAtUtc >= left.EndsAtUtc)
-                {
-                    break;
-                }
+            timeline.Sort(static (left, right) => left.StartsAtUtc.CompareTo(right.StartsAtUtc));
 
-                if (SameMetricScope(left, right) && right.StartsAtUtc < left.EndsAtUtc)
+            for (var index = 1; index < timeline.Count; index++)
+            {
+                if (timeline[index - 1].EndsAtUtc > timeline[index].StartsAtUtc)
                 {
                     throw new InvalidOperationException(
-                        $"Production-time eligibility intervals '{left.Id}' and '{right.Id}' overlap within the same metric scope.");
+                        $"Eligibility intervals for machine '{timeline[index].MachineId}' overlap.");
                 }
             }
         }
@@ -106,35 +106,29 @@ public static class DurableMetricInputFactDeriver
         {
             ArgumentNullException.ThrowIfNull(evidence);
             evidence.Validate();
+
             if (!quantityIds.Add(evidence.Id))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate production quantity evidence '{evidence.Id}'.");
+                throw new InvalidOperationException($"Production quantity evidence '{evidence.Id}' is duplicated.");
             }
         }
     }
 
-    private static bool SameMetricScope(
-        ProductionTimeEligibilityInterval left,
-        ProductionTimeEligibilityInterval right) =>
-        left.CompanyId == right.CompanyId &&
-        left.SiteId == right.SiteId &&
-        left.ProductionLineId == right.ProductionLineId &&
-        left.MachineId == right.MachineId &&
-        left.ShiftId == right.ShiftId &&
-        left.ProductionContextAssignmentId == right.ProductionContextAssignmentId &&
-        left.ProductionOrderId == right.ProductionOrderId &&
-        left.OperationId == right.OperationId &&
-        left.PartId == right.PartId &&
-        left.OperatorId == right.OperatorId;
-
     private static void ValidateEligibility(ProductionTimeEligibilityInterval interval)
     {
-        ArgumentNullException.ThrowIfNull(interval);
-
         if (interval.Id.IsEmpty)
         {
             throw new ArgumentException("Eligibility interval ID is required.", nameof(interval));
+        }
+
+        if (interval.SourceContextualizedActivityIntervalId.IsEmpty)
+        {
+            throw new ArgumentException("Source contextualized activity interval ID is required.", nameof(interval));
+        }
+
+        if (interval.ShiftScheduleAssignmentId.IsEmpty)
+        {
+            throw new ArgumentException("Shift schedule assignment ID is required.", nameof(interval));
         }
 
         if (interval.CompanyId.IsEmpty || interval.SiteId.IsEmpty || interval.MachineId.IsEmpty || interval.ShiftId.IsEmpty)
@@ -142,9 +136,31 @@ public static class DurableMetricInputFactDeriver
             throw new ArgumentException("Eligibility interval hierarchy is incomplete.", nameof(interval));
         }
 
-        if (interval.ProductionLineId is { IsEmpty: true })
+        if (interval.ProductionLineId is { IsEmpty: true } ||
+            interval.ProductionContextAssignmentId is { IsEmpty: true } ||
+            interval.ProductionOrderId is { IsEmpty: true } ||
+            interval.OperationId is { IsEmpty: true } ||
+            interval.PartId is { IsEmpty: true } ||
+            interval.OperatorId is { IsEmpty: true })
         {
-            throw new ArgumentException("Production line ID cannot be empty when specified.", nameof(interval));
+            throw new ArgumentException("Eligibility interval contains an empty optional identifier.", nameof(interval));
+        }
+
+        if (interval.IsPlannedProductionTime)
+        {
+            if (interval.PlannedProductionScheduleAssignmentId is null ||
+                interval.PlannedProductionScheduleAssignmentId.Value.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "Planned eligibility requires a planned production schedule assignment ID.",
+                    nameof(interval));
+            }
+        }
+        else if (interval.PlannedProductionScheduleAssignmentId is not null)
+        {
+            throw new ArgumentException(
+                "Non-planned eligibility must not reference a planned production schedule assignment.",
+                nameof(interval));
         }
 
         if (interval.EndsAtUtc <= interval.StartsAtUtc)
@@ -171,7 +187,6 @@ public static class DurableMetricInputFactDeriver
             ProductionLineId = interval.ProductionLineId,
             MachineId = interval.MachineId,
             ShiftId = interval.ShiftId,
-            ShiftScheduleAssignmentId = interval.ShiftScheduleAssignmentId,
             ProductionContextAssignmentId = interval.ProductionContextAssignmentId,
             ProductionOrderId = interval.ProductionOrderId,
             OperationId = interval.OperationId,
@@ -179,6 +194,7 @@ public static class DurableMetricInputFactDeriver
             OperatorId = interval.OperatorId,
             IsPlannedProductionTime = interval.IsPlannedProductionTime,
             PlannedProductionScheduleAssignmentId = interval.PlannedProductionScheduleAssignmentId,
+            ShiftScheduleAssignmentId = interval.ShiftScheduleAssignmentId,
             SourceContextualizedActivityIntervalId = interval.SourceContextualizedActivityIntervalId,
             SourceEligibilityIntervalId = interval.Id,
         });
