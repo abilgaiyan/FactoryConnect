@@ -18,10 +18,10 @@ public sealed record ObservationProcessingCommit
         }
 
         if (expectedCheckpoint is not null &&
-            expectedCheckpoint.Position.CompareTo(checkpoint.Position) > 0)
+            expectedCheckpoint.Position.CompareTo(checkpoint.Position) >= 0)
         {
             throw new ArgumentException(
-                "A processing checkpoint cannot move backwards.",
+                "A processing checkpoint must advance to a greater position.",
                 nameof(checkpoint));
         }
 

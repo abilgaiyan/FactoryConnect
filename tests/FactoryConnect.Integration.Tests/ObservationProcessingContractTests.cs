@@ -95,6 +95,21 @@ public sealed class ObservationProcessingContractTests
     }
 
     [Fact]
+    public void ReadBatchRejectsDuplicatePositions()
+    {
+        var streamId = StreamId();
+
+        Assert.Throws<ArgumentException>(
+            () => new ObservationReadBatch(
+                streamId,
+                [
+                    DurableObservation(streamId, 5),
+                    DurableObservation(streamId, 5),
+                ],
+                hasMore: false));
+    }
+
+    [Fact]
     public void ReadBatchRejectsObservationFromAnotherStream()
     {
         var streamId = StreamId();
@@ -152,6 +167,50 @@ public sealed class ObservationProcessingContractTests
             () => new ObservationProcessingCommit(
                 expected,
                 checkpoint));
+    }
+
+    [Fact]
+    public void ProcessingCommitRejectsUnchangedPosition()
+    {
+        var streamId = StreamId();
+        var expected = Checkpoint("machine-state", streamId, 10);
+        var checkpoint = Checkpoint("machine-state", streamId, 10);
+
+        Assert.Throws<ArgumentException>(
+            () => new ObservationProcessingCommit(
+                expected,
+                checkpoint));
+    }
+
+    [Fact]
+    public void ProcessingCommitAcceptsStrictAdvancement()
+    {
+        var streamId = StreamId();
+        var expected = Checkpoint("machine-state", streamId, 10);
+        var checkpoint = Checkpoint("machine-state", streamId, 11);
+
+        var commit = new ObservationProcessingCommit(
+            expected,
+            checkpoint);
+
+        Assert.Equal(expected, commit.ExpectedCheckpoint);
+        Assert.Equal(checkpoint, commit.Checkpoint);
+    }
+
+    [Fact]
+    public void ProcessingCommitAcceptsInitialCreation()
+    {
+        var checkpoint = Checkpoint(
+            "machine-state",
+            StreamId(),
+            1);
+
+        var commit = new ObservationProcessingCommit(
+            null,
+            checkpoint);
+
+        Assert.Null(commit.ExpectedCheckpoint);
+        Assert.Equal(checkpoint, commit.Checkpoint);
     }
 
     private static ObservationProcessingCheckpoint Checkpoint(
