@@ -160,9 +160,11 @@ The in-memory conformance scenarios prove:
 - partial missing-context survival;
 - duration conservation through contextualized activity, eligibility, and scheduled-duration facts;
 - quantity fact derivation from explicit durable evidence;
-- failure propagation from checkpoint restoration, durable activity read, production-context read, shift assignment read, shift override read, planned-production assignment read, planned-production override read, and final durable commit;
+- activity-runtime failure propagation from checkpoint restoration, durable activity read, production-context read, shift assignment read, shift override read, planned-production assignment read, planned-production override read, and final durable commit;
+- quantity-runtime failure propagation from quantity checkpoint restoration, durable quantity-evidence read, and quantity-fact durable commit;
 - no output or checkpoint mutation after a failed provider/durable boundary;
-- retry after recovery processes the same activity exactly once;
+- retry after recovery consumes the same activity or quantity evidence exactly once;
+- restart after successful recovery produces no duplicate facts;
 - inconsistent replay collisions are rejected.
 
 ## Scope boundaries
