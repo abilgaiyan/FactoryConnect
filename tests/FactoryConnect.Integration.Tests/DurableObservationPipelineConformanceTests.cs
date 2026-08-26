@@ -82,15 +82,226 @@ public sealed class DurableObservationPipelineConformanceTests
                 streamId));
     }
 
+    [Fact]
+    public async Task CanonicalSinkFailureDoesNotAdvanceRawProcessingProgress()
+    {
+        var streamId = new ObservationStreamId(
+            MachineId.New(),
+            "modbus:line-1");
+        var rawStore = new InMemoryObservationIngestionStore();
+        var mappedStore = new FailOnceMappedStore();
+        var projectionStore =
+            new InMemoryMachineStateActivityProjectionStore();
+
+        await rawStore.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                new ObservationCheckpoint(streamId, 7, 2),
+                [Sequenced(streamId.MachineId, 1, "DI1", true)]));
+
+        var pipeline = Pipeline(
+            rawStore,
+            mappedStore,
+            mappedStore,
+            projectionStore,
+            streamId,
+            "DI1",
+            CanonicalSignalKeys.Running);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => pipeline.RunCycleAsync());
+
+        Assert.Null(
+            await rawStore.ReadCheckpointAsync(
+                new ObservationProcessorId("canonical-mapping"),
+                streamId));
+        Assert.Empty(mappedStore.Inner.ReadObservations(streamId));
+
+        Assert.True(await pipeline.RunCycleAsync());
+
+        Assert.Equal(
+            new ObservationPosition(1),
+            (await rawStore.ReadCheckpointAsync(
+                new ObservationProcessorId("canonical-mapping"),
+                streamId))?.Position);
+        Assert.Single(mappedStore.Inner.ReadObservations(streamId));
+    }
+
+    [Fact]
+    public async Task ProjectionFailureLeavesCanonicalObservationEligibleForRetry()
+    {
+        var streamId = new ObservationStreamId(
+            MachineId.New(),
+            "modbus:line-1");
+        var rawStore = new InMemoryObservationIngestionStore();
+        var mappedStore = new InMemoryMappedMachineObservationSink();
+        var projectionStore = new FailOnceProjectionStore();
+
+        await rawStore.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                new ObservationCheckpoint(streamId, 7, 2),
+                [Sequenced(streamId.MachineId, 1, "DI1", true)]));
+
+        var pipeline = Pipeline(
+            rawStore,
+            mappedStore,
+            mappedStore,
+            projectionStore,
+            streamId,
+            "DI1",
+            CanonicalSignalKeys.Running);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => pipeline.RunCycleAsync());
+
+        Assert.Equal(
+            new ObservationPosition(1),
+            (await rawStore.ReadCheckpointAsync(
+                new ObservationProcessorId("canonical-mapping"),
+                streamId))?.Position);
+        Assert.Single(mappedStore.ReadObservations(streamId));
+        Assert.Null(
+            await projectionStore.Inner.ReadAsync(
+                new ObservationProcessorId("machine-state-activity"),
+                streamId));
+
+        Assert.True(await pipeline.RunCycleAsync());
+
+        Assert.Equal(
+            new ObservationPosition(1),
+            (await projectionStore.Inner.ReadAsync(
+                new ObservationProcessorId("machine-state-activity"),
+                streamId))?.Position);
+        Assert.Single(mappedStore.ReadObservations(streamId));
+        Assert.Single(
+            projectionStore.Inner.ReadStateChanges(
+                new ObservationProcessorId("machine-state-activity"),
+                streamId));
+    }
+
+    [Fact]
+    public async Task MultipleStreamsRestartWithIndependentMappingsAndProgress()
+    {
+        var firstStream = new ObservationStreamId(
+            MachineId.New(),
+            "modbus:line-1");
+        var secondStream = new ObservationStreamId(
+            MachineId.New(),
+            "modbus:line-2");
+        var rawStore = new InMemoryObservationIngestionStore();
+        var mappedStore = new InMemoryMappedMachineObservationSink();
+        var projectionStore =
+            new InMemoryMachineStateActivityProjectionStore();
+
+        await rawStore.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                new ObservationCheckpoint(firstStream, 1, 2),
+                [Sequenced(firstStream.MachineId, 1, "DI1", true)]));
+        await rawStore.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                new ObservationCheckpoint(secondStream, 1, 2),
+                [Sequenced(secondStream.MachineId, 1, "X1", true)]));
+
+        var first = PipelineSet(
+            rawStore,
+            mappedStore,
+            projectionStore,
+            firstStream,
+            secondStream);
+
+        Assert.True(await first.RunCycleAsync());
+
+        Assert.Equal(
+            CanonicalSignalKeys.Running,
+            Assert.Single(mappedStore.ReadObservations(firstStream))
+                .Observation.SignalKey);
+        Assert.Equal(
+            CanonicalSignalKeys.PowerOn,
+            Assert.Single(mappedStore.ReadObservations(secondStream))
+                .Observation.SignalKey);
+        Assert.Equal(
+            new ObservationPosition(1),
+            (await rawStore.ReadCheckpointAsync(
+                new ObservationProcessorId("canonical-mapping"),
+                firstStream))?.Position);
+        Assert.Equal(
+            new ObservationPosition(1),
+            (await rawStore.ReadCheckpointAsync(
+                new ObservationProcessorId("canonical-mapping"),
+                secondStream))?.Position);
+
+        var restarted = PipelineSet(
+            rawStore,
+            mappedStore,
+            projectionStore,
+            firstStream,
+            secondStream);
+
+        Assert.False(await restarted.RunCycleAsync());
+        Assert.Single(mappedStore.ReadObservations(firstStream));
+        Assert.Single(mappedStore.ReadObservations(secondStream));
+    }
+
+    private static DurableObservationProcessingPipelineSet PipelineSet(
+        InMemoryObservationIngestionStore rawStore,
+        InMemoryMappedMachineObservationSink mappedStore,
+        InMemoryMachineStateActivityProjectionStore projectionStore,
+        ObservationStreamId firstStream,
+        ObservationStreamId secondStream)
+    {
+        var options = Options();
+        DurableObservationProcessingPipeline[] pipelines =
+        [
+            Pipeline(
+                rawStore,
+                mappedStore,
+                mappedStore,
+                projectionStore,
+                firstStream,
+                "DI1",
+                CanonicalSignalKeys.Running),
+            Pipeline(
+                rawStore,
+                mappedStore,
+                mappedStore,
+                projectionStore,
+                secondStream,
+                "X1",
+                CanonicalSignalKeys.PowerOn),
+        ];
+
+        return new DurableObservationProcessingPipelineSet(
+            pipelines,
+            options.PollingInterval);
+    }
+
     private static DurableObservationProcessingPipeline Pipeline(
         InMemoryObservationIngestionStore rawStore,
         InMemoryMappedMachineObservationSink mappedStore,
         InMemoryMachineStateActivityProjectionStore projectionStore,
-        ObservationStreamId streamId)
+        ObservationStreamId streamId) =>
+        Pipeline(
+            rawStore,
+            mappedStore,
+            mappedStore,
+            projectionStore,
+            streamId,
+            "DI1",
+            CanonicalSignalKeys.Running);
+
+    private static DurableObservationProcessingPipeline Pipeline(
+        InMemoryObservationIngestionStore rawStore,
+        IMappedMachineObservationSink mappedSink,
+        IDurableMappedObservationReader mappedReader,
+        IMachineStateActivityProjectionStore projectionStore,
+        ObservationStreamId streamId,
+        string address,
+        string signalKey)
     {
-        var options = new ObservationProcessingRuntimeOptions(
-            1,
-            TimeSpan.FromMilliseconds(1));
+        var options = Options();
         var mapping = new MachineSignalMappingProcessor(
             new ObservationProcessorId("canonical-mapping"),
             new MachineSignalMappingConfiguration
@@ -101,13 +312,13 @@ public sealed class DurableObservationPipelineConformanceTests
                     new MachineSignalMappingDefinition
                     {
                         Source = "modbus",
-                        Address = "DI1",
-                        SignalKey = CanonicalSignalKeys.Running,
+                        Address = address,
+                        SignalKey = signalKey,
                         Type = SignalType.Digital,
                     },
                 ],
             },
-            mappedStore);
+            mappedSink);
         var stateActivity = new MachineStateActivityProcessor(
             new ObservationProcessorId("machine-state-activity"),
             projectionStore);
@@ -120,13 +331,16 @@ public sealed class DurableObservationPipelineConformanceTests
                 streamId,
                 options),
             new MappedObservationProcessingRuntime(
-                mappedStore,
+                mappedReader,
                 projectionStore,
                 stateActivity,
                 streamId,
                 options),
             options.PollingInterval);
     }
+
+    private static ObservationProcessingRuntimeOptions Options() =>
+        new(1, TimeSpan.FromMilliseconds(1));
 
     private static SequencedMachineObservation Sequenced(
         MachineId machineId,
@@ -147,4 +361,59 @@ public sealed class DurableObservationPipelineConformanceTests
 
     private static DateTimeOffset At(ulong minute) =>
         new(2026, 8, 26, 10, checked((int)minute), 0, TimeSpan.Zero);
+
+    private sealed class FailOnceMappedStore :
+        IMappedMachineObservationSink,
+        IDurableMappedObservationReader
+    {
+        private bool _shouldFail = true;
+
+        public InMemoryMappedMachineObservationSink Inner { get; } = new();
+
+        public ValueTask WriteAsync(
+            IReadOnlyList<DurableMappedMachineObservation> observations,
+            CancellationToken cancellationToken = default)
+        {
+            if (_shouldFail)
+            {
+                _shouldFail = false;
+                throw new InvalidOperationException("Simulated mapped-store failure.");
+            }
+
+            return Inner.WriteAsync(observations, cancellationToken);
+        }
+
+        public ValueTask<MappedObservationReadBatch> ReadAsync(
+            MappedObservationReadRequest request,
+            CancellationToken cancellationToken = default) =>
+            Inner.ReadAsync(request, cancellationToken);
+    }
+
+    private sealed class FailOnceProjectionStore :
+        IMachineStateActivityProjectionStore
+    {
+        private bool _shouldFail = true;
+
+        public InMemoryMachineStateActivityProjectionStore Inner { get; } =
+            new();
+
+        public ValueTask<MachineStateActivityProjection?> ReadAsync(
+            ObservationProcessorId processorId,
+            ObservationStreamId streamId,
+            CancellationToken cancellationToken = default) =>
+            Inner.ReadAsync(processorId, streamId, cancellationToken);
+
+        public ValueTask CommitAsync(
+            MachineStateActivityProjectionCommit commit,
+            CancellationToken cancellationToken = default)
+        {
+            if (_shouldFail)
+            {
+                _shouldFail = false;
+                throw new InvalidOperationException("Simulated projection-store failure.");
+            }
+
+            return Inner.CommitAsync(commit, cancellationToken);
+        }
+    }
 }
