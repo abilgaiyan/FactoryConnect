@@ -8,6 +8,9 @@ public sealed record ContextualizedActivityInterval
     public required ObservationStreamId SourceStreamId { get; init; }
     public required ulong SourceInstanceId { get; init; }
     public required ulong SourceSequence { get; init; }
+    public required CompanyId CompanyId { get; init; }
+    public required SiteId SiteId { get; init; }
+    public ProductionLineId? ProductionLineId { get; init; }
     public required MachineId MachineId { get; init; }
     public required MachineState State { get; init; }
     public required DateTimeOffset StartsAtUtc { get; init; }
