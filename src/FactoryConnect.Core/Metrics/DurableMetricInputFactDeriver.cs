@@ -13,11 +13,14 @@ public static class DurableMetricInputFactDeriver
         ArgumentNullException.ThrowIfNull(eligibilityIntervals);
         ArgumentNullException.ThrowIfNull(quantityEvidence);
 
+        ValidateSources(eligibilityIntervals, quantityEvidence);
+
         var output = new List<DurableMetricInputFact>();
 
-        foreach (var interval in eligibilityIntervals.OrderBy(static item => item.StartsAtUtc).ThenBy(static item => item.Id.Value, StringComparer.Ordinal))
+        foreach (var interval in eligibilityIntervals
+            .OrderBy(static item => item.StartsAtUtc)
+            .ThenBy(static item => item.Id.Value, StringComparer.Ordinal))
         {
-            ValidateEligibility(interval);
             AddDurationFact(output, interval, MetricInputFactKeys.ScheduledDuration);
 
             if (interval.IsPlannedProductionTime)
@@ -31,6 +34,7 @@ public static class DurableMetricInputFactDeriver
                 MachineState.Idle => MetricInputFactKeys.IdleDuration,
                 MachineState.Stopped => MetricInputFactKeys.StoppedDuration,
                 MachineState.Fault => MetricInputFactKeys.AlarmDuration,
+                MachineState.Offline => MetricInputFactKeys.OfflineDuration,
                 MachineState.Unknown => null,
                 _ => null,
             };
@@ -41,11 +45,10 @@ public static class DurableMetricInputFactDeriver
             }
         }
 
-        foreach (var evidence in quantityEvidence.OrderBy(static item => item.OccurredAtUtc).ThenBy(static item => item.Id.Value, StringComparer.Ordinal))
+        foreach (var evidence in quantityEvidence
+            .OrderBy(static item => item.OccurredAtUtc)
+            .ThenBy(static item => item.Id.Value, StringComparer.Ordinal))
         {
-            ArgumentNullException.ThrowIfNull(evidence);
-            evidence.Validate();
-
             AddQuantityFact(output, evidence, MetricInputFactKeys.PartCountIncrement, evidence.PartCountIncrement);
             AddQuantityFact(output, evidence, MetricInputFactKeys.GoodQuantity, evidence.GoodQuantity);
             AddQuantityFact(output, evidence, MetricInputFactKeys.RejectedQuantity, evidence.RejectedQuantity);
@@ -57,6 +60,73 @@ public static class DurableMetricInputFactDeriver
             .ThenBy(static fact => fact.Id.Value, StringComparer.Ordinal)
             .ToArray();
     }
+
+    private static void ValidateSources(
+        IReadOnlyList<ProductionTimeEligibilityInterval> eligibilityIntervals,
+        IReadOnlyList<ProductionQuantityEvidence> quantityEvidence)
+    {
+        var eligibilityIds = new HashSet<ProductionTimeEligibilityIntervalId>();
+        foreach (var interval in eligibilityIntervals)
+        {
+            ValidateEligibility(interval);
+            if (!eligibilityIds.Add(interval.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate production-time eligibility interval '{interval.Id}'.");
+            }
+        }
+
+        var orderedEligibility = eligibilityIntervals
+            .OrderBy(static item => item.StartsAtUtc)
+            .ThenBy(static item => item.EndsAtUtc)
+            .ThenBy(static item => item.Id.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        for (var leftIndex = 0; leftIndex < orderedEligibility.Length; leftIndex++)
+        {
+            var left = orderedEligibility[leftIndex];
+            for (var rightIndex = leftIndex + 1; rightIndex < orderedEligibility.Length; rightIndex++)
+            {
+                var right = orderedEligibility[rightIndex];
+                if (right.StartsAtUtc >= left.EndsAtUtc)
+                {
+                    break;
+                }
+
+                if (SameMetricScope(left, right) && right.StartsAtUtc < left.EndsAtUtc)
+                {
+                    throw new InvalidOperationException(
+                        $"Production-time eligibility intervals '{left.Id}' and '{right.Id}' overlap within the same metric scope.");
+                }
+            }
+        }
+
+        var quantityIds = new HashSet<ProductionQuantityEvidenceId>();
+        foreach (var evidence in quantityEvidence)
+        {
+            ArgumentNullException.ThrowIfNull(evidence);
+            evidence.Validate();
+            if (!quantityIds.Add(evidence.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate production quantity evidence '{evidence.Id}'.");
+            }
+        }
+    }
+
+    private static bool SameMetricScope(
+        ProductionTimeEligibilityInterval left,
+        ProductionTimeEligibilityInterval right) =>
+        left.CompanyId == right.CompanyId &&
+        left.SiteId == right.SiteId &&
+        left.ProductionLineId == right.ProductionLineId &&
+        left.MachineId == right.MachineId &&
+        left.ShiftId == right.ShiftId &&
+        left.ProductionContextAssignmentId == right.ProductionContextAssignmentId &&
+        left.ProductionOrderId == right.ProductionOrderId &&
+        left.OperationId == right.OperationId &&
+        left.PartId == right.PartId &&
+        left.OperatorId == right.OperatorId;
 
     private static void ValidateEligibility(ProductionTimeEligibilityInterval interval)
     {
@@ -101,11 +171,15 @@ public static class DurableMetricInputFactDeriver
             ProductionLineId = interval.ProductionLineId,
             MachineId = interval.MachineId,
             ShiftId = interval.ShiftId,
+            ShiftScheduleAssignmentId = interval.ShiftScheduleAssignmentId,
             ProductionContextAssignmentId = interval.ProductionContextAssignmentId,
             ProductionOrderId = interval.ProductionOrderId,
             OperationId = interval.OperationId,
             PartId = interval.PartId,
             OperatorId = interval.OperatorId,
+            IsPlannedProductionTime = interval.IsPlannedProductionTime,
+            PlannedProductionScheduleAssignmentId = interval.PlannedProductionScheduleAssignmentId,
+            SourceContextualizedActivityIntervalId = interval.SourceContextualizedActivityIntervalId,
             SourceEligibilityIntervalId = interval.Id,
         });
     }
