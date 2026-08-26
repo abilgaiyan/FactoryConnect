@@ -101,7 +101,7 @@ public sealed class ShiftOccurrenceResolver
             .ToArray();
     }
 
-    private static IReadOnlyList<ShiftScheduleAssignment> SelectScope(
+    private static ShiftScheduleAssignment[] SelectScope(
         IReadOnlyList<ShiftScheduleAssignment> assignments,
         ProductionLineId? productionLineId,
         DateOnly factoryDate)
