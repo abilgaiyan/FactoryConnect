@@ -3,7 +3,9 @@ using FactoryConnect.Abstractions;
 namespace FactoryConnect.Infrastructure;
 
 public sealed class InMemoryObservationIngestionStore :
-    IObservationIngestionStore
+    IObservationIngestionStore,
+    IDurableObservationReader,
+    IObservationProcessingCheckpointStore
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<
@@ -11,7 +13,13 @@ public sealed class InMemoryObservationIngestionStore :
         ObservationCheckpoint> _checkpoints = [];
     private readonly Dictionary<
         ObservationKey,
-        SequencedMachineObservation> _observations = [];
+        DurableMachineObservation> _observations = [];
+    private readonly Dictionary<
+        ObservationStreamId,
+        ObservationPosition> _lastPositions = [];
+    private readonly Dictionary<
+        ProcessingCheckpointKey,
+        ObservationProcessingCheckpoint> _processingCheckpoints = [];
 
     public ValueTask<ObservationCheckpoint?> ReadCheckpointAsync(
         ObservationStreamId streamId,
@@ -40,14 +48,115 @@ public sealed class InMemoryObservationIngestionStore :
         {
             ValidateBatch(batch);
             var pending = StageObservations(batch);
+            var staged = AssignPositions(batch, pending);
 
-            foreach (var pair in pending)
+            foreach (var observation in staged)
             {
-                _observations.TryAdd(pair.Key, pair.Value);
+                var key = new ObservationKey(
+                    observation.StreamId,
+                    observation.InstanceId,
+                    observation.Sequence);
+
+                _observations.Add(key, observation);
+            }
+
+            if (staged.Length > 0)
+            {
+                _lastPositions[batch.Checkpoint.StreamId] =
+                    staged[^1].Position;
             }
 
             _checkpoints[batch.Checkpoint.StreamId] =
                 batch.Checkpoint;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<ObservationReadBatch> ReadAsync(
+        ObservationReadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            var observations = _observations.Values
+                .Where(
+                    observation =>
+                        observation.StreamId == request.StreamId &&
+                        (request.AfterPosition is null ||
+                         observation.Position > request.AfterPosition))
+                .OrderBy(observation => observation.Position)
+                .Take(checked(request.BatchSize + 1))
+                .ToArray();
+            var hasMore = observations.Length > request.BatchSize;
+            var page = hasMore
+                ? observations[..request.BatchSize]
+                : observations;
+
+            return ValueTask.FromResult(
+                new ObservationReadBatch(
+                    request.StreamId,
+                    page,
+                    hasMore));
+        }
+    }
+
+    public ValueTask<ObservationProcessingCheckpoint?>
+        ReadCheckpointAsync(
+            ObservationProcessorId processorId,
+            ObservationStreamId streamId,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(processorId);
+        ArgumentNullException.ThrowIfNull(streamId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            _processingCheckpoints.TryGetValue(
+                new ProcessingCheckpointKey(processorId, streamId),
+                out var checkpoint);
+
+            return ValueTask.FromResult<
+                ObservationProcessingCheckpoint?>(checkpoint);
+        }
+    }
+
+    public ValueTask CommitAsync(
+        ObservationProcessingCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            var checkpoint = commit.Checkpoint;
+            var key = new ProcessingCheckpointKey(
+                checkpoint.ProcessorId,
+                checkpoint.StreamId);
+
+            _processingCheckpoints.TryGetValue(key, out var current);
+
+            if (current != commit.ExpectedCheckpoint)
+            {
+                throw new InvalidOperationException(
+                    "The processing checkpoint no longer matches the expected state.");
+            }
+
+            if (!_observations.Values.Any(
+                    observation =>
+                        observation.StreamId == checkpoint.StreamId &&
+                        observation.Position == checkpoint.Position))
+            {
+                throw new InvalidOperationException(
+                    "A processing checkpoint must reference a durable observation in the same stream.");
+            }
+
+            _processingCheckpoints[key] = checkpoint;
         }
 
         return ValueTask.CompletedTask;
@@ -60,13 +169,56 @@ public sealed class InMemoryObservationIngestionStore :
 
         lock (_gate)
         {
-            return _observations
-                .Where(pair => pair.Key.StreamId == streamId)
-                .OrderBy(pair => pair.Key.InstanceId)
-                .ThenBy(pair => pair.Key.Sequence)
-                .Select(pair => pair.Value)
+            return _observations.Values
+                .Where(
+                    observation =>
+                        observation.StreamId == streamId)
+                .OrderBy(observation => observation.Position)
+                .Select(
+                    observation =>
+                        new SequencedMachineObservation(
+                            observation.Sequence,
+                            observation.Observation))
                 .ToArray();
         }
+    }
+
+    private DurableMachineObservation[] AssignPositions(
+        ObservationIngestionBatch batch,
+        Dictionary<ObservationKey, SequencedMachineObservation> pending)
+    {
+        var newObservations = pending
+            .Where(pair => !_observations.ContainsKey(pair.Key))
+            .ToArray();
+
+        if (newObservations.Length == 0)
+        {
+            return [];
+        }
+
+        var lastPosition = _lastPositions.TryGetValue(
+            batch.Checkpoint.StreamId,
+            out var current)
+            ? current.Value
+            : 0;
+        var result = new DurableMachineObservation[
+            newObservations.Length];
+
+        for (var index = 0; index < newObservations.Length; index++)
+        {
+            var pair = newObservations[index];
+            var position = new ObservationPosition(
+                checked(lastPosition + (ulong)index + 1));
+
+            result[index] = new DurableMachineObservation(
+                position,
+                batch.Checkpoint.StreamId,
+                batch.Checkpoint.InstanceId,
+                pair.Value.Sequence,
+                pair.Value.Observation);
+        }
+
+        return result;
     }
 
     private Dictionary<ObservationKey, SequencedMachineObservation>
@@ -87,7 +239,8 @@ public sealed class InMemoryObservationIngestionStore :
                 item.Sequence);
 
             if ((_observations.TryGetValue(key, out var existing) &&
-                 existing != item) ||
+                 (existing.Sequence != item.Sequence ||
+                  existing.Observation != item.Observation)) ||
                 (pending.TryGetValue(key, out var staged) &&
                  staged != item))
             {
@@ -155,4 +308,8 @@ public sealed class InMemoryObservationIngestionStore :
         ObservationStreamId StreamId,
         ulong InstanceId,
         ulong Sequence);
+
+    private readonly record struct ProcessingCheckpointKey(
+        ObservationProcessorId ProcessorId,
+        ObservationStreamId StreamId);
 }
