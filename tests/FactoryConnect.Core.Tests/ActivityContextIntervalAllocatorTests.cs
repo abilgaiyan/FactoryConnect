@@ -164,6 +164,7 @@ public sealed class ActivityContextIntervalAllocatorTests
         new()
         {
             SourceAssignmentId = new ShiftScheduleAssignmentId(id),
+            CompanyId = new CompanyId("COMP-1"),
             ShiftId = new ShiftId(id),
             SiteId = new SiteId("SITE-1"),
             FactoryDate = DateOnly.FromDateTime(startsAt.UtcDateTime),
