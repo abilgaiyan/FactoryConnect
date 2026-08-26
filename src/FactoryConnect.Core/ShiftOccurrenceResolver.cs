@@ -11,8 +11,43 @@ public sealed class ShiftOccurrenceResolver
         _reader = reader ?? throw new ArgumentNullException(nameof(reader));
     }
 
-    public async Task<IReadOnlyList<ShiftOccurrence>> ResolveAsync(
+    public Task<IReadOnlyList<ShiftOccurrence>> ResolveAsync(
         SiteId siteId,
+        DateOnly factoryDateFrom,
+        DateOnly factoryDateTo,
+        CancellationToken cancellationToken) =>
+        ResolveCoreAsync(
+            siteId,
+            null,
+            factoryDateFrom,
+            factoryDateTo,
+            cancellationToken);
+
+    public Task<IReadOnlyList<ShiftOccurrence>> ResolveAsync(
+        SiteId siteId,
+        ProductionLineId productionLineId,
+        DateOnly factoryDateFrom,
+        DateOnly factoryDateTo,
+        CancellationToken cancellationToken)
+    {
+        if (productionLineId.IsEmpty)
+        {
+            throw new ArgumentException(
+                "Production line ID is required when resolving a line schedule.",
+                nameof(productionLineId));
+        }
+
+        return ResolveCoreAsync(
+            siteId,
+            productionLineId,
+            factoryDateFrom,
+            factoryDateTo,
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<ShiftOccurrence>> ResolveCoreAsync(
+        SiteId siteId,
+        ProductionLineId? productionLineId,
         DateOnly factoryDateFrom,
         DateOnly factoryDateTo,
         CancellationToken cancellationToken)
@@ -24,11 +59,14 @@ public sealed class ShiftOccurrenceResolver
             factoryDateFrom,
             factoryDateTo,
             cancellationToken);
-        var exceptions = await _reader.ReadExceptionsAsync(
+        ValidateAssignments(assignments);
+
+        var calendarOverrides = await _reader.ReadExceptionsAsync(
             siteId,
             factoryDateFrom,
             factoryDateTo,
             cancellationToken);
+        ValidateOverrides(calendarOverrides);
 
         var occurrences = new List<ShiftOccurrence>();
 
@@ -38,11 +76,15 @@ public sealed class ShiftOccurrenceResolver
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            foreach (var assignment in assignments)
+            var scopedAssignments = SelectScope(
+                assignments,
+                productionLineId,
+                factoryDate);
+
+            foreach (var assignment in scopedAssignments)
             {
-                if (!assignment.IsEffectiveOn(factoryDate) ||
-                    !assignment.ActiveDays.Contains(factoryDate.DayOfWeek) ||
-                    IsShutdown(exceptions, assignment, factoryDate))
+                if (!assignment.ActiveDays.Contains(factoryDate.DayOfWeek) ||
+                    IsShutdown(calendarOverrides, assignment, factoryDate))
                 {
                     continue;
                 }
@@ -53,8 +95,41 @@ public sealed class ShiftOccurrenceResolver
 
         return occurrences
             .OrderBy(static occurrence => occurrence.StartsAtUtc)
+            .ThenBy(static occurrence => occurrence.ProductionLineId?.Value, StringComparer.Ordinal)
             .ThenBy(static occurrence => occurrence.ShiftId.Value, StringComparer.Ordinal)
             .ThenBy(static occurrence => occurrence.SourceAssignmentId.Value, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ShiftScheduleAssignment> SelectScope(
+        IReadOnlyList<ShiftScheduleAssignment> assignments,
+        ProductionLineId? productionLineId,
+        DateOnly factoryDate)
+    {
+        if (productionLineId is null)
+        {
+            return assignments
+                .Where(assignment =>
+                    assignment.ProductionLineId is null &&
+                    assignment.IsEffectiveOn(factoryDate))
+                .ToArray();
+        }
+
+        var lineAssignments = assignments
+            .Where(assignment =>
+                assignment.ProductionLineId == productionLineId &&
+                assignment.IsEffectiveOn(factoryDate))
+            .ToArray();
+
+        if (lineAssignments.Length > 0)
+        {
+            return lineAssignments;
+        }
+
+        return assignments
+            .Where(assignment =>
+                assignment.ProductionLineId is null &&
+                assignment.IsEffectiveOn(factoryDate))
             .ToArray();
     }
 
@@ -63,26 +138,18 @@ public sealed class ShiftOccurrenceResolver
         DateOnly factoryDate)
     {
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
-        var localStart = factoryDate.ToDateTime(assignment.StartsAtLocal, DateTimeKind.Unspecified);
+        var localStart = factoryDate.ToDateTime(
+            assignment.StartsAtLocal,
+            DateTimeKind.Unspecified);
         var endDate = assignment.IsOvernight
             ? factoryDate.AddDays(1)
             : factoryDate;
-        var localEnd = endDate.ToDateTime(assignment.EndsAtLocal, DateTimeKind.Unspecified);
+        var localEnd = endDate.ToDateTime(
+            assignment.EndsAtLocal,
+            DateTimeKind.Unspecified);
 
-        if (timeZone.IsInvalidTime(localStart) || timeZone.IsInvalidTime(localEnd))
-        {
-            throw new InvalidOperationException(
-                $"Shift '{assignment.ShiftId}' resolves to an invalid local time in time zone '{assignment.TimeZoneId}'.");
-        }
-
-        if (timeZone.IsAmbiguousTime(localStart) || timeZone.IsAmbiguousTime(localEnd))
-        {
-            throw new InvalidOperationException(
-                $"Shift '{assignment.ShiftId}' resolves to an ambiguous local time in time zone '{assignment.TimeZoneId}'.");
-        }
-
-        var startsAtUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localStart, timeZone), TimeSpan.Zero);
-        var endsAtUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localEnd, timeZone), TimeSpan.Zero);
+        var startsAtUtc = ResolveLocalBoundary(timeZone, localStart, useEarlierUtc: true);
+        var endsAtUtc = ResolveLocalBoundary(timeZone, localEnd, useEarlierUtc: false);
 
         return new ShiftOccurrence
         {
@@ -96,12 +163,58 @@ public sealed class ShiftOccurrenceResolver
         };
     }
 
+    private static DateTimeOffset ResolveLocalBoundary(
+        TimeZoneInfo timeZone,
+        DateTime localTime,
+        bool useEarlierUtc)
+    {
+        while (timeZone.IsInvalidTime(localTime))
+        {
+            localTime = localTime.AddMinutes(1);
+        }
+
+        if (!timeZone.IsAmbiguousTime(localTime))
+        {
+            return new DateTimeOffset(
+                TimeZoneInfo.ConvertTimeToUtc(localTime, timeZone),
+                TimeSpan.Zero);
+        }
+
+        var candidates = timeZone
+            .GetAmbiguousTimeOffsets(localTime)
+            .Select(offset => new DateTimeOffset(localTime, offset).ToUniversalTime())
+            .OrderBy(static candidate => candidate)
+            .ToArray();
+
+        return useEarlierUtc ? candidates[0] : candidates[^1];
+    }
+
     private static bool IsShutdown(
-        IReadOnlyList<ShiftCalendarOverride> exceptions,
+        IReadOnlyList<ShiftCalendarOverride> calendarOverrides,
         ShiftScheduleAssignment assignment,
         DateOnly factoryDate) =>
-        exceptions.Any(calendarException =>
-            calendarException.IsShutdown &&
-            calendarException.FactoryDate == factoryDate &&
-            (calendarException.ShiftId is null || calendarException.ShiftId == assignment.ShiftId));
+        calendarOverrides.Any(calendarOverride =>
+            calendarOverride.IsShutdown &&
+            calendarOverride.FactoryDate == factoryDate &&
+            (calendarOverride.ShiftId is null || calendarOverride.ShiftId == assignment.ShiftId));
+
+    private static void ValidateAssignments(
+        IReadOnlyList<ShiftScheduleAssignment> assignments)
+    {
+        foreach (var assignment in assignments)
+        {
+            ArgumentNullException.ThrowIfNull(assignment);
+            assignment.Validate();
+        }
+    }
+
+    private static void ValidateOverrides(
+        IReadOnlyList<ShiftCalendarOverride> calendarOverrides)
+    {
+        foreach (var calendarOverride in calendarOverrides)
+        {
+            ArgumentNullException.ThrowIfNull(calendarOverride);
+            calendarOverride.Validate();
+        }
+    }
 }
