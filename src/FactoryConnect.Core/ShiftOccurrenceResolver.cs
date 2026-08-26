@@ -59,14 +59,22 @@ public sealed class ShiftOccurrenceResolver
             factoryDateFrom,
             factoryDateTo,
             cancellationToken);
-        ValidateAssignments(assignments);
+        ShiftScheduleCollectionValidator.ValidateAssignments(
+            assignments,
+            siteId,
+            factoryDateFrom,
+            factoryDateTo);
 
         var calendarOverrides = await _reader.ReadExceptionsAsync(
             siteId,
             factoryDateFrom,
             factoryDateTo,
             cancellationToken);
-        ValidateOverrides(calendarOverrides);
+        ShiftScheduleCollectionValidator.ValidateOverrides(
+            calendarOverrides,
+            siteId,
+            factoryDateFrom,
+            factoryDateTo);
 
         var occurrences = new List<ShiftOccurrence>();
 
@@ -194,27 +202,8 @@ public sealed class ShiftOccurrenceResolver
         ShiftScheduleAssignment assignment,
         DateOnly factoryDate) =>
         calendarOverrides.Any(calendarOverride =>
+            calendarOverride.SiteId == assignment.SiteId &&
             calendarOverride.IsShutdown &&
             calendarOverride.FactoryDate == factoryDate &&
             (calendarOverride.ShiftId is null || calendarOverride.ShiftId == assignment.ShiftId));
-
-    private static void ValidateAssignments(
-        IReadOnlyList<ShiftScheduleAssignment> assignments)
-    {
-        foreach (var assignment in assignments)
-        {
-            ArgumentNullException.ThrowIfNull(assignment);
-            assignment.Validate();
-        }
-    }
-
-    private static void ValidateOverrides(
-        IReadOnlyList<ShiftCalendarOverride> calendarOverrides)
-    {
-        foreach (var calendarOverride in calendarOverrides)
-        {
-            ArgumentNullException.ThrowIfNull(calendarOverride);
-            calendarOverride.Validate();
-        }
-    }
 }
