@@ -59,11 +59,7 @@ public sealed record PlannedProductionScheduleAssignment
                 nameof(EffectiveTo));
         }
 
-        foreach (var window in PlannedWindows)
-        {
-            ArgumentNullException.ThrowIfNull(window);
-            window.Validate();
-        }
+        PlannedProductionWindow.ValidateNonOverlapping(PlannedWindows, nameof(PlannedWindows));
 
         foreach (var window in BreakWindows)
         {
