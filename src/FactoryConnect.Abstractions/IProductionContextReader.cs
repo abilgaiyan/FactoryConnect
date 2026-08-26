@@ -4,7 +4,7 @@ public interface IProductionContextReader
 {
     Task<IReadOnlyList<ProductionContextAssignment>> ReadAsync(
         MachineId machineId,
-        DateTimeOffset from,
-        DateTimeOffset to,
+        DateTimeOffset effectiveFrom,
+        DateTimeOffset effectiveTo,
         CancellationToken cancellationToken);
 }
