@@ -82,6 +82,9 @@ public sealed class InMemoryObservationIngestionStore :
 
         lock (_gate)
         {
+            var readLimit = request.BatchSize == int.MaxValue
+                ? int.MaxValue
+                : request.BatchSize + 1;
             var observations = _observations.Values
                 .Where(
                     observation =>
@@ -89,7 +92,7 @@ public sealed class InMemoryObservationIngestionStore :
                         (request.AfterPosition is null ||
                          observation.Position > request.AfterPosition))
                 .OrderBy(observation => observation.Position)
-                .Take(checked(request.BatchSize + 1))
+                .Take(readLimit)
                 .ToArray();
             var hasMore = observations.Length > request.BatchSize;
             var page = hasMore
@@ -185,10 +188,10 @@ public sealed class InMemoryObservationIngestionStore :
 
     private DurableMachineObservation[] AssignPositions(
         ObservationIngestionBatch batch,
-        Dictionary<ObservationKey, SequencedMachineObservation> pending)
+        StagedObservation[] pending)
     {
         var newObservations = pending
-            .Where(pair => !_observations.ContainsKey(pair.Key))
+            .Where(item => !_observations.ContainsKey(item.Key))
             .ToArray();
 
         if (newObservations.Length == 0)
@@ -206,7 +209,7 @@ public sealed class InMemoryObservationIngestionStore :
 
         for (var index = 0; index < newObservations.Length; index++)
         {
-            var pair = newObservations[index];
+            var item = newObservations[index];
             var position = new ObservationPosition(
                 checked(lastPosition + (ulong)index + 1));
 
@@ -214,17 +217,18 @@ public sealed class InMemoryObservationIngestionStore :
                 position,
                 batch.Checkpoint.StreamId,
                 batch.Checkpoint.InstanceId,
-                pair.Value.Sequence,
-                pair.Value.Observation);
+                item.Observation.Sequence,
+                item.Observation.Observation);
         }
 
         return result;
     }
 
-    private Dictionary<ObservationKey, SequencedMachineObservation>
-        StageObservations(ObservationIngestionBatch batch)
+    private StagedObservation[] StageObservations(
+        ObservationIngestionBatch batch)
     {
         Dictionary<ObservationKey, SequencedMachineObservation> pending = [];
+        List<StagedObservation> ordered = [];
         var isIdempotentReplay =
             _checkpoints.TryGetValue(
                 batch.Checkpoint.StreamId,
@@ -257,10 +261,13 @@ public sealed class InMemoryObservationIngestionStore :
                     "already committed checkpoint.");
             }
 
-            pending.TryAdd(key, item);
+            if (pending.TryAdd(key, item))
+            {
+                ordered.Add(new StagedObservation(key, item));
+            }
         }
 
-        return pending;
+        return ordered.ToArray();
     }
 
     private void ValidateBatch(ObservationIngestionBatch batch)
@@ -303,6 +310,10 @@ public sealed class InMemoryObservationIngestionStore :
             }
         }
     }
+
+    private readonly record struct StagedObservation(
+        ObservationKey Key,
+        SequencedMachineObservation Observation);
 
     private readonly record struct ObservationKey(
         ObservationStreamId StreamId,

@@ -28,6 +28,9 @@ public abstract class ObservationProcessingStoreConformanceTests
             [new ObservationPosition(1), new ObservationPosition(2)],
             firstRead.Observations.Select(item => item.Position));
         Assert.Equal(
+            [101UL, 102UL],
+            firstRead.Observations.Select(item => item.Sequence));
+        Assert.Equal(
             firstRead.Observations,
             replayRead.Observations);
         Assert.Equal(firstRead.HasMore, replayRead.HasMore);
@@ -72,6 +75,24 @@ public abstract class ObservationProcessingStoreConformanceTests
 
         Assert.Equal(streamId, batch.StreamId);
         Assert.Empty(batch.Observations);
+        Assert.False(batch.HasMore);
+    }
+
+    [Fact]
+    public async Task ReadAsyncAcceptsMaximumBatchSize()
+    {
+        var store = CreateStore();
+        var streamId = StreamId();
+
+        await store.CommitAsync(InitialBatch(streamId));
+
+        var batch = await Reader(store).ReadAsync(
+            new ObservationReadRequest(
+                streamId,
+                null,
+                int.MaxValue));
+
+        Assert.Equal(2, batch.Observations.Count);
         Assert.False(batch.HasMore);
     }
 
