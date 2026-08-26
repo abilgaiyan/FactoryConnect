@@ -54,7 +54,7 @@ public sealed class ObservationProcessingRuntimeIntegrationTests
 
     private static ObservationProcessingRuntime Runtime(
         InMemoryObservationIngestionStore store,
-        IObservationProcessor processor,
+        RecordingProcessor processor,
         ObservationStreamId streamId) =>
         new(
             store,
