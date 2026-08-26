@@ -27,7 +27,10 @@ public abstract class ObservationProcessingStoreConformanceTests
         Assert.Equal(
             [new ObservationPosition(1), new ObservationPosition(2)],
             firstRead.Observations.Select(item => item.Position));
-        Assert.Equal(firstRead, replayRead);
+        Assert.Equal(
+            firstRead.Observations,
+            replayRead.Observations);
+        Assert.Equal(firstRead.HasMore, replayRead.HasMore);
     }
 
     [Fact]
