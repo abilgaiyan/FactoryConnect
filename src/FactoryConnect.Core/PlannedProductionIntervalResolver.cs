@@ -125,7 +125,7 @@ public sealed class PlannedProductionIntervalResolver
         DateOnly date)
     {
         var lineMatches = productionLineId is null
-            ? []
+            ? Array.Empty<PlannedProductionScheduleAssignment>()
             : assignments.Where(assignment =>
                 assignment.ProductionLineId == productionLineId && assignment.IsEffectiveOn(date)).ToArray();
 
@@ -156,7 +156,7 @@ public sealed class PlannedProductionIntervalResolver
         DateOnly date)
     {
         var lineMatches = productionLineId is null
-            ? []
+            ? Array.Empty<PlannedProductionCalendarOverride>()
             : overrides.Where(item => item.FactoryDate == date && item.ProductionLineId == productionLineId).ToArray();
 
         if (lineMatches.Length > 1)
@@ -214,7 +214,7 @@ public sealed class PlannedProductionIntervalResolver
 
     private static IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> Subtract(
         List<(DateTimeOffset Start, DateTimeOffset End)> planned,
-        IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> breaks)
+        (DateTimeOffset Start, DateTimeOffset End)[] breaks)
     {
         foreach (var source in planned)
         {
