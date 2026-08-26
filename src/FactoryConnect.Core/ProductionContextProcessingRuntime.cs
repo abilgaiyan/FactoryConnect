@@ -35,6 +35,11 @@ public sealed class ProductionContextProcessingRuntime
         ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
         scope.Validate();
 
+        if (string.IsNullOrWhiteSpace(processorId.Value))
+        {
+            throw new ArgumentException("Processor ID is required.", nameof(processorId));
+        }
+
         ProcessorId = processorId;
         _activityReader = activityReader;
         _contextReader = contextReader;
