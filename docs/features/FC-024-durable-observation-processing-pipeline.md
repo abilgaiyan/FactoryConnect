@@ -72,6 +72,8 @@ Delivery between stages is at least once.
 - conflicting output at the same durable identity is rejected
 - state/activity projection state and derived outputs commit atomically
 - canonical-store failure leaves raw processing progress unchanged
+- canonical write followed by raw processing checkpoint failure replays the raw
+  observation and remains idempotent at the canonical boundary
 - projection-store failure leaves canonical input eligible for retry
 - restart resumes after independently persisted stage progress
 
@@ -91,8 +93,8 @@ without changing Edge orchestration.
 
 ## Multi-machine and multi-stream composition
 
-The Edge composition root may register one or more observation streams. Every
-stream receives its own:
+The observation-processing registration supports one or more observation
+streams. Every stream receives its own:
 
 - `MachineSignalMappingConfiguration`
 - raw-to-canonical processor/runtime
@@ -110,6 +112,12 @@ multiple streams are registered, mappings are bound explicitly under
 `StreamKey`, and mapping collection. Missing, duplicate, or extra stream
 configuration fails during composition rather than silently applying another
 machine's mapping.
+
+The singular `DurableObservationProcessingPipeline` compatibility service is
+registered only for a single configured stream. Multi-stream composition exposes
+`DurableObservationProcessingPipelineSet` instead, so a valid multi-stream
+container does not contain a service descriptor that is guaranteed to fail when
+resolved.
 
 ## Edge composition
 
@@ -129,6 +137,21 @@ A selected raw persistence provider must implement
 startup failure. The current complete end-to-end composition uses the in-memory
 reference provider.
 
+### Current executable-host limitation
+
+The reusable observation-processing composition is multi-stream capable, but the
+current `FactoryConnect.Edge` executable still binds one `MTConnect` acquisition
+section, creates one acquisition runtime, derives one observation stream, and
+calls the single-stream observation-processing overload. This is an explicit
+host limitation, not a limitation of the FC-024 processing architecture.
+
+Composing multiple live acquisition runtimes belongs to the acquisition/host
+composition boundary and is intentionally not expanded inside FC-024. A future
+multi-machine Edge-host slice can bind a collection of acquisition definitions,
+derive all stream identities, and pass those identities to the existing
+multi-stream processing registration without changing the durable processing
+contracts defined here.
+
 ## Conformance proof
 
 The in-memory conformance scenario proves:
@@ -139,8 +162,11 @@ The in-memory conformance scenario proves:
 - sparse canonical positions
 - restart/resume without duplicate canonical or derived output
 - canonical sink failure without raw checkpoint advancement
+- canonical write followed by raw processing checkpoint failure and idempotent
+  replay
 - projection commit failure followed by equivalent retry
 - independent mappings and progress across machines and streams
+- a valid multi-stream service graph without a singular pipeline registration
 
 ## Deferred boundaries
 
@@ -152,5 +178,6 @@ FC-024 intentionally excludes:
 - reporting queries
 - downtime reason classification
 - implicit historical reprocessing
+- multi-acquisition executable-host composition
 
 These belong to subsequent provider and factory-domain slices.
