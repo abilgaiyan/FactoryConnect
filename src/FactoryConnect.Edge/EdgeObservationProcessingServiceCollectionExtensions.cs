@@ -186,8 +186,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                 [streamId] = new MachineSignalMappingConfiguration
                 {
                     MachineId = streamId.MachineId,
-                    Mappings = ReadMappings(
-                        section.GetRequiredSection("Mappings")),
+                    Mappings = ReadMappings(section.GetSection("Mappings")),
                 },
             };
         }
@@ -210,7 +209,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     {
                         MachineId = machineId,
                         Mappings = ReadMappings(
-                            streamSection.GetRequiredSection("Mappings")),
+                            streamSection.GetSection("Mappings")),
                     }))
             {
                 throw new InvalidOperationException(
@@ -240,10 +239,49 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
     }
 
     private static MachineSignalMappingDefinition[] ReadMappings(
-        IConfigurationSection section) =>
-        section.GetChildren()
+        IConfigurationSection section)
+    {
+        var mappings = section.GetChildren()
             .Select(ReadMapping)
             .ToArray();
+
+        ValidateStateMappings(mappings, section.Path);
+        return mappings;
+    }
+
+    private static void ValidateStateMappings(
+        IReadOnlyList<MachineSignalMappingDefinition> mappings,
+        string configurationPath)
+    {
+        foreach (var mapping in mappings)
+        {
+            if (IsStateDrivingSignal(mapping.SignalKey) &&
+                mapping.Type != SignalType.Digital)
+            {
+                throw new InvalidOperationException(
+                    $"{configurationPath} maps canonical state signal " +
+                    $"'{mapping.SignalKey}' as '{mapping.Type}'. " +
+                    "Machine state projection currently requires state-driving " +
+                    "canonical signals to use Digital Boolean semantics. " +
+                    "Normalize the source value before mapping or omit the " +
+                    "state-driving mapping.");
+            }
+        }
+    }
+
+    private static bool IsStateDrivingSignal(string signalKey) =>
+        string.Equals(
+            signalKey,
+            CanonicalSignalKeys.Running,
+            StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(
+            signalKey,
+            CanonicalSignalKeys.Idle,
+            StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(
+            signalKey,
+            CanonicalSignalKeys.Fault,
+            StringComparison.OrdinalIgnoreCase);
 
     private static MachineSignalMappingDefinition ReadMapping(
         IConfigurationSection section)
