@@ -22,7 +22,13 @@ Resolved PlannedProductionInterval
 ProductionTimeEligibilityInterval
         ↓
 DurableMetricInputFact
+
+DurableProductionQuantityEvidence
+        ↓
+DurableMetricInputFact
 ```
+
+Activity-derived time facts and quantity-derived facts use independent durable processor identities and checkpoints because their source positions may advance independently.
 
 ## Temporal invariants
 
@@ -33,6 +39,7 @@ DurableMetricInputFact
 - Planned-production replacement overrides may activate an otherwise inactive recurring day.
 - Allocation preserves source duration and cannot introduce gaps, overlaps, or zero-length fragments.
 - Missing production context does not discard machine activity.
+- One machine timeline cannot contain overlapping eligibility intervals even when shift or production context differs.
 
 ## Shift resolution
 
@@ -73,14 +80,16 @@ Facts are not percentages or final metrics. Availability, performance, quality, 
 
 Quantity facts require explicit quantity evidence. Running time never implies a produced quantity.
 
+Every duration fact preserves planned-production eligibility, shift-schedule lineage, planned-production schedule lineage when applicable, source contextualized-activity lineage, hierarchy, and production context.
+
 ## Durable runtime composition
 
-`ProductionContextProcessingRuntime` owns an independent `ObservationProcessorId` and checkpoint for one configured machine/stream scope.
+`ProductionContextProcessingRuntime` owns an independent `ObservationProcessorId` and checkpoint for one configured machine/activity-stream scope.
 
 A cycle performs:
 
 ```text
-restore FC-025 checkpoint
+restore FC-025 activity checkpoint
         ↓
 read durable activity after checkpoint
         ↓
@@ -92,16 +101,32 @@ allocate contextualized activity
 resolve planned-production intervals
 allocate planned/non-planned eligibility
         ↓
-derive durable metric-input facts
+derive durable duration metric-input facts
         ↓
 atomic commit
     contextualized intervals
     eligibility intervals
-    metric facts
-    next checkpoint
+    duration metric facts
+    next activity checkpoint
 ```
 
-The checkpoint is not advanced until all outputs cross the same durable commit boundary.
+`ProductionQuantityFactProcessingRuntime` owns a separate processor identity and checkpoint for one durable quantity-evidence stream:
+
+```text
+restore quantity checkpoint
+        ↓
+read durable quantity evidence after checkpoint
+        ↓
+derive part / good / rejected quantity facts
+        ↓
+atomic commit
+    quantity metric facts
+    next quantity checkpoint
+```
+
+Activity progress and quantity progress are intentionally independent. Both runtimes write the same durable metric-fact model through the same provider-neutral store contract.
+
+The checkpoint is not advanced until all outputs for that processor cross the durable commit boundary.
 
 ## Provider-neutral contracts
 
@@ -111,21 +136,34 @@ FC-025 uses provider-neutral boundaries:
 - `IShiftScheduleReader`
 - `IPlannedProductionScheduleReader`
 - `IProductionContextActivityReader`
+- `IProductionQuantityEvidenceReader`
 - `IProductionContextProcessingStore`
 
 The in-memory implementations are reference/conformance providers. SQL persistence for FC-025 outputs is outside this feature slice.
 
-## Restart and replay
+## Restart, replay, and durable identity
 
-Output identities are deterministic. A restarted runtime restores its own checkpoint and resumes after the last committed durable activity position.
+Output identities are deterministic. A restarted runtime restores its own processor/stream checkpoint and resumes after the last committed durable source position.
 
-The in-memory conformance scenario proves:
+Identical replay of an already durable output identity is idempotent. Reuse of the same durable output identity with different content is rejected before checkpoint advancement.
 
+The in-memory conformance scenarios prove:
+
+- independent processor checkpoints on the same stream;
+- independent activity and quantity processor progress;
+- multiple machines and lines;
 - multi-batch processing;
 - restart/resume without duplicate outputs;
-- independent machine and line scopes;
-- missing-context survival;
-- atomic failure behavior at the durable commit boundary.
+- context-boundary splitting;
+- shift-boundary splitting;
+- planned-production boundary and planned-break splitting;
+- partial missing-context survival;
+- duration conservation through contextualized activity, eligibility, and scheduled-duration facts;
+- quantity fact derivation from explicit durable evidence;
+- failure propagation from checkpoint restoration, durable activity read, production-context read, shift assignment read, shift override read, planned-production assignment read, planned-production override read, and final durable commit;
+- no output or checkpoint mutation after a failed provider/durable boundary;
+- retry after recovery processes the same activity exactly once;
+- inconsistent replay collisions are rejected.
 
 ## Scope boundaries
 
