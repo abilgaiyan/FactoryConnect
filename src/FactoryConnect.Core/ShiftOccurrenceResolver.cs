@@ -97,7 +97,7 @@ public sealed class ShiftOccurrenceResolver
     }
 
     private static bool IsShutdown(
-        IReadOnlyList<ShiftCalendarException> exceptions,
+        IReadOnlyList<ShiftCalendarOverride> exceptions,
         ShiftScheduleAssignment assignment,
         DateOnly factoryDate) =>
         exceptions.Any(calendarException =>
