@@ -162,6 +162,7 @@ public sealed class ShiftOccurrenceResolver
         return new ShiftOccurrence
         {
             SourceAssignmentId = assignment.Id,
+            CompanyId = assignment.CompanyId,
             ShiftId = assignment.ShiftId,
             SiteId = assignment.SiteId,
             ProductionLineId = assignment.ProductionLineId,
