@@ -7,7 +7,7 @@ namespace FactoryConnect.Core;
 
 public sealed class ActivityContextIntervalAllocator
 {
-    public IReadOnlyList<ContextualizedActivityInterval> Allocate(
+    public static IReadOnlyList<ContextualizedActivityInterval> Allocate(
         DurableMachineActivityPeriod sourceActivity,
         IReadOnlyList<ShiftOccurrence> shiftOccurrences,
         IReadOnlyList<ProductionContextAssignment> contextAssignments)
@@ -263,7 +263,7 @@ public sealed class ActivityContextIntervalAllocator
 
     private static void ValidateConservation(
         MachineActivityPeriod source,
-        IReadOnlyList<ContextualizedActivityInterval> output)
+        List<ContextualizedActivityInterval> output)
     {
         if (output.Count == 0)
         {
