@@ -83,6 +83,9 @@ builder.Services.AddSingleton<MtConnectContinuityRecoveryPolicy>();
 
 builder.Services.AddFactoryConnectEdgePersistence(
     builder.Configuration);
+builder.Services.AddFactoryConnectObservationProcessing(
+    builder.Configuration,
+    streamId);
 
 builder.Services.AddSingleton<MtConnectStartupCheckpointResolver>();
 builder.Services.AddSingleton<IMtConnectObservationSink>(
