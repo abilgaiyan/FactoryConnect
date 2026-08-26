@@ -100,7 +100,7 @@ public sealed class ProductionContextProcessingRuntimeTests
         int startHour,
         bool includeContext = true)
     {
-        var machineId = new MachineId(GuidUtility(machineName));
+        var machineId = new MachineId(CreateStableGuid(machineName));
         var streamId = new ObservationStreamId(machineId, "activity");
         var lineId = new ProductionLineId(line);
         var start = new DateTimeOffset(2026, 8, 26, startHour, 0, 0, TimeSpan.Zero);
@@ -191,10 +191,10 @@ public sealed class ProductionContextProcessingRuntimeTests
             position,
             new MachineActivityPeriod(machineId, MachineState.Running, startsAt, endsAt));
 
-    private static Guid GuidUtility(string value)
+    private static Guid CreateStableGuid(string value)
     {
-        var bytes = System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(value));
-        return new Guid(bytes);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value));
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     private sealed record RuntimeFixture(
