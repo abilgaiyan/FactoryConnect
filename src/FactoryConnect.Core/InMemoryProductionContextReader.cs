@@ -51,17 +51,17 @@ public sealed class InMemoryProductionContextReader : IProductionContextReader
 
     public Task<IReadOnlyList<ProductionContextAssignment>> ReadAsync(
         MachineId machineId,
-        DateTimeOffset from,
-        DateTimeOffset to,
+        DateTimeOffset effectiveFrom,
+        DateTimeOffset effectiveTo,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(to, from);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(effectiveTo, effectiveFrom);
 
         IReadOnlyList<ProductionContextAssignment> result = _assignments
             .Where(assignment =>
                 assignment.MachineId == machineId &&
-                assignment.Intersects(from, to))
+                assignment.Intersects(effectiveFrom, effectiveTo))
             .OrderBy(static assignment => assignment.EffectiveFrom)
             .ThenBy(static assignment => assignment.Id.Value, StringComparer.Ordinal)
             .ToArray();
