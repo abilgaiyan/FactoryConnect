@@ -55,16 +55,19 @@ public sealed class InMemoryProductionContextProcessingStore : IProductionContex
         foreach (var item in commit.ContextualizedActivity)
         {
             ArgumentNullException.ThrowIfNull(item);
+            ValidateReplay(_contextualized, item.Id, item, "contextualized activity");
         }
 
         foreach (var item in commit.EligibilityIntervals)
         {
             ArgumentNullException.ThrowIfNull(item);
+            ValidateReplay(_eligibility, item.Id, item, "eligibility interval");
         }
 
         foreach (var item in commit.MetricFacts)
         {
             ArgumentNullException.ThrowIfNull(item);
+            ValidateReplay(_metricFacts, item.Id, item, "metric fact");
         }
 
         foreach (var item in commit.ContextualizedActivity)
@@ -95,6 +98,21 @@ public sealed class InMemoryProductionContextProcessingStore : IProductionContex
               left.ProcessorId == right.ProcessorId &&
               left.StreamId == right.StreamId &&
               left.Position == right.Position;
+
+    private static void ValidateReplay<TKey, TValue>(
+        IReadOnlyDictionary<TKey, TValue> existing,
+        TKey id,
+        TValue value,
+        string kind)
+        where TKey : notnull
+        where TValue : notnull
+    {
+        if (existing.TryGetValue(id, out var persisted) && !EqualityComparer<TValue>.Default.Equals(persisted, value))
+        {
+            throw new InvalidOperationException(
+                $"Production context processing {kind} identity collides with different content.");
+        }
+    }
 
     private static void ValidateUnique<T>(IEnumerable<T> ids, string kind)
         where T : notnull
