@@ -161,7 +161,8 @@ public sealed class EdgeObservationProcessingCompositionTests
             ["ObservationProcessing:PollingInterval"] = "00:00:01",
             ["ObservationProcessing:Mappings:0:Source"] = "modbus",
             ["ObservationProcessing:Mappings:0:Address"] = "DI1",
-            ["ObservationProcessing:Mappings:0:SignalKey"] = "running",
+            ["ObservationProcessing:Mappings:0:SignalKey"] =
+                CanonicalSignalKeys.Running,
             ["ObservationProcessing:Mappings:0:Type"] = "Digital",
             ["ObservationProcessing:Mappings:0:Invert"] = "false",
         };
@@ -191,7 +192,8 @@ public sealed class EdgeObservationProcessingCompositionTests
             ["ObservationProcessing:Streams:0:StreamKey"] = first.StreamKey,
             ["ObservationProcessing:Streams:0:Mappings:0:Source"] = "modbus",
             ["ObservationProcessing:Streams:0:Mappings:0:Address"] = "DI1",
-            ["ObservationProcessing:Streams:0:Mappings:0:SignalKey"] = "running",
+            ["ObservationProcessing:Streams:0:Mappings:0:SignalKey"] =
+                CanonicalSignalKeys.Running,
             ["ObservationProcessing:Streams:0:Mappings:0:Type"] = "Digital",
             ["ObservationProcessing:Streams:0:Mappings:0:Invert"] = "false",
             ["ObservationProcessing:Streams:1:MachineId"] =
@@ -199,7 +201,8 @@ public sealed class EdgeObservationProcessingCompositionTests
             ["ObservationProcessing:Streams:1:StreamKey"] = second.StreamKey,
             ["ObservationProcessing:Streams:1:Mappings:0:Source"] = "modbus",
             ["ObservationProcessing:Streams:1:Mappings:0:Address"] = "X1",
-            ["ObservationProcessing:Streams:1:Mappings:0:SignalKey"] = "power.on",
+            ["ObservationProcessing:Streams:1:Mappings:0:SignalKey"] =
+                CanonicalSignalKeys.PowerOn,
             ["ObservationProcessing:Streams:1:Mappings:0:Type"] = "Digital",
             ["ObservationProcessing:Streams:1:Mappings:0:Invert"] = "false",
         };
