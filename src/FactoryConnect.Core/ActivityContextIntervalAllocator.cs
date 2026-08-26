@@ -1,11 +1,10 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core;
 
-public sealed class ActivityContextIntervalAllocator
+public static class ActivityContextIntervalAllocator
 {
     public static IReadOnlyList<ContextualizedActivityInterval> Allocate(
         DurableMachineActivityPeriod sourceActivity,
@@ -40,6 +39,7 @@ public sealed class ActivityContextIntervalAllocator
 
             var shift = FindShift(shifts, startsAt, endsAt);
             var context = FindContext(contexts, startsAt, endsAt);
+            ValidateScopeCompatibility(shift, context);
 
             output.Add(new ContextualizedActivityInterval
             {
@@ -49,6 +49,9 @@ public sealed class ActivityContextIntervalAllocator
                 SourceStreamId = sourceActivity.StreamId,
                 SourceInstanceId = sourceActivity.InstanceId,
                 SourceSequence = sourceActivity.Sequence,
+                CompanyId = context?.CompanyId ?? shift.CompanyId,
+                SiteId = context?.SiteId ?? shift.SiteId,
+                ProductionLineId = context?.ProductionLineId ?? shift.ProductionLineId,
                 MachineId = source.MachineId,
                 State = source.State,
                 StartsAtUtc = startsAt,
@@ -71,6 +74,46 @@ public sealed class ActivityContextIntervalAllocator
         MachineActivityPeriod source,
         IReadOnlyList<ShiftOccurrence> shiftOccurrences)
     {
+        foreach (var shift in shiftOccurrences)
+        {
+            ArgumentNullException.ThrowIfNull(shift);
+
+            if (shift.SourceAssignmentId.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "Shift schedule assignment ID is required.",
+                    nameof(shiftOccurrences));
+            }
+
+            if (shift.CompanyId.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "Shift company ID is required.",
+                    nameof(shiftOccurrences));
+            }
+
+            if (shift.SiteId.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "Shift site ID is required.",
+                    nameof(shiftOccurrences));
+            }
+
+            if (shift.ProductionLineId is { IsEmpty: true })
+            {
+                throw new ArgumentException(
+                    "Shift production line ID cannot be empty when specified.",
+                    nameof(shiftOccurrences));
+            }
+
+            if (shift.ShiftId.IsEmpty)
+            {
+                throw new ArgumentException(
+                    "Shift ID is required.",
+                    nameof(shiftOccurrences));
+            }
+        }
+
         var shifts = shiftOccurrences
             .Where(shift =>
                 shift.EndsAtUtc > source.StartedAt &&
@@ -130,25 +173,28 @@ public sealed class ActivityContextIntervalAllocator
         MachineActivityPeriod source,
         IReadOnlyList<ProductionContextAssignment> contextAssignments)
     {
+        foreach (var context in contextAssignments)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            context.Validate();
+
+            if (context.MachineId != source.MachineId)
+            {
+                throw new InvalidOperationException(
+                    $"Production context assignment '{context.Id}' belongs to a different machine.");
+            }
+        }
+
         var contexts = contextAssignments
-            .Where(context =>
-                context.MachineId == source.MachineId &&
-                context.Intersects(source.StartedAt, source.EndedAt))
+            .Where(context => context.Intersects(source.StartedAt, source.EndedAt))
             .OrderBy(static context => context.EffectiveFrom)
             .ThenBy(static context => context.Id.Value, StringComparer.Ordinal)
             .ToArray();
 
-        for (var index = 0; index < contexts.Length; index++)
+        for (var index = 1; index < contexts.Length; index++)
         {
-            var context = contexts[index];
-            context.Validate();
-
-            if (index == 0)
-            {
-                continue;
-            }
-
             var previous = contexts[index - 1];
+            var context = contexts[index];
             if (previous.EffectiveTo is null || previous.EffectiveTo.Value > context.EffectiveFrom)
             {
                 throw new InvalidOperationException(
@@ -157,6 +203,35 @@ public sealed class ActivityContextIntervalAllocator
         }
 
         return contexts;
+    }
+
+    private static void ValidateScopeCompatibility(
+        ShiftOccurrence shift,
+        ProductionContextAssignment? context)
+    {
+        if (context is null)
+        {
+            return;
+        }
+
+        if (context.CompanyId != shift.CompanyId)
+        {
+            throw new InvalidOperationException(
+                "Shift occurrence and production context belong to different companies.");
+        }
+
+        if (context.SiteId != shift.SiteId)
+        {
+            throw new InvalidOperationException(
+                "Shift occurrence and production context belong to different sites.");
+        }
+
+        if (shift.ProductionLineId is { } shiftLineId &&
+            context.ProductionLineId != shiftLineId)
+        {
+            throw new InvalidOperationException(
+                "Line-specific shift occurrence and production context belong to different production lines.");
+        }
     }
 
     private static List<DateTimeOffset> BuildBoundaries(
@@ -244,20 +319,26 @@ public sealed class ActivityContextIntervalAllocator
         ShiftOccurrence shift,
         ProductionContextAssignment? context)
     {
-        var payload = string.Join(
-            "|",
-            sourceActivity.ProcessorId.Value,
-            sourceActivity.Position.Value.ToString(CultureInfo.InvariantCulture),
-            sourceActivity.StreamId.MachineId.ToString(),
-            sourceActivity.StreamId.StreamKey,
-            sourceActivity.InstanceId.ToString(CultureInfo.InvariantCulture),
-            sourceActivity.Sequence.ToString(CultureInfo.InvariantCulture),
-            startsAt.UtcTicks.ToString(CultureInfo.InvariantCulture),
-            endsAt.UtcTicks.ToString(CultureInfo.InvariantCulture),
-            shift.SourceAssignmentId.Value,
-            context?.Id.Value ?? string.Empty);
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(sourceActivity.ProcessorId.Value);
+            writer.Write(sourceActivity.Position.Value);
+            writer.Write(sourceActivity.StreamId.MachineId.Value.ToByteArray());
+            writer.Write(sourceActivity.StreamId.StreamKey);
+            writer.Write(sourceActivity.InstanceId);
+            writer.Write(sourceActivity.Sequence);
+            writer.Write(startsAt.UtcTicks);
+            writer.Write(endsAt.UtcTicks);
+            writer.Write(shift.SourceAssignmentId.Value);
+            writer.Write(context is not null);
+            if (context is not null)
+            {
+                writer.Write(context.Id.Value);
+            }
+        }
 
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
+        var bytes = SHA256.HashData(stream.ToArray());
         return new ContextualizedActivityIntervalId(Convert.ToHexString(bytes));
     }
 
