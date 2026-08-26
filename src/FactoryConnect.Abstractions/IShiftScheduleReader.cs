@@ -8,7 +8,7 @@ public interface IShiftScheduleReader
         DateOnly factoryDateTo,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<ShiftCalendarException>> ReadExceptionsAsync(
+    Task<IReadOnlyList<ShiftCalendarOverride>> ReadExceptionsAsync(
         SiteId siteId,
         DateOnly factoryDateFrom,
         DateOnly factoryDateTo,
