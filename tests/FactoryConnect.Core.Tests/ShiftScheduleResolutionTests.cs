@@ -52,7 +52,7 @@ public sealed class ShiftScheduleResolutionTests
         var assignment = CreateAssignment("A1", siteId, "SHIFT-1", new TimeOnly(6, 0), new TimeOnly(14, 0), date);
         var reader = new InMemoryShiftScheduleReader(
             [assignment],
-            [new ShiftCalendarException { SiteId = siteId, FactoryDate = date, IsShutdown = true }]);
+            [new ShiftCalendarOverride { SiteId = siteId, FactoryDate = date, IsShutdown = true }]);
         var resolver = new ShiftOccurrenceResolver(reader);
 
         var result = await resolver.ResolveAsync(siteId, date, date.AddDays(1), CancellationToken.None);
