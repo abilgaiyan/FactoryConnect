@@ -3,7 +3,8 @@ using FactoryConnect.Abstractions;
 namespace FactoryConnect.Infrastructure;
 
 public sealed class InMemoryMappedMachineObservationSink :
-    IMappedMachineObservationSink
+    IMappedMachineObservationSink,
+    IDurableMappedObservationReader
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<
@@ -52,6 +53,40 @@ public sealed class InMemoryMappedMachineObservationSink :
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    public ValueTask<MappedObservationReadBatch> ReadAsync(
+        MappedObservationReadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            var readLimit = request.BatchSize == int.MaxValue
+                ? int.MaxValue
+                : request.BatchSize + 1;
+            var observations = _observations.Values
+                .Where(
+                    observation =>
+                        observation.StreamId == request.StreamId &&
+                        (request.AfterPosition is null ||
+                         observation.Position > request.AfterPosition))
+                .OrderBy(observation => observation.Position)
+                .Take(readLimit)
+                .ToArray();
+            var hasMore = observations.Length > request.BatchSize;
+            var page = hasMore
+                ? observations[..request.BatchSize]
+                : observations;
+
+            return ValueTask.FromResult(
+                new MappedObservationReadBatch(
+                    request.StreamId,
+                    page,
+                    hasMore));
+        }
     }
 
     public DurableMappedMachineObservation[] ReadObservations(
