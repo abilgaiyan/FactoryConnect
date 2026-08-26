@@ -113,7 +113,9 @@ public sealed class ProductionContextProcessingCommitRetryTests
         Assert.Equal(3, innerStore.MetricFacts.Count);
     }
 
-    private sealed class CommitFailureException : Exception;
+    private sealed class CommitFailureException : Exception
+    {
+    }
 
     private sealed class FailOnceCommitStore : IProductionContextProcessingStore
     {
