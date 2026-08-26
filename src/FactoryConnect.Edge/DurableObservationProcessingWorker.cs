@@ -3,7 +3,7 @@ using FactoryConnect.Core;
 namespace FactoryConnect.Edge;
 
 public sealed class DurableObservationProcessingWorker(
-    DurableObservationProcessingPipeline pipeline,
+    DurableObservationProcessingPipelineSet pipelines,
     ILogger<DurableObservationProcessingWorker> logger)
     : BackgroundService
 {
@@ -17,6 +17,6 @@ public sealed class DurableObservationProcessingWorker(
         CancellationToken stoppingToken)
     {
         ProcessingStarting(logger, null);
-        await pipeline.RunAsync(stoppingToken);
+        await pipelines.RunAsync(stoppingToken);
     }
 }
