@@ -51,7 +51,9 @@ public sealed class InMemoryMachineStateActivityProjectionStore :
                 projection.StreamId);
             _projections.TryGetValue(projectionKey, out var current);
 
-            if (current != commit.ExpectedProjection)
+            if (!MatchesExpectedPosition(
+                    current,
+                    commit.ExpectedProjection))
             {
                 throw new InvalidOperationException(
                     "The machine state/activity projection no longer matches the expected state.");
@@ -113,6 +115,11 @@ public sealed class InMemoryMachineStateActivityProjectionStore :
                 .ToArray();
         }
     }
+
+    private static bool MatchesExpectedPosition(
+        MachineStateActivityProjection? current,
+        MachineStateActivityProjection? expected) =>
+        current?.Position == expected?.Position;
 
     private Dictionary<OutputKey, DurableMachineStateChangedEvent>
         StageStateChanges(
