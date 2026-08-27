@@ -1,89 +1,10 @@
-using System.Globalization;
-using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
-using FactoryConnect.Protocols.MTConnect;
 
 var builder = Host.CreateApplicationBuilder(args);
-var section = builder.Configuration.GetRequiredSection("MTConnect");
-
-var baseUri = section["BaseUri"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:BaseUri is required.");
-
-var machineId = section["MachineId"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:MachineId is required.");
-
-var deviceKey = section["DeviceKey"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:DeviceKey is required.");
-
-var fromSequence = section["FromSequence"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:FromSequence is required.");
-
-var pollingInterval = section["PollingInterval"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:PollingInterval is required.");
-
-var retrySection = section.GetRequiredSection("Retry");
-
-var maxAttempts = retrySection["MaxAttempts"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:Retry:MaxAttempts is required.");
-
-var initialDelay = retrySection["InitialDelay"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:Retry:InitialDelay is required.");
-
-var maximumDelay = retrySection["MaximumDelay"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:Retry:MaximumDelay is required.");
-
-var jitterRatio = retrySection["JitterRatio"]
-    ?? throw new InvalidOperationException(
-        "MTConnect:Retry:JitterRatio is required.");
-
-var options = new MtConnectAcquisitionOptions(
-    new MtConnectEndpoint(new Uri(baseUri, UriKind.Absolute)),
-    new MachineId(Guid.Parse(machineId)),
-    deviceKey,
-    ulong.Parse(fromSequence, CultureInfo.InvariantCulture),
-    TimeSpan.Parse(pollingInterval, CultureInfo.InvariantCulture));
-
-var retryOptions = new MtConnectRetryOptions(
-    int.Parse(maxAttempts, CultureInfo.InvariantCulture),
-    TimeSpan.Parse(initialDelay, CultureInfo.InvariantCulture),
-    TimeSpan.Parse(maximumDelay, CultureInfo.InvariantCulture),
-    double.Parse(jitterRatio, CultureInfo.InvariantCulture));
-
-var streamId = MtConnectObservationStreamId.Create(
-    options.MachineId,
-    options.DeviceKey);
-ObservationStreamId[] activityStreams = [streamId];
-var machineIds = activityStreams
-    .Select(static stream => stream.MachineId)
-    .ToArray();
-
-builder.Services.AddSingleton(options);
-builder.Services.AddSingleton(retryOptions);
-builder.Services.AddSingleton<HttpClient>();
-builder.Services.AddSingleton<MtConnectSampleClient>();
-builder.Services.AddSingleton<MtConnectCurrentClient>();
-builder.Services.AddSingleton<
-    IMtConnectAcquisitionSessionFactory,
-    MtConnectAcquisitionSessionFactory>();
-builder.Services.AddSingleton<
-    IMtConnectRetryDelay,
-    SystemMtConnectRetryDelay>();
-builder.Services.AddSingleton<
-    IMtConnectJitterSource,
-    SystemMtConnectJitterSource>();
-builder.Services.AddSingleton<MtConnectTransientRetryPolicy>();
-builder.Services.AddSingleton<
-    IMtConnectContinuityReporter,
-    LoggingMtConnectContinuityReporter>();
-builder.Services.AddSingleton<MtConnectContinuityRecoveryPolicy>();
+var machineInventory = MtConnectMachineInventory.FromConfiguration(
+    builder.Configuration);
+var activityStreams = machineInventory.ActivityStreams;
+var machineIds = machineInventory.MachineIds;
 
 builder.Services.AddFactoryConnectEdgePersistence(
     builder.Configuration);
@@ -96,15 +17,8 @@ builder.Services.AddFactoryConnectProductionMetricInputs(
 builder.Services.AddFactoryConnectMetricAggregation(
     builder.Configuration,
     machineIds);
-
-builder.Services.AddSingleton<MtConnectStartupCheckpointResolver>();
-builder.Services.AddSingleton<IMtConnectObservationSink>(
-    services => new MtConnectDurableObservationSink(
-        services.GetRequiredService<IObservationIngestionStore>(),
-        streamId));
-builder.Services.AddSingleton<
-    IMtConnectAcquisitionRuntimeFactory,
-    MtConnectAcquisitionRuntimeFactory>();
-builder.Services.AddHostedService<FactoryConnectWorker>();
+builder.Services.AddFactoryConnectMtConnectAcquisition(
+    builder.Configuration,
+    machineInventory);
 
 await builder.Build().RunAsync();
