@@ -104,68 +104,61 @@ SQL Server additionally provides executable additive migrations, relational owne
 
 ## Machine execution and failure isolation
 
-Edge creates one `MetricAggregationProcessingRuntime` per configured machine. The hosted worker supervises one independent polling loop per runtime.
+Edge creates one activity producer, one quantity producer, and one `MetricAggregationProcessingRuntime` per configured machine. The producer and aggregation hosted workers supervise independent polling loops per runtime.
 
-A machine reader/store failure is logged for that processor and only that machine loop is delayed/retried. Other machine loops continue processing and advancing their own checkpoints. Cancellation is propagated to all loops and the worker joins all loops before stopping.
-
-The FC-025 activity and quantity runtimes are likewise supervised independently. A failure in one producer does not acknowledge its checkpoint and does not terminate the other producer loop.
+A machine producer or aggregation reader/store failure is logged for that processor and only that loop is delayed/retried. Other machine loops continue processing and advancing their own checkpoints. Cancellation is propagated to all loops and each worker joins its loops before stopping.
 
 This operational isolation complements the durable identity isolation already provided by machine-scoped streams and processor-scoped checkpoints.
 
 ## Restart and replay
 
-Each producer restores its own FC-025 checkpoint. Each aggregation runtime restores its own durable aggregation checkpoint before its first read. The next request begins strictly after the corresponding committed position. Successful commit is the only acknowledgement boundary.
+Each FC-025 producer and FC-026 aggregation runtime restores its own durable checkpoint before its first read. Successful commit is the only acknowledgement boundary.
 
 Therefore:
 
-- producer restart republishes no acknowledged fact;
+- producer restart resumes after the last committed activity or quantity evidence position;
 - aggregation restart resumes after the last committed metric-input position;
-- identical replay cannot inflate totals;
-- conflicting replay is rejected without progress;
-- empty read windows may advance explicit source progress without creating aggregates.
+- identical producer replay preserves the existing metric-input position and cannot inflate totals;
+- conflicting producer replay is rejected without producer or aggregation progress;
+- a failed producer commit exposes no positioned metric input downstream;
+- empty aggregation read windows may advance explicit source progress without creating aggregates.
 
 ## Edge composition
 
-The executable Edge host composes the full FC-025 → FC-026 path:
+`ProductionProcessing:Machines` is the machine-specific FC-025 configuration model. Each entry binds the machine to its registered activity stream, quantity stream, company/site/line scope, production-context assignment, shift schedule, and planned-production schedule.
+
+The composition root constructs one shared activity-stream inventory and passes that same inventory to FC-024 observation processing and FC-025 production processing. FC-026 machine identities are derived from those same stream entries rather than from a second independent machine list.
 
 ```text
-FC-024 machine-state/activity projection
-        ↓
-ProjectionProductionContextActivityReader
-        ↓
-ProductionContextProcessingRuntime
-        │
-        ├── independent activity checkpoint
-        │
-Durable production quantity evidence
-        ↓
-ProductionQuantityFactProcessingRuntime
-        │
-        ├── independent quantity checkpoint
-        │
-        └──────────────┬──────────────────────┘
-                       ↓
-         IProductionContextProcessingStore
-              atomic producer publication
-                       ↓
-             machine metric-input stream
-                       ↓
-         MetricAggregationProcessingRuntime
+shared activity-stream inventory
+        ├── Machine A / Stream A
+        └── Machine B / Stream B
+              ↓
+FC-024 observation processing
+              ↓
+FC-025 machine-scoped producer pairs
+              ↓
+provider-selected machine metric-input streams
+              ↓
+FC-026 machine-scoped aggregation processors
 ```
 
-`ProductionProcessing:BatchSize` and `ProductionProcessing:PollingInterval` configure the FC-025 producer loops. The production-processing section also supplies the historical production scope, shift schedule, and planned-production schedule used by FC-025 to establish immutable ownership before publication.
+`ProductionProcessing:BatchSize` and `ProductionProcessing:PollingInterval` configure producer execution. `MetricAggregation:BatchSize` and `MetricAggregation:PollingInterval` configure aggregation execution.
 
-`MetricAggregation:BatchSize` and `MetricAggregation:PollingInterval` configure aggregation execution. Machine identity comes from the same machine-specific application configuration used to construct acquisition and observation processing; FC-026 does not maintain a second independent machine inventory.
-
-The composition root resolves `IProductionContextProcessingStore`, `IMetricInputReader`, and `IMetricAggregationStore` from the same selected persistence provider. Activity-derived and quantity-derived facts therefore become visible to aggregation only through the approved atomic producer boundary.
-
-The current executable sample host has one configured MTConnect machine. The Edge registration APIs remain machine-scoped and support multiple aggregation runtimes; expanding the application configuration from one machine section to a shared multi-machine inventory is a deployment/composition evolution rather than a change to FC-026 aggregate semantics.
+A single-machine compatibility overload remains available, but the underlying composition model is list-based and validates exactly one production configuration for every registered activity-stream machine. Extra, missing, duplicate, or mismatched machine/stream configuration is rejected during composition.
 
 ## Conformance
 
-Composed conformance proves that activity and quantity producers publish to the same machine metric-input stream, persistence assigns one monotonic downstream sequence, aggregation consumes both fact families, and newly constructed producer and aggregation runtimes restore durable progress without duplicate publication or aggregate inflation.
+The composed FC-026 scenarios prove:
 
-Provider-specific SQL tests additionally prove transaction rollback, concurrent checkpoint CAS, position allocation, replay conflicts, relational ownership constraints, and SQL/in-memory observable aggregation parity.
+- activity and quantity producers publish into one downstream metric-input sequence per machine;
+- two machines retain distinct producer checkpoints, metric-input streams, aggregation checkpoints, and totals;
+- overnight facts after midnight retain the opening shift's production-day identity through aggregation;
+- one machine producer failure does not prevent another machine from publishing and aggregating, and recovery occurs without host restart;
+- identical producer replay preserves the original positioned fact;
+- conflicting producer replay leaves producer and aggregation progress unchanged;
+- failed producer commit makes no metric input visible downstream;
+- in-memory and SQL Server provider selection both execute producer publication, ordered metric-input consumption, aggregation, and restart semantics.
 
 ## FC-027 handoff
 
