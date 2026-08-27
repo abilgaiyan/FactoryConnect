@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using Microsoft.Extensions.Configuration;
@@ -38,10 +39,9 @@ public sealed class EdgeMetricAggregationCompositionTests
         Assert.Equal(2, runtimes.Runtimes.Select(static runtime => runtime.ProcessorId).Distinct().Count());
 
         Assert.False(await runtimes.RunCycleAsync(CancellationToken.None));
-        Assert.Equal(
-            [MetricInputStreamId.ForMachine(machineOne), MetricInputStreamId.ForMachine(machineTwo)],
-            reader.StreamIds.OrderBy(static stream => stream.StreamIdSortKey()).ToArray()
-                .OrderBy(static stream => stream.StreamIdSortKey()).ToArray());
+        Assert.Equal(2, reader.StreamIds.Count);
+        Assert.Contains(MetricInputStreamId.ForMachine(machineOne), reader.StreamIds);
+        Assert.Contains(MetricInputStreamId.ForMachine(machineTwo), reader.StreamIds);
         Assert.All(reader.MaxCounts, static count => Assert.Equal(25, count));
     }
 
@@ -98,9 +98,9 @@ public sealed class EdgeMetricAggregationCompositionTests
 
     private sealed class RecordingMetricInputReader : IMetricInputReader
     {
-        public List<MetricInputStreamId> StreamIds { get; } = [];
+        public ConcurrentBag<MetricInputStreamId> StreamIds { get; } = [];
 
-        public List<int> MaxCounts { get; } = [];
+        public ConcurrentBag<int> MaxCounts { get; } = [];
 
         public ValueTask<MetricInputReadBatch> ReadAsync(
             MetricInputReadRequest request,
@@ -117,10 +117,4 @@ public sealed class EdgeMetricAggregationCompositionTests
                     []));
         }
     }
-}
-
-internal static class MetricInputStreamIdTestExtensions
-{
-    public static string StreamIdSortKey(this MetricInputStreamId streamId) =>
-        $"{streamId.MachineId.Value:D}:{streamId.Value}";
 }
