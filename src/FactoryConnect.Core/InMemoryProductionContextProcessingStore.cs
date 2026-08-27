@@ -2,16 +2,21 @@ using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core;
 
-public sealed class InMemoryProductionContextProcessingStore : IProductionContextProcessingStore
+public sealed class InMemoryProductionContextProcessingStore :
+    IProductionContextProcessingStore,
+    IMetricInputReader
 {
     private readonly Dictionary<(string ProcessorId, ObservationStreamId StreamId), ObservationProcessingCheckpoint> _checkpoints = [];
     private readonly Dictionary<ContextualizedActivityIntervalId, ContextualizedActivityInterval> _contextualized = [];
     private readonly Dictionary<ProductionTimeEligibilityIntervalId, ProductionTimeEligibilityInterval> _eligibility = [];
     private readonly Dictionary<MetricInputFactId, DurableMetricInputFact> _metricFacts = [];
+    private readonly Dictionary<MetricInputStreamId, List<PositionedMetricInputFact>> _metricInputStreams = [];
+    private readonly Dictionary<MetricInputFactId, PositionedMetricInputFact> _positionedByFactId = [];
 
     public IReadOnlyCollection<ContextualizedActivityInterval> ContextualizedActivity => _contextualized.Values;
     public IReadOnlyCollection<ProductionTimeEligibilityInterval> EligibilityIntervals => _eligibility.Values;
     public IReadOnlyCollection<DurableMetricInputFact> MetricFacts => _metricFacts.Values;
+    public IReadOnlyCollection<PositionedMetricInputFact> PositionedMetricInputs => _positionedByFactId.Values;
 
     public Task<ObservationProcessingCheckpoint?> ReadCheckpointAsync(
         ObservationProcessorId processorId,
@@ -24,6 +29,51 @@ public sealed class InMemoryProductionContextProcessingStore : IProductionContex
 
         _checkpoints.TryGetValue((processorId.Value, streamId), out var checkpoint);
         return Task.FromResult(checkpoint);
+    }
+
+    public ValueTask<MetricInputReadBatch> ReadAsync(
+        MetricInputReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_metricInputStreams.TryGetValue(request.StreamId, out var stream) || stream.Count == 0)
+        {
+            if (request.AfterPosition is not null)
+            {
+                throw new InvalidOperationException(
+                    "Metric input read position is beyond the durable stream tail.");
+            }
+
+            return ValueTask.FromResult(new MetricInputReadBatch(
+                request.StreamId,
+                null,
+                null,
+                []));
+        }
+
+        var tail = stream[^1].Position;
+        if (request.AfterPosition is not null && request.AfterPosition > tail)
+        {
+            throw new InvalidOperationException(
+                "Metric input read position is beyond the durable stream tail.");
+        }
+
+        var facts = stream
+            .Where(item => request.AfterPosition is null || item.Position > request.AfterPosition)
+            .Take(request.MaxCount)
+            .ToArray();
+
+        var through = facts.Length == 0
+            ? request.AfterPosition
+            : facts[^1].Position;
+
+        return ValueTask.FromResult(new MetricInputReadBatch(
+            request.StreamId,
+            request.AfterPosition,
+            through,
+            facts));
     }
 
     public Task CommitAsync(
@@ -51,6 +101,7 @@ public sealed class InMemoryProductionContextProcessingStore : IProductionContex
         ValidateUnique(commit.ContextualizedActivity.Select(static item => item.Id), "contextualized activity");
         ValidateUnique(commit.EligibilityIntervals.Select(static item => item.Id), "eligibility interval");
         ValidateUnique(commit.MetricFacts.Select(static item => item.Id), "metric fact");
+        ValidateUnique(commit.MetricInputs.Select(static item => item.Fact.Id), "metric input");
 
         foreach (var item in commit.ContextualizedActivity)
         {
@@ -70,6 +121,8 @@ public sealed class InMemoryProductionContextProcessingStore : IProductionContex
             ValidateReplay(_metricFacts, item.Id, item, "metric fact");
         }
 
+        var stagedInputs = StageMetricInputs(commit.MetricInputs);
+
         foreach (var item in commit.ContextualizedActivity)
         {
             _contextualized.TryAdd(item.Id, item);
@@ -85,8 +138,75 @@ public sealed class InMemoryProductionContextProcessingStore : IProductionContex
             _metricFacts.TryAdd(item.Id, item);
         }
 
+        foreach (var item in stagedInputs)
+        {
+            if (_positionedByFactId.ContainsKey(item.Fact.Id))
+            {
+                continue;
+            }
+
+            if (!_metricInputStreams.TryGetValue(item.StreamId, out var stream))
+            {
+                stream = [];
+                _metricInputStreams.Add(item.StreamId, stream);
+            }
+
+            stream.Add(item);
+            _positionedByFactId.Add(item.Fact.Id, item);
+        }
+
         _checkpoints[key] = next;
         return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<PositionedMetricInputFact> StageMetricInputs(
+        IReadOnlyList<DurableMetricInputAppend> appends)
+    {
+        var staged = new List<PositionedMetricInputFact>(appends.Count);
+        var nextPositions = _metricInputStreams.ToDictionary(
+            static pair => pair.Key,
+            static pair => pair.Value.Count == 0 ? 1UL : pair.Value[^1].Position.Value + 1UL);
+
+        foreach (var append in appends)
+        {
+            ArgumentNullException.ThrowIfNull(append);
+
+            if (_positionedByFactId.TryGetValue(append.Fact.Id, out var persisted))
+            {
+                var replay = new PositionedMetricInputFact(
+                    append.StreamId,
+                    persisted.Position,
+                    append.Fact,
+                    append.ShiftOccurrenceId,
+                    append.ProductionDayId);
+
+                if (persisted != replay)
+                {
+                    throw new InvalidOperationException(
+                        "Production context processing metric input identity collides with different content.");
+                }
+
+                staged.Add(persisted);
+                continue;
+            }
+
+            if (!nextPositions.TryGetValue(append.StreamId, out var nextPosition))
+            {
+                nextPosition = 1UL;
+            }
+
+            var positioned = new PositionedMetricInputFact(
+                append.StreamId,
+                new MetricInputPosition(nextPosition),
+                append.Fact,
+                append.ShiftOccurrenceId,
+                append.ProductionDayId);
+
+            staged.Add(positioned);
+            nextPositions[append.StreamId] = checked(nextPosition + 1UL);
+        }
+
+        return staged;
     }
 
     private static bool CheckpointEquals(
