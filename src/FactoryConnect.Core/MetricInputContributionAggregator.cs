@@ -32,8 +32,12 @@ public static class MetricInputContributionAggregator
         }
 
         var shiftContributions = shiftGroups
-            .OrderBy(static pair => pair.Key.ShiftOccurrenceId.StartsAtUtc)
+            .OrderBy(static pair => pair.Key.MachineId.Value)
+            .ThenBy(static pair => pair.Key.ShiftOccurrenceId.SiteId.Value, StringComparer.Ordinal)
+            .ThenBy(static pair => pair.Key.ShiftOccurrenceId.StartsAtUtc)
             .ThenBy(static pair => pair.Key.ShiftOccurrenceId.EndsAtUtc)
+            .ThenBy(static pair => pair.Key.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value, StringComparer.Ordinal)
+            .ThenBy(static pair => pair.Key.ShiftOccurrenceId.ShiftId.Value, StringComparer.Ordinal)
             .ThenBy(static pair => pair.Key.MetricInputKey, StringComparer.Ordinal)
             .Select(static pair => new ShiftMetricAggregateContribution(
                 pair.Key,
@@ -41,7 +45,9 @@ public static class MetricInputContributionAggregator
             .ToArray();
 
         var productionDayContributions = dayGroups
-            .OrderBy(static pair => pair.Key.ProductionDayId.BusinessDate)
+            .OrderBy(static pair => pair.Key.MachineId.Value)
+            .ThenBy(static pair => pair.Key.ProductionDayId.SiteId.Value, StringComparer.Ordinal)
+            .ThenBy(static pair => pair.Key.ProductionDayId.BusinessDate)
             .ThenBy(static pair => pair.Key.MetricInputKey, StringComparer.Ordinal)
             .Select(static pair => new ProductionDayMetricAggregateContribution(
                 pair.Key,
