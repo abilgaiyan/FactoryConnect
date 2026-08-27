@@ -56,6 +56,12 @@ public sealed class MetricAggregationProcessingRuntime
                 "Metric input reader returned a batch outside the requested aggregation window.");
         }
 
+        if (batch.Facts.Count > _batchSize)
+        {
+            throw new InvalidOperationException(
+                "Metric input reader returned more facts than the requested maximum.");
+        }
+
         if (batch.ThroughPosition is null)
         {
             return 0;
