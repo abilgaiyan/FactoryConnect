@@ -6,6 +6,14 @@ namespace FactoryConnect.Persistence;
 
 public static class PersistenceServiceCollectionExtensions
 {
+    private static readonly Type[] ActivatedCapabilityTypes =
+    [
+        typeof(IObservationIngestionStore),
+        typeof(IProductionContextProcessingStore),
+        typeof(IMetricInputReader),
+        typeof(IMetricAggregationStore),
+    ];
+
     public static IServiceCollection AddFactoryConnectPersistence(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -13,13 +21,14 @@ public static class PersistenceServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        if (services.Any(
-                descriptor => descriptor.ServiceType ==
-                    typeof(IObservationIngestionStore)))
+        var existingCapability = ActivatedCapabilityTypes.FirstOrDefault(
+            capabilityType => services.Any(
+                descriptor => descriptor.ServiceType == capabilityType));
+        if (existingCapability is not null)
         {
             throw new InvalidOperationException(
-                "IObservationIngestionStore is already registered. " +
-                "Persistence activation must own the single store registration.");
+                $"{existingCapability.Name} is already registered. " +
+                "Persistence activation must own the selected provider capabilities.");
         }
 
         var provider = configuration["Persistence:Provider"];
@@ -53,8 +62,24 @@ public static class PersistenceServiceCollectionExtensions
         }
 
         services.AddSingleton(options);
-        services.AddSingleton<IObservationIngestionStore>(
+        services.AddSingleton<PersistenceProviderServices>(
             serviceProvider => selected.Create(serviceProvider));
+        services.AddSingleton<IObservationIngestionStore>(
+            static serviceProvider => serviceProvider
+                .GetRequiredService<PersistenceProviderServices>()
+                .ObservationIngestionStore);
+        services.AddSingleton<IProductionContextProcessingStore>(
+            static serviceProvider => serviceProvider
+                .GetRequiredService<PersistenceProviderServices>()
+                .ProductionContextProcessingStore);
+        services.AddSingleton<IMetricInputReader>(
+            static serviceProvider => serviceProvider
+                .GetRequiredService<PersistenceProviderServices>()
+                .MetricInputReader);
+        services.AddSingleton<IMetricAggregationStore>(
+            static serviceProvider => serviceProvider
+                .GetRequiredService<PersistenceProviderServices>()
+                .MetricAggregationStore);
 
         return services;
     }
