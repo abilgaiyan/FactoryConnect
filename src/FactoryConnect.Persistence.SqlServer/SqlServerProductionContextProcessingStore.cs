@@ -33,8 +33,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
             transaction: null,
             processorId,
             streamId,
-            cancellationToken,
-            lockForUpdate: false);
+            lockForUpdate: false,
+            cancellationToken);
         if (processorRowId is null)
         {
             return null;
@@ -44,8 +44,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
             connection,
             transaction: null,
             processorRowId.Value,
-            cancellationToken,
-            lockForUpdate: false);
+            lockForUpdate: false,
+            cancellationToken);
         return position is null
             ? null
             : new ObservationProcessingCheckpoint(
@@ -82,8 +82,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
                 connection,
                 sqlTransaction,
                 processorRowId,
-                cancellationToken,
-                lockForUpdate: true);
+                lockForUpdate: true,
+                cancellationToken);
             ValidateExpectedCheckpoint(commit, current);
 
             foreach (var append in commit.MetricInputs)
@@ -201,8 +201,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
             transaction,
             processorId,
             streamId,
-            cancellationToken,
-            lockForUpdate: true);
+            lockForUpdate: true,
+            cancellationToken);
         if (existing is not null)
         {
             return existing.Value;
@@ -236,8 +236,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
         SqlTransaction? transaction,
         ObservationProcessorId processorId,
         ObservationStreamId streamId,
-        CancellationToken cancellationToken,
-        bool lockForUpdate)
+        bool lockForUpdate,
+        CancellationToken cancellationToken)
     {
         var processorBinary = OrdinalStringKeyCodec.Encode(processorId.Value);
         var streamBinary = OrdinalStringKeyCodec.Encode(streamId.StreamKey);
@@ -272,8 +272,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
         SqlConnection connection,
         SqlTransaction? transaction,
         long processorRowId,
-        CancellationToken cancellationToken,
-        bool lockForUpdate)
+        bool lockForUpdate,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
