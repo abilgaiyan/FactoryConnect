@@ -7,7 +7,6 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
 {
-    private const string DecimalFormat = "G29";
     private readonly string _connectionString;
 
     public SqlServerMetricAggregationStore(string connectionString)
@@ -369,7 +368,7 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
             OrdinalStringKeyCodec.Encode(fact.Id.Value);
         AddString(command, "@FactId", fact.Id.Value, 256);
         AddString(command, "@MetricInputKey", fact.Key, 256);
-        AddString(command, "@MetricValue", SerializeDecimal(fact.Value), 64);
+        AddString(command, "@MetricValue", SqlServerCanonicalDecimalCodec.Serialize(fact.Value), 64);
         AddString(command, "@Unit", fact.Unit, 128);
         command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value = fact.StartsAtUtc;
         command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value = fact.EndsAtUtc;
@@ -386,37 +385,15 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
         AddNullableString(command, "@OperatorId", fact.OperatorId?.Value, 256);
         command.Parameters.Add("@IsPlanned", SqlDbType.Bit).Value =
             fact.IsPlannedProductionTime is null ? DBNull.Value : fact.IsPlannedProductionTime.Value;
-        AddNullableString(
-            command,
-            "@PlannedAssignmentId",
-            fact.PlannedProductionScheduleAssignmentId?.Value,
-            256);
-        AddNullableString(
-            command,
-            "@SourceContextId",
-            fact.SourceContextualizedActivityIntervalId?.Value,
-            256);
-        AddNullableString(
-            command,
-            "@SourceEligibilityId",
-            fact.SourceEligibilityIntervalId?.Value,
-            256);
-        AddNullableString(
-            command,
-            "@SourceQuantityId",
-            fact.SourceQuantityEvidenceId?.Value,
-            256);
+        AddNullableString(command, "@PlannedAssignmentId", fact.PlannedProductionScheduleAssignmentId?.Value, 256);
+        AddNullableString(command, "@SourceContextId", fact.SourceContextualizedActivityIntervalId?.Value, 256);
+        AddNullableString(command, "@SourceEligibilityId", fact.SourceEligibilityIntervalId?.Value, 256);
+        AddNullableString(command, "@SourceQuantityId", fact.SourceQuantityEvidenceId?.Value, 256);
         AddString(command, "@OccurrenceSiteId", occurrence.SiteId.Value, 256);
-        AddString(
-            command,
-            "@OccurrenceScheduleId",
-            occurrence.ShiftScheduleAssignmentId.Value,
-            256);
+        AddString(command, "@OccurrenceScheduleId", occurrence.ShiftScheduleAssignmentId.Value, 256);
         AddString(command, "@OccurrenceShiftId", occurrence.ShiftId.Value, 256);
-        command.Parameters.Add("@OccurrenceStartsAtUtc", SqlDbType.DateTimeOffset).Value =
-            occurrence.StartsAtUtc;
-        command.Parameters.Add("@OccurrenceEndsAtUtc", SqlDbType.DateTimeOffset).Value =
-            occurrence.EndsAtUtc;
+        command.Parameters.Add("@OccurrenceStartsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.StartsAtUtc;
+        command.Parameters.Add("@OccurrenceEndsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.EndsAtUtc;
         AddString(command, "@ProductionDaySiteId", productionDay.SiteId.Value, 256);
         command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
             productionDay.BusinessDate.ToDateTime(TimeOnly.MinValue);
@@ -525,7 +502,7 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
                 transaction,
                 "dbo.ShiftMetricAggregate",
                 "ShiftMetricAggregateRowId",
-                persisted.Value.RowId,
+                persisted.RowId,
                 value,
                 cancellationToken);
         }
@@ -568,7 +545,7 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
                 transaction,
                 "dbo.ProductionDayMetricAggregate",
                 "ProductionDayMetricAggregateRowId",
-                persisted.Value.RowId,
+                persisted.RowId,
                 value,
                 cancellationToken);
         }
@@ -641,7 +618,7 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
         return new AggregateRow(
             reader.GetInt64(0),
             new MetricAggregateValue(
-                DeserializeDecimal(reader.GetString(2)),
+                SqlServerCanonicalDecimalCodec.Deserialize(reader.GetString(2)),
                 reader.GetString(3),
                 reader.GetInt64(4),
                 reader.GetDateTimeOffset(5),
@@ -854,8 +831,7 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
         command.CommandText =
             "SELECT MetricInputStreamRowId FROM dbo.MetricInputStream" + hint +
             " WHERE MachineId = @MachineId AND StreamKeyBinary = @StreamKeyBinary;";
-        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value =
-            streamId.MachineId.Value;
+        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = streamId.MachineId.Value;
         command.Parameters.Add("@StreamKeyBinary", SqlDbType.VarBinary, 512).Value =
             OrdinalStringKeyCodec.Encode(streamId.StreamKey);
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -930,16 +906,13 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
         byte[] canonicalKey)
     {
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = processorRowId;
-        command.Parameters.Add("@Hash", SqlDbType.Binary, 32).Value =
-            SqlServerMetricAggregateKeyCodec.Hash(canonicalKey);
+        command.Parameters.Add("@Hash", SqlDbType.Binary, 32).Value = SqlServerMetricAggregateKeyCodec.Hash(canonicalKey);
         command.Parameters.Add("@Key", SqlDbType.VarBinary, -1).Value = canonicalKey;
     }
 
-    private static void AddAggregateValueParameters(
-        SqlCommand command,
-        MetricAggregateValue value)
+    private static void AddAggregateValueParameters(SqlCommand command, MetricAggregateValue value)
     {
-        AddString(command, "@Value", SerializeDecimal(value.Value), 64);
+        AddString(command, "@Value", SqlServerCanonicalDecimalCodec.Serialize(value.Value), 64);
         AddString(command, "@Unit", value.Unit, 128);
         command.Parameters.Add("@InputCount", SqlDbType.BigInt).Value = value.InputCount;
         command.Parameters.Add("@First", SqlDbType.DateTimeOffset).Value = value.FirstInputTimestamp;
@@ -949,19 +922,8 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
     private static void AddString(SqlCommand command, string name, string value, int size) =>
         command.Parameters.Add(name, SqlDbType.NVarChar, size).Value = value;
 
-    private static void AddNullableString(
-        SqlCommand command,
-        string name,
-        string? value,
-        int size) =>
-        command.Parameters.Add(name, SqlDbType.NVarChar, size).Value =
-            value is null ? DBNull.Value : value;
-
-    private static string SerializeDecimal(decimal value) =>
-        value.ToString(DecimalFormat, CultureInfo.InvariantCulture);
-
-    private static decimal DeserializeDecimal(string value) =>
-        decimal.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture);
+    private static void AddNullableString(SqlCommand command, string name, string? value, int size) =>
+        command.Parameters.Add(name, SqlDbType.NVarChar, size).Value = value is null ? DBNull.Value : value;
 
     private sealed class MutableAggregate
     {
