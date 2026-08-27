@@ -8,11 +8,6 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMetricInputStoreIntegrationTests :
     IClassFixture<SqlServerTestDatabaseFixture>
 {
-    private static readonly MachineId MachineOne = new(
-        Guid.Parse("11111111-1111-1111-1111-111111111111"));
-    private static readonly MachineId MachineTwo = new(
-        Guid.Parse("22222222-2222-2222-2222-222222222222"));
-
     private readonly SqlServerTestDatabaseFixture _fixture;
 
     public SqlServerMetricInputStoreIntegrationTests(
@@ -24,9 +19,10 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
     [Fact]
     public async Task AppendAllocatesOrderedPositionsAndIdenticalReplayPreservesPosition()
     {
+        var machineId = NewMachineId();
         var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
-        var first = CreateAppend(MachineOne, "fact-1", 10m, minute: 0);
-        var second = CreateAppend(MachineOne, "fact-2", 20m, minute: 1);
+        var first = CreateAppend(machineId, "fact-1", 10m, minute: 0);
+        var second = CreateAppend(machineId, "fact-2", 20m, minute: 1);
 
         var positionedFirst = await store.AppendAsync(first, CancellationToken.None);
         var replayedFirst = await store.AppendAsync(first, CancellationToken.None);
@@ -40,9 +36,10 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
     [Fact]
     public async Task ConflictingReplayIsRejectedWithoutAllocatingAnotherPosition()
     {
+        var machineId = NewMachineId();
         var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
-        var original = CreateAppend(MachineOne, "fact-conflict", 10m, minute: 10);
-        var conflicting = CreateAppend(MachineOne, "fact-conflict", 11m, minute: 10);
+        var original = CreateAppend(machineId, "fact-conflict", 10m, minute: 10);
+        var conflicting = CreateAppend(machineId, "fact-conflict", 11m, minute: 10);
 
         await store.AppendAsync(original, CancellationToken.None);
 
@@ -50,7 +47,7 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
             await store.AppendAsync(conflicting, CancellationToken.None));
 
         var next = await store.AppendAsync(
-            CreateAppend(MachineOne, "fact-after-conflict", 12m, minute: 11),
+            CreateAppend(machineId, "fact-after-conflict", 12m, minute: 11),
             CancellationToken.None);
 
         Assert.Equal(2UL, next.Position.Value);
@@ -59,14 +56,15 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
     [Fact]
     public async Task OrderedReaderHonorsAfterPositionAndMaximumCount()
     {
+        var machineId = NewMachineId();
         var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
-        var streamId = MetricInputStreamId.ForMachine(MachineOne);
+        var streamId = MetricInputStreamId.ForMachine(machineId);
 
         for (var index = 0; index < 4; index++)
         {
             await store.AppendAsync(
                 CreateAppend(
-                    MachineOne,
+                    machineId,
                     $"fact-read-{index}",
                     index + 1m,
                     minute: 20 + index),
@@ -101,19 +99,23 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
     [Fact]
     public async Task MachineScopedStreamsAllocateProgressIndependently()
     {
+        var machineOneId = NewMachineId();
+        var machineTwoId = NewMachineId();
         var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
 
         var machineOne = await store.AppendAsync(
-            CreateAppend(MachineOne, "fact-machine-1", 1m, minute: 30),
+            CreateAppend(machineOneId, "fact-machine-1", 1m, minute: 30),
             CancellationToken.None);
         var machineTwo = await store.AppendAsync(
-            CreateAppend(MachineTwo, "fact-machine-2", 1m, minute: 30),
+            CreateAppend(machineTwoId, "fact-machine-2", 1m, minute: 30),
             CancellationToken.None);
 
         Assert.Equal(1UL, machineOne.Position.Value);
         Assert.Equal(1UL, machineTwo.Position.Value);
         Assert.NotEqual(machineOne.StreamId, machineTwo.StreamId);
     }
+
+    private static MachineId NewMachineId() => new(Guid.NewGuid());
 
     private static DurableMetricInputAppend CreateAppend(
         MachineId machineId,
