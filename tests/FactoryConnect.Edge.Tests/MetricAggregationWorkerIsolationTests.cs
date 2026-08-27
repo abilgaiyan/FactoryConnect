@@ -15,21 +15,23 @@ public sealed class MetricAggregationWorkerIsolationTests
         var machineTwo = new MachineId(Guid.NewGuid());
         var streamOne = MetricInputStreamId.ForMachine(machineOne);
         var streamTwo = MetricInputStreamId.ForMachine(machineTwo);
-        var reader = new FaultingMetricInputReader(streamOne, failuresBeforeSuccess: 2);
+        var reader = new FaultingMetricInputReader(streamOne);
         reader.Add(CreatePositionedFact(machineOne, "machine-one", 10m));
         reader.Add(CreatePositionedFact(machineTwo, "machine-two", 20m));
         var innerStore = new InMemoryMetricAggregationStore();
         var store = new SignalingAggregationStore(innerStore);
+        var processorOne = new MetricAggregationProcessorId("metric-aggregation:machine-one");
+        var processorTwo = new MetricAggregationProcessorId("metric-aggregation:machine-two");
         var runtimes = new MetricAggregationProcessingRuntimeSet(
             [
                 new MetricAggregationProcessingRuntime(
-                    new MetricAggregationProcessorId("metric-aggregation:machine-one"),
+                    processorOne,
                     reader,
                     store,
                     streamOne,
                     batchSize: 10),
                 new MetricAggregationProcessingRuntime(
-                    new MetricAggregationProcessorId("metric-aggregation:machine-two"),
+                    processorTwo,
                     reader,
                     store,
                     streamTwo,
@@ -43,34 +45,31 @@ public sealed class MetricAggregationWorkerIsolationTests
         await worker.StartAsync(CancellationToken.None);
         try
         {
-            await store.WaitForCheckpointAsync(
-                new MetricAggregationProcessorId("metric-aggregation:machine-two"),
-                TimeSpan.FromSeconds(5));
+            await store.WaitForCheckpointAsync(processorTwo, TimeSpan.FromSeconds(5));
+            await reader.WaitForFailureAsync(TimeSpan.FromSeconds(5));
 
             var machineOneBeforeRecovery = await innerStore.ReadCheckpointAsync(
-                new MetricAggregationProcessorId("metric-aggregation:machine-one"),
+                processorOne,
                 streamOne,
                 CancellationToken.None);
             Assert.Null(machineOneBeforeRecovery);
+            Assert.True(reader.FailureCount > 0);
 
-            await store.WaitForCheckpointAsync(
-                new MetricAggregationProcessorId("metric-aggregation:machine-one"),
-                TimeSpan.FromSeconds(5));
+            reader.AllowRecovery();
+            await store.WaitForCheckpointAsync(processorOne, TimeSpan.FromSeconds(5));
 
             var machineOneCheckpoint = await innerStore.ReadCheckpointAsync(
-                new MetricAggregationProcessorId("metric-aggregation:machine-one"),
+                processorOne,
                 streamOne,
                 CancellationToken.None);
             var machineTwoCheckpoint = await innerStore.ReadCheckpointAsync(
-                new MetricAggregationProcessorId("metric-aggregation:machine-two"),
+                processorTwo,
                 streamTwo,
                 CancellationToken.None);
 
             Assert.Equal(new MetricInputPosition(1), machineOneCheckpoint!.Position);
             Assert.Equal(new MetricInputPosition(1), machineTwoCheckpoint!.Position);
-            Assert.Equal(1, store.SuccessfulCommitCount(
-                new MetricAggregationProcessorId("metric-aggregation:machine-two")));
-            Assert.True(reader.FailureCount >= 2);
+            Assert.Equal(1, store.SuccessfulCommitCount(processorTwo));
         }
         finally
         {
@@ -119,15 +118,21 @@ public sealed class MetricAggregationWorkerIsolationTests
     }
 
     private sealed class FaultingMetricInputReader(
-        MetricInputStreamId faultingStream,
-        int failuresBeforeSuccess) : IMetricInputReader
+        MetricInputStreamId faultingStream) : IMetricInputReader
     {
         private readonly Dictionary<MetricInputStreamId, PositionedMetricInputFact> _facts = [];
-        private int _remainingFailures = failuresBeforeSuccess;
+        private readonly TaskCompletionSource _failureObserved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private volatile bool _allowRecovery;
 
         public int FailureCount { get; private set; }
 
         public void Add(PositionedMetricInputFact fact) => _facts.Add(fact.StreamId, fact);
+
+        public void AllowRecovery() => _allowRecovery = true;
+
+        public Task WaitForFailureAsync(TimeSpan timeout) =>
+            _failureObserved.Task.WaitAsync(timeout);
 
         public ValueTask<MetricInputReadBatch> ReadAsync(
             MetricInputReadRequest request,
@@ -135,10 +140,10 @@ public sealed class MetricAggregationWorkerIsolationTests
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (request.StreamId == faultingStream && _remainingFailures > 0)
+            if (request.StreamId == faultingStream && !_allowRecovery)
             {
-                _remainingFailures--;
                 FailureCount++;
+                _failureObserved.TrySetResult();
                 throw new InvalidOperationException("Injected machine reader failure.");
             }
 
