@@ -87,10 +87,10 @@ public sealed class ProductionMetricInputAggregationCompositionTests
         Assert.NotEmpty(inputBatch.Facts);
         Assert.Contains(
             inputBatch.Facts,
-            static fact => fact.Fact.Key == "running-duration");
+            static fact => fact.Fact.Key == "duration.running");
         Assert.Contains(
             inputBatch.Facts,
-            static fact => fact.Fact.Key == "good-quantity");
+            static fact => fact.Fact.Key == "quantity.good");
         Assert.Equal(
             Enumerable.Range(1, inputBatch.Facts.Count)
                 .Select(static value => new MetricInputPosition((ulong)value)),
@@ -122,7 +122,7 @@ public sealed class ProductionMetricInputAggregationCompositionTests
         }
 
         var restartedActivity = new ProductionContextProcessingRuntime(
-            new ObservationProcessorId("production-context"),
+            producers.ActivityRuntimes[0].ProcessorId,
             provider.GetRequiredService<IProductionContextActivityReader>(),
             provider.GetRequiredService<IProductionContextReader>(),
             provider.GetRequiredService<ShiftOccurrenceResolver>(),
@@ -131,7 +131,7 @@ public sealed class ProductionMetricInputAggregationCompositionTests
             provider.GetRequiredService<ProductionContextProcessingScope>(),
             batchSize: 100);
         var restartedQuantity = new ProductionQuantityFactProcessingRuntime(
-            new ObservationProcessorId("production-quantity"),
+            producers.QuantityRuntimes[0].ProcessorId,
             provider.GetRequiredService<IProductionQuantityEvidenceReader>(),
             provider.GetRequiredService<ShiftOccurrenceResolver>(),
             provider.GetRequiredService<IProductionContextProcessingStore>(),
