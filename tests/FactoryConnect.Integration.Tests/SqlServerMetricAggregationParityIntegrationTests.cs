@@ -334,6 +334,7 @@ public sealed class SqlServerMetricAggregationParityIntegrationTests :
         var dayTwo = dayOne.AddDays(1);
         var shiftOneStart = new DateTimeOffset(2026, 8, 27, 6, 0, 0, TimeSpan.Zero);
         var shiftTwoStart = new DateTimeOffset(2026, 8, 27, 14, 0, 0, TimeSpan.Zero);
+        var shiftThreeStart = new DateTimeOffset(2026, 8, 28, 14, 0, 0, TimeSpan.Zero);
         var first = await inputStore.AppendAsync(
             CreateAppend(machineId, "multi-1", 10m, "seconds", 0, "running", "SHIFT-A", "SCHEDULE-A", shiftOneStart, dayOne),
             CancellationToken.None);
@@ -341,7 +342,7 @@ public sealed class SqlServerMetricAggregationParityIntegrationTests :
             CreateAppend(machineId, "multi-2", 20m, "seconds", 1, "running", "SHIFT-B", "SCHEDULE-B", shiftTwoStart, dayOne),
             CancellationToken.None);
         var third = await inputStore.AppendAsync(
-            CreateAppend(machineId, "multi-3", 3m, "parts", 2, "good-parts", "SHIFT-B", "SCHEDULE-B", shiftTwoStart, dayTwo),
+            CreateAppend(machineId, "multi-3", 3m, "parts", 2, "good-parts", "SHIFT-B", "SCHEDULE-B", shiftThreeStart, dayTwo),
             CancellationToken.None);
         var processorId = NewProcessorId("multi");
 
@@ -353,9 +354,27 @@ public sealed class SqlServerMetricAggregationParityIntegrationTests :
                 [first, second, third]),
             CancellationToken.None);
 
-        Assert.Equal(10m, (await store.ReadShiftAggregateAsync(processorId, ShiftKey(first), CancellationToken.None))!.Value);
-        Assert.Equal(20m, (await store.ReadShiftAggregateAsync(processorId, ShiftKey(second), CancellationToken.None))!.Value);
-        Assert.Equal(3m, (await store.ReadProductionDayAggregateAsync(processorId, DayKey(third), CancellationToken.None))!.Value);
+        var firstShift = await store.ReadShiftAggregateAsync(
+            processorId,
+            ShiftKey(first),
+            CancellationToken.None);
+        var secondShift = await store.ReadShiftAggregateAsync(
+            processorId,
+            ShiftKey(second),
+            CancellationToken.None);
+        var dayOneRunning = await store.ReadProductionDayAggregateAsync(
+            processorId,
+            DayKey(first),
+            CancellationToken.None);
+        var dayTwoGoodParts = await store.ReadProductionDayAggregateAsync(
+            processorId,
+            DayKey(third),
+            CancellationToken.None);
+
+        Assert.Equal(10m, firstShift!.Value);
+        Assert.Equal(20m, secondShift!.Value);
+        Assert.Equal(30m, dayOneRunning!.Value);
+        Assert.Equal(3m, dayTwoGoodParts!.Value);
     }
 
     [Fact]
