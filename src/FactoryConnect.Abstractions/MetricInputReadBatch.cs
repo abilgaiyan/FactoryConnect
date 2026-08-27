@@ -29,6 +29,8 @@ public sealed record MetricInputReadBatch
                 nameof(facts));
         }
 
+        var factIds = new HashSet<MetricInputFactId>();
+
         for (var index = 0; index < snapshot.Length; index++)
         {
             var item = snapshot[index];
@@ -37,6 +39,13 @@ public sealed record MetricInputReadBatch
             {
                 throw new ArgumentException(
                     "Every positioned metric input fact must belong to the requested stream.",
+                    nameof(facts));
+            }
+
+            if (!factIds.Add(item.Fact.Id))
+            {
+                throw new ArgumentException(
+                    "A metric input fact identity must not appear at multiple positions in one read batch.",
                     nameof(facts));
             }
 
