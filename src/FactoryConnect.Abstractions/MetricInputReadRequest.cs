@@ -28,11 +28,20 @@ public sealed record MetricInputReadRequest
     public int MaxCount { get; }
 
     public static MetricInputReadRequest FromCheckpoint(
+        MetricAggregationProcessorId processorId,
         MetricInputStreamId streamId,
         MetricAggregationCheckpoint? checkpoint,
         int maxCount)
     {
+        ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(streamId);
+
+        if (checkpoint is not null && checkpoint.ProcessorId != processorId)
+        {
+            throw new ArgumentException(
+                "Aggregation checkpoint must belong to the requested processor.",
+                nameof(checkpoint));
+        }
 
         if (checkpoint is not null && checkpoint.StreamId != streamId)
         {
