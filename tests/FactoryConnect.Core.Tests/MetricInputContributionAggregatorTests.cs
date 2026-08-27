@@ -50,7 +50,7 @@ public sealed class MetricInputContributionAggregatorTests
         var result = MetricInputContributionAggregator.Aggregate(stream, inputs);
 
         Assert.Equal(3, result.ShiftContributions.Count);
-        Assert.Equal(4, result.ProductionDayContributions.Count);
+        Assert.Equal(3, result.ProductionDayContributions.Count);
     }
 
     [Fact]
@@ -70,6 +70,75 @@ public sealed class MetricInputContributionAggregatorTests
         var aggregate = Assert.Single(ordered.ShiftContributions).Value;
         Assert.Equal(second.Fact.StartsAtUtc, aggregate.FirstInputTimestamp);
         Assert.Equal(first.Fact.EndsAtUtc, aggregate.LastInputTimestamp);
+    }
+
+    [Fact]
+    public void ContributionContractsRejectNullStateAndSnapshotCollections()
+    {
+        var occurrence = CreateOccurrence("SHIFT-A", "SCHEDULE-A", 6, 14);
+        var day = new ProductionDayId(new SiteId("SITE-1"), new DateOnly(2026, 8, 27));
+        var shiftKey = new ShiftMetricAggregateKey(MachineOne, occurrence, "running-duration");
+        var dayKey = new ProductionDayMetricAggregateKey(MachineOne, day, "running-duration");
+        var timestamp = new DateTimeOffset(2026, 8, 27, 7, 0, 0, TimeSpan.Zero);
+        var value = new MetricAggregateValue(60m, "seconds", 1, timestamp, timestamp.AddMinutes(1));
+
+        Assert.Throws<ArgumentNullException>(() => new ShiftMetricAggregateContribution(null!, value));
+        Assert.Throws<ArgumentNullException>(() => new ShiftMetricAggregateContribution(shiftKey, null!));
+        Assert.Throws<ArgumentNullException>(() => new ProductionDayMetricAggregateContribution(null!, value));
+        Assert.Throws<ArgumentNullException>(() => new ProductionDayMetricAggregateContribution(dayKey, null!));
+        Assert.Throws<ArgumentNullException>(() => new MetricAggregateContributionSet(null!, []));
+        Assert.Throws<ArgumentNullException>(() => new MetricAggregateContributionSet([], null!));
+        Assert.Throws<ArgumentException>(() => new MetricAggregateContributionSet(
+            new List<ShiftMetricAggregateContribution> { null! },
+            []));
+        Assert.Throws<ArgumentException>(() => new MetricAggregateContributionSet(
+            [],
+            new List<ProductionDayMetricAggregateContribution> { null! }));
+
+        var shiftContribution = new ShiftMetricAggregateContribution(shiftKey, value);
+        var dayContribution = new ProductionDayMetricAggregateContribution(dayKey, value);
+        var shifts = new List<ShiftMetricAggregateContribution> { shiftContribution };
+        var days = new List<ProductionDayMetricAggregateContribution> { dayContribution };
+        var result = new MetricAggregateContributionSet(shifts, days);
+
+        shifts.Clear();
+        days.Clear();
+
+        Assert.Single(result.ShiftContributions);
+        Assert.Single(result.ProductionDayContributions);
+    }
+
+    [Fact]
+    public void AggregateIdentityProvidesTotalCanonicalOrderingIndependentOfPositions()
+    {
+        var stream = MetricInputStreamId.ForMachine(MachineOne);
+        var siteA = new SiteId("SITE-A");
+        var siteB = new SiteId("SITE-B");
+        var occurrenceA = CreateOccurrence("SHIFT-A", "SCHEDULE-A", 6, 14, siteA);
+        var occurrenceB = CreateOccurrence("SHIFT-B", "SCHEDULE-B", 6, 14, siteB);
+        var dayA = new ProductionDayId(siteA, new DateOnly(2026, 8, 27));
+        var dayB = new ProductionDayId(siteB, new DateOnly(2026, 8, 27));
+
+        var firstSet = new[]
+        {
+            CreateInput(stream, 1, "FACT-B1", "running-duration", 10m, "seconds", occurrenceB, dayB, 7, 0),
+            CreateInput(stream, 2, "FACT-A1", "running-duration", 10m, "seconds", occurrenceA, dayA, 7, 0),
+        };
+        var secondSet = new[]
+        {
+            CreateInput(stream, 1, "FACT-A2", "running-duration", 10m, "seconds", occurrenceA, dayA, 7, 0),
+            CreateInput(stream, 2, "FACT-B2", "running-duration", 10m, "seconds", occurrenceB, dayB, 7, 0),
+        };
+
+        var first = MetricInputContributionAggregator.Aggregate(stream, firstSet);
+        var second = MetricInputContributionAggregator.Aggregate(stream, secondSet);
+
+        Assert.Equal(first.ShiftContributions, second.ShiftContributions);
+        Assert.Equal(first.ProductionDayContributions, second.ProductionDayContributions);
+        Assert.Equal("SITE-A", first.ShiftContributions[0].Key.ShiftOccurrenceId.SiteId.Value);
+        Assert.Equal("SITE-B", first.ShiftContributions[1].Key.ShiftOccurrenceId.SiteId.Value);
+        Assert.Equal("SITE-A", first.ProductionDayContributions[0].Key.ProductionDayId.SiteId.Value);
+        Assert.Equal("SITE-B", first.ProductionDayContributions[1].Key.ProductionDayId.SiteId.Value);
     }
 
     [Fact]
@@ -150,9 +219,10 @@ public sealed class MetricInputContributionAggregatorTests
         string shiftId,
         string scheduleId,
         int startsHour,
-        int endsHour) =>
+        int endsHour,
+        SiteId? siteId = null) =>
         new(
-            new SiteId("SITE-1"),
+            siteId ?? new SiteId("SITE-1"),
             new ShiftScheduleAssignmentId(scheduleId),
             new ShiftId(shiftId),
             new DateTimeOffset(2026, 8, 27, startsHour, 0, 0, TimeSpan.Zero),
@@ -184,7 +254,7 @@ public sealed class MetricInputContributionAggregatorTests
             StartsAtUtc = startsAt,
             EndsAtUtc = startsAt.AddMinutes(1),
             CompanyId = new CompanyId("COMP-1"),
-            SiteId = new SiteId("SITE-1"),
+            SiteId = occurrence.SiteId,
             ProductionLineId = new ProductionLineId("LINE-1"),
             MachineId = machine,
             ShiftId = occurrence.ShiftId,
