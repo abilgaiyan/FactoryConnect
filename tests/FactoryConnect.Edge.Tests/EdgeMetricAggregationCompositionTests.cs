@@ -40,8 +40,40 @@ public sealed class EdgeMetricAggregationCompositionTests
         Assert.False(await runtimes.RunCycleAsync(CancellationToken.None));
         Assert.Equal(
             [MetricInputStreamId.ForMachine(machineOne), MetricInputStreamId.ForMachine(machineTwo)],
-            reader.StreamIds);
+            reader.StreamIds.OrderBy(static stream => stream.StreamIdSortKey()).ToArray()
+                .OrderBy(static stream => stream.StreamIdSortKey()).ToArray());
         Assert.All(reader.MaxCounts, static count => Assert.Equal(25, count));
+    }
+
+    [Fact]
+    public void SelectedInMemoryProviderResolvesAggregationCompositionWithoutManualStores()
+    {
+        var machineId = new MachineId(Guid.NewGuid());
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Persistence:Provider"] = "InMemory",
+                    ["MetricAggregation:BatchSize"] = "25",
+                    ["MetricAggregation:PollingInterval"] = "00:00:01",
+                })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddFactoryConnectMetricAggregation(configuration, [machineId]);
+
+        using var provider = services.BuildServiceProvider();
+        var runtimes = provider.GetRequiredService<MetricAggregationProcessingRuntimeSet>();
+
+        var runtime = Assert.Single(runtimes.Runtimes);
+        Assert.Equal(
+            new MetricAggregationProcessorId($"metric-aggregation:{machineId.Value:D}"),
+            runtime.ProcessorId);
+        Assert.Same(
+            provider.GetRequiredService<IProductionContextProcessingStore>(),
+            provider.GetRequiredService<IMetricInputReader>());
     }
 
     [Fact]
@@ -85,4 +117,10 @@ public sealed class EdgeMetricAggregationCompositionTests
                     []));
         }
     }
+}
+
+internal static class MetricInputStreamIdTestExtensions
+{
+    public static string StreamIdSortKey(this MetricInputStreamId streamId) =>
+        $"{streamId.MachineId.Value:D}:{streamId.Value}";
 }
