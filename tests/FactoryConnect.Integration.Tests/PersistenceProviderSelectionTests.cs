@@ -208,7 +208,7 @@ public sealed class PersistenceProviderSelectionTests
 
         Assert.Equal(
             "IObservationIngestionStore is already registered. " +
-            "Persistence activation must own the single store registration.",
+            "Persistence activation must own the selected provider capabilities.",
             exception.Message);
     }
 
