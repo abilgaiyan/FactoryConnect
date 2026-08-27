@@ -7,4 +7,5 @@ public enum MachineState
     Idle = 2,
     Running = 3,
     Fault = 4,
+    Offline = 5,
 }
