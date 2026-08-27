@@ -1,5 +1,3 @@
-using FactoryConnect.Abstractions;
-
 namespace FactoryConnect.Persistence;
 
 public sealed class PersistenceProviderRegistration :
@@ -7,13 +5,13 @@ public sealed class PersistenceProviderRegistration :
 {
     private readonly Func<
         IServiceProvider,
-        IObservationIngestionStore> _factory;
+        PersistenceProviderServices> _factory;
 
     public string ProviderKey { get; }
 
     public PersistenceProviderRegistration(
         string providerKey,
-        Func<IServiceProvider, IObservationIngestionStore> factory)
+        Func<IServiceProvider, PersistenceProviderServices> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
@@ -21,12 +19,12 @@ public sealed class PersistenceProviderRegistration :
         _factory = factory;
     }
 
-    public IObservationIngestionStore Create(IServiceProvider services)
+    public PersistenceProviderServices Create(IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);
 
         return _factory(services)
             ?? throw new InvalidOperationException(
-                $"Persistence provider '{ProviderKey}' returned no store.");
+                $"Persistence provider '{ProviderKey}' returned no services.");
     }
 }
