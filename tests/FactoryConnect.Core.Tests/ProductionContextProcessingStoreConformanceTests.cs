@@ -112,9 +112,14 @@ public sealed class ProductionContextProcessingStoreConformanceTests
         MetricInputStreamId streamId,
         DurableMetricInputFact fact)
     {
+        if (fact.ShiftScheduleAssignmentId is not { } scheduleAssignmentId)
+        {
+            throw new InvalidOperationException("Test fact must include shift schedule assignment identity.");
+        }
+
         var occurrence = new ShiftOccurrenceId(
             fact.SiteId,
-            fact.ShiftScheduleAssignmentId!,
+            scheduleAssignmentId,
             fact.ShiftId,
             new DateTimeOffset(2026, 8, 26, 7, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 8, 26, 15, 0, 0, TimeSpan.Zero));
