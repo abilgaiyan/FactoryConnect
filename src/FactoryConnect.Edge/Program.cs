@@ -60,6 +60,10 @@ var retryOptions = new MtConnectRetryOptions(
 var streamId = MtConnectObservationStreamId.Create(
     options.MachineId,
     options.DeviceKey);
+ObservationStreamId[] activityStreams = [streamId];
+var machineIds = activityStreams
+    .Select(static stream => stream.MachineId)
+    .ToArray();
 
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(retryOptions);
@@ -85,13 +89,13 @@ builder.Services.AddFactoryConnectEdgePersistence(
     builder.Configuration);
 builder.Services.AddFactoryConnectObservationProcessing(
     builder.Configuration,
-    streamId);
+    activityStreams);
 builder.Services.AddFactoryConnectProductionMetricInputs(
     builder.Configuration,
-    streamId);
+    activityStreams);
 builder.Services.AddFactoryConnectMetricAggregation(
     builder.Configuration,
-    [options.MachineId]);
+    machineIds);
 
 builder.Services.AddSingleton<MtConnectStartupCheckpointResolver>();
 builder.Services.AddSingleton<IMtConnectObservationSink>(
