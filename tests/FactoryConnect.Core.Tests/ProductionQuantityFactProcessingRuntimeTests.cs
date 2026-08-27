@@ -16,17 +16,19 @@ public sealed class ProductionQuantityFactProcessingRuntimeTests
         reader.Add(CreateDurableEvidence(machineId, streamId, 2, "Q2"));
         var store = new InMemoryProductionContextProcessingStore();
         var quantityProcessorId = new ObservationProcessorId("quantity-facts");
+        var shiftResolver = CreateShiftResolver();
 
         var first = new ProductionQuantityFactProcessingRuntime(
-            quantityProcessorId, reader, store, streamId, 1);
+            quantityProcessorId, reader, shiftResolver, store, streamId, 1);
         Assert.Equal(1, await first.RunCycleAsync());
 
         var resumed = new ProductionQuantityFactProcessingRuntime(
-            quantityProcessorId, reader, store, streamId, 1);
+            quantityProcessorId, reader, shiftResolver, store, streamId, 1);
         Assert.Equal(1, await resumed.RunCycleAsync());
         Assert.Equal(0, await resumed.RunCycleAsync());
 
         Assert.Equal(6, store.MetricFacts.Count);
+        Assert.Equal(6, store.PositionedMetricInputs.Count);
         var checkpoint = await store.ReadCheckpointAsync(
             quantityProcessorId, streamId, CancellationToken.None);
         Assert.NotNull(checkpoint);
@@ -43,9 +45,12 @@ public sealed class ProductionQuantityFactProcessingRuntimeTests
         var store = new InMemoryProductionContextProcessingStore();
         var firstId = new ObservationProcessorId("quantity-a");
         var secondId = new ObservationProcessorId("quantity-b");
+        var shiftResolver = CreateShiftResolver();
 
-        await new ProductionQuantityFactProcessingRuntime(firstId, reader, store, streamId, 10).RunCycleAsync();
-        await new ProductionQuantityFactProcessingRuntime(secondId, reader, store, streamId, 10).RunCycleAsync();
+        await new ProductionQuantityFactProcessingRuntime(
+            firstId, reader, shiftResolver, store, streamId, 10).RunCycleAsync();
+        await new ProductionQuantityFactProcessingRuntime(
+            secondId, reader, shiftResolver, store, streamId, 10).RunCycleAsync();
 
         var firstCheckpoint = await store.ReadCheckpointAsync(firstId, streamId, CancellationToken.None);
         var secondCheckpoint = await store.ReadCheckpointAsync(secondId, streamId, CancellationToken.None);
@@ -54,6 +59,25 @@ public sealed class ProductionQuantityFactProcessingRuntimeTests
         Assert.Equal(new ObservationPosition(1), firstCheckpoint.Position);
         Assert.Equal(new ObservationPosition(1), secondCheckpoint.Position);
         Assert.Equal(3, store.MetricFacts.Count);
+        Assert.Equal(3, store.PositionedMetricInputs.Count);
+    }
+
+    private static ShiftOccurrenceResolver CreateShiftResolver()
+    {
+        var assignment = new ShiftScheduleAssignment
+        {
+            Id = new ShiftScheduleAssignmentId("SCHEDULE-1"),
+            CompanyId = new CompanyId("COMP-1"),
+            SiteId = new SiteId("SITE-1"),
+            TimeZoneId = new FactoryTimeZoneId("Asia/Kolkata"),
+            ShiftId = new ShiftId("SHIFT-1"),
+            Name = "SHIFT-1",
+            StartsAtLocal = new TimeOnly(6, 0),
+            EndsAtLocal = new TimeOnly(15, 0),
+            EffectiveFrom = new DateOnly(2026, 8, 26),
+        };
+
+        return new ShiftOccurrenceResolver(new InMemoryShiftScheduleReader([assignment]));
     }
 
     private static DurableProductionQuantityEvidence CreateDurableEvidence(
