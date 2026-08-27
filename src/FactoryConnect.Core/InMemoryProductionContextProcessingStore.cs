@@ -102,6 +102,7 @@ public sealed class InMemoryProductionContextProcessingStore :
         ValidateUnique(commit.EligibilityIntervals.Select(static item => item.Id), "eligibility interval");
         ValidateUnique(commit.MetricFacts.Select(static item => item.Id), "metric fact");
         ValidateUnique(commit.MetricInputs.Select(static item => item.Fact.Id), "metric input");
+        ValidateMetricInputEquivalence(commit.MetricFacts, commit.MetricInputs);
 
         foreach (var item in commit.ContextualizedActivity)
         {
@@ -207,6 +208,32 @@ public sealed class InMemoryProductionContextProcessingStore :
         }
 
         return staged;
+    }
+
+    private static void ValidateMetricInputEquivalence(
+        IReadOnlyList<DurableMetricInputFact> metricFacts,
+        IReadOnlyList<DurableMetricInputAppend> metricInputs)
+    {
+        if (metricFacts.Count != metricInputs.Count)
+        {
+            throw new InvalidOperationException(
+                "Production context processing metric facts and positioned metric inputs must contain the same durable facts.");
+        }
+
+        var inputFactsById = metricInputs.ToDictionary(
+            static item => item.Fact.Id,
+            static item => item.Fact);
+
+        foreach (var fact in metricFacts)
+        {
+            ArgumentNullException.ThrowIfNull(fact);
+
+            if (!inputFactsById.TryGetValue(fact.Id, out var positionedFact) || positionedFact != fact)
+            {
+                throw new InvalidOperationException(
+                    "Production context processing metric facts and positioned metric inputs must contain equivalent payloads.");
+            }
+        }
     }
 
     private static bool CheckpointEquals(
