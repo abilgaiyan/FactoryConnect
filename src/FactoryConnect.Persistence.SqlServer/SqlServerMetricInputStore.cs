@@ -28,63 +28,18 @@ internal sealed class SqlServerMetricInputStore :
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
+        var sqlTransaction = (SqlTransaction)transaction;
 
         try
         {
-            var streamRowId = await GetOrCreateStreamAsync(
+            var result = await SqlServerMetricInputTransactionWriter.AppendAsync(
                 connection,
-                (SqlTransaction)transaction,
-                append.StreamId,
-                cancellationToken);
-
-            var existing = await ReadByFactIdentityAsync(
-                connection,
-                (SqlTransaction)transaction,
-                streamRowId,
-                append.Fact.Id,
-                cancellationToken);
-
-            if (existing is not null)
-            {
-                var requested = new PositionedMetricInputFact(
-                    append.StreamId,
-                    existing.Position,
-                    append.Fact,
-                    append.ShiftOccurrenceId,
-                    append.ProductionDayId);
-
-                if (existing != requested)
-                {
-                    throw new InvalidOperationException(
-                        "A durable metric input fact identity was reused with a conflicting payload.");
-                }
-
-                await transaction.CommitAsync(cancellationToken);
-                return existing;
-            }
-
-            var nextPosition = await AllocateNextPositionAsync(
-                connection,
-                (SqlTransaction)transaction,
-                streamRowId,
-                cancellationToken);
-
-            await InsertFactAsync(
-                connection,
-                (SqlTransaction)transaction,
-                streamRowId,
-                nextPosition,
+                sqlTransaction,
                 append,
                 cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
-
-            return new PositionedMetricInputFact(
-                append.StreamId,
-                nextPosition,
-                append.Fact,
-                append.ShiftOccurrenceId,
-                append.ProductionDayId);
+            return result;
         }
         catch
         {
@@ -162,43 +117,6 @@ internal sealed class SqlServerMetricInputStore :
             facts);
     }
 
-    private static async Task<long> GetOrCreateStreamAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        MetricInputStreamId streamId,
-        CancellationToken cancellationToken)
-    {
-        var existing = await FindStreamAsync(
-            connection,
-            transaction,
-            streamId,
-            cancellationToken,
-            lockForUpdate: true);
-
-        if (existing is not null)
-        {
-            return existing.Value;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            "INSERT INTO dbo.MetricInputStream " +
-            "(MachineId, StreamKeyBinary, StreamKey) " +
-            "OUTPUT INSERTED.MetricInputStreamRowId " +
-            "VALUES (@MachineId, @StreamKeyBinary, @StreamKey);";
-        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value =
-            streamId.MachineId.Value;
-        command.Parameters.Add("@StreamKeyBinary", SqlDbType.VarBinary, 512).Value =
-            OrdinalStringKeyCodec.Encode(streamId.StreamKey);
-        command.Parameters.Add("@StreamKey", SqlDbType.NVarChar, 256).Value =
-            streamId.StreamKey;
-
-        return Convert.ToInt64(
-            await command.ExecuteScalarAsync(cancellationToken),
-            CultureInfo.InvariantCulture);
-    }
-
     private static async Task<long?> FindStreamAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
@@ -223,25 +141,6 @@ internal sealed class SqlServerMetricInputStore :
             : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    private static async Task<MetricInputPosition> AllocateNextPositionAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long streamRowId,
-        CancellationToken cancellationToken)
-    {
-        var tail = await ReadTailPositionAsync(
-            connection,
-            transaction,
-            streamRowId,
-            cancellationToken,
-            lockForUpdate: true);
-
-        var next = tail is null
-            ? 1UL
-            : checked(tail.Value + 1UL);
-        return new MetricInputPosition(next);
-    }
-
     private static async Task<MetricInputPosition?> ReadTailPositionAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
@@ -264,27 +163,6 @@ internal sealed class SqlServerMetricInputStore :
 
         return new MetricInputPosition(
             SqlServerUInt64.Materialize((decimal)result));
-    }
-
-    private static async Task<PositionedMetricInputFact?> ReadByFactIdentityAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long streamRowId,
-        MetricInputFactId factId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = CreateFactReadCommand(connection, transaction);
-        command.CommandText +=
-            " WHERE f.MetricInputStreamRowId = @StreamRowId " +
-            "AND f.FactIdBinary = @FactIdBinary;";
-        command.Parameters.Add("@StreamRowId", SqlDbType.BigInt).Value = streamRowId;
-        command.Parameters.Add("@FactIdBinary", SqlDbType.VarBinary, 512).Value =
-            OrdinalStringKeyCodec.Encode(factId.Value);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? Materialize(reader)
-            : null;
     }
 
     private static async Task<List<PositionedMetricInputFact>> ReadWindowAsync(
@@ -432,85 +310,4 @@ internal sealed class SqlServerMetricInputStore :
         Func<string, T> factory)
         where T : struct =>
         reader.IsDBNull(ordinal) ? null : factory(reader.GetString(ordinal));
-
-    private static async Task InsertFactAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long streamRowId,
-        MetricInputPosition position,
-        DurableMetricInputAppend append,
-        CancellationToken cancellationToken)
-    {
-        var fact = append.Fact;
-        var occurrence = append.ShiftOccurrenceId;
-        var productionDay = append.ProductionDayId;
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            "INSERT INTO dbo.MetricInputFact " +
-            "(MetricInputStreamRowId, Position, FactIdBinary, FactId, MetricInputKey, " +
-            "MetricValue, Unit, StartsAtUtc, EndsAtUtc, CompanyId, SiteId, ProductionLineId, " +
-            "MachineId, ShiftId, ShiftScheduleAssignmentId, ProductionContextAssignmentId, " +
-            "ProductionOrderId, OperationId, PartId, OperatorId, IsPlannedProductionTime, " +
-            "PlannedProductionScheduleAssignmentId, SourceContextualizedActivityIntervalId, " +
-            "SourceEligibilityIntervalId, SourceQuantityEvidenceId, OccurrenceSiteId, " +
-            "OccurrenceShiftScheduleAssignmentId, OccurrenceShiftId, OccurrenceStartsAtUtc, " +
-            "OccurrenceEndsAtUtc, ProductionDaySiteId, ProductionBusinessDate) " +
-            "VALUES (@StreamRowId, @Position, @FactIdBinary, @FactId, @MetricInputKey, " +
-            "@MetricValue, @Unit, @StartsAtUtc, @EndsAtUtc, @CompanyId, @SiteId, " +
-            "@ProductionLineId, @MachineId, @ShiftId, @ShiftScheduleAssignmentId, " +
-            "@ProductionContextAssignmentId, @ProductionOrderId, @OperationId, @PartId, " +
-            "@OperatorId, @IsPlannedProductionTime, @PlannedProductionScheduleAssignmentId, " +
-            "@SourceContextualizedActivityIntervalId, @SourceEligibilityIntervalId, " +
-            "@SourceQuantityEvidenceId, @OccurrenceSiteId, @OccurrenceScheduleId, " +
-            "@OccurrenceShiftId, @OccurrenceStartsAtUtc, @OccurrenceEndsAtUtc, " +
-            "@ProductionDaySiteId, @ProductionBusinessDate);";
-
-        command.Parameters.Add("@StreamRowId", SqlDbType.BigInt).Value = streamRowId;
-        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", position.Value));
-        command.Parameters.Add("@FactIdBinary", SqlDbType.VarBinary, 512).Value =
-            OrdinalStringKeyCodec.Encode(fact.Id.Value);
-        command.Parameters.Add("@FactId", SqlDbType.NVarChar, 256).Value = fact.Id.Value;
-        command.Parameters.Add("@MetricInputKey", SqlDbType.NVarChar, 256).Value = fact.Key;
-        command.Parameters.Add("@MetricValue", SqlDbType.NVarChar, 64).Value =
-            SqlServerCanonicalDecimalCodec.Serialize(fact.Value);
-        command.Parameters.Add("@Unit", SqlDbType.NVarChar, 128).Value = fact.Unit;
-        command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value = fact.StartsAtUtc;
-        command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value = fact.EndsAtUtc;
-        command.Parameters.Add("@CompanyId", SqlDbType.NVarChar, 256).Value = fact.CompanyId.Value;
-        command.Parameters.Add("@SiteId", SqlDbType.NVarChar, 256).Value = fact.SiteId.Value;
-        AddNullableString(command, "@ProductionLineId", fact.ProductionLineId?.Value);
-        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = fact.MachineId.Value;
-        command.Parameters.Add("@ShiftId", SqlDbType.NVarChar, 256).Value = fact.ShiftId.Value;
-        command.Parameters.Add("@ShiftScheduleAssignmentId", SqlDbType.NVarChar, 256).Value =
-            fact.ShiftScheduleAssignmentId!.Value.Value;
-        AddNullableString(command, "@ProductionContextAssignmentId", fact.ProductionContextAssignmentId?.Value);
-        AddNullableString(command, "@ProductionOrderId", fact.ProductionOrderId?.Value);
-        AddNullableString(command, "@OperationId", fact.OperationId?.Value);
-        AddNullableString(command, "@PartId", fact.PartId?.Value);
-        AddNullableString(command, "@OperatorId", fact.OperatorId?.Value);
-        command.Parameters.Add("@IsPlannedProductionTime", SqlDbType.Bit).Value =
-            fact.IsPlannedProductionTime is null ? DBNull.Value : fact.IsPlannedProductionTime.Value;
-        AddNullableString(command, "@PlannedProductionScheduleAssignmentId", fact.PlannedProductionScheduleAssignmentId?.Value);
-        AddNullableString(command, "@SourceContextualizedActivityIntervalId", fact.SourceContextualizedActivityIntervalId?.Value);
-        AddNullableString(command, "@SourceEligibilityIntervalId", fact.SourceEligibilityIntervalId?.Value);
-        AddNullableString(command, "@SourceQuantityEvidenceId", fact.SourceQuantityEvidenceId?.Value);
-        command.Parameters.Add("@OccurrenceSiteId", SqlDbType.NVarChar, 256).Value = occurrence.SiteId.Value;
-        command.Parameters.Add("@OccurrenceScheduleId", SqlDbType.NVarChar, 256).Value = occurrence.ShiftScheduleAssignmentId.Value;
-        command.Parameters.Add("@OccurrenceShiftId", SqlDbType.NVarChar, 256).Value = occurrence.ShiftId.Value;
-        command.Parameters.Add("@OccurrenceStartsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.StartsAtUtc;
-        command.Parameters.Add("@OccurrenceEndsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.EndsAtUtc;
-        command.Parameters.Add("@ProductionDaySiteId", SqlDbType.NVarChar, 256).Value = productionDay.SiteId.Value;
-        command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
-            productionDay.BusinessDate.ToDateTime(TimeOnly.MinValue);
-
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private static void AddNullableString(SqlCommand command, string name, string? value)
-    {
-        command.Parameters.Add(name, SqlDbType.NVarChar, 256).Value =
-            value is null ? DBNull.Value : value;
-    }
 }
