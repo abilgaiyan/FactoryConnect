@@ -53,8 +53,10 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         MetricAggregationProcessorId processorId)
     {
         const string prefix = "metric-aggregation:";
-        Assert.True(
-            processorId.Value.StartsWith(prefix, StringComparison.Ordinal));
+        Assert.StartsWith(
+            prefix,
+            processorId.Value,
+            StringComparison.Ordinal);
         return new MachineId(Guid.Parse(processorId.Value[prefix.Length..]));
     }
 
