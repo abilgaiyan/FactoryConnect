@@ -22,9 +22,16 @@ public sealed class EdgePersistenceCompositionTests
         services.AddFactoryConnectEdgePersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
-        var store = provider.GetRequiredService<IObservationIngestionStore>();
+        var observation = provider.GetRequiredService<IObservationIngestionStore>();
+        var production = provider.GetRequiredService<IProductionContextProcessingStore>();
+        var reader = provider.GetRequiredService<IMetricInputReader>();
+        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
 
-        Assert.IsType<InMemoryObservationIngestionStore>(store);
+        Assert.IsType<InMemoryObservationIngestionStore>(observation);
+        Assert.Same(production, reader);
+        Assert.Equal(
+            "FactoryConnect.Core.InMemoryMetricAggregationStore",
+            aggregation.GetType().FullName);
     }
 
     [Fact]
@@ -42,11 +49,23 @@ public sealed class EdgePersistenceCompositionTests
         services.AddFactoryConnectEdgePersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
-        var store = provider.GetRequiredService<IObservationIngestionStore>();
+        var observation = provider.GetRequiredService<IObservationIngestionStore>();
+        var production = provider.GetRequiredService<IProductionContextProcessingStore>();
+        var reader = provider.GetRequiredService<IMetricInputReader>();
+        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
 
         Assert.Equal(
             "FactoryConnect.Persistence.SqlServer.SqlServerObservationIngestionStore",
-            store.GetType().FullName);
+            observation.GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerProductionContextProcessingStore",
+            production.GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerMetricInputStore",
+            reader.GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerMetricAggregationStore",
+            aggregation.GetType().FullName);
     }
 
     private static IConfiguration CreateConfiguration(
