@@ -32,9 +32,11 @@ public sealed class ProductionQuantityFactProcessingFailureConformanceTests
             innerStore,
             boundary == FailureBoundary.CheckpointRestore,
             boundary == FailureBoundary.Commit);
+        var shiftResolver = CreateShiftResolver();
         var runtime = new ProductionQuantityFactProcessingRuntime(
             processorId,
             reader,
+            shiftResolver,
             store,
             streamId,
             10);
@@ -43,6 +45,7 @@ public sealed class ProductionQuantityFactProcessingFailureConformanceTests
             runtime.RunCycleAsync());
         Assert.Equal(boundary, error.Boundary);
         Assert.Empty(innerStore.MetricFacts);
+        Assert.Empty(innerStore.PositionedMetricInputs);
         Assert.Null(await innerStore.ReadCheckpointAsync(
             processorId,
             streamId,
@@ -50,6 +53,7 @@ public sealed class ProductionQuantityFactProcessingFailureConformanceTests
 
         Assert.Equal(1, await runtime.RunCycleAsync());
         Assert.Equal(3, innerStore.MetricFacts.Count);
+        Assert.Equal(3, innerStore.PositionedMetricInputs.Count);
         var checkpoint = await innerStore.ReadCheckpointAsync(
             processorId,
             streamId,
@@ -60,11 +64,13 @@ public sealed class ProductionQuantityFactProcessingFailureConformanceTests
         var restarted = new ProductionQuantityFactProcessingRuntime(
             processorId,
             innerReader,
+            shiftResolver,
             innerStore,
             streamId,
             10);
         Assert.Equal(0, await restarted.RunCycleAsync());
         Assert.Equal(3, innerStore.MetricFacts.Count);
+        Assert.Equal(3, innerStore.PositionedMetricInputs.Count);
     }
 
     public enum FailureBoundary
@@ -72,6 +78,24 @@ public sealed class ProductionQuantityFactProcessingFailureConformanceTests
         CheckpointRestore,
         EvidenceRead,
         Commit,
+    }
+
+    private static ShiftOccurrenceResolver CreateShiftResolver()
+    {
+        var assignment = new ShiftScheduleAssignment
+        {
+            Id = new ShiftScheduleAssignmentId("SCHEDULE-1"),
+            CompanyId = new CompanyId("COMP-1"),
+            SiteId = new SiteId("SITE-1"),
+            TimeZoneId = new FactoryTimeZoneId("Asia/Kolkata"),
+            ShiftId = new ShiftId("SHIFT-1"),
+            Name = "SHIFT-1",
+            StartsAtLocal = new TimeOnly(6, 0),
+            EndsAtLocal = new TimeOnly(15, 0),
+            EffectiveFrom = new DateOnly(2026, 8, 26),
+        };
+
+        return new ShiftOccurrenceResolver(new InMemoryShiftScheduleReader([assignment]));
     }
 
     private static DurableProductionQuantityEvidence CreateDurableEvidence(
