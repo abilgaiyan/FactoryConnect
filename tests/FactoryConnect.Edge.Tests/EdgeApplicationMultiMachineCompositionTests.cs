@@ -53,7 +53,8 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         MetricAggregationProcessorId processorId)
     {
         const string prefix = "metric-aggregation:";
-        Assert.StartsWith(prefix, processorId.Value, StringComparison.Ordinal);
+        Assert.True(
+            processorId.Value.StartsWith(prefix, StringComparison.Ordinal));
         return new MachineId(Guid.Parse(processorId.Value[prefix.Length..]));
     }
 
@@ -94,7 +95,9 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
     {
         var machineText = machineId.Value.ToString("D");
         var mtPrefix = $"MTConnect:Machines:{index}";
-        values[$"{mtPrefix}:BaseUri"] = $"http://localhost:{5000 + index}";
+        values[$"{mtPrefix}:BaseUri"] = index == 0
+            ? "http://localhost:5000"
+            : "http://localhost:5001";
         values[$"{mtPrefix}:MachineId"] = machineText;
         values[$"{mtPrefix}:DeviceKey"] = deviceKey;
         values[$"{mtPrefix}:FromSequence"] = "1";
