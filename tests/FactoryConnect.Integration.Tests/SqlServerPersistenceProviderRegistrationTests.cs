@@ -31,6 +31,30 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
     }
 
     [Fact]
+    public void InMemorySelectionResolvesCoherentMetricPipelineCapabilities()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("InMemory");
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddInMemoryPersistenceProvider();
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var observation = provider.GetRequiredService<IObservationIngestionStore>();
+        var production = provider.GetRequiredService<IProductionContextProcessingStore>();
+        var reader = provider.GetRequiredService<IMetricInputReader>();
+        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
+
+        Assert.IsType<InMemoryObservationIngestionStore>(observation);
+        Assert.IsType<FactoryConnect.Core.InMemoryProductionContextProcessingStore>(production);
+        Assert.Same(production, reader);
+        Assert.IsType<FactoryConnect.Core.InMemoryMetricAggregationStore>(aggregation);
+        Assert.IsNotType<SqlServerObservationIngestionStore>(observation);
+    }
+
+    [Fact]
     public void SelectedSqlServerProviderRequiresConnectionString()
     {
         ServiceCollection services = new();
@@ -53,7 +77,7 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
     }
 
     [Fact]
-    public void SelectedSqlServerProviderCreatesStoreWithConfiguredConnectionString()
+    public void SelectedSqlServerProviderCreatesAllCapabilitiesWithConfiguredConnectionString()
     {
         const string connectionString = "Server=test;Database=test;";
         ServiceCollection services = new();
@@ -61,6 +85,7 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
             selectedProvider: "SqlServer",
             connectionString);
 
+        services.AddInMemoryPersistenceProvider();
         services.AddSqlServerPersistenceProvider(
             configuration.GetRequiredSection(
                 SqlServerPersistenceOptions.SectionName));
@@ -68,14 +93,20 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
 
         using var provider = services.BuildServiceProvider();
 
-        var store = Assert.IsType<SqlServerObservationIngestionStore>(
+        var observation = Assert.IsType<SqlServerObservationIngestionStore>(
             provider.GetRequiredService<IObservationIngestionStore>());
+        Assert.IsType<SqlServerProductionContextProcessingStore>(
+            provider.GetRequiredService<IProductionContextProcessingStore>());
+        Assert.IsType<SqlServerMetricInputStore>(
+            provider.GetRequiredService<IMetricInputReader>());
+        Assert.IsType<SqlServerMetricAggregationStore>(
+            provider.GetRequiredService<IMetricAggregationStore>());
 
-        Assert.Equal(connectionString, store.ConnectionString);
+        Assert.Equal(connectionString, observation.ConnectionString);
     }
 
     [Fact]
-    public void RegistrationDoesNotActivateStore()
+    public void RegistrationDoesNotActivateAnySelectedCapability()
     {
         ServiceCollection services = new();
         var configuration = BuildConfiguration(
@@ -90,6 +121,18 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
             services,
             descriptor => descriptor.ServiceType ==
                 typeof(IObservationIngestionStore));
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType ==
+                typeof(IProductionContextProcessingStore));
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType ==
+                typeof(IMetricInputReader));
+        Assert.DoesNotContain(
+            services,
+            descriptor => descriptor.ServiceType ==
+                typeof(IMetricAggregationStore));
     }
 
     private static IConfiguration BuildConfiguration(

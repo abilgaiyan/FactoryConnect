@@ -7,4 +7,5 @@ public sealed record ProductionContextProcessingCommit
     public IReadOnlyList<ContextualizedActivityInterval> ContextualizedActivity { get; init; } = [];
     public IReadOnlyList<ProductionTimeEligibilityInterval> EligibilityIntervals { get; init; } = [];
     public IReadOnlyList<DurableMetricInputFact> MetricFacts { get; init; } = [];
+    public IReadOnlyList<DurableMetricInputAppend> MetricInputs { get; init; } = [];
 }

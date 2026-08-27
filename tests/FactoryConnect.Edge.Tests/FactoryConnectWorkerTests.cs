@@ -11,7 +11,7 @@ public sealed class FactoryConnectWorkerTests
         var runtime = new RecordingRuntime();
         var factory = new RecordingRuntimeFactory(runtime);
         var worker = new FactoryConnectWorker(
-            factory,
+            [factory],
             NullLogger<FactoryConnectWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
@@ -21,6 +21,31 @@ public sealed class FactoryConnectWorkerTests
         Assert.Equal(1, factory.CreateCount);
         Assert.Equal(1, runtime.RunCount);
         Assert.True(runtime.ObservedCancellation);
+    }
+
+    [Fact]
+    public async Task WorkerRunsAllConfiguredAcquisitionRuntimes()
+    {
+        var runtimeA = new RecordingRuntime();
+        var runtimeB = new RecordingRuntime();
+        var factoryA = new RecordingRuntimeFactory(runtimeA);
+        var factoryB = new RecordingRuntimeFactory(runtimeB);
+        var worker = new FactoryConnectWorker(
+            [factoryA, factoryB],
+            NullLogger<FactoryConnectWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await Task.WhenAll(
+            runtimeA.Started.WaitAsync(TimeSpan.FromSeconds(1)),
+            runtimeB.Started.WaitAsync(TimeSpan.FromSeconds(1)));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, factoryA.CreateCount);
+        Assert.Equal(1, factoryB.CreateCount);
+        Assert.Equal(1, runtimeA.RunCount);
+        Assert.Equal(1, runtimeB.RunCount);
+        Assert.True(runtimeA.ObservedCancellation);
+        Assert.True(runtimeB.ObservedCancellation);
     }
 
     private sealed class RecordingRuntimeFactory(

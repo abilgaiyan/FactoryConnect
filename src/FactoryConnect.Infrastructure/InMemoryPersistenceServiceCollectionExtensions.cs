@@ -1,3 +1,4 @@
+using FactoryConnect.Core;
 using FactoryConnect.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,16 @@ public static class InMemoryPersistenceServiceCollectionExtensions
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
-                static _ => new InMemoryObservationIngestionStore()));
+                static _ =>
+                {
+                    var productionContextStore =
+                        new InMemoryProductionContextProcessingStore();
+
+                    return new PersistenceProviderServices(
+                        new InMemoryObservationIngestionStore(),
+                        productionContextStore,
+                        productionContextStore,
+                        new InMemoryMetricAggregationStore());
+                }));
     }
 }
