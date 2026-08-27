@@ -36,25 +36,36 @@ public sealed class SqlServerMetricAggregationSchemaTests
         Assert.Contains("UQ_MetricInputFact_StreamFactIdentity", schema, StringComparison.Ordinal);
         Assert.Contains("CK_MetricInputFact_Position_UInt64", schema, StringComparison.Ordinal);
         Assert.Contains("CK_MetricInputFact_OwnershipContainment", schema, StringComparison.Ordinal);
+        Assert.Contains("CK_MetricInputFact_SiteOwnership", schema, StringComparison.Ordinal);
+        Assert.Contains("CK_MetricInputFact_ShiftOwnership", schema, StringComparison.Ordinal);
+        Assert.Contains("CK_MetricInputFact_ScheduleOwnership", schema, StringComparison.Ordinal);
+        Assert.Contains("CK_MetricInputFact_UtcOffsets", schema, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AggregationSchemaContainsContributionAndCheckpointConcurrencyBoundaries()
+    public void AggregationSchemaStructurallyBindsContributionToProcessorStreamFactAndPosition()
     {
         var schema = SqlServerSchema.ReadMetricAggregationSchema();
 
-        Assert.Contains("PK_MetricAggregationContribution", schema, StringComparison.Ordinal);
-        Assert.Contains("UQ_MetricAggregationContribution_Position", schema, StringComparison.Ordinal);
+        Assert.Contains("UQ_MetricAggregationProcessor_StreamBinding", schema, StringComparison.Ordinal);
+        Assert.Contains("UQ_MetricInputFact_StreamPositionRow", schema, StringComparison.Ordinal);
+        Assert.Contains("FK_MetricAggregationContribution_ProcessorStream", schema, StringComparison.Ordinal);
+        Assert.Contains("FK_MetricAggregationContribution_FactStreamPosition", schema, StringComparison.Ordinal);
         Assert.Contains("PK_MetricAggregationCheckpoint", schema, StringComparison.Ordinal);
         Assert.Contains("CK_MetricAggregationCheckpoint_Position_UInt64", schema, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void AggregateSchemaKeepsUnitOutsideAggregateIdentity()
+    public void AggregateSchemaUsesSurrogateClusteredKeysAndFixedSizeIdentityHashes()
     {
         var schema = SqlServerSchema.ReadMetricAggregationSchema();
 
-        Assert.Contains("AggregateKeyBinary varbinary(900) NOT NULL", schema, StringComparison.Ordinal);
+        Assert.Contains("ShiftMetricAggregateRowId bigint IDENTITY(1,1)", schema, StringComparison.Ordinal);
+        Assert.Contains("ProductionDayMetricAggregateRowId bigint IDENTITY(1,1)", schema, StringComparison.Ordinal);
+        Assert.Contains("AggregateKeyHash binary(32) NOT NULL", schema, StringComparison.Ordinal);
+        Assert.Contains("AggregateKeyBinary varbinary(max) NOT NULL", schema, StringComparison.Ordinal);
+        Assert.Contains("UQ_ShiftMetricAggregate_IdentityHash", schema, StringComparison.Ordinal);
+        Assert.Contains("UQ_ProductionDayMetricAggregate_IdentityHash", schema, StringComparison.Ordinal);
         Assert.Contains("Unit nvarchar(128)", schema, StringComparison.Ordinal);
         Assert.DoesNotContain("PRIMARY KEY (Unit", schema, StringComparison.Ordinal);
     }
