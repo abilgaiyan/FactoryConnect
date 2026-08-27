@@ -344,10 +344,7 @@ internal sealed class SqlServerMetricInputStore :
             SqlServerUInt64.Materialize(reader.GetDecimal(ordinal++)));
         var factId = new MetricInputFactId(reader.GetString(ordinal++));
         var key = reader.GetString(ordinal++);
-        var value = decimal.Parse(
-            reader.GetString(ordinal++),
-            NumberStyles.Number,
-            CultureInfo.InvariantCulture);
+        var value = SqlServerCanonicalDecimalCodec.Deserialize(reader.GetString(ordinal++));
         var unit = reader.GetString(ordinal++);
         var startsAtUtc = reader.GetDateTimeOffset(ordinal++);
         var endsAtUtc = reader.GetDateTimeOffset(ordinal++);
@@ -477,7 +474,7 @@ internal sealed class SqlServerMetricInputStore :
         command.Parameters.Add("@FactId", SqlDbType.NVarChar, 256).Value = fact.Id.Value;
         command.Parameters.Add("@MetricInputKey", SqlDbType.NVarChar, 256).Value = fact.Key;
         command.Parameters.Add("@MetricValue", SqlDbType.NVarChar, 64).Value =
-            fact.Value.ToString("G29", CultureInfo.InvariantCulture);
+            SqlServerCanonicalDecimalCodec.Serialize(fact.Value);
         command.Parameters.Add("@Unit", SqlDbType.NVarChar, 128).Value = fact.Unit;
         command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value = fact.StartsAtUtc;
         command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value = fact.EndsAtUtc;
@@ -488,56 +485,30 @@ internal sealed class SqlServerMetricInputStore :
         command.Parameters.Add("@ShiftId", SqlDbType.NVarChar, 256).Value = fact.ShiftId.Value;
         command.Parameters.Add("@ShiftScheduleAssignmentId", SqlDbType.NVarChar, 256).Value =
             fact.ShiftScheduleAssignmentId!.Value.Value;
-        AddNullableString(
-            command,
-            "@ProductionContextAssignmentId",
-            fact.ProductionContextAssignmentId?.Value);
+        AddNullableString(command, "@ProductionContextAssignmentId", fact.ProductionContextAssignmentId?.Value);
         AddNullableString(command, "@ProductionOrderId", fact.ProductionOrderId?.Value);
         AddNullableString(command, "@OperationId", fact.OperationId?.Value);
         AddNullableString(command, "@PartId", fact.PartId?.Value);
         AddNullableString(command, "@OperatorId", fact.OperatorId?.Value);
         command.Parameters.Add("@IsPlannedProductionTime", SqlDbType.Bit).Value =
-            fact.IsPlannedProductionTime is null
-                ? DBNull.Value
-                : fact.IsPlannedProductionTime.Value;
-        AddNullableString(
-            command,
-            "@PlannedProductionScheduleAssignmentId",
-            fact.PlannedProductionScheduleAssignmentId?.Value);
-        AddNullableString(
-            command,
-            "@SourceContextualizedActivityIntervalId",
-            fact.SourceContextualizedActivityIntervalId?.Value);
-        AddNullableString(
-            command,
-            "@SourceEligibilityIntervalId",
-            fact.SourceEligibilityIntervalId?.Value);
-        AddNullableString(
-            command,
-            "@SourceQuantityEvidenceId",
-            fact.SourceQuantityEvidenceId?.Value);
-        command.Parameters.Add("@OccurrenceSiteId", SqlDbType.NVarChar, 256).Value =
-            occurrence.SiteId.Value;
-        command.Parameters.Add("@OccurrenceScheduleId", SqlDbType.NVarChar, 256).Value =
-            occurrence.ShiftScheduleAssignmentId.Value;
-        command.Parameters.Add("@OccurrenceShiftId", SqlDbType.NVarChar, 256).Value =
-            occurrence.ShiftId.Value;
-        command.Parameters.Add("@OccurrenceStartsAtUtc", SqlDbType.DateTimeOffset).Value =
-            occurrence.StartsAtUtc;
-        command.Parameters.Add("@OccurrenceEndsAtUtc", SqlDbType.DateTimeOffset).Value =
-            occurrence.EndsAtUtc;
-        command.Parameters.Add("@ProductionDaySiteId", SqlDbType.NVarChar, 256).Value =
-            productionDay.SiteId.Value;
+            fact.IsPlannedProductionTime is null ? DBNull.Value : fact.IsPlannedProductionTime.Value;
+        AddNullableString(command, "@PlannedProductionScheduleAssignmentId", fact.PlannedProductionScheduleAssignmentId?.Value);
+        AddNullableString(command, "@SourceContextualizedActivityIntervalId", fact.SourceContextualizedActivityIntervalId?.Value);
+        AddNullableString(command, "@SourceEligibilityIntervalId", fact.SourceEligibilityIntervalId?.Value);
+        AddNullableString(command, "@SourceQuantityEvidenceId", fact.SourceQuantityEvidenceId?.Value);
+        command.Parameters.Add("@OccurrenceSiteId", SqlDbType.NVarChar, 256).Value = occurrence.SiteId.Value;
+        command.Parameters.Add("@OccurrenceScheduleId", SqlDbType.NVarChar, 256).Value = occurrence.ShiftScheduleAssignmentId.Value;
+        command.Parameters.Add("@OccurrenceShiftId", SqlDbType.NVarChar, 256).Value = occurrence.ShiftId.Value;
+        command.Parameters.Add("@OccurrenceStartsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.StartsAtUtc;
+        command.Parameters.Add("@OccurrenceEndsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.EndsAtUtc;
+        command.Parameters.Add("@ProductionDaySiteId", SqlDbType.NVarChar, 256).Value = productionDay.SiteId.Value;
         command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
             productionDay.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddNullableString(
-        SqlCommand command,
-        string name,
-        string? value)
+    private static void AddNullableString(SqlCommand command, string name, string? value)
     {
         command.Parameters.Add(name, SqlDbType.NVarChar, 256).Value =
             value is null ? DBNull.Value : value;
