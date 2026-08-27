@@ -14,11 +14,43 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
     public static IServiceCollection AddFactoryConnectProductionMetricInputs(
         this IServiceCollection services,
         IConfiguration configuration,
-        ObservationStreamId activityStreamId)
+        ObservationStreamId activityStreamId) =>
+        services.AddFactoryConnectProductionMetricInputs(
+            configuration,
+            [activityStreamId]);
+
+    public static IServiceCollection AddFactoryConnectProductionMetricInputs(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IReadOnlyList<ObservationStreamId> activityStreamIds)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentNullException.ThrowIfNull(activityStreamId);
+        ArgumentNullException.ThrowIfNull(activityStreamIds);
+
+        if (activityStreamIds.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one production activity stream is required.",
+                nameof(activityStreamIds));
+        }
+
+        if (activityStreamIds.Distinct().Count() != activityStreamIds.Count)
+        {
+            throw new ArgumentException(
+                "Production activity streams must be unique.",
+                nameof(activityStreamIds));
+        }
+
+        if (activityStreamIds
+            .Select(static stream => stream.MachineId)
+            .Distinct()
+            .Count() != activityStreamIds.Count)
+        {
+            throw new ArgumentException(
+                "Production processing requires exactly one activity stream per machine.",
+                nameof(activityStreamIds));
+        }
 
         var section = configuration.GetRequiredSection(SectionName);
         var batchSize = int.Parse(
@@ -32,6 +64,169 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             pollingInterval,
             TimeSpan.Zero);
 
+        var configurations = ReadMachineConfigurations(
+            section,
+            activityStreamIds);
+        var scopes = configurations.Select(static item => item.Scope).ToArray();
+        var contexts = configurations.Select(static item => item.Context).ToArray();
+        var shifts = configurations.Select(static item => item.Shift).ToArray();
+        var planned = configurations.Select(static item => item.Planned).ToArray();
+
+        services.AddSingleton(
+            new InMemoryProductionContextReader(contexts));
+        services.AddSingleton<IProductionContextReader>(
+            static provider => provider.GetRequiredService<
+                InMemoryProductionContextReader>());
+        services.AddSingleton(
+            new InMemoryShiftScheduleReader(shifts));
+        services.AddSingleton<IShiftScheduleReader>(
+            static provider => provider.GetRequiredService<
+                InMemoryShiftScheduleReader>());
+        services.AddSingleton(
+            new InMemoryPlannedProductionScheduleReader(planned));
+        services.AddSingleton<IPlannedProductionScheduleReader>(
+            static provider => provider.GetRequiredService<
+                InMemoryPlannedProductionScheduleReader>());
+        services.AddSingleton<ShiftOccurrenceResolver>();
+        services.AddSingleton<PlannedProductionIntervalResolver>();
+
+        services.AddSingleton<ProjectionProductionContextActivityReader>();
+        services.AddSingleton<IProductionContextActivityReader>(
+            static provider => provider.GetRequiredService<
+                ProjectionProductionContextActivityReader>());
+        services.AddSingleton<InMemoryProductionQuantityEvidenceReader>();
+        services.AddSingleton<IProductionQuantityEvidenceReader>(
+            static provider => provider.GetRequiredService<
+                InMemoryProductionQuantityEvidenceReader>());
+
+        if (scopes.Length == 1)
+        {
+            services.AddSingleton(scopes[0]);
+        }
+
+        services.AddSingleton(
+            provider =>
+            {
+                var activityReader = provider.GetRequiredService<
+                    IProductionContextActivityReader>();
+                var contextReader = provider.GetRequiredService<
+                    IProductionContextReader>();
+                var shiftResolver = provider.GetRequiredService<
+                    ShiftOccurrenceResolver>();
+                var plannedResolver = provider.GetRequiredService<
+                    PlannedProductionIntervalResolver>();
+                var quantityReader = provider.GetRequiredService<
+                    IProductionQuantityEvidenceReader>();
+                var store = provider.GetRequiredService<
+                    IProductionContextProcessingStore>();
+                List<ProductionContextProcessingRuntime> activityRuntimes = [];
+                List<ProductionQuantityFactProcessingRuntime> quantityRuntimes = [];
+
+                foreach (var item in configurations)
+                {
+                    var processorSuffix = item.Scope.MachineId.ToString();
+                    activityRuntimes.Add(
+                        new ProductionContextProcessingRuntime(
+                            new ObservationProcessorId(
+                                $"production-context:{processorSuffix}"),
+                            activityReader,
+                            contextReader,
+                            shiftResolver,
+                            plannedResolver,
+                            store,
+                            item.Scope,
+                            batchSize));
+                    quantityRuntimes.Add(
+                        new ProductionQuantityFactProcessingRuntime(
+                            new ObservationProcessorId(
+                                $"production-quantity:{processorSuffix}"),
+                            quantityReader,
+                            shiftResolver,
+                            store,
+                            item.QuantityStreamId,
+                            batchSize));
+                }
+
+                return new ProductionMetricInputRuntimeSet(
+                    activityRuntimes,
+                    quantityRuntimes,
+                    pollingInterval);
+            });
+
+        services.AddHostedService<ProductionMetricInputProcessingWorker>();
+        return services;
+    }
+
+    private static MachineProductionConfiguration[] ReadMachineConfigurations(
+        IConfigurationSection section,
+        IReadOnlyList<ObservationStreamId> activityStreamIds)
+    {
+        var machineSections = section.GetSection("Machines").GetChildren().ToArray();
+        if (machineSections.Length == 0)
+        {
+            if (activityStreamIds.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "ProductionProcessing:Machines is required when multiple machines are configured.");
+            }
+
+            return [ReadMachineConfiguration(section, activityStreamIds[0])];
+        }
+
+        Dictionary<MachineId, IConfigurationSection> byMachine = [];
+        foreach (var machineSection in machineSections)
+        {
+            var machineId = new MachineId(
+                Guid.Parse(Required(machineSection, "MachineId")));
+            if (!byMachine.TryAdd(machineId, machineSection))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate production-processing machine '{machineId}'.");
+            }
+        }
+
+        var expectedMachines = activityStreamIds
+            .Select(static stream => stream.MachineId)
+            .ToHashSet();
+        if (byMachine.Keys.Any(machineId => !expectedMachines.Contains(machineId)))
+        {
+            throw new InvalidOperationException(
+                "ProductionProcessing:Machines contains a machine that is not registered for activity processing.");
+        }
+
+        List<MachineProductionConfiguration> configurations = [];
+        foreach (var activityStreamId in activityStreamIds)
+        {
+            if (!byMachine.TryGetValue(
+                    activityStreamId.MachineId,
+                    out var machineSection))
+            {
+                throw new InvalidOperationException(
+                    $"No production-processing configuration exists for machine '{activityStreamId.MachineId}'.");
+            }
+
+            var configuredStreamKey = Required(
+                machineSection,
+                "ActivityStreamKey");
+            if (!StringComparer.Ordinal.Equals(
+                    configuredStreamKey,
+                    activityStreamId.StreamKey))
+            {
+                throw new InvalidOperationException(
+                    $"Production-processing activity stream for machine '{activityStreamId.MachineId}' does not match the registered stream.");
+            }
+
+            configurations.Add(
+                ReadMachineConfiguration(machineSection, activityStreamId));
+        }
+
+        return configurations.ToArray();
+    }
+
+    private static MachineProductionConfiguration ReadMachineConfiguration(
+        IConfigurationSection section,
+        ObservationStreamId activityStreamId)
+    {
         var companyId = new CompanyId(Required(section, "CompanyId"));
         var siteId = new SiteId(Required(section, "SiteId"));
         var lineId = new ProductionLineId(Required(section, "ProductionLineId"));
@@ -109,64 +304,16 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             ],
         };
 
-        services.AddSingleton(scope);
-        services.AddSingleton(
-            new InMemoryProductionContextReader([contextAssignment]));
-        services.AddSingleton<IProductionContextReader>(
-            static provider => provider.GetRequiredService<
-                InMemoryProductionContextReader>());
-        services.AddSingleton(
-            new InMemoryShiftScheduleReader([shiftAssignment]));
-        services.AddSingleton<IShiftScheduleReader>(
-            static provider => provider.GetRequiredService<
-                InMemoryShiftScheduleReader>());
-        services.AddSingleton(
-            new InMemoryPlannedProductionScheduleReader([plannedAssignment]));
-        services.AddSingleton<IPlannedProductionScheduleReader>(
-            static provider => provider.GetRequiredService<
-                InMemoryPlannedProductionScheduleReader>());
-        services.AddSingleton<ShiftOccurrenceResolver>();
-        services.AddSingleton<PlannedProductionIntervalResolver>();
-
-        services.AddSingleton<ProjectionProductionContextActivityReader>();
-        services.AddSingleton<IProductionContextActivityReader>(
-            static provider => provider.GetRequiredService<
-                ProjectionProductionContextActivityReader>());
-        services.AddSingleton<InMemoryProductionQuantityEvidenceReader>();
-        services.AddSingleton<IProductionQuantityEvidenceReader>(
-            static provider => provider.GetRequiredService<
-                InMemoryProductionQuantityEvidenceReader>());
-
         var quantityStreamId = new ObservationStreamId(
             machineId,
             section["QuantityStreamKey"] ?? "production-quantity");
 
-        services.AddSingleton(
-            provider => new ProductionMetricInputRuntimeSet(
-                [
-                    new ProductionContextProcessingRuntime(
-                        new ObservationProcessorId("production-context"),
-                        provider.GetRequiredService<IProductionContextActivityReader>(),
-                        provider.GetRequiredService<IProductionContextReader>(),
-                        provider.GetRequiredService<ShiftOccurrenceResolver>(),
-                        provider.GetRequiredService<PlannedProductionIntervalResolver>(),
-                        provider.GetRequiredService<IProductionContextProcessingStore>(),
-                        scope,
-                        batchSize),
-                ],
-                [
-                    new ProductionQuantityFactProcessingRuntime(
-                        new ObservationProcessorId("production-quantity"),
-                        provider.GetRequiredService<IProductionQuantityEvidenceReader>(),
-                        provider.GetRequiredService<ShiftOccurrenceResolver>(),
-                        provider.GetRequiredService<IProductionContextProcessingStore>(),
-                        quantityStreamId,
-                        batchSize),
-                ],
-                pollingInterval));
-
-        services.AddHostedService<ProductionMetricInputProcessingWorker>();
-        return services;
+        return new MachineProductionConfiguration(
+            scope,
+            quantityStreamId,
+            contextAssignment,
+            shiftAssignment,
+            plannedAssignment);
     }
 
     private static string Required(
@@ -174,4 +321,11 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         string key) =>
         section[key] ?? throw new InvalidOperationException(
             $"{section.Path}:{key} is required.");
+
+    private sealed record MachineProductionConfiguration(
+        ProductionContextProcessingScope Scope,
+        ObservationStreamId QuantityStreamId,
+        ProductionContextAssignment Context,
+        ShiftScheduleAssignment Shift,
+        PlannedProductionScheduleAssignment Planned);
 }
