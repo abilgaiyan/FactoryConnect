@@ -1,9 +1,10 @@
+using System.Collections.ObjectModel;
+
 namespace FactoryConnect.Core;
 
 public sealed class MetricAggregationProcessingRuntimeSet
 {
-    private readonly MetricAggregationProcessingRuntime[] _runtimes;
-    private readonly TimeSpan _pollingInterval;
+    private readonly ReadOnlyCollection<MetricAggregationProcessingRuntime> _runtimes;
 
     public MetricAggregationProcessingRuntimeSet(
         IReadOnlyList<MetricAggregationProcessingRuntime> runtimes,
@@ -25,44 +26,42 @@ public sealed class MetricAggregationProcessingRuntimeSet
                 "Polling interval must be greater than zero.");
         }
 
-        _runtimes = runtimes.ToArray();
-        _pollingInterval = pollingInterval;
+        _runtimes = Array.AsReadOnly(runtimes.ToArray());
+        PollingInterval = pollingInterval;
     }
 
     public IReadOnlyList<MetricAggregationProcessingRuntime> Runtimes => _runtimes;
 
+    public TimeSpan PollingInterval { get; }
+
     public async Task<bool> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
-        var processed = false;
+        var tasks = _runtimes
+            .Select(runtime => runtime.RunCycleAsync(cancellationToken).AsTask())
+            .ToArray();
 
-        foreach (var runtime in _runtimes)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            processed = await runtime.RunCycleAsync(cancellationToken) > 0 || processed;
+            var results = await Task.WhenAll(tasks);
+            return results.Any(static count => count > 0);
         }
-
-        return processed;
-    }
-
-    public async Task RunAsync(CancellationToken cancellationToken = default)
-    {
-        while (!cancellationToken.IsCancellationRequested)
+        catch
         {
-            if (await RunCycleAsync(cancellationToken))
-            {
-                continue;
-            }
-
-            try
-            {
-                await Task.Delay(_pollingInterval, cancellationToken);
-            }
-            catch (OperationCanceledException)
-                when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
+            await Task.WhenAll(
+                tasks.Select(
+                    static async task =>
+                    {
+                        try
+                        {
+                            await task;
+                        }
+                        catch
+                        {
+                            // Ensure every runtime is observed before propagating.
+                        }
+                    }));
+            throw;
         }
     }
 }
