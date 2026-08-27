@@ -7,6 +7,7 @@ namespace FactoryConnect.Core.Tests;
 public sealed class InMemoryMetricAggregationStoreConcurrencyTests
 {
     private static readonly MachineId Machine = new(new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+    private static readonly decimal[] ConcurrentWinningTotals = [90m, 100m];
 
     [Fact]
     public async Task NewFactBehindExpectedCheckpointIsRejectedWithoutMutation()
@@ -101,7 +102,7 @@ public sealed class InMemoryMetricAggregationStoreConcurrencyTests
         var key = new ShiftMetricAggregateKey(Machine, occurrence, MetricInputFactKeys.RunningDuration);
         var aggregate = await store.ReadShiftAggregateAsync(processor, key, CancellationToken.None);
         Assert.NotNull(aggregate);
-        Assert.Contains(aggregate.Value, new[] { 90m, 100m });
+        Assert.Contains(aggregate.Value, ConcurrentWinningTotals);
         Assert.Equal(2, aggregate.InputCount);
         Assert.Equal(proposed, await store.ReadCheckpointAsync(processor, stream, CancellationToken.None));
     }
