@@ -6,12 +6,17 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.001_InitialObservationIngestion.sql";
     private const string MetricAggregationSchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.002_DurableMetricAggregation.sql";
+    private const string MetricInputMachineBindingSchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.003_BindMetricInputFactMachine.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
 
     public static string ReadMetricAggregationSchema() =>
         ReadSchema(MetricAggregationSchemaResourceName);
+
+    public static string ReadMetricInputMachineBindingSchema() =>
+        ReadSchema(MetricInputMachineBindingSchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
