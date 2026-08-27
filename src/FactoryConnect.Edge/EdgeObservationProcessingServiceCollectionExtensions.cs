@@ -199,12 +199,24 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         {
             var machineId = new MachineId(
                 Guid.Parse(Required(streamSection, "MachineId")));
-            var streamId = new ObservationStreamId(
-                machineId,
-                Required(streamSection, "StreamKey"));
+            var streamKey = Required(streamSection, "StreamKey");
+            var registeredStream = streamIds.FirstOrDefault(
+                stream =>
+                    stream.MachineId == machineId &&
+                    string.Equals(
+                        stream.StreamKey,
+                        streamKey,
+                        StringComparison.Ordinal));
+
+            if (registeredStream is null)
+            {
+                throw new InvalidOperationException(
+                    "ObservationProcessing:Streams contains a stream that is not " +
+                    "registered for processing.");
+            }
 
             if (!configured.TryAdd(
-                    streamId,
+                    registeredStream,
                     new MachineSignalMappingConfiguration
                     {
                         MachineId = machineId,
@@ -213,7 +225,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     }))
             {
                 throw new InvalidOperationException(
-                    $"Duplicate observation processing stream '{streamId.StreamKey}'.");
+                    $"Duplicate observation processing stream '{streamKey}'.");
             }
         }
 
@@ -226,13 +238,6 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     $"for machine '{streamId.MachineId}' and stream " +
                     $"'{streamId.StreamKey}'.");
             }
-        }
-
-        if (configured.Keys.Any(streamId => !streamIds.Contains(streamId)))
-        {
-            throw new InvalidOperationException(
-                "ObservationProcessing:Streams contains a stream that is not " +
-                "registered for processing.");
         }
 
         return configured;
