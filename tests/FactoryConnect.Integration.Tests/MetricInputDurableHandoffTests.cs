@@ -178,17 +178,76 @@ public sealed class MetricInputDurableHandoffTests
     }
 
     [Fact]
+    public void ReadRequestRejectsCheckpointFromAnotherProcessor()
+    {
+        var stream = new MetricInputStreamId(MachineOne, "metrics");
+        var expectedProcessor = new MetricAggregationProcessorId("aggregate-a");
+        var checkpoint = new MetricAggregationCheckpoint(
+            new MetricAggregationProcessorId("aggregate-b"),
+            stream,
+            new MetricInputPosition(5));
+
+        Assert.Throws<ArgumentException>(() =>
+            MetricInputReadRequest.FromCheckpoint(
+                expectedProcessor,
+                stream,
+                checkpoint,
+                10));
+    }
+
+    [Fact]
     public void ReadRequestRejectsCheckpointFromAnotherStream()
     {
         var firstStream = new MetricInputStreamId(MachineOne, "metrics");
         var secondStream = new MetricInputStreamId(MachineTwo, "metrics");
+        var processor = new MetricAggregationProcessorId("aggregate-machine-1");
         var checkpoint = new MetricAggregationCheckpoint(
-            new MetricAggregationProcessorId("aggregate-machine-2"),
+            processor,
             secondStream,
             new MetricInputPosition(5));
 
         Assert.Throws<ArgumentException>(() =>
-            MetricInputReadRequest.FromCheckpoint(firstStream, checkpoint, 10));
+            MetricInputReadRequest.FromCheckpoint(
+                processor,
+                firstStream,
+                checkpoint,
+                10));
+    }
+
+    [Fact]
+    public void ReadRequestAcceptsMatchingProcessorAndStream()
+    {
+        var stream = new MetricInputStreamId(MachineOne, "metrics");
+        var processor = new MetricAggregationProcessorId("aggregate-machine-1");
+        var checkpoint = new MetricAggregationCheckpoint(
+            processor,
+            stream,
+            new MetricInputPosition(5));
+
+        var request = MetricInputReadRequest.FromCheckpoint(
+            processor,
+            stream,
+            checkpoint,
+            10);
+
+        Assert.Equal(new MetricInputPosition(5), request.AfterPosition);
+        Assert.Equal(stream, request.StreamId);
+    }
+
+    [Fact]
+    public void ReadRequestWithNullCheckpointBeginsWithoutPosition()
+    {
+        var stream = new MetricInputStreamId(MachineOne, "metrics");
+        var processor = new MetricAggregationProcessorId("aggregate-machine-1");
+
+        var request = MetricInputReadRequest.FromCheckpoint(
+            processor,
+            stream,
+            null,
+            10);
+
+        Assert.Null(request.AfterPosition);
+        Assert.Equal(stream, request.StreamId);
     }
 
     [Fact]
@@ -235,6 +294,22 @@ public sealed class MetricInputDurableHandoffTests
             CreateFact(MachineTwo),
             append.ShiftOccurrenceId,
             append.ProductionDayId));
+    }
+
+    [Fact]
+    public async Task ReadRejectsPositionBeyondDurableStreamTail()
+    {
+        var store = new InMemoryMetricInputStore();
+        var append = CreateAppend();
+        await store.AppendAsync(append, CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await store.ReadAsync(
+                new MetricInputReadRequest(
+                    append.StreamId,
+                    new MetricInputPosition(999),
+                    10),
+                CancellationToken.None));
     }
 
     private static DurableMetricInputAppend CreateAppend()
