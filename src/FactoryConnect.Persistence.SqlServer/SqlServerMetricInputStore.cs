@@ -238,7 +238,7 @@ internal sealed class SqlServerMetricInputStore :
 
         var next = tail is null
             ? 1UL
-            : checked(tail.Value.Value + 1UL);
+            : checked(tail.Value + 1UL);
         return new MetricInputPosition(next);
     }
 
@@ -459,14 +459,16 @@ internal sealed class SqlServerMetricInputStore :
             "PlannedProductionScheduleAssignmentId, SourceContextualizedActivityIntervalId, " +
             "SourceEligibilityIntervalId, SourceQuantityEvidenceId, OccurrenceSiteId, " +
             "OccurrenceShiftScheduleAssignmentId, OccurrenceShiftId, OccurrenceStartsAtUtc, " +
-            "OccurrenceEndsAtUtc, ProductionDaySiteId, ProductionBusinessDate) VALUES " +
-            "(@StreamRowId, @Position, @FactIdBinary, @FactId, @MetricInputKey, @MetricValue, " +
-            "@Unit, @StartsAtUtc, @EndsAtUtc, @CompanyId, @SiteId, @ProductionLineId, @MachineId, " +
-            "@ShiftId, @ScheduleId, @ContextId, @OrderId, @OperationId, @PartId, @OperatorId, " +
-            "@Planned, @PlannedAssignmentId, @SourceContextId, @SourceEligibilityId, " +
-            "@SourceQuantityId, @OccurrenceSiteId, @OccurrenceScheduleId, @OccurrenceShiftId, " +
-            "@OccurrenceStartsAtUtc, @OccurrenceEndsAtUtc, @ProductionDaySiteId, " +
-            "@ProductionBusinessDate);";
+            "OccurrenceEndsAtUtc, ProductionDaySiteId, ProductionBusinessDate) " +
+            "VALUES (@StreamRowId, @Position, @FactIdBinary, @FactId, @MetricInputKey, " +
+            "@MetricValue, @Unit, @StartsAtUtc, @EndsAtUtc, @CompanyId, @SiteId, " +
+            "@ProductionLineId, @MachineId, @ShiftId, @ShiftScheduleAssignmentId, " +
+            "@ProductionContextAssignmentId, @ProductionOrderId, @OperationId, @PartId, " +
+            "@OperatorId, @IsPlannedProductionTime, @PlannedProductionScheduleAssignmentId, " +
+            "@SourceContextualizedActivityIntervalId, @SourceEligibilityIntervalId, " +
+            "@SourceQuantityEvidenceId, @OccurrenceSiteId, @OccurrenceScheduleId, " +
+            "@OccurrenceShiftId, @OccurrenceStartsAtUtc, @OccurrenceEndsAtUtc, " +
+            "@ProductionDaySiteId, @ProductionBusinessDate);";
 
         command.Parameters.Add("@StreamRowId", SqlDbType.BigInt).Value = streamRowId;
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", position.Value));
@@ -481,35 +483,38 @@ internal sealed class SqlServerMetricInputStore :
         command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value = fact.EndsAtUtc;
         command.Parameters.Add("@CompanyId", SqlDbType.NVarChar, 256).Value = fact.CompanyId.Value;
         command.Parameters.Add("@SiteId", SqlDbType.NVarChar, 256).Value = fact.SiteId.Value;
-        AddNullableText(command, "@ProductionLineId", fact.ProductionLineId?.Value);
+        AddNullableString(command, "@ProductionLineId", fact.ProductionLineId?.Value);
         command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = fact.MachineId.Value;
         command.Parameters.Add("@ShiftId", SqlDbType.NVarChar, 256).Value = fact.ShiftId.Value;
-        command.Parameters.Add("@ScheduleId", SqlDbType.NVarChar, 256).Value =
+        command.Parameters.Add("@ShiftScheduleAssignmentId", SqlDbType.NVarChar, 256).Value =
             fact.ShiftScheduleAssignmentId!.Value.Value;
-        AddNullableText(command, "@ContextId", fact.ProductionContextAssignmentId?.Value);
-        AddNullableText(command, "@OrderId", fact.ProductionOrderId?.Value);
-        AddNullableText(command, "@OperationId", fact.OperationId?.Value);
-        AddNullableText(command, "@PartId", fact.PartId?.Value);
-        AddNullableText(command, "@OperatorId", fact.OperatorId?.Value);
-        command.Parameters.Add("@Planned", SqlDbType.Bit).Value =
+        AddNullableString(
+            command,
+            "@ProductionContextAssignmentId",
+            fact.ProductionContextAssignmentId?.Value);
+        AddNullableString(command, "@ProductionOrderId", fact.ProductionOrderId?.Value);
+        AddNullableString(command, "@OperationId", fact.OperationId?.Value);
+        AddNullableString(command, "@PartId", fact.PartId?.Value);
+        AddNullableString(command, "@OperatorId", fact.OperatorId?.Value);
+        command.Parameters.Add("@IsPlannedProductionTime", SqlDbType.Bit).Value =
             fact.IsPlannedProductionTime is null
                 ? DBNull.Value
                 : fact.IsPlannedProductionTime.Value;
-        AddNullableText(
+        AddNullableString(
             command,
-            "@PlannedAssignmentId",
+            "@PlannedProductionScheduleAssignmentId",
             fact.PlannedProductionScheduleAssignmentId?.Value);
-        AddNullableText(
+        AddNullableString(
             command,
-            "@SourceContextId",
+            "@SourceContextualizedActivityIntervalId",
             fact.SourceContextualizedActivityIntervalId?.Value);
-        AddNullableText(
+        AddNullableString(
             command,
-            "@SourceEligibilityId",
+            "@SourceEligibilityIntervalId",
             fact.SourceEligibilityIntervalId?.Value);
-        AddNullableText(
+        AddNullableString(
             command,
-            "@SourceQuantityId",
+            "@SourceQuantityEvidenceId",
             fact.SourceQuantityEvidenceId?.Value);
         command.Parameters.Add("@OccurrenceSiteId", SqlDbType.NVarChar, 256).Value =
             occurrence.SiteId.Value;
@@ -529,7 +534,7 @@ internal sealed class SqlServerMetricInputStore :
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddNullableText(
+    private static void AddNullableString(
         SqlCommand command,
         string name,
         string? value)
