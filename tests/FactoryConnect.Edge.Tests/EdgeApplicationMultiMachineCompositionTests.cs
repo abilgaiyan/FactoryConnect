@@ -96,6 +96,7 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         string contextId)
     {
         var machineText = machineId.Value.ToString("D");
+        var activityStreamKey = $"mtconnect:{deviceKey}";
         var mtPrefix = $"MTConnect:Machines:{index}";
         values[$"{mtPrefix}:BaseUri"] = index == 0
             ? "http://localhost:5000"
@@ -107,11 +108,11 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
 
         var observationPrefix = $"ObservationProcessing:Streams:{index}";
         values[$"{observationPrefix}:MachineId"] = machineText;
-        values[$"{observationPrefix}:StreamKey"] = deviceKey;
+        values[$"{observationPrefix}:StreamKey"] = activityStreamKey;
 
         var productionPrefix = $"ProductionProcessing:Machines:{index}";
         values[$"{productionPrefix}:MachineId"] = machineText;
-        values[$"{productionPrefix}:ActivityStreamKey"] = deviceKey;
+        values[$"{productionPrefix}:ActivityStreamKey"] = activityStreamKey;
         values[$"{productionPrefix}:QuantityStreamKey"] = "production-quantity";
         values[$"{productionPrefix}:CompanyId"] = "COMP-1";
         values[$"{productionPrefix}:SiteId"] = "SITE-1";
