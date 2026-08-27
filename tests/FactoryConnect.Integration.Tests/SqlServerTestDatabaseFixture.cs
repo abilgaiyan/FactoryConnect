@@ -36,7 +36,7 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
                 $"{ConnectionStringEnvironmentVariable} must specify a SQL Server data source.");
         }
 
-        _databaseName = $"FactoryConnect_FC023_{Guid.NewGuid():N}";
+        _databaseName = $"FactoryConnect_FC026_{Guid.NewGuid():N}";
 
         var adminBuilder = new SqlConnectionStringBuilder(
             sourceBuilder.ConnectionString)
@@ -61,9 +61,12 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
             await using var databaseConnection = new SqlConnection(
                 ConnectionString);
             await databaseConnection.OpenAsync();
-            await using var schemaCommand = databaseConnection.CreateCommand();
-            schemaCommand.CommandText = SqlServerSchema.ReadInitialSchema();
-            await schemaCommand.ExecuteNonQueryAsync();
+            await ExecuteSchemaAsync(
+                databaseConnection,
+                SqlServerSchema.ReadInitialSchema());
+            await ExecuteSchemaAsync(
+                databaseConnection,
+                SqlServerSchema.ReadMetricAggregationSchema());
         }
         catch
         {
@@ -78,6 +81,15 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
     }
 
     public SqlConnection CreateConnection() => new(ConnectionString);
+
+    private static async Task ExecuteSchemaAsync(
+        SqlConnection connection,
+        string schema)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = schema;
+        await command.ExecuteNonQueryAsync();
+    }
 
     private async Task CreateDatabaseAsync()
     {
