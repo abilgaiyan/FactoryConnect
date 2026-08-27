@@ -318,5 +318,7 @@ public sealed class MetricAggregationProcessingRuntimeTests
         }
     }
 
-    private sealed class InjectedAggregationCommitException : Exception;
+    private sealed class InjectedAggregationCommitException : Exception
+    {
+    }
 }
