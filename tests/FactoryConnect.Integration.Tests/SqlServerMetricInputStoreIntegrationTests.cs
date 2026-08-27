@@ -115,6 +115,80 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
         Assert.NotEqual(machineOne.StreamId, machineTwo.StreamId);
     }
 
+    [Fact]
+    public async Task ConcurrentDifferentFactsReceiveDistinctConsecutivePositions()
+    {
+        var machineId = NewMachineId();
+        var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
+        var first = CreateAppend(machineId, "fact-concurrent-1", 1m, minute: 40);
+        var second = CreateAppend(machineId, "fact-concurrent-2", 2m, minute: 41);
+
+        var results = await Task.WhenAll(
+            store.AppendAsync(first, CancellationToken.None).AsTask(),
+            store.AppendAsync(second, CancellationToken.None).AsTask());
+
+        var positions = results
+            .Select(static result => result.Position.Value)
+            .OrderBy(static position => position)
+            .ToArray();
+
+        Assert.Equal([1UL, 2UL], positions);
+
+        var batch = await store.ReadAsync(
+            new MetricInputReadRequest(
+                MetricInputStreamId.ForMachine(machineId),
+                afterPosition: null,
+                maxCount: 10),
+            CancellationToken.None);
+
+        Assert.Equal(2, batch.Facts.Count);
+        Assert.Equal(2, batch.Facts.Select(static fact => fact.Fact.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task ConcurrentIdenticalReplayProducesOneFactAndOneStablePosition()
+    {
+        var machineId = NewMachineId();
+        var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
+        var append = CreateAppend(machineId, "fact-concurrent-replay", 3m, minute: 50);
+
+        var results = await Task.WhenAll(
+            store.AppendAsync(append, CancellationToken.None).AsTask(),
+            store.AppendAsync(append, CancellationToken.None).AsTask());
+
+        Assert.Equal(results[0], results[1]);
+        Assert.Equal(1UL, results[0].Position.Value);
+
+        var batch = await store.ReadAsync(
+            new MetricInputReadRequest(
+                MetricInputStreamId.ForMachine(machineId),
+                afterPosition: null,
+                maxCount: 10),
+            CancellationToken.None);
+
+        var persisted = Assert.Single(batch.Facts);
+        Assert.Equal(results[0], persisted);
+    }
+
+    [Fact]
+    public async Task SeparateMachineStreamsAllocateIndependentlyUnderConcurrency()
+    {
+        var firstMachineId = NewMachineId();
+        var secondMachineId = NewMachineId();
+        var store = new SqlServerMetricInputStore(_fixture.ConnectionString);
+
+        var results = await Task.WhenAll(
+            store.AppendAsync(
+                CreateAppend(firstMachineId, "fact-concurrent-machine-1", 1m, minute: 55),
+                CancellationToken.None).AsTask(),
+            store.AppendAsync(
+                CreateAppend(secondMachineId, "fact-concurrent-machine-2", 1m, minute: 55),
+                CancellationToken.None).AsTask());
+
+        Assert.All(results, static result => Assert.Equal(1UL, result.Position.Value));
+        Assert.NotEqual(results[0].StreamId, results[1].StreamId);
+    }
+
     private static MachineId NewMachineId() => new(Guid.NewGuid());
 
     private static DurableMetricInputAppend CreateAppend(
