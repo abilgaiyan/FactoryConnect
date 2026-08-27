@@ -4,6 +4,7 @@ namespace FactoryConnect.Core;
 
 public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
 {
+    private readonly object _sync = new();
     private readonly Dictionary<MetricAggregationProcessorId, MetricAggregationCheckpoint> _checkpoints = [];
     private readonly Dictionary<(MetricAggregationProcessorId ProcessorId, MetricInputFactId FactId), PositionedMetricInputFact> _contributions = [];
     private readonly Dictionary<(MetricAggregationProcessorId ProcessorId, MetricInputPosition Position), MetricInputFactId> _positions = [];
@@ -19,18 +20,21 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
         ArgumentNullException.ThrowIfNull(streamId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_checkpoints.TryGetValue(processorId, out var checkpoint))
+        lock (_sync)
         {
-            if (checkpoint.StreamId != streamId)
+            if (_checkpoints.TryGetValue(processorId, out var checkpoint))
             {
-                throw new InvalidOperationException(
-                    "Aggregation processor checkpoint belongs to a different metric input stream.");
+                if (checkpoint.StreamId != streamId)
+                {
+                    throw new InvalidOperationException(
+                        "Aggregation processor checkpoint belongs to a different metric input stream.");
+                }
+
+                return ValueTask.FromResult<MetricAggregationCheckpoint?>(checkpoint);
             }
 
-            return ValueTask.FromResult<MetricAggregationCheckpoint?>(checkpoint);
+            return ValueTask.FromResult<MetricAggregationCheckpoint?>(null);
         }
-
-        return ValueTask.FromResult<MetricAggregationCheckpoint?>(null);
     }
 
     public ValueTask<MetricAggregateValue?> ReadShiftAggregateAsync(
@@ -42,8 +46,11 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
         ArgumentNullException.ThrowIfNull(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        _shiftAggregates.TryGetValue((processorId, key), out var value);
-        return ValueTask.FromResult<MetricAggregateValue?>(value);
+        lock (_sync)
+        {
+            _shiftAggregates.TryGetValue((processorId, key), out var value);
+            return ValueTask.FromResult<MetricAggregateValue?>(value);
+        }
     }
 
     public ValueTask<MetricAggregateValue?> ReadProductionDayAggregateAsync(
@@ -55,8 +62,11 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
         ArgumentNullException.ThrowIfNull(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        _productionDayAggregates.TryGetValue((processorId, key), out var value);
-        return ValueTask.FromResult<MetricAggregateValue?>(value);
+        lock (_sync)
+        {
+            _productionDayAggregates.TryGetValue((processorId, key), out var value);
+            return ValueTask.FromResult<MetricAggregateValue?>(value);
+        }
     }
 
     public ValueTask CommitAsync(
@@ -66,45 +76,48 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
         ArgumentNullException.ThrowIfNull(commit);
         cancellationToken.ThrowIfCancellationRequested();
 
-        _checkpoints.TryGetValue(commit.ProcessorId, out var current);
-        if (!CheckpointEquals(current, commit.ExpectedCheckpoint))
+        lock (_sync)
         {
-            throw new InvalidOperationException("Metric aggregation checkpoint conflict.");
+            _checkpoints.TryGetValue(commit.ProcessorId, out var current);
+            if (!CheckpointEquals(current, commit.ExpectedCheckpoint))
+            {
+                throw new InvalidOperationException("Metric aggregation checkpoint conflict.");
+            }
+
+            if (current is not null && current.StreamId != commit.ProposedCheckpoint.StreamId)
+            {
+                throw new InvalidOperationException(
+                    "Aggregation processor cannot change metric input streams.");
+            }
+
+            var newInputs = StageNewInputs(commit);
+            var contributions = MetricInputContributionAggregator.Aggregate(
+                commit.ProposedCheckpoint.StreamId,
+                newInputs);
+            var stagedShift = StageShiftAggregates(commit.ProcessorId, contributions.ShiftContributions);
+            var stagedProductionDay = StageProductionDayAggregates(
+                commit.ProcessorId,
+                contributions.ProductionDayContributions);
+
+            foreach (var input in newInputs)
+            {
+                _contributions.Add((commit.ProcessorId, input.Fact.Id), input);
+                _positions.Add((commit.ProcessorId, input.Position), input.Fact.Id);
+            }
+
+            foreach (var pair in stagedShift)
+            {
+                _shiftAggregates[pair.Key] = pair.Value;
+            }
+
+            foreach (var pair in stagedProductionDay)
+            {
+                _productionDayAggregates[pair.Key] = pair.Value;
+            }
+
+            _checkpoints[commit.ProcessorId] = commit.ProposedCheckpoint;
+            return ValueTask.CompletedTask;
         }
-
-        if (current is not null && current.StreamId != commit.ProposedCheckpoint.StreamId)
-        {
-            throw new InvalidOperationException(
-                "Aggregation processor cannot change metric input streams.");
-        }
-
-        var newInputs = StageNewInputs(commit);
-        var contributions = MetricInputContributionAggregator.Aggregate(
-            commit.ProposedCheckpoint.StreamId,
-            newInputs);
-        var stagedShift = StageShiftAggregates(commit.ProcessorId, contributions.ShiftContributions);
-        var stagedProductionDay = StageProductionDayAggregates(
-            commit.ProcessorId,
-            contributions.ProductionDayContributions);
-
-        foreach (var input in newInputs)
-        {
-            _contributions.Add((commit.ProcessorId, input.Fact.Id), input);
-            _positions.Add((commit.ProcessorId, input.Position), input.Fact.Id);
-        }
-
-        foreach (var pair in stagedShift)
-        {
-            _shiftAggregates[pair.Key] = pair.Value;
-        }
-
-        foreach (var pair in stagedProductionDay)
-        {
-            _productionDayAggregates[pair.Key] = pair.Value;
-        }
-
-        _checkpoints[commit.ProcessorId] = commit.ProposedCheckpoint;
-        return ValueTask.CompletedTask;
     }
 
     private List<PositionedMetricInputFact> StageNewInputs(MetricAggregationCommit commit)
@@ -143,6 +156,13 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
                 }
 
                 continue;
+            }
+
+            if (commit.ExpectedCheckpoint is not null &&
+                input.Position <= commit.ExpectedCheckpoint.Position)
+            {
+                throw new InvalidOperationException(
+                    "New metric input position must be after the expected aggregation checkpoint.");
             }
 
             var positionIdentity = (commit.ProcessorId, input.Position);
