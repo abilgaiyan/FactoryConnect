@@ -132,7 +132,10 @@ public sealed class SqlServerMetricInputStoreIntegrationTests :
             .OrderBy(static position => position)
             .ToArray();
 
-        Assert.Equal([1UL, 2UL], positions);
+        Assert.Collection(
+            positions,
+            static position => Assert.Equal(1UL, position),
+            static position => Assert.Equal(2UL, position));
 
         var batch = await store.ReadAsync(
             new MetricInputReadRequest(
