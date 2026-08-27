@@ -12,6 +12,8 @@
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.001_InitialObservationIngestion.sql" />
     <EmbeddedResource Include="Sql\002_DurableMetricAggregation.sql"
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.002_DurableMetricAggregation.sql" />
+    <EmbeddedResource Include="Sql\003_BindMetricInputFactMachine.sql"
+                      LogicalName="FactoryConnect.Persistence.SqlServer.Sql.003_BindMetricInputFactMachine.sql" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
