@@ -4,8 +4,14 @@ namespace FactoryConnect.Integration.Tests;
 
 public sealed class MetricAggregationContractTests
 {
+    private static readonly MachineId MachineOne = new(
+        Guid.Parse("11111111-1111-1111-1111-111111111111"));
+
+    private static readonly MachineId MachineTwo = new(
+        Guid.Parse("22222222-2222-2222-2222-222222222222"));
+
     [Fact]
-    public void Metric_input_position_rejects_zero_and_orders_by_value()
+    public void MetricInputPositionRejectsZeroAndOrdersByValue()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new MetricInputPosition(0));
 
@@ -17,14 +23,12 @@ public sealed class MetricAggregationContractTests
     }
 
     [Fact]
-    public void Metric_input_stream_is_machine_scoped()
+    public void MetricInputStreamIsMachineScoped()
     {
-        var machineId = new MachineId("machine-1");
-
-        var first = new MetricInputStreamId(machineId, "metrics");
-        var replay = new MetricInputStreamId(machineId, "metrics");
+        var first = new MetricInputStreamId(MachineOne, "metrics");
+        var replay = new MetricInputStreamId(MachineOne, "metrics");
         var otherMachine = new MetricInputStreamId(
-            new MachineId("machine-2"),
+            MachineTwo,
             "metrics");
 
         Assert.Equal(first, replay);
@@ -32,7 +36,7 @@ public sealed class MetricAggregationContractTests
     }
 
     [Fact]
-    public void Shift_occurrence_identity_is_deterministic_from_resolved_ownership()
+    public void ShiftOccurrenceIdentityIsDeterministicFromResolvedOwnership()
     {
         var startsAt = new DateTimeOffset(2026, 8, 27, 16, 30, 0, TimeSpan.Zero);
         var endsAt = startsAt.AddHours(8);
@@ -48,7 +52,7 @@ public sealed class MetricAggregationContractTests
     }
 
     [Fact]
-    public void Production_day_identity_is_site_and_business_date_scoped()
+    public void ProductionDayIdentityIsSiteAndBusinessDateScoped()
     {
         var siteId = new SiteId("site-1");
         var businessDate = new DateOnly(2026, 8, 27);
@@ -64,10 +68,10 @@ public sealed class MetricAggregationContractTests
     }
 
     [Fact]
-    public void Positioned_fact_requires_matching_machine_and_temporal_ownership()
+    public void PositionedFactRequiresMatchingMachineAndTemporalOwnership()
     {
         var streamId = new MetricInputStreamId(
-            new MachineId("machine-1"),
+            MachineOne,
             "metrics");
         var shiftOccurrenceId = CreateShiftOccurrenceId(
             new DateTimeOffset(2026, 8, 27, 6, 30, 0, TimeSpan.Zero),
@@ -79,7 +83,7 @@ public sealed class MetricAggregationContractTests
         var positioned = new PositionedMetricInputFact(
             streamId,
             new MetricInputPosition(1),
-            CreateFact(new MachineId("machine-1")),
+            CreateFact(MachineOne),
             shiftOccurrenceId,
             productionDayId);
 
@@ -87,16 +91,16 @@ public sealed class MetricAggregationContractTests
         Assert.Throws<ArgumentException>(() => new PositionedMetricInputFact(
             streamId,
             new MetricInputPosition(2),
-            CreateFact(new MachineId("machine-2")),
+            CreateFact(MachineTwo),
             shiftOccurrenceId,
             productionDayId));
     }
 
     [Fact]
-    public void Read_batch_requires_strictly_increasing_stream_positions()
+    public void ReadBatchRequiresStrictlyIncreasingStreamPositions()
     {
         var streamId = new MetricInputStreamId(
-            new MachineId("machine-1"),
+            MachineOne,
             "metrics");
         var shiftOccurrenceId = CreateShiftOccurrenceId(
             new DateTimeOffset(2026, 8, 27, 6, 30, 0, TimeSpan.Zero),
@@ -104,7 +108,7 @@ public sealed class MetricAggregationContractTests
         var productionDayId = new ProductionDayId(
             new SiteId("site-1"),
             new DateOnly(2026, 8, 27));
-        var fact = CreateFact(new MachineId("machine-1"));
+        var fact = CreateFact(MachineOne);
 
         var first = new PositionedMetricInputFact(
             streamId,
@@ -135,10 +139,10 @@ public sealed class MetricAggregationContractTests
     }
 
     [Fact]
-    public void Empty_read_window_can_explicitly_advance_source_progress()
+    public void EmptyReadWindowCanExplicitlyAdvanceSourceProgress()
     {
         var streamId = new MetricInputStreamId(
-            new MachineId("machine-1"),
+            MachineOne,
             "metrics");
 
         var batch = new MetricInputReadBatch(
@@ -152,15 +156,14 @@ public sealed class MetricAggregationContractTests
     }
 
     [Fact]
-    public void Aggregate_keys_do_not_partition_by_unit()
+    public void AggregateKeysDoNotPartitionByUnit()
     {
-        var machineId = new MachineId("machine-1");
         var shiftOccurrenceId = CreateShiftOccurrenceId(
             new DateTimeOffset(2026, 8, 27, 6, 30, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 8, 27, 14, 30, 0, TimeSpan.Zero));
 
         var key = new ShiftMetricAggregateKey(
-            machineId,
+            MachineOne,
             shiftOccurrenceId,
             "running-duration");
         var value = new MetricAggregateValue(
