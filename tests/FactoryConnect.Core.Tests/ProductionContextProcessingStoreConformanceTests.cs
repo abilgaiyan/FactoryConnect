@@ -54,6 +54,78 @@ public sealed class ProductionContextProcessingStoreConformanceTests
         Assert.Equal(1m, fact.Value);
     }
 
+    [Fact]
+    public async Task PositionedMetricInputAndCheckpointCommitAtomically()
+    {
+        var machineId = new MachineId(new Guid("66666666-6666-6666-6666-666666666666"));
+        var sourceStream = new ObservationStreamId(machineId, "activity");
+        var processorId = new ObservationProcessorId("fc025-atomic-output");
+        var metricStream = MetricInputStreamId.ForMachine(machineId);
+        var fact = CreateFact(machineId, 1m);
+        var append = CreateAppend(metricStream, fact);
+        var store = new InMemoryProductionContextProcessingStore();
+        var firstCheckpoint = new ObservationProcessingCheckpoint(
+            processorId,
+            sourceStream,
+            new ObservationPosition(1));
+
+        await store.CommitAsync(
+            new ProductionContextProcessingCommit
+            {
+                ExpectedCheckpoint = null,
+                NextCheckpoint = firstCheckpoint,
+                MetricFacts = [fact],
+                MetricInputs = [append],
+            },
+            CancellationToken.None);
+
+        var positioned = Assert.Single(store.PositionedMetricInputs);
+        Assert.Equal(new MetricInputPosition(1), positioned.Position);
+        Assert.Equal(fact.Id, positioned.Fact.Id);
+
+        var conflictingFact = fact with { Value = 2m };
+        var conflicting = new ProductionContextProcessingCommit
+        {
+            ExpectedCheckpoint = firstCheckpoint,
+            NextCheckpoint = new ObservationProcessingCheckpoint(
+                processorId,
+                sourceStream,
+                new ObservationPosition(2)),
+            MetricFacts = [conflictingFact],
+            MetricInputs = [CreateAppend(metricStream, conflictingFact)],
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.CommitAsync(conflicting, CancellationToken.None));
+
+        var checkpoint = await store.ReadCheckpointAsync(
+            processorId,
+            sourceStream,
+            CancellationToken.None);
+        Assert.NotNull(checkpoint);
+        Assert.Equal(new ObservationPosition(1), checkpoint.Position);
+        Assert.Single(store.PositionedMetricInputs);
+        Assert.Equal(1m, Assert.Single(store.MetricFacts).Value);
+    }
+
+    private static DurableMetricInputAppend CreateAppend(
+        MetricInputStreamId streamId,
+        DurableMetricInputFact fact)
+    {
+        var occurrence = new ShiftOccurrenceId(
+            fact.SiteId,
+            fact.ShiftScheduleAssignmentId!,
+            fact.ShiftId,
+            new DateTimeOffset(2026, 8, 26, 7, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 26, 15, 0, 0, TimeSpan.Zero));
+
+        return new DurableMetricInputAppend(
+            streamId,
+            fact,
+            occurrence,
+            new ProductionDayId(fact.SiteId, new DateOnly(2026, 8, 26)));
+    }
+
     private static DurableMetricInputFact CreateFact(MachineId machineId, decimal value) =>
         new()
         {
