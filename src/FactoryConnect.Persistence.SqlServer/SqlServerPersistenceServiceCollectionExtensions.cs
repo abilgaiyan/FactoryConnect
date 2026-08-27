@@ -25,8 +25,11 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                     var connectionString =
                         options.GetRequiredConnectionString();
 
-                    return new SqlServerObservationIngestionStore(
-                        connectionString);
+                    return new PersistenceProviderServices(
+                        new SqlServerObservationIngestionStore(connectionString),
+                        new SqlServerProductionContextProcessingStore(connectionString),
+                        new SqlServerMetricInputStore(connectionString),
+                        new SqlServerMetricAggregationStore(connectionString));
                 }));
     }
 }
