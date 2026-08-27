@@ -8,6 +8,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.002_DurableMetricAggregation.sql";
     private const string MetricInputMachineBindingSchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.003_BindMetricInputFactMachine.sql";
+    private const string ProductionContextHandoffSchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.004_ProductionContextMetricInputHandoff.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -17,6 +19,9 @@ internal static class SqlServerSchema
 
     public static string ReadMetricInputMachineBindingSchema() =>
         ReadSchema(MetricInputMachineBindingSchemaResourceName);
+
+    public static string ReadProductionContextHandoffSchema() =>
+        ReadSchema(ProductionContextHandoffSchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
