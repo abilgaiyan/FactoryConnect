@@ -86,6 +86,9 @@ builder.Services.AddFactoryConnectEdgePersistence(
 builder.Services.AddFactoryConnectObservationProcessing(
     builder.Configuration,
     streamId);
+builder.Services.AddFactoryConnectProductionMetricInputs(
+    builder.Configuration,
+    streamId);
 builder.Services.AddFactoryConnectMetricAggregation(
     builder.Configuration,
     [options.MachineId]);
