@@ -63,7 +63,7 @@ public sealed class SqlServerMetricAggregationStoreIntegrationTests :
 
         Assert.NotNull(shift);
         Assert.Equal(30m, shift.Value);
-        Assert.Equal(2, shift.InputCount);
+        Assert.Equal(2L, shift.InputCount);
         Assert.Equal(shift, day);
         Assert.Equal(checkpoint, restored);
     }
@@ -116,7 +116,7 @@ public sealed class SqlServerMetricAggregationStoreIntegrationTests :
 
         Assert.NotNull(aggregate);
         Assert.Equal(30m, aggregate.Value);
-        Assert.Equal(2, aggregate.InputCount);
+        Assert.Equal(2L, aggregate.InputCount);
     }
 
     [Fact]
