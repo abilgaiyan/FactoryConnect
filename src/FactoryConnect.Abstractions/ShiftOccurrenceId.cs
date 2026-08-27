@@ -30,6 +30,20 @@ public sealed record ShiftOccurrenceId
                 nameof(shiftId));
         }
 
+        if (startsAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException(
+                "Shift occurrence start must use a zero UTC offset.",
+                nameof(startsAtUtc));
+        }
+
+        if (endsAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException(
+                "Shift occurrence end must use a zero UTC offset.",
+                nameof(endsAtUtc));
+        }
+
         if (endsAtUtc <= startsAtUtc)
         {
             throw new ArgumentException(
