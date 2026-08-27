@@ -188,7 +188,7 @@ public sealed class MetricInputDurableHandoffTests
             new MetricInputPosition(5));
 
         Assert.Throws<ArgumentException>(() =>
-            new MetricInputReadRequest(firstStream, checkpoint, 10));
+            MetricInputReadRequest.FromCheckpoint(firstStream, checkpoint, 10));
     }
 
     [Fact]
