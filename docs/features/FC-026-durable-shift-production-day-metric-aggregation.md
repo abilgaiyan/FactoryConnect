@@ -104,9 +104,9 @@ SQL Server additionally provides executable additive migrations, relational owne
 
 ## Machine execution and failure isolation
 
-Edge creates one activity producer, one quantity producer, and one `MetricAggregationProcessingRuntime` per configured machine. The producer and aggregation hosted workers supervise independent polling loops per runtime.
+Edge creates one acquisition runtime, one activity producer, one quantity producer, and one `MetricAggregationProcessingRuntime` per configured machine. Acquisition, producer, and aggregation hosted workers supervise independent machine/runtime loops.
 
-A machine producer or aggregation reader/store failure is logged for that processor and only that loop is delayed/retried. Other machine loops continue processing and advancing their own checkpoints. Cancellation is propagated to all loops and each worker joins its loops before stopping.
+A machine acquisition, producer, or aggregation reader/store failure is logged for that processor and only that machine/runtime loop is retried. Other machines continue processing and advancing their own checkpoints. Cancellation is propagated to all loops and each worker joins its loops before stopping.
 
 This operational isolation complements the durable identity isolation already provided by machine-scoped streams and processor-scoped checkpoints.
 
@@ -125,14 +125,18 @@ Therefore:
 
 ## Edge composition
 
-`ProductionProcessing:Machines` is the machine-specific FC-025 configuration model. Each entry binds the machine to its registered activity stream, quantity stream, company/site/line scope, production-context assignment, shift schedule, and planned-production schedule.
+`MTConnect:Machines` is the root machine inventory for the executable Edge host. Each entry supplies the machine identity, MTConnect endpoint, device key, bootstrap sequence, and acquisition polling interval. The inventory derives the canonical observation stream for every machine.
 
-The composition root constructs one shared activity-stream inventory and passes that same inventory to FC-024 observation processing and FC-025 production processing. FC-026 machine identities are derived from those same stream entries rather than from a second independent machine list.
+`ProductionProcessing:Machines` then binds those same machines and activity streams to quantity streams, company/site/line scope, production-context assignments, shift schedules, and planned-production schedules.
+
+`AddFactoryConnectEdgeApplication` constructs the shared inventory once and supplies it to acquisition, FC-024 observation processing, FC-025 production processing, and FC-026 aggregation. `Program.cs` invokes that same composition method, so the executable host and composition tests use one root path.
 
 ```text
-shared activity-stream inventory
+MTConnect:Machines
         ├── Machine A / Stream A
         └── Machine B / Stream B
+              ↓ shared inventory
+MTConnect acquisition runtimes + durable sinks
               ↓
 FC-024 observation processing
               ↓
@@ -143,14 +147,17 @@ provider-selected machine metric-input streams
 FC-026 machine-scoped aggregation processors
 ```
 
-`ProductionProcessing:BatchSize` and `ProductionProcessing:PollingInterval` configure producer execution. `MetricAggregation:BatchSize` and `MetricAggregation:PollingInterval` configure aggregation execution.
+`ObservationProcessing:Streams` and `ProductionProcessing:Machines` must match the shared MTConnect-derived stream inventory. Missing, extra, duplicate, or mismatched machine/stream configuration is rejected during composition.
 
-A single-machine compatibility overload remains available, but the underlying composition model is list-based and validates exactly one production configuration for every registered activity-stream machine. Extra, missing, duplicate, or mismatched machine/stream configuration is rejected during composition.
+`ProductionProcessing:BatchSize` and `ProductionProcessing:PollingInterval` configure producer execution. `MetricAggregation:BatchSize` and `MetricAggregation:PollingInterval` configure aggregation execution. MTConnect retry policy remains shared while each machine has its own acquisition options, sink, startup checkpoint, and runtime factory.
+
+The machine inventory retains backward compatibility with the former single-machine `MTConnect` shape when `MTConnect:Machines` is absent, but the production composition model itself is multi-machine.
 
 ## Conformance
 
 The composed FC-026 scenarios prove:
 
+- the real Edge application root creates acquisition, FC-024, FC-025, and FC-026 layers for two configured machines from one inventory;
 - activity and quantity producers publish into one downstream metric-input sequence per machine;
 - two machines retain distinct producer checkpoints, metric-input streams, aggregation checkpoints, and totals;
 - overnight facts after midnight retain the opening shift's production-day identity through aggregation;
