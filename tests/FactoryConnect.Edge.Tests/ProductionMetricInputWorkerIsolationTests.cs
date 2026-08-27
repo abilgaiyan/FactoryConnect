@@ -151,9 +151,9 @@ public sealed class ProductionMetricInputWorkerIsolationTests
     {
         private readonly InMemoryProductionContextProcessingStore _inner;
         private readonly ObservationProcessorId _failingProcessor;
-        private readonly TaskCompletionSource _machineACommitted =
+        private readonly TaskCompletionSource<bool> _machineACommitted =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _machineBCommitted =
+        private readonly TaskCompletionSource<bool> _machineBCommitted =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         private volatile bool _allowMachineA;
 
@@ -195,11 +195,11 @@ public sealed class ProductionMetricInputWorkerIsolationTests
 
             if (commit.NextCheckpoint.ProcessorId == _failingProcessor)
             {
-                _machineACommitted.TrySetResult();
+                _machineACommitted.TrySetResult(true);
             }
             else
             {
-                _machineBCommitted.TrySetResult();
+                _machineBCommitted.TrySetResult(true);
             }
         }
     }
