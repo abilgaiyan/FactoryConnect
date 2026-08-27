@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Core;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
@@ -59,7 +60,8 @@ public sealed class PersistenceProviderSelectionTests
                 _ =>
                 {
                     primaryActivations++;
-                    return new InMemoryObservationIngestionStore();
+                    return CreateProviderServices(
+                        new InMemoryObservationIngestionStore());
                 }));
         services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
@@ -67,7 +69,8 @@ public sealed class PersistenceProviderSelectionTests
                 _ =>
                 {
                     secondaryActivations++;
-                    return new InMemoryObservationIngestionStore();
+                    return CreateProviderServices(
+                        new InMemoryObservationIngestionStore());
                 }));
         services.AddFactoryConnectPersistence(configuration);
 
@@ -94,7 +97,8 @@ public sealed class PersistenceProviderSelectionTests
                 _ =>
                 {
                     activations++;
-                    return new InMemoryObservationIngestionStore();
+                    return CreateProviderServices(
+                        new InMemoryObservationIngestionStore());
                 }));
         services.AddFactoryConnectPersistence(configuration);
 
@@ -112,7 +116,8 @@ public sealed class PersistenceProviderSelectionTests
         services.AddPersistenceProvider(
             new CustomPersistenceProviderRegistration(
                 " sqlserver ",
-                static _ => new InMemoryObservationIngestionStore()));
+                static _ => CreateProviderServices(
+                    new InMemoryObservationIngestionStore())));
         services.AddFactoryConnectPersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
@@ -147,11 +152,13 @@ public sealed class PersistenceProviderSelectionTests
         services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 "Primary",
-                static _ => new InMemoryObservationIngestionStore()));
+                static _ => CreateProviderServices(
+                    new InMemoryObservationIngestionStore())));
         services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 " primary ",
-                static _ => new InMemoryObservationIngestionStore()));
+                static _ => CreateProviderServices(
+                    new InMemoryObservationIngestionStore())));
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => services.AddFactoryConnectPersistence(configuration));
@@ -170,11 +177,13 @@ public sealed class PersistenceProviderSelectionTests
         services.AddPersistenceProvider(
             new CustomPersistenceProviderRegistration(
                 "SqlServer",
-                static _ => new InMemoryObservationIngestionStore()));
+                static _ => CreateProviderServices(
+                    new InMemoryObservationIngestionStore())));
         services.AddPersistenceProvider(
             new CustomPersistenceProviderRegistration(
                 " sqlserver ",
-                static _ => new InMemoryObservationIngestionStore()));
+                static _ => CreateProviderServices(
+                    new InMemoryObservationIngestionStore())));
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => services.AddFactoryConnectPersistence(configuration));
@@ -216,7 +225,8 @@ public sealed class PersistenceProviderSelectionTests
             () => services.AddPersistenceProvider(
                 new PersistenceProviderRegistration(
                     "Other",
-                    static _ => new InMemoryObservationIngestionStore())));
+                    static _ => CreateProviderServices(
+                        new InMemoryObservationIngestionStore()))));
 
         Assert.Equal(
             "Persistence has already been finalized. " +
@@ -254,24 +264,36 @@ public sealed class PersistenceProviderSelectionTests
             .Build();
     }
 
+    private static PersistenceProviderServices CreateProviderServices(
+        IObservationIngestionStore observationStore)
+    {
+        var productionStore = new InMemoryProductionContextProcessingStore();
+
+        return new PersistenceProviderServices(
+            observationStore,
+            productionStore,
+            productionStore,
+            new InMemoryMetricAggregationStore());
+    }
+
     private sealed class CustomPersistenceProviderRegistration :
         IPersistenceProviderRegistration
     {
         private readonly Func<
             IServiceProvider,
-            IObservationIngestionStore> _factory;
+            PersistenceProviderServices> _factory;
 
         public string ProviderKey { get; }
 
         public CustomPersistenceProviderRegistration(
             string providerKey,
-            Func<IServiceProvider, IObservationIngestionStore> factory)
+            Func<IServiceProvider, PersistenceProviderServices> factory)
         {
             ProviderKey = providerKey;
             _factory = factory;
         }
 
-        public IObservationIngestionStore Create(IServiceProvider services) =>
+        public PersistenceProviderServices Create(IServiceProvider services) =>
             _factory(services);
     }
 }
