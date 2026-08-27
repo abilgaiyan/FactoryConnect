@@ -98,7 +98,8 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         Assert.Equal(batchB.ThroughPosition, checkpointB.Position);
 
         var runningA = Assert.Single(
-            batchA.Facts.Where(static item => item.Fact.Key == "duration.running"));
+            batchA.Facts,
+            static item => item.Fact.Key == "duration.running");
         var dayAggregateA = await aggregationStore.ReadProductionDayAggregateAsync(
             runtimeA.ProcessorId,
             new ProductionDayMetricAggregateKey(
@@ -207,14 +208,14 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         MachineId machineA,
         MachineId machineB)
     {
-        Dictionary<string, string?> values =
-        [
-            new("Persistence:Provider", "InMemory"),
-            new("ProductionProcessing:BatchSize", "100"),
-            new("ProductionProcessing:PollingInterval", "00:00:01"),
-            new("MetricAggregation:BatchSize", "100"),
-            new("MetricAggregation:PollingInterval", "00:00:01"),
-        ];
+        var values = new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "InMemory",
+            ["ProductionProcessing:BatchSize"] = "100",
+            ["ProductionProcessing:PollingInterval"] = "00:00:01",
+            ["MetricAggregation:BatchSize"] = "100",
+            ["MetricAggregation:PollingInterval"] = "00:00:01",
+        };
         AddMachine(values, 0, machineA, "activity-a", "quantity-a", "LINE-A", "CTX-A", "SHIFT-A", "POT-A");
         AddMachine(values, 1, machineB, "activity-b", "quantity-b", "LINE-B", "CTX-B", "SHIFT-B", "POT-B");
 
@@ -224,7 +225,7 @@ public sealed class MultiMachineProductionAggregationCompositionTests
     }
 
     private static void AddMachine(
-        IDictionary<string, string?> values,
+        Dictionary<string, string?> values,
         int index,
         MachineId machineId,
         string activityStreamKey,
