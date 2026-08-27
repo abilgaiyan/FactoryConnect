@@ -21,23 +21,16 @@ public sealed record MetricInputReadRequest
         MaxCount = maxCount;
     }
 
-    public MetricInputReadRequest(
-        MetricInputStreamId streamId,
-        MetricAggregationCheckpoint? checkpoint,
-        int maxCount)
-        : this(streamId, GetCheckpointPosition(streamId, checkpoint), maxCount)
-    {
-    }
-
     public MetricInputStreamId StreamId { get; }
 
     public MetricInputPosition? AfterPosition { get; }
 
     public int MaxCount { get; }
 
-    private static MetricInputPosition? GetCheckpointPosition(
+    public static MetricInputReadRequest FromCheckpoint(
         MetricInputStreamId streamId,
-        MetricAggregationCheckpoint? checkpoint)
+        MetricAggregationCheckpoint? checkpoint,
+        int maxCount)
     {
         ArgumentNullException.ThrowIfNull(streamId);
 
@@ -48,6 +41,9 @@ public sealed record MetricInputReadRequest
                 nameof(checkpoint));
         }
 
-        return checkpoint?.Position;
+        return new MetricInputReadRequest(
+            streamId,
+            checkpoint?.Position,
+            maxCount);
     }
 }
