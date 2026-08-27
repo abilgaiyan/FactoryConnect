@@ -71,6 +71,7 @@ public sealed class ProductionContextProcessingRuntime
 
         var contextualized = new List<ContextualizedActivityInterval>();
         var eligibility = new List<ProductionTimeEligibilityInterval>();
+        var resolvedShifts = new List<ShiftOccurrence>();
 
         foreach (var source in batch)
         {
@@ -90,6 +91,7 @@ public sealed class ProductionContextProcessingRuntime
                 factoryDateFrom,
                 factoryDateTo,
                 cancellationToken);
+            resolvedShifts.AddRange(shifts);
 
             var activityIntervals = ActivityContextIntervalAllocator.Allocate(
                 source,
@@ -112,6 +114,12 @@ public sealed class ProductionContextProcessingRuntime
         }
 
         var metricFacts = DurableMetricInputFactDeriver.Derive(eligibility, []);
+        var metricInputs = MetricInputAppendFactory.Create(
+            MetricInputStreamId.ForMachine(_scope.MachineId),
+            metricFacts,
+            resolvedShifts
+                .Distinct()
+                .ToArray());
         var nextCheckpoint = new ObservationProcessingCheckpoint(
             ProcessorId,
             _scope.StreamId,
@@ -125,6 +133,7 @@ public sealed class ProductionContextProcessingRuntime
                 ContextualizedActivity = contextualized,
                 EligibilityIntervals = eligibility,
                 MetricFacts = metricFacts,
+                MetricInputs = metricInputs,
             },
             cancellationToken);
 
