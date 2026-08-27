@@ -65,7 +65,8 @@ public sealed class MetricInputContributionAggregatorTests
         var ordered = MetricInputContributionAggregator.Aggregate(stream, [first, second]);
         var reversed = MetricInputContributionAggregator.Aggregate(stream, [second, first]);
 
-        Assert.Equal(ordered, reversed);
+        Assert.Equal(ordered.ShiftContributions, reversed.ShiftContributions);
+        Assert.Equal(ordered.ProductionDayContributions, reversed.ProductionDayContributions);
         var aggregate = Assert.Single(ordered.ShiftContributions).Value;
         Assert.Equal(second.Fact.StartsAtUtc, aggregate.FirstInputTimestamp);
         Assert.Equal(first.Fact.EndsAtUtc, aggregate.LastInputTimestamp);
