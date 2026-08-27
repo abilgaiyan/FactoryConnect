@@ -9,6 +9,7 @@ public sealed class MtConnectMachineInventory
 {
     private readonly IReadOnlyList<MtConnectAcquisitionOptions> _machines;
     private readonly IReadOnlyList<ObservationStreamId> _activityStreams;
+    private readonly IReadOnlyList<MachineId> _machineIds;
 
     public MtConnectMachineInventory(
         IReadOnlyList<MtConnectAcquisitionOptions> machines)
@@ -38,15 +39,15 @@ public sealed class MtConnectMachineInventory
                     options.MachineId,
                     options.DeviceKey))
                 .ToArray());
+        _machineIds = Array.AsReadOnly(
+            snapshot.Select(static options => options.MachineId).ToArray());
     }
 
     public IReadOnlyList<MtConnectAcquisitionOptions> Machines => _machines;
 
     public IReadOnlyList<ObservationStreamId> ActivityStreams => _activityStreams;
 
-    public IReadOnlyList<MachineId> MachineIds =>
-        Array.AsReadOnly(
-            _machines.Select(static options => options.MachineId).ToArray());
+    public IReadOnlyList<MachineId> MachineIds => _machineIds;
 
     public static MtConnectMachineInventory FromConfiguration(
         IConfiguration configuration)
