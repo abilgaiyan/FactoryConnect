@@ -159,7 +159,7 @@ public sealed class InMemoryProductionContextProcessingStore :
         return Task.CompletedTask;
     }
 
-    private IReadOnlyList<PositionedMetricInputFact> StageMetricInputs(
+    private List<PositionedMetricInputFact> StageMetricInputs(
         IReadOnlyList<DurableMetricInputAppend> appends)
     {
         var staged = new List<PositionedMetricInputFact>(appends.Count);
