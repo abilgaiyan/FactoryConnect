@@ -61,6 +61,9 @@ CREATE TABLE dbo.MetricInputFact
     CONSTRAINT UQ_MetricInputFact_StreamFactIdentity
         UNIQUE (MetricInputStreamRowId, FactIdBinary),
 
+    CONSTRAINT UQ_MetricInputFact_StreamPositionRow
+        UNIQUE (MetricInputFactRowId, MetricInputStreamRowId, Position),
+
     CONSTRAINT CK_MetricInputFact_Position_UInt64
         CHECK (
             Position >= 1
@@ -77,6 +80,28 @@ CREATE TABLE dbo.MetricInputFact
         CHECK (
             StartsAtUtc >= OccurrenceStartsAtUtc
             AND EndsAtUtc <= OccurrenceEndsAtUtc
+        ),
+
+    CONSTRAINT CK_MetricInputFact_SiteOwnership
+        CHECK (
+            SiteId = OccurrenceSiteId
+            AND SiteId = ProductionDaySiteId
+        ),
+
+    CONSTRAINT CK_MetricInputFact_ShiftOwnership
+        CHECK (ShiftId = OccurrenceShiftId),
+
+    CONSTRAINT CK_MetricInputFact_ScheduleOwnership
+        CHECK (
+            ShiftScheduleAssignmentId = OccurrenceShiftScheduleAssignmentId
+        ),
+
+    CONSTRAINT CK_MetricInputFact_UtcOffsets
+        CHECK (
+            DATEPART(TZOFFSET, StartsAtUtc) = 0
+            AND DATEPART(TZOFFSET, EndsAtUtc) = 0
+            AND DATEPART(TZOFFSET, OccurrenceStartsAtUtc) = 0
+            AND DATEPART(TZOFFSET, OccurrenceEndsAtUtc) = 0
         )
 );
 
@@ -96,6 +121,9 @@ CREATE TABLE dbo.MetricAggregationProcessor
 
     CONSTRAINT UQ_MetricAggregationProcessor_Identity
         UNIQUE (ProcessorKeyBinary),
+
+    CONSTRAINT UQ_MetricAggregationProcessor_StreamBinding
+        UNIQUE (MetricAggregationProcessorRowId, MetricInputStreamRowId),
 
     CONSTRAINT FK_MetricAggregationProcessor_MetricInputStream
         FOREIGN KEY (MetricInputStreamRowId)
@@ -124,6 +152,7 @@ CREATE TABLE dbo.MetricAggregationCheckpoint
 CREATE TABLE dbo.MetricAggregationContribution
 (
     MetricAggregationProcessorRowId bigint NOT NULL,
+    MetricInputStreamRowId bigint NOT NULL,
     MetricInputFactRowId bigint NOT NULL,
     Position decimal(20,0) NOT NULL,
 
@@ -139,13 +168,27 @@ CREATE TABLE dbo.MetricAggregationContribution
             Position
         ),
 
-    CONSTRAINT FK_MetricAggregationContribution_Processor
-        FOREIGN KEY (MetricAggregationProcessorRowId)
-        REFERENCES dbo.MetricAggregationProcessor (MetricAggregationProcessorRowId),
+    CONSTRAINT FK_MetricAggregationContribution_ProcessorStream
+        FOREIGN KEY (
+            MetricAggregationProcessorRowId,
+            MetricInputStreamRowId
+        )
+        REFERENCES dbo.MetricAggregationProcessor (
+            MetricAggregationProcessorRowId,
+            MetricInputStreamRowId
+        ),
 
-    CONSTRAINT FK_MetricAggregationContribution_Fact
-        FOREIGN KEY (MetricInputFactRowId)
-        REFERENCES dbo.MetricInputFact (MetricInputFactRowId),
+    CONSTRAINT FK_MetricAggregationContribution_FactStreamPosition
+        FOREIGN KEY (
+            MetricInputFactRowId,
+            MetricInputStreamRowId,
+            Position
+        )
+        REFERENCES dbo.MetricInputFact (
+            MetricInputFactRowId,
+            MetricInputStreamRowId,
+            Position
+        ),
 
     CONSTRAINT CK_MetricAggregationContribution_Position_UInt64
         CHECK (
@@ -156,8 +199,10 @@ CREATE TABLE dbo.MetricAggregationContribution
 
 CREATE TABLE dbo.ShiftMetricAggregate
 (
+    ShiftMetricAggregateRowId bigint IDENTITY(1,1) NOT NULL,
     MetricAggregationProcessorRowId bigint NOT NULL,
-    AggregateKeyBinary varbinary(900) NOT NULL,
+    AggregateKeyHash binary(32) NOT NULL,
+    AggregateKeyBinary varbinary(max) NOT NULL,
     MachineId uniqueidentifier NOT NULL,
     SiteId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
     ShiftScheduleAssignmentId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
@@ -172,9 +217,12 @@ CREATE TABLE dbo.ShiftMetricAggregate
     LastInputTimestamp datetimeoffset(7) NOT NULL,
 
     CONSTRAINT PK_ShiftMetricAggregate
-        PRIMARY KEY (
+        PRIMARY KEY (ShiftMetricAggregateRowId),
+
+    CONSTRAINT UQ_ShiftMetricAggregate_IdentityHash
+        UNIQUE (
             MetricAggregationProcessorRowId,
-            AggregateKeyBinary
+            AggregateKeyHash
         ),
 
     CONSTRAINT FK_ShiftMetricAggregate_Processor
@@ -188,7 +236,15 @@ CREATE TABLE dbo.ShiftMetricAggregate
         CHECK (InputCount > 0),
 
     CONSTRAINT CK_ShiftMetricAggregate_InputInterval
-        CHECK (LastInputTimestamp >= FirstInputTimestamp)
+        CHECK (LastInputTimestamp >= FirstInputTimestamp),
+
+    CONSTRAINT CK_ShiftMetricAggregate_UtcOffsets
+        CHECK (
+            DATEPART(TZOFFSET, ShiftStartsAtUtc) = 0
+            AND DATEPART(TZOFFSET, ShiftEndsAtUtc) = 0
+            AND DATEPART(TZOFFSET, FirstInputTimestamp) = 0
+            AND DATEPART(TZOFFSET, LastInputTimestamp) = 0
+        )
 );
 
 CREATE INDEX IX_ShiftMetricAggregate_Query
@@ -201,8 +257,10 @@ CREATE INDEX IX_ShiftMetricAggregate_Query
 
 CREATE TABLE dbo.ProductionDayMetricAggregate
 (
+    ProductionDayMetricAggregateRowId bigint IDENTITY(1,1) NOT NULL,
     MetricAggregationProcessorRowId bigint NOT NULL,
-    AggregateKeyBinary varbinary(900) NOT NULL,
+    AggregateKeyHash binary(32) NOT NULL,
+    AggregateKeyBinary varbinary(max) NOT NULL,
     MachineId uniqueidentifier NOT NULL,
     SiteId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
     ProductionBusinessDate date NOT NULL,
@@ -214,9 +272,12 @@ CREATE TABLE dbo.ProductionDayMetricAggregate
     LastInputTimestamp datetimeoffset(7) NOT NULL,
 
     CONSTRAINT PK_ProductionDayMetricAggregate
-        PRIMARY KEY (
+        PRIMARY KEY (ProductionDayMetricAggregateRowId),
+
+    CONSTRAINT UQ_ProductionDayMetricAggregate_IdentityHash
+        UNIQUE (
             MetricAggregationProcessorRowId,
-            AggregateKeyBinary
+            AggregateKeyHash
         ),
 
     CONSTRAINT FK_ProductionDayMetricAggregate_Processor
@@ -227,7 +288,13 @@ CREATE TABLE dbo.ProductionDayMetricAggregate
         CHECK (InputCount > 0),
 
     CONSTRAINT CK_ProductionDayMetricAggregate_InputInterval
-        CHECK (LastInputTimestamp >= FirstInputTimestamp)
+        CHECK (LastInputTimestamp >= FirstInputTimestamp),
+
+    CONSTRAINT CK_ProductionDayMetricAggregate_UtcOffsets
+        CHECK (
+            DATEPART(TZOFFSET, FirstInputTimestamp) = 0
+            AND DATEPART(TZOFFSET, LastInputTimestamp) = 0
+        )
 );
 
 CREATE INDEX IX_ProductionDayMetricAggregate_Query
