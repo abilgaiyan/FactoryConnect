@@ -86,6 +86,9 @@ builder.Services.AddFactoryConnectEdgePersistence(
 builder.Services.AddFactoryConnectObservationProcessing(
     builder.Configuration,
     streamId);
+builder.Services.AddFactoryConnectMetricAggregation(
+    builder.Configuration,
+    [options.MachineId]);
 
 builder.Services.AddSingleton<MtConnectStartupCheckpointResolver>();
 builder.Services.AddSingleton<IMtConnectObservationSink>(
