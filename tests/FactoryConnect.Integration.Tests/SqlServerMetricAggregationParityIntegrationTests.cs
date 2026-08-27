@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Persistence.SqlServer;
@@ -468,7 +469,9 @@ public sealed class SqlServerMetricAggregationParityIntegrationTests :
             "WHERE p.ProcessorKey = @ProcessorKey AND f.FactId = @FactId;";
         command.Parameters.Add("@ProcessorKey", SqlDbType.NVarChar, 256).Value = processorId.Value;
         command.Parameters.Add("@FactId", SqlDbType.NVarChar, 256).Value = factId.Value;
-        return Convert.ToInt64(await command.ExecuteScalarAsync(CancellationToken.None));
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(CancellationToken.None),
+            CultureInfo.InvariantCulture);
     }
 
     private static ShiftMetricAggregateKey ShiftKey(PositionedMetricInputFact input) =>
