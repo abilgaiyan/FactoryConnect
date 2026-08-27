@@ -64,13 +64,26 @@ public sealed class InMemoryMetricInputStore :
 
         lock (_sync)
         {
-            if (!_factsByStream.TryGetValue(request.StreamId, out var streamFacts))
+            if (!_factsByStream.TryGetValue(request.StreamId, out var streamFacts) || streamFacts.Count == 0)
             {
+                if (request.AfterPosition is not null)
+                {
+                    throw new InvalidOperationException(
+                        "Metric input read position is beyond the durable stream tail.");
+                }
+
                 return ValueTask.FromResult(new MetricInputReadBatch(
                     request.StreamId,
-                    request.AfterPosition,
-                    request.AfterPosition,
+                    null,
+                    null,
                     []));
+            }
+
+            var tail = streamFacts[^1].Position;
+            if (request.AfterPosition is not null && request.AfterPosition > tail)
+            {
+                throw new InvalidOperationException(
+                    "Metric input read position is beyond the durable stream tail.");
             }
 
             var facts = streamFacts
