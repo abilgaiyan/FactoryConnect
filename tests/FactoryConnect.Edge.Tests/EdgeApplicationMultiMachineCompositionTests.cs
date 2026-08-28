@@ -30,6 +30,8 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             ProductionMetricInputRuntimeSet>();
         var aggregationRuntimes = provider.GetRequiredService<
             MetricAggregationProcessingRuntimeSet>();
+        var metricRuntimes = provider.GetRequiredService<
+            OperationalMetricProjectionProcessingRuntimeSet>();
 
         Assert.Equal(2, inventory.Machines.Count);
         Assert.Equal(2, inventory.ActivityStreams.Count);
@@ -38,6 +40,8 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         Assert.Equal(2, producerRuntimes.ActivityRuntimes.Count);
         Assert.Equal(2, producerRuntimes.QuantityRuntimes.Count);
         Assert.Equal(2, aggregationRuntimes.Runtimes.Count);
+        Assert.Equal(2, metricRuntimes.Runtimes.Count);
+        Assert.NotNull(provider.GetRequiredService<IOperationalMetricReportReader>());
 
         Assert.Equal(
             new[] { machineA, machineB }.OrderBy(static item => item.Value),
@@ -77,6 +81,7 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             ["ProductionProcessing:PollingInterval"] = "00:00:01",
             ["MetricAggregation:BatchSize"] = "100",
             ["MetricAggregation:PollingInterval"] = "00:00:01",
+            ["OperationalMetrics:PollingInterval"] = "00:00:01",
         };
 
         AddMachine(values, 0, machineA, "CNC-A", "LINE-A", "CTX-A");
