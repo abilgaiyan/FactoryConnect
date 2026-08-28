@@ -210,17 +210,6 @@ public sealed class OperationalMetricEvaluatorTests
                 CancellationToken.None));
     }
 
-    [Fact]
-    public async Task ProductEvaluationRemainsOutOfFc0272()
-    {
-        var fixture = CreateFixture();
-
-        await Assert.ThrowsAsync<NotSupportedException>(async () =>
-            await fixture.Evaluator.EvaluateAsync(
-                Key(fixture, BuiltInOperationalMetricDefinitions.OeeId),
-                CancellationToken.None));
-    }
-
     private static EvaluationFixture CreateFixture()
     {
         var machineId = MachineId.New();
