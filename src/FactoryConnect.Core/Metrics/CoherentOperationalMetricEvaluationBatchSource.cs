@@ -8,8 +8,8 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
     private readonly IOperationalMetricComponentSnapshotReader _snapshotReader;
     private readonly MetricAggregationProcessorId _aggregationProcessorId;
     private readonly MetricInputStreamId _sourceStreamId;
-    private readonly IReadOnlyList<OperationalMetricEvaluationPlan> _plans;
-    private readonly IReadOnlyList<OperationalMetricOperandDefinition> _snapshotOperands;
+    private readonly ReadOnlyCollection<OperationalMetricEvaluationPlan> _plans;
+    private readonly ReadOnlyCollection<OperationalMetricOperandDefinition> _snapshotOperands;
     private readonly OperationalMetricEvaluationKey _anchorKey;
 
     public CoherentOperationalMetricEvaluationBatchSource(
