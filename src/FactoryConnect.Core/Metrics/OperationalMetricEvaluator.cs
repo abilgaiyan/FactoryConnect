@@ -38,22 +38,24 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         var session = await _sessionFactory.CreateAsync(plan, cancellationToken).ConfigureAwait(false);
         ValidateSnapshotComponents(session);
 
-        return EvaluateDefinition(session, plan.RootDefinition);
+        return EvaluateDefinition(session, plan.RootDefinition.Id);
     }
 
     internal static OperationalMetricEvaluation EvaluateDefinition(
         OperationalMetricEvaluationSession session,
-        OperationalMetricDefinition definition)
+        OperationalMetricDefinitionId definitionId)
     {
         ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(definitionId);
 
-        if (session.TryGetEvaluation(definition.Id, out var cached))
+        var definition = session.Plan.GetRequiredDefinition(definitionId);
+
+        if (session.TryGetEvaluation(definitionId, out var cached))
         {
             return cached!;
         }
 
-        session.BeginEvaluation(definition.Id);
+        session.BeginEvaluation(definitionId);
         try
         {
             var evaluation = definition.Formula switch
@@ -65,12 +67,12 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                     $"Metric '{definition.Id}' has an unsupported formula contract."),
             };
 
-            session.CompleteEvaluation(definition.Id, evaluation);
+            session.CompleteEvaluation(definitionId, evaluation);
             return evaluation;
         }
         catch
         {
-            session.AbandonEvaluation(definition.Id);
+            session.AbandonEvaluation(definitionId);
             throw;
         }
     }
