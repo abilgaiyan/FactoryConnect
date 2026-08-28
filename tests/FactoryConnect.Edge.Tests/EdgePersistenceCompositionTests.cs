@@ -1,6 +1,8 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
+using FactoryConnect.Persistence;
+using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -10,7 +12,7 @@ namespace FactoryConnect.Edge.Tests;
 public sealed class EdgePersistenceCompositionTests
 {
     [Fact]
-    public void InMemorySelectionDoesNotRequireSqlServerConfiguration()
+    public void InMemoryCoreSelectionDoesNotRequireSqlServerConfiguration()
     {
         var configuration = CreateConfiguration(
             new Dictionary<string, string?>
@@ -32,6 +34,39 @@ public sealed class EdgePersistenceCompositionTests
         Assert.Equal(
             "FactoryConnect.Core.InMemoryMetricAggregationStore",
             aggregation.GetType().FullName);
+        Assert.Null(provider.GetService<IMetricAggregationRevisionReader>());
+        Assert.Null(provider.GetService<IRevisionedOperationalMetricComponentSnapshotReader>());
+        Assert.Null(provider.GetService<IOperationalMetricProjectionStore>());
+        Assert.Null(provider.GetService<IOperationalMetricProjectionQueryReader>());
+    }
+
+    [Fact]
+    public void InMemoryFullCapabilitySelectionUsesOneProviderOwnedCapabilitySet()
+    {
+        var configuration = CreateConfiguration(
+            new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = "InMemory",
+            });
+        var services = new ServiceCollection();
+
+        services.AddFactoryConnectEdgePersistence(
+            configuration,
+            PersistenceProviderCapabilities.All);
+
+        using var provider = services.BuildServiceProvider();
+        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
+        var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
+        var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
+        var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
+        var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
+
+        Assert.Same(aggregation, revisionReader);
+        Assert.Same(aggregation, snapshotReader);
+        Assert.Same(projectionStore, projectionReader);
+        Assert.Equal(
+            "FactoryConnect.Core.InMemoryOperationalMetricProjectionStore",
+            projectionStore.GetType().FullName);
     }
 
     [Fact]
@@ -45,8 +80,9 @@ public sealed class EdgePersistenceCompositionTests
                     "Server=test;Database=FactoryConnect;Integrated Security=True",
             });
         var services = new ServiceCollection();
-
-        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
         var observation = provider.GetRequiredService<IObservationIngestionStore>();
@@ -66,6 +102,27 @@ public sealed class EdgePersistenceCompositionTests
         Assert.Equal(
             "FactoryConnect.Persistence.SqlServer.SqlServerMetricAggregationStore",
             aggregation.GetType().FullName);
+    }
+
+    [Fact]
+    public void SqlServerFullCapabilitySelectionFailsDuringPersistenceFinalization()
+    {
+        var configuration = CreateConfiguration(
+            new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = "SqlServer",
+                ["PersistenceProviders:SqlServer:ConnectionString"] =
+                    "Server=test;Database=FactoryConnect;Integrated Security=True",
+            });
+        var services = new ServiceCollection();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectEdgePersistence(
+                configuration,
+                PersistenceProviderCapabilities.All));
+
+        Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("OperationalMetricProjectionStorage", exception.Message, StringComparison.Ordinal);
     }
 
     private static IConfiguration CreateConfiguration(

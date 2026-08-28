@@ -16,16 +16,23 @@ public static class InMemoryPersistenceServiceCollectionExtensions
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
+                PersistenceProviderCapabilities.All,
                 static _ =>
                 {
                     var productionContextStore =
                         new InMemoryProductionContextProcessingStore();
+                    var aggregationStore = new InMemoryMetricAggregationStore();
+                    var projectionStore = new InMemoryOperationalMetricProjectionStore();
 
                     return new PersistenceProviderServices(
                         new InMemoryObservationIngestionStore(),
                         productionContextStore,
                         productionContextStore,
-                        new InMemoryMetricAggregationStore());
+                        aggregationStore,
+                        aggregationStore,
+                        aggregationStore,
+                        projectionStore,
+                        projectionStore);
                 }));
     }
 }

@@ -11,231 +11,210 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class PersistenceProviderSelectionTests
 {
     [Fact]
-    public void ProviderKeyNormalizesWhitespaceAndCase()
-    {
-        var key = PersistenceProviderKey.Normalize("  inMemory  ");
-
-        Assert.Equal("INMEMORY", key);
-    }
-
-    [Fact]
-    public void AddFactoryConnectPersistenceRequiresProviderConfiguration()
+    public void MissingProviderConfigurationFailsFast()
     {
         ServiceCollection services = new();
-        services.AddInMemoryPersistenceProvider();
         var configuration = BuildConfiguration();
+        services.AddInMemoryPersistenceProvider();
 
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddFactoryConnectPersistence(configuration));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
 
         Assert.Equal("Persistence:Provider is required.", exception.Message);
     }
 
     [Fact]
-    public void AddFactoryConnectPersistenceRequiresAvailableProvider()
+    public void UnknownProviderFailsFast()
     {
         ServiceCollection services = new();
-        var configuration = BuildConfiguration("inmemory");
-
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddFactoryConnectPersistence(configuration));
-
-        Assert.Equal(
-            "At least one persistence provider must be registered " +
-            "before persistence finalization.",
-            exception.Message);
-    }
-
-    [Fact]
-    public void ResolvingStoreActivatesOnlySelectedProvider()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("primary");
-        var primaryActivations = 0;
-        var secondaryActivations = 0;
-
-        services.AddPersistenceProvider(
-            new PersistenceProviderRegistration(
-                "Primary",
-                _ =>
-                {
-                    primaryActivations++;
-                    return CreateProviderServices(
-                        new InMemoryObservationIngestionStore());
-                }));
-        services.AddPersistenceProvider(
-            new PersistenceProviderRegistration(
-                "Secondary",
-                _ =>
-                {
-                    secondaryActivations++;
-                    return CreateProviderServices(
-                        new InMemoryObservationIngestionStore());
-                }));
-        services.AddFactoryConnectPersistence(configuration);
-
-        using var provider = services.BuildServiceProvider();
-
-        var first = provider.GetRequiredService<IObservationIngestionStore>();
-        var second = provider.GetRequiredService<IObservationIngestionStore>();
-
-        Assert.Same(first, second);
-        Assert.Equal(1, primaryActivations);
-        Assert.Equal(0, secondaryActivations);
-    }
-
-    [Fact]
-    public void RegisteredProviderIsNotActivatedDuringFinalization()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("primary");
-        var activations = 0;
-
-        services.AddPersistenceProvider(
-            new PersistenceProviderRegistration(
-                "Primary",
-                _ =>
-                {
-                    activations++;
-                    return CreateProviderServices(
-                        new InMemoryObservationIngestionStore());
-                }));
-        services.AddFactoryConnectPersistence(configuration);
-
-        using var provider = services.BuildServiceProvider();
-
-        Assert.Equal(0, activations);
-    }
-
-    [Fact]
-    public void CustomProviderWithUnnormalizedKeyCanBeSelected()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("SqlServer");
-
-        services.AddPersistenceProvider(
-            new CustomPersistenceProviderRegistration(
-                " sqlserver ",
-                static _ => CreateProviderServices(
-                    new InMemoryObservationIngestionStore())));
-        services.AddFactoryConnectPersistence(configuration);
-
-        using var provider = services.BuildServiceProvider();
-
-        var store = provider.GetRequiredService<IObservationIngestionStore>();
-
-        Assert.IsType<InMemoryObservationIngestionStore>(store);
-    }
-
-    [Fact]
-    public void FinalizationRejectsUnknownProvider()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("missing");
-
+        var configuration = BuildConfiguration("Unknown");
         services.AddInMemoryPersistenceProvider();
 
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddFactoryConnectPersistence(configuration));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Equal("Persistence provider 'UNKNOWN' is not registered.", exception.Message);
+    }
+
+    [Fact]
+    public void NoRegisteredProvidersFailsFast()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("InMemory");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
 
         Assert.Equal(
-            "Persistence provider 'MISSING' is not registered.",
+            "At least one persistence provider must be registered before persistence finalization.",
             exception.Message);
     }
 
     [Fact]
-    public void FinalizationRejectsDuplicateNormalizedProviderKeys()
+    public void DuplicateProviderKeysFailFast()
     {
         ServiceCollection services = new();
-        var configuration = BuildConfiguration("primary");
-
-        services.AddPersistenceProvider(
-            new PersistenceProviderRegistration(
-                "Primary",
-                static _ => CreateProviderServices(
-                    new InMemoryObservationIngestionStore())));
-        services.AddPersistenceProvider(
-            new PersistenceProviderRegistration(
-                " primary ",
-                static _ => CreateProviderServices(
-                    new InMemoryObservationIngestionStore())));
-
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddFactoryConnectPersistence(configuration));
-
-        Assert.Equal(
-            "Persistence provider key 'PRIMARY' is registered more than once.",
-            exception.Message);
-    }
-
-    [Fact]
-    public void FinalizationRejectsEquivalentCustomProviderKeys()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("SqlServer");
-
-        services.AddPersistenceProvider(
-            new CustomPersistenceProviderRegistration(
-                "SqlServer",
-                static _ => CreateProviderServices(
-                    new InMemoryObservationIngestionStore())));
-        services.AddPersistenceProvider(
-            new CustomPersistenceProviderRegistration(
-                " sqlserver ",
-                static _ => CreateProviderServices(
-                    new InMemoryObservationIngestionStore())));
-
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddFactoryConnectPersistence(configuration));
-
-        Assert.Equal(
-            "Persistence provider key 'SQLSERVER' is registered more than once.",
-            exception.Message);
-    }
-
-    [Fact]
-    public void FinalizationRejectsPreRegisteredStore()
-    {
-        ServiceCollection services = new();
-        var configuration = BuildConfiguration("inmemory");
-
+        var configuration = BuildConfiguration("InMemory");
         services.AddInMemoryPersistenceProvider();
-        services.AddSingleton<IObservationIngestionStore>(
-            new InMemoryObservationIngestionStore());
+        services.AddPersistenceProvider(
+            new PersistenceProviderRegistration(
+                " inMemory ",
+                PersistenceProviderCapabilities.All,
+                _ => CreateProviderServices(new InMemoryObservationIngestionStore())));
 
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddFactoryConnectPersistence(configuration));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
 
         Assert.Equal(
-            "IObservationIngestionStore is already registered. " +
-            "Persistence activation must own the selected provider capabilities.",
+            "Persistence provider key 'INMEMORY' is registered more than once.",
             exception.Message);
     }
 
     [Fact]
-    public void ProviderRegistrationAfterFinalizationIsRejected()
+    public void ProviderRegistrationAfterFinalizationFailsFast()
     {
         ServiceCollection services = new();
-        var configuration = BuildConfiguration("inmemory");
-
+        var configuration = BuildConfiguration("InMemory");
         services.AddInMemoryPersistenceProvider();
         services.AddFactoryConnectPersistence(configuration);
 
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => services.AddPersistenceProvider(
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddPersistenceProvider(
                 new PersistenceProviderRegistration(
-                    "Other",
-                    static _ => CreateProviderServices(
-                        new InMemoryObservationIngestionStore()))));
+                    "other",
+                    PersistenceProviderCapabilities.Core,
+                    _ => CreateProviderServices(new InMemoryObservationIngestionStore()))));
 
         Assert.Equal(
-            "Persistence has already been finalized. " +
-            "Register providers before AddFactoryConnectPersistence.",
+            "Persistence has already been finalized. Register providers before AddFactoryConnectPersistence.",
             exception.Message);
     }
 
     [Fact]
-    public void InMemoryProviderIsActivatedThroughProviderRegistration()
+    public void ExistingObservationStoreBeforeFinalizationFailsFast()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<IObservationIngestionStore, InMemoryObservationIngestionStore>();
+        var configuration = BuildConfiguration("InMemory");
+        services.AddInMemoryPersistenceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Contains(nameof(IObservationIngestionStore), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExistingProductionContextStoreBeforeFinalizationFailsFast()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<IProductionContextProcessingStore, InMemoryProductionContextProcessingStore>();
+        var configuration = BuildConfiguration("InMemory");
+        services.AddInMemoryPersistenceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Contains(nameof(IProductionContextProcessingStore), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExistingMetricInputReaderBeforeFinalizationFailsFast()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<IMetricInputReader, InMemoryProductionContextProcessingStore>();
+        var configuration = BuildConfiguration("InMemory");
+        services.AddInMemoryPersistenceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Contains(nameof(IMetricInputReader), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ExistingMetricAggregationStoreBeforeFinalizationFailsFast()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<IMetricAggregationStore, InMemoryMetricAggregationStore>();
+        var configuration = BuildConfiguration("InMemory");
+        services.AddInMemoryPersistenceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Contains(nameof(IMetricAggregationStore), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SelectedProviderOwnsActivatedCapabilities()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("custom");
+        var observationStore = new InMemoryObservationIngestionStore();
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                "custom",
+                PersistenceProviderCapabilities.Core,
+                _ => CreateProviderServices(observationStore)));
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Same(observationStore, provider.GetRequiredService<IObservationIngestionStore>());
+    }
+
+    [Fact]
+    public void SelectedProviderFactoryIsLazy()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("custom");
+        var factoryCalls = 0;
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                "custom",
+                PersistenceProviderCapabilities.Core,
+                _ =>
+                {
+                    factoryCalls++;
+                    return CreateProviderServices(new InMemoryObservationIngestionStore());
+                }));
+        services.AddFactoryConnectPersistence(configuration);
+
+        Assert.Equal(0, factoryCalls);
+
+        using var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IObservationIngestionStore>();
+
+        Assert.Equal(1, factoryCalls);
+    }
+
+    [Fact]
+    public void UnselectedProviderFactoryIsNeverInvoked()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("InMemory");
+        var customFactoryCalled = false;
+        services.AddInMemoryPersistenceProvider();
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                "custom",
+                PersistenceProviderCapabilities.Core,
+                _ =>
+                {
+                    customFactoryCalled = true;
+                    return CreateProviderServices(new InMemoryObservationIngestionStore());
+                }));
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IObservationIngestionStore>();
+
+        Assert.False(customFactoryCalled);
+    }
+
+    [Fact]
+    public void ProviderKeySelectionIsCaseInsensitive()
     {
         ServiceCollection services = new();
         var configuration = BuildConfiguration(" InMemory ");
@@ -283,15 +262,19 @@ public sealed class PersistenceProviderSelectionTests
             IServiceProvider,
             PersistenceProviderServices> _factory;
 
-        public string ProviderKey { get; }
-
         public CustomPersistenceProviderRegistration(
             string providerKey,
+            PersistenceProviderCapabilities capabilities,
             Func<IServiceProvider, PersistenceProviderServices> factory)
         {
             ProviderKey = providerKey;
+            Capabilities = capabilities;
             _factory = factory;
         }
+
+        public string ProviderKey { get; }
+
+        public PersistenceProviderCapabilities Capabilities { get; }
 
         public PersistenceProviderServices Create(IServiceProvider services) =>
             _factory(services);

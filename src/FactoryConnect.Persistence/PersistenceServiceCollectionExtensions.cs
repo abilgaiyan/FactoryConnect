@@ -12,14 +12,33 @@ public static class PersistenceServiceCollectionExtensions
         typeof(IProductionContextProcessingStore),
         typeof(IMetricInputReader),
         typeof(IMetricAggregationStore),
+        typeof(IMetricAggregationRevisionReader),
+        typeof(IRevisionedOperationalMetricComponentSnapshotReader),
+        typeof(IOperationalMetricProjectionStore),
+        typeof(IOperationalMetricProjectionQueryReader),
+    ];
+
+    private static readonly PersistenceProviderCapabilities[] IndividualCapabilities =
+    [
+        PersistenceProviderCapabilities.ObservationIngestion,
+        PersistenceProviderCapabilities.ProductionContextProcessing,
+        PersistenceProviderCapabilities.MetricInputReading,
+        PersistenceProviderCapabilities.MetricAggregation,
+        PersistenceProviderCapabilities.MetricAggregationRevisionReading,
+        PersistenceProviderCapabilities.RevisionedOperationalMetricSnapshotReading,
+        PersistenceProviderCapabilities.OperationalMetricProjectionStorage,
+        PersistenceProviderCapabilities.OperationalMetricProjectionQuery,
     ];
 
     public static IServiceCollection AddFactoryConnectPersistence(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        PersistenceProviderCapabilities requiredCapabilities = PersistenceProviderCapabilities.Core)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+
+        requiredCapabilities |= PersistenceProviderCapabilities.Core;
 
         var existingCapability = ActivatedCapabilityTypes.FirstOrDefault(
             capabilityType => services.Any(
@@ -61,6 +80,16 @@ public static class PersistenceServiceCollectionExtensions
                 $"Persistence provider '{options.Provider}' is not registered.");
         }
 
+        var missingCapabilities = requiredCapabilities & ~selected.Capabilities;
+        if (missingCapabilities != PersistenceProviderCapabilities.None)
+        {
+            var missingNames = IndividualCapabilities
+                .Where(capability => (missingCapabilities & capability) != 0)
+                .Select(static capability => capability.ToString());
+            throw new InvalidOperationException(
+                $"Persistence provider '{options.Provider}' does not support required capabilities: {string.Join(", ", missingNames)}.");
+        }
+
         services.AddSingleton(options);
         services.AddSingleton<PersistenceProviderServices>(
             serviceProvider => selected.Create(serviceProvider));
@@ -81,6 +110,30 @@ public static class PersistenceServiceCollectionExtensions
                 .GetRequiredService<PersistenceProviderServices>()
                 .MetricAggregationStore);
 
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetrics) != 0)
+        {
+            services.AddSingleton<IMetricAggregationRevisionReader>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .MetricAggregationRevisionReader
+                    ?? throw MissingProviderService(nameof(IMetricAggregationRevisionReader)));
+            services.AddSingleton<IRevisionedOperationalMetricComponentSnapshotReader>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .RevisionedOperationalMetricComponentSnapshotReader
+                    ?? throw MissingProviderService(nameof(IRevisionedOperationalMetricComponentSnapshotReader)));
+            services.AddSingleton<IOperationalMetricProjectionStore>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .OperationalMetricProjectionStore
+                    ?? throw MissingProviderService(nameof(IOperationalMetricProjectionStore)));
+            services.AddSingleton<IOperationalMetricProjectionQueryReader>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .OperationalMetricProjectionQueryReader
+                    ?? throw MissingProviderService(nameof(IOperationalMetricProjectionQueryReader)));
+        }
+
         return services;
     }
 
@@ -100,43 +153,33 @@ public static class PersistenceServiceCollectionExtensions
                 "Register providers before AddFactoryConnectPersistence.");
         }
 
-        services.AddSingleton<IPersistenceProviderRegistration>(
-            registration);
-
+        services.AddSingleton<IPersistenceProviderRegistration>(registration);
         return services;
     }
 
-    private static IPersistenceProviderRegistration[] GetRegistrations(
-        IServiceCollection services)
-    {
-        return services
-            .Where(
-                descriptor => descriptor.ServiceType ==
-                    typeof(IPersistenceProviderRegistration))
-            .Select(
-                descriptor => descriptor.ImplementationInstance as
-                    IPersistenceProviderRegistration
-                    ?? throw new InvalidOperationException(
-                        "Persistence providers must be registered through " +
-                        "AddPersistenceProvider before persistence finalization."))
-            .ToArray();
-    }
+    private static InvalidOperationException MissingProviderService(string capabilityName) =>
+        new($"Selected persistence provider declared capability '{capabilityName}' but returned no implementation.");
 
-    private static void ValidateUniqueProviderKeys(
-        IPersistenceProviderRegistration[] registrations)
+    private static IPersistenceProviderRegistration[] GetRegistrations(IServiceCollection services) =>
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IPersistenceProviderRegistration))
+            .Select(descriptor => descriptor.ImplementationInstance as IPersistenceProviderRegistration
+                ?? throw new InvalidOperationException(
+                    "Persistence providers must be registered through AddPersistenceProvider before persistence finalization."))
+            .ToArray();
+
+    private static void ValidateUniqueProviderKeys(IPersistenceProviderRegistration[] registrations)
     {
         var duplicate = registrations
             .GroupBy(
-                registration => PersistenceProviderKey.Normalize(
-                    registration.ProviderKey),
+                registration => PersistenceProviderKey.Normalize(registration.ProviderKey),
                 StringComparer.Ordinal)
             .FirstOrDefault(group => group.Count() > 1);
 
         if (duplicate is not null)
         {
             throw new InvalidOperationException(
-                $"Persistence provider key '{duplicate.Key}' is registered " +
-                "more than once.");
+                $"Persistence provider key '{duplicate.Key}' is registered more than once.");
         }
     }
 }

@@ -10,7 +10,8 @@ public static class EdgePersistenceServiceCollectionExtensions
 {
     public static IServiceCollection AddFactoryConnectEdgePersistence(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        PersistenceProviderCapabilities requiredCapabilities = PersistenceProviderCapabilities.Core)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -20,7 +21,7 @@ public static class EdgePersistenceServiceCollectionExtensions
             configuration.GetSection(
                 SqlServerPersistenceOptions.SectionName));
 
-        services.AddFactoryConnectPersistence(configuration);
+        services.AddFactoryConnectPersistence(configuration, requiredCapabilities);
 
         return services;
     }

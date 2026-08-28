@@ -18,6 +18,7 @@ public static class SqlServerPersistenceServiceCollectionExtensions
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
+                PersistenceProviderCapabilities.Core,
                 _ =>
                 {
                     var options = new SqlServerPersistenceOptions();

@@ -1,3 +1,4 @@
+using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,7 +15,9 @@ public static class EdgeApplicationServiceCollectionExtensions
 
         var inventory = MtConnectMachineInventory.FromConfiguration(configuration);
 
-        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddFactoryConnectEdgePersistence(
+            configuration,
+            PersistenceProviderCapabilities.All);
         services.AddFactoryConnectObservationProcessing(
             configuration,
             inventory.ActivityStreams);
@@ -22,6 +25,9 @@ public static class EdgeApplicationServiceCollectionExtensions
             configuration,
             inventory.ActivityStreams);
         services.AddFactoryConnectMetricAggregation(
+            configuration,
+            inventory.MachineIds);
+        services.AddFactoryConnectOperationalMetrics(
             configuration,
             inventory.MachineIds);
         services.AddFactoryConnectMtConnectAcquisition(
