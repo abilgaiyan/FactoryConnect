@@ -12,7 +12,7 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
         var fixture = CreateFixture();
         var revision = Revision(fixture, 10);
         var projection = Projection(fixture, revision, 0.75m);
-        var checkpoint = Checkpoint(fixture, revision);
+        var checkpoint = Checkpoint(fixture, revision, projection);
 
         await fixture.Store.CommitAsync(
             new OperationalMetricProjectionCommit(
@@ -41,8 +41,8 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
     {
         var fixture = CreateFixture();
         var revision10 = Revision(fixture, 10);
-        var checkpoint10 = Checkpoint(fixture, revision10);
         var projection10 = Projection(fixture, revision10, 0.5m);
+        var checkpoint10 = Checkpoint(fixture, revision10, projection10);
         await fixture.Store.CommitAsync(
             new OperationalMetricProjectionCommit(
                 fixture.ProjectionProcessorId,
@@ -60,7 +60,7 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
                 new OperationalMetricProjectionCommit(
                     fixture.ProjectionProcessorId,
                     stale,
-                    Checkpoint(fixture, revision11),
+                    Checkpoint(fixture, revision11, projection11),
                     [projection11]),
                 CancellationToken.None));
 
@@ -113,8 +113,8 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
     {
         var fixture = CreateFixture();
         var revision10 = Revision(fixture, 10);
-        var checkpoint10 = Checkpoint(fixture, revision10);
         var projection10 = Projection(fixture, revision10, 0.5m);
+        var checkpoint10 = Checkpoint(fixture, revision10, projection10);
         await fixture.Store.CommitAsync(
             new OperationalMetricProjectionCommit(
                 fixture.ProjectionProcessorId,
@@ -129,7 +129,7 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
             new OperationalMetricProjectionCommit(
                 fixture.ProjectionProcessorId,
                 checkpoint10,
-                Checkpoint(fixture, revision11),
+                Checkpoint(fixture, revision11, projection11),
                 [projection11]),
             CancellationToken.None);
 
@@ -161,14 +161,17 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
             new OperationalMetricProjectionCommit(
                 fixture.ProjectionProcessorId,
                 null,
-                Checkpoint(fixture, revision),
+                Checkpoint(fixture, revision, firstProjection),
                 [firstProjection]),
             CancellationToken.None);
         await fixture.Store.CommitAsync(
             new OperationalMetricProjectionCommit(
                 otherProcessor,
                 null,
-                new OperationalMetricProjectionCheckpoint(otherProcessor, revision),
+                new OperationalMetricProjectionCheckpoint(
+                    otherProcessor,
+                    revision,
+                    new OperationalMetricProjectionBatchManifest([otherProjection.Key])),
                 [otherProjection]),
             CancellationToken.None);
 
@@ -191,6 +194,7 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
     {
         var fixture = CreateFixture();
         var revision = Revision(fixture, 10);
+        var projection = Projection(fixture, revision, 0.5m);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -199,8 +203,8 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
                 new OperationalMetricProjectionCommit(
                     fixture.ProjectionProcessorId,
                     null,
-                    Checkpoint(fixture, revision),
-                    [Projection(fixture, revision, 0.5m)]),
+                    Checkpoint(fixture, revision, projection),
+                    [projection]),
                 cancellation.Token));
 
         Assert.Null(await fixture.Store.ReadCheckpointAsync(
@@ -228,9 +232,12 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
 
     private static OperationalMetricProjectionCheckpoint Checkpoint(
         StoreFixture fixture,
-        MetricAggregationCheckpoint revision) => new(
+        MetricAggregationCheckpoint revision,
+        params OperationalMetricProjection[] projections) => new(
             fixture.ProjectionProcessorId,
-            revision);
+            revision,
+            new OperationalMetricProjectionBatchManifest(
+                projections.Select(static projection => projection.Key)));
 
     private static OperationalMetricProjection Projection(
         StoreFixture fixture,
