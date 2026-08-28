@@ -33,11 +33,7 @@ public sealed record MetricOperandEvidence
         ArgumentException.ThrowIfNullOrWhiteSpace(operandName);
         ArgumentException.ThrowIfNullOrWhiteSpace(componentKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(unit);
-
-        if (inputCount <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(inputCount));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputCount);
 
         if (lastInputTimestamp < firstInputTimestamp)
         {
