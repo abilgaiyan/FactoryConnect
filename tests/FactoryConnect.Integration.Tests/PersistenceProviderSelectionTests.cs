@@ -33,7 +33,7 @@ public sealed class PersistenceProviderSelectionTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             services.AddFactoryConnectPersistence(configuration));
 
-        Assert.Equal("Persistence provider 'unknown' is not registered.", exception.Message);
+        Assert.Equal("Persistence provider 'UNKNOWN' is not registered.", exception.Message);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class PersistenceProviderSelectionTests
             services.AddFactoryConnectPersistence(configuration));
 
         Assert.Equal(
-            "Persistence provider key 'inmemory' is registered more than once.",
+            "Persistence provider key 'INMEMORY' is registered more than once.",
             exception.Message);
     }
 
