@@ -29,6 +29,97 @@ public sealed class OperationalMetricEvaluatorTests
     }
 
     [Fact]
+    public async Task ShiftScopeRequestsShiftPeriodComponents()
+    {
+        var fixture = CreateFixture();
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(30m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(60m, MetricInputFactUnits.Seconds));
+        var occurrence = new ShiftOccurrenceId(
+            new SiteId("site-a"),
+            new ShiftScheduleAssignmentId("schedule-a"),
+            new ShiftId("shift-a"),
+            new DateTimeOffset(2026, 8, 28, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 28, 8, 0, 0, TimeSpan.Zero));
+        var evaluationKey = new OperationalMetricEvaluationKey(
+            fixture.MachineId,
+            new OperationalMetricPeriodId.Shift(occurrence),
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
+
+        var result = await fixture.Evaluator.EvaluateAsync(evaluationKey, CancellationToken.None);
+
+        Assert.Equal(0.5m, result.Value);
+        var request = Assert.IsType<OperationalMetricComponentSnapshotRequest>(fixture.Reader.LastRequest);
+        var period = Assert.IsType<OperationalMetricPeriodId.Shift>(request.EvaluationKey.PeriodId);
+        Assert.Equal(occurrence, period.ShiftOccurrenceId);
+    }
+
+    [Fact]
+    public async Task PreCancelledTokenPropagatesWithoutEvaluation()
+    {
+        var fixture = CreateFixture();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await fixture.Evaluator.EvaluateAsync(
+                Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
+                cancellation.Token));
+
+        Assert.Equal(0, fixture.Reader.ReadCount);
+    }
+
+    [Fact]
+    public async Task ZeroNumeratorWithNonzeroDenominatorCalculatesZero()
+    {
+        var fixture = CreateFixture();
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(0m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(60m, MetricInputFactUnits.Seconds));
+
+        var result = await fixture.Evaluator.EvaluateAsync(
+            Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
+            CancellationToken.None);
+
+        Assert.Equal(OperationalMetricEvaluationStatus.Calculated, result.Status);
+        Assert.Equal(0m, result.Value);
+        Assert.Null(result.ReasonCode);
+    }
+
+    [Fact]
+    public async Task BothOperandsMissingProducesDeterministicInsufficientEvidence()
+    {
+        var fixture = CreateFixture();
+
+        var result = await fixture.Evaluator.EvaluateAsync(
+            Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
+            CancellationToken.None);
+
+        Assert.Equal(OperationalMetricEvaluationStatus.InsufficientEvidence, result.Status);
+        Assert.Equal(OperationalMetricEvaluationReasonCode.MissingOperand, result.ReasonCode);
+        Assert.Equal("ActualProductionTime", result.ReasonOperandName);
+        Assert.Empty(result.OperandEvidence);
+    }
+
+    [Fact]
+    public async Task PartitionedContextIsRejectedBeforeSnapshotRead()
+    {
+        var fixture = CreateFixture();
+        var key = new OperationalMetricEvaluationKey(
+            fixture.MachineId,
+            new OperationalMetricPeriodId.ProductionDay(fixture.ProductionDayId),
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            new OperationalMetricEvaluationContextKey
+            {
+                ProductionOrderId = new ProductionOrderId("order-1"),
+            });
+
+        await Assert.ThrowsAsync<NotSupportedException>(async () =>
+            await fixture.Evaluator.EvaluateAsync(key, CancellationToken.None));
+
+        Assert.Equal(0, fixture.Reader.ReadCount);
+    }
+
+    [Fact]
     public async Task MissingComponentProducesInsufficientEvidenceWithSnapshotRevision()
     {
         var fixture = CreateFixture();
@@ -176,6 +267,8 @@ public sealed class OperationalMetricEvaluatorTests
 
         public int ReadCount { get; private set; }
 
+        public OperationalMetricComponentSnapshotRequest? LastRequest { get; private set; }
+
         public void Set(string componentKey, MetricAggregateValue value) =>
             _aggregates[componentKey] = value;
 
@@ -185,6 +278,7 @@ public sealed class OperationalMetricEvaluatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             ReadCount++;
+            LastRequest = request;
 
             var components = new List<OperationalMetricComponent>();
             foreach (var operand in request.Operands)
