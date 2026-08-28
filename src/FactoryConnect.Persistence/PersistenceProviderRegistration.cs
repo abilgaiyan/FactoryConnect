@@ -9,6 +9,13 @@ public sealed class PersistenceProviderRegistration :
 
     public PersistenceProviderRegistration(
         string providerKey,
+        Func<IServiceProvider, PersistenceProviderServices> factory)
+        : this(providerKey, PersistenceProviderCapabilities.Core, factory)
+    {
+    }
+
+    public PersistenceProviderRegistration(
+        string providerKey,
         PersistenceProviderCapabilities capabilities,
         Func<IServiceProvider, PersistenceProviderServices> factory)
     {
