@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core.Metrics;
@@ -20,13 +21,14 @@ public static class BuiltInOperationalMetricDefinitions
         new(CanonicalMetricKeys.Oee, "1.0");
 
     public static IReadOnlyList<OperationalMetricDefinition> All { get; } =
-    [
-        CreateAvailability(),
-        CreateUtilization(),
-        CreatePerformance(),
-        CreateQuality(),
-        CreateOee(),
-    ];
+        new ReadOnlyCollection<OperationalMetricDefinition>(
+        [
+            CreateAvailability(),
+            CreateUtilization(),
+            CreatePerformance(),
+            CreateQuality(),
+            CreateOee(),
+        ]);
 
     private static OperationalMetricDefinition CreateAvailability() => new()
     {
