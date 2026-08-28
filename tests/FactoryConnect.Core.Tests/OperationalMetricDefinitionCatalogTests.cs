@@ -60,9 +60,70 @@ public sealed class OperationalMetricDefinitionCatalogTests
         var definition = BuiltInOperationalMetricDefinitions.All[0];
         var catalog = new OperationalMetricDefinitionCatalog([definition, definition]);
 
-        var order = catalog.GetEvaluationOrder(OperationalMetricEvaluationScope.Shift);
+        Assert.Single(catalog.GetEvaluationOrder(OperationalMetricEvaluationScope.Shift));
+    }
 
-        Assert.Single(order);
+    [Fact]
+    public void SeparatelyConstructedEquivalentProductDefinitionsAreIdempotent()
+    {
+        var definitions = BuiltInOperationalMetricDefinitions.All.ToList();
+        var oee = definitions.Single(definition => definition.Id == BuiltInOperationalMetricDefinitions.OeeId);
+        var equivalent = oee with
+        {
+            Operands = oee.Operands.Select(operand => operand with { }).ToArray(),
+            Formula = new OperationalMetricFormula.Product(["Availability", "Performance", "Quality"]),
+        };
+        definitions.Add(equivalent);
+
+        var catalog = new OperationalMetricDefinitionCatalog(definitions);
+
+        Assert.Same(
+            catalog.GetRequired(BuiltInOperationalMetricDefinitions.OeeId),
+            catalog.GetEvaluationOrder(OperationalMetricEvaluationScope.Shift)
+                .Single(definition => definition.Id == BuiltInOperationalMetricDefinitions.OeeId));
+    }
+
+    [Fact]
+    public void ChangedProductFactorSequenceIsConflicting()
+    {
+        var oee = BuiltInOperationalMetricDefinitions.All.Single(
+            definition => definition.Id == BuiltInOperationalMetricDefinitions.OeeId);
+        var changed = oee with
+        {
+            Formula = new OperationalMetricFormula.Product(["Performance", "Availability", "Quality"]),
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            new OperationalMetricDefinitionCatalog([.. BuiltInOperationalMetricDefinitions.All, changed]));
+    }
+
+    [Fact]
+    public void OperandDeclarationOrderIsNotSemantic()
+    {
+        var definition = BuiltInOperationalMetricDefinitions.All[0];
+        var reordered = definition with { Operands = definition.Operands.Reverse().ToArray() };
+
+        Assert.True(OperationalMetricDefinitionSemanticComparer.AreEquivalent(definition, reordered));
+
+        _ = new OperationalMetricDefinitionCatalog([definition, reordered]);
+    }
+
+    [Fact]
+    public void ChangedOperandSemanticsAreConflicting()
+    {
+        var definition = BuiltInOperationalMetricDefinitions.All[0];
+        var changedOperands = definition.Operands
+            .Select(operand => operand.OperandName == "ActualProductionTime"
+                ? operand with
+                {
+                    Source = new OperationalMetricOperandSource.Component(MetricInputKeys.MachinePowerOnTime),
+                }
+                : operand)
+            .ToArray();
+        var changed = definition with { Operands = changedOperands };
+
+        Assert.Throws<ArgumentException>(() =>
+            new OperationalMetricDefinitionCatalog([definition, changed]));
     }
 
     [Fact]
@@ -70,9 +131,8 @@ public sealed class OperationalMetricDefinitionCatalogTests
     {
         var definition = BuiltInOperationalMetricDefinitions.All[0];
         var renamed = definition with { DisplayName = "Different descriptive label" };
-        var comparer = new OperationalMetricDefinitionSemanticComparer();
 
-        Assert.True(comparer.AreEquivalent(definition, renamed));
+        Assert.True(OperationalMetricDefinitionSemanticComparer.AreEquivalent(definition, renamed));
     }
 
     [Fact]
@@ -90,6 +150,43 @@ public sealed class OperationalMetricDefinitionCatalogTests
 
         Assert.Throws<ArgumentException>(() =>
             new OperationalMetricDefinitionCatalog([definition, conflicting]));
+    }
+
+    [Fact]
+    public void CatalogDefensivelyFreezesCallerOwnedCollections()
+    {
+        var sourceOee = BuiltInOperationalMetricDefinitions.All.Single(
+            definition => definition.Id == BuiltInOperationalMetricDefinitions.OeeId);
+        var mutableOperands = sourceOee.Operands.Select(operand => operand with { }).ToList();
+        var mutableFactors = new List<string> { "Availability", "Performance", "Quality" };
+        var mutableOee = sourceOee with
+        {
+            Operands = mutableOperands,
+            Formula = new OperationalMetricFormula.Product(mutableFactors),
+        };
+        var definitions = BuiltInOperationalMetricDefinitions.All
+            .Where(definition => definition.Id != BuiltInOperationalMetricDefinitions.OeeId)
+            .Append(mutableOee)
+            .ToList();
+
+        var catalog = new OperationalMetricDefinitionCatalog(definitions);
+        var expectedOrder = catalog.GetEvaluationOrder(OperationalMetricEvaluationScope.Shift)
+            .Select(definition => definition.Id)
+            .ToArray();
+
+        mutableOperands.Clear();
+        mutableFactors.Clear();
+        definitions.Clear();
+
+        var storedOee = catalog.GetRequired(BuiltInOperationalMetricDefinitions.OeeId);
+        var storedProduct = Assert.IsType<OperationalMetricFormula.Product>(storedOee.Formula);
+        Assert.Equal(3, storedOee.Operands.Count);
+        Assert.Equal(["Availability", "Performance", "Quality"], storedProduct.FactorOperands);
+        Assert.Equal(
+            expectedOrder,
+            catalog.GetEvaluationOrder(OperationalMetricEvaluationScope.Shift)
+                .Select(definition => definition.Id)
+                .ToArray());
     }
 
     [Fact]
@@ -181,7 +278,7 @@ public sealed class OperationalMetricDefinitionCatalogTests
         };
 
         Assert.Throws<ArgumentException>(() =>
-            new OperationalMetricDefinitionValidator().Validate(definition with { Operands = operands }));
+            OperationalMetricDefinitionValidator.Validate(definition with { Operands = operands }));
     }
 
     [Fact]
@@ -194,8 +291,7 @@ public sealed class OperationalMetricDefinitionCatalogTests
             Formula = new OperationalMetricFormula.Product(["Availability", "Availability", "Quality"]),
         };
 
-        Assert.Throws<ArgumentException>(() =>
-            new OperationalMetricDefinitionValidator().Validate(invalid));
+        Assert.Throws<ArgumentException>(() => OperationalMetricDefinitionValidator.Validate(invalid));
     }
 
     [Fact]
@@ -210,8 +306,33 @@ public sealed class OperationalMetricDefinitionCatalogTests
             },
         };
 
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            new OperationalMetricDefinitionValidator().Validate(definition));
+        Assert.Throws<ArgumentOutOfRangeException>(() => OperationalMetricDefinitionValidator.Validate(definition));
+    }
+
+    [Fact]
+    public void UndefinedRoundingModeIsRejected()
+    {
+        var definition = BuiltInOperationalMetricDefinitions.All[0] with
+        {
+            PrecisionPolicy = new OperationalMetricPrecisionPolicy
+            {
+                DurableDecimalScale = 8,
+                RoundingMode = (MidpointRounding)999,
+            },
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => OperationalMetricDefinitionValidator.Validate(definition));
+    }
+
+    [Fact]
+    public void OperandNamesWithBoundaryWhitespaceAreRejected()
+    {
+        var definition = BuiltInOperationalMetricDefinitions.All[0];
+        var operands = definition.Operands.ToArray();
+        operands[0] = operands[0] with { OperandName = $" {operands[0].OperandName}" };
+
+        Assert.Throws<ArgumentException>(() =>
+            OperationalMetricDefinitionValidator.Validate(definition with { Operands = operands }));
     }
 
     [Fact]
@@ -226,8 +347,7 @@ public sealed class OperationalMetricDefinitionCatalogTests
             },
         };
 
-        Assert.Throws<ArgumentException>(() =>
-            new OperationalMetricDefinitionValidator().Validate(definition));
+        Assert.Throws<ArgumentException>(() => OperationalMetricDefinitionValidator.Validate(definition));
     }
 
     private static OperationalMetricDefinition Clone(
