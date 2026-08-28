@@ -19,23 +19,23 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
             fixture.SourceStreamId,
             CancellationToken.None);
         Assert.Equal((ulong)40, checkpoint!.SourceRevision.Position.Value);
+        Assert.Single(checkpoint.BatchManifest.ProjectionKeys);
 
         var stored = await fixture.Store.ReadProjectionAsync(
             fixture.ProjectionProcessorId,
-            EvaluationKey(fixture),
+            EvaluationKey(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
             CancellationToken.None);
         Assert.Equal(0.33333333m, stored!.Value);
     }
 
     [Fact]
-    public async Task ExactRevisionReplayIsStructuralNoOp()
+    public async Task ExactRevisionReplayWithIndependentlyConstructedEvidenceIsStructuralNoOp()
     {
         var fixture = CreateFixture();
-        var batch = Batch(fixture, 40, 0.5m);
-        fixture.Source.Enqueue(batch);
+        fixture.Source.Enqueue(BatchWithEvidence(fixture, 40, 0.5m));
         Assert.Equal(1, await fixture.Runtime.RunCycleAsync());
 
-        fixture.Source.Enqueue(batch);
+        fixture.Source.Enqueue(BatchWithEvidence(fixture, 40, 0.5m));
         Assert.Equal(0, await fixture.Runtime.RunCycleAsync());
 
         Assert.Equal((ulong)40, fixture.Source.Requests[1].KnownRevision!.Position.Value);
@@ -52,6 +52,78 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
 
         await Assert.ThrowsAsync<InvalidDataException>(async () =>
             await fixture.Runtime.RunCycleAsync());
+    }
+
+    [Fact]
+    public async Task ReplayOmittingPreviouslyCommittedEvaluationFails()
+    {
+        var fixture = CreateFixture();
+        fixture.Source.Enqueue(Batch(
+            fixture,
+            40,
+            (BuiltInOperationalMetricDefinitions.AvailabilityId, 0.5m),
+            (BuiltInOperationalMetricDefinitions.QualityId, 0.9m)));
+        Assert.Equal(2, await fixture.Runtime.RunCycleAsync());
+
+        fixture.Source.Enqueue(Batch(
+            fixture,
+            40,
+            (BuiltInOperationalMetricDefinitions.AvailabilityId, 0.5m)));
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await fixture.Runtime.RunCycleAsync());
+    }
+
+    [Fact]
+    public async Task EmptyReplayOfPreviouslyNonEmptyRevisionFails()
+    {
+        var fixture = CreateFixture();
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+        Assert.Equal(1, await fixture.Runtime.RunCycleAsync());
+
+        fixture.Source.Enqueue(new OperationalMetricEvaluationBatch(
+            Revision(fixture, 40),
+            []));
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await fixture.Runtime.RunCycleAsync());
+    }
+
+    [Fact]
+    public async Task ReplayAddingEvaluationFails()
+    {
+        var fixture = CreateFixture();
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+        Assert.Equal(1, await fixture.Runtime.RunCycleAsync());
+
+        fixture.Source.Enqueue(Batch(
+            fixture,
+            40,
+            (BuiltInOperationalMetricDefinitions.AvailabilityId, 0.5m),
+            (BuiltInOperationalMetricDefinitions.QualityId, 0.9m)));
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await fixture.Runtime.RunCycleAsync());
+    }
+
+    [Fact]
+    public async Task ReorderedReplaySucceedsBecauseBatchOrderIsNonSemantic()
+    {
+        var fixture = CreateFixture();
+        fixture.Source.Enqueue(Batch(
+            fixture,
+            40,
+            (BuiltInOperationalMetricDefinitions.AvailabilityId, 0.5m),
+            (BuiltInOperationalMetricDefinitions.QualityId, 0.9m)));
+        Assert.Equal(2, await fixture.Runtime.RunCycleAsync());
+
+        fixture.Source.Enqueue(Batch(
+            fixture,
+            40,
+            (BuiltInOperationalMetricDefinitions.QualityId, 0.9m),
+            (BuiltInOperationalMetricDefinitions.AvailabilityId, 0.5m)));
+
+        Assert.Equal(0, await fixture.Runtime.RunCycleAsync());
     }
 
     [Fact]
@@ -90,6 +162,7 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
             fixture.SourceStreamId,
             CancellationToken.None);
         Assert.Equal((ulong)40, checkpoint!.SourceRevision.Position.Value);
+        Assert.Empty(checkpoint.BatchManifest.ProjectionKeys);
     }
 
     [Fact]
@@ -156,20 +229,79 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
     private static OperationalMetricEvaluationBatch Batch(
         RuntimeFixture fixture,
         ulong position,
-        decimal value)
+        decimal value) => Batch(
+            fixture,
+            position,
+            (BuiltInOperationalMetricDefinitions.AvailabilityId, value));
+
+    private static OperationalMetricEvaluationBatch Batch(
+        RuntimeFixture fixture,
+        ulong position,
+        params (OperationalMetricDefinitionId DefinitionId, decimal Value)[] values)
     {
         var revision = Revision(fixture, position);
         return new OperationalMetricEvaluationBatch(
             revision,
+            values.Select(value => new OperationalMetricEvaluation(
+                EvaluationKey(fixture, value.DefinitionId),
+                OperationalMetricEvaluationStatus.Calculated,
+                value.Value,
+                OperationalMetricUnits.Ratio,
+                null,
+                null,
+                revision,
+                [])).ToArray());
+    }
+
+    private static OperationalMetricEvaluationBatch BatchWithEvidence(
+        RuntimeFixture fixture,
+        ulong position,
+        decimal value)
+    {
+        var revision = Revision(fixture, position);
+        var key = EvaluationKey(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId);
+        var firstTimestamp = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
+        var lastTimestamp = firstTimestamp.AddMinutes(10);
+        return new OperationalMetricEvaluationBatch(
+            revision,
             [new OperationalMetricEvaluation(
-                EvaluationKey(fixture),
+                key,
                 OperationalMetricEvaluationStatus.Calculated,
                 value,
                 OperationalMetricUnits.Ratio,
                 null,
                 null,
                 revision,
-                [])]);
+                [
+                    new MetricOperandEvidence(
+                        "ActualProductionTime",
+                        new OperationalMetricAggregateSourceIdentity(
+                            fixture.SourceProcessorId,
+                            fixture.MachineId,
+                            key.PeriodId,
+                            MetricInputKeys.ActualProductionTime),
+                        revision,
+                        MetricDimension.Duration,
+                        30m,
+                        MetricInputFactUnits.Seconds,
+                        2,
+                        firstTimestamp,
+                        lastTimestamp),
+                    new MetricOperandEvidence(
+                        "PlannedOperatingTime",
+                        new OperationalMetricAggregateSourceIdentity(
+                            fixture.SourceProcessorId,
+                            fixture.MachineId,
+                            key.PeriodId,
+                            MetricInputKeys.PlannedOperatingTime),
+                        revision,
+                        MetricDimension.Duration,
+                        60m,
+                        MetricInputFactUnits.Seconds,
+                        3,
+                        firstTimestamp,
+                        lastTimestamp),
+                ])]);
     }
 
     private static MetricAggregationCheckpoint Revision(
@@ -179,12 +311,14 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
             fixture.SourceStreamId,
             new MetricInputPosition(position));
 
-    private static OperationalMetricEvaluationKey EvaluationKey(RuntimeFixture fixture) => new(
-        fixture.MachineId,
-        new OperationalMetricPeriodId.ProductionDay(
-            new ProductionDayId(new SiteId("site-a"), new DateOnly(2026, 8, 29))),
-        BuiltInOperationalMetricDefinitions.AvailabilityId,
-        OperationalMetricEvaluationContextKey.Unpartitioned);
+    private static OperationalMetricEvaluationKey EvaluationKey(
+        RuntimeFixture fixture,
+        OperationalMetricDefinitionId definitionId) => new(
+            fixture.MachineId,
+            new OperationalMetricPeriodId.ProductionDay(
+                new ProductionDayId(new SiteId("site-a"), new DateOnly(2026, 8, 29))),
+            definitionId,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
 
     private sealed class QueueEvaluationBatchSource : IOperationalMetricEvaluationBatchSource
     {
