@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 
 namespace FactoryConnect.Core.Tests;
 
