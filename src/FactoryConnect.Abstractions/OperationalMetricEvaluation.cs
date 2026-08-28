@@ -75,6 +75,13 @@ public sealed record MetricOperandEvidence
                 nameof(sourceRevision));
         }
 
+        if (sourceRevision.StreamId.MachineId != sourceIdentity.MachineId)
+        {
+            throw new ArgumentException(
+                "Operand source revision must belong to the source machine stream.",
+                nameof(sourceRevision));
+        }
+
         if (lastInputTimestamp < firstInputTimestamp)
         {
             throw new ArgumentException(
@@ -149,6 +156,13 @@ public sealed record OperationalMetricComponentSnapshot
         ArgumentNullException.ThrowIfNull(evaluationKey);
         ArgumentNullException.ThrowIfNull(revision);
         ArgumentNullException.ThrowIfNull(components);
+
+        if (revision.StreamId.MachineId != evaluationKey.MachineId)
+        {
+            throw new ArgumentException(
+                "Snapshot revision must belong to the evaluation machine stream.",
+                nameof(revision));
+        }
 
         var snapshot = components.ToArray();
         if (snapshot.Any(component => component is null))
@@ -249,6 +263,13 @@ public sealed record OperationalMetricEvaluation
         ArgumentException.ThrowIfNullOrWhiteSpace(unit);
         ArgumentNullException.ThrowIfNull(sourceRevision);
         ArgumentNullException.ThrowIfNull(operandEvidence);
+
+        if (sourceRevision.StreamId.MachineId != key.MachineId)
+        {
+            throw new ArgumentException(
+                "Evaluation source revision must belong to the evaluation machine stream.",
+                nameof(sourceRevision));
+        }
 
         var evidenceSnapshot = operandEvidence.ToArray();
         if (evidenceSnapshot.Any(evidence => evidence is null))
