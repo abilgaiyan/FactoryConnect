@@ -9,9 +9,9 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
     private static readonly DateTimeOffset EndsAt = new(2026, 8, 29, 1, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task CompleteDefinitionSetUsesOneCoherentSnapshotRevision()
+    public async Task ProductionDayChangeEvaluatesCompleteDefinitionSetFromOneExactSnapshot()
     {
-        var fixture = CreateReaderFixture();
+        var fixture = CreateReaderFixture(includeShift: false);
 
         var batch = await fixture.Source.ReadAsync(
             new OperationalMetricEvaluationBatchRequest(
@@ -26,17 +26,38 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
         Assert.Equal(5, batch.Evaluations.Count);
         Assert.All(batch.Evaluations, evaluation => Assert.Equal(fixture.Revision, evaluation.SourceRevision));
 
-        Assert.Equal(0.5m, Find(batch, BuiltInOperationalMetricDefinitions.AvailabilityId).Value);
-        Assert.Equal(0.8m, Find(batch, BuiltInOperationalMetricDefinitions.PerformanceId).Value);
-        Assert.Equal(0.9m, Find(batch, BuiltInOperationalMetricDefinitions.QualityId).Value);
-        Assert.Equal(0.36m, Find(batch, BuiltInOperationalMetricDefinitions.OeeId).Value);
-        Assert.Equal(0.4m, Find(batch, BuiltInOperationalMetricDefinitions.UtilizationId).Value);
+        Assert.Equal(0.5m, Find(batch, fixture.DayPeriod, BuiltInOperationalMetricDefinitions.AvailabilityId).Value);
+        Assert.Equal(0.8m, Find(batch, fixture.DayPeriod, BuiltInOperationalMetricDefinitions.PerformanceId).Value);
+        Assert.Equal(0.9m, Find(batch, fixture.DayPeriod, BuiltInOperationalMetricDefinitions.QualityId).Value);
+        Assert.Equal(0.36m, Find(batch, fixture.DayPeriod, BuiltInOperationalMetricDefinitions.OeeId).Value);
+        Assert.Equal(0.4m, Find(batch, fixture.DayPeriod, BuiltInOperationalMetricDefinitions.UtilizationId).Value);
     }
 
     [Fact]
-    public async Task OeeKeepsFullPrecisionAndExactDependencyLineageWithinPinnedSnapshot()
+    public async Task OneRevisionMayEvaluateShiftAndProductionDayWithoutRevisionDrift()
+    {
+        var fixture = CreateReaderFixture(includeShift: true);
+
+        var batch = await fixture.Source.ReadAsync(
+            new OperationalMetricEvaluationBatchRequest(
+                fixture.AggregationProcessorId,
+                fixture.StreamId,
+                null),
+            CancellationToken.None);
+
+        Assert.NotNull(batch);
+        Assert.Equal(2, fixture.Reader.ReadCount);
+        Assert.Equal(10, batch.Evaluations.Count);
+        Assert.Equal(5, batch.Evaluations.Count(evaluation => evaluation.Key.Scope == OperationalMetricEvaluationScope.Shift));
+        Assert.Equal(5, batch.Evaluations.Count(evaluation => evaluation.Key.Scope == OperationalMetricEvaluationScope.ProductionDay));
+        Assert.All(batch.Evaluations, evaluation => Assert.Equal(fixture.Revision, evaluation.SourceRevision));
+    }
+
+    [Fact]
+    public async Task OeeKeepsFullPrecisionAndExactDependencyLineageWithinPinnedRevision()
     {
         var fixture = CreateReaderFixture(
+            includeShift: false,
             actualProductionTime: 1m,
             plannedOperatingTime: 3m,
             productionReferenceTime: 1m,
@@ -50,7 +71,10 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
                 fixture.StreamId,
                 null),
             CancellationToken.None);
-        var oee = Find(batch!, BuiltInOperationalMetricDefinitions.OeeId);
+        var oee = Find(
+            batch!,
+            fixture.DayPeriod,
+            BuiltInOperationalMetricDefinitions.OeeId);
 
         var expected = (1m / 3m) * 1m * (1m / 3m);
         Assert.Equal(expected, oee.Value);
@@ -65,25 +89,35 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
     }
 
     [Fact]
-    public async Task KnownRevisionAheadOfCurrentSnapshotFails()
+    public async Task InvalidEvaluationFailsBeforeProjectionCheckpointAdvances()
     {
-        var fixture = CreateReaderFixture();
-        var ahead = new MetricAggregationCheckpoint(
+        var fixture = CreateReaderFixture(
+            includeShift: false,
+            actualProductionTime: 700m,
+            plannedOperatingTime: 600m);
+        var projectionProcessorId = new OperationalMetricProjectionProcessorId("projection-m01");
+        var projectionStore = new InMemoryOperationalMetricProjectionStore();
+        var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
+        var factory = new OperationalMetricProjectionFactory(catalog, projectionProcessorId);
+        var runtime = new OperationalMetricProjectionProcessingRuntime(
+            projectionProcessorId,
             fixture.AggregationProcessorId,
             fixture.StreamId,
-            new MetricInputPosition(fixture.Revision.Position.Value + 1));
+            fixture.Source,
+            factory,
+            projectionStore);
 
         await Assert.ThrowsAsync<InvalidDataException>(async () =>
-            await fixture.Source.ReadAsync(
-                new OperationalMetricEvaluationBatchRequest(
-                    fixture.AggregationProcessorId,
-                    fixture.StreamId,
-                    ahead),
-                CancellationToken.None));
+            await runtime.RunCycleAsync());
+
+        Assert.Null(await projectionStore.ReadCheckpointAsync(
+            projectionProcessorId,
+            fixture.StreamId,
+            CancellationToken.None));
     }
 
     [Fact]
-    public async Task InMemoryAggregationThroughProjectionRuntimePersistsCompleteMetricSetAndReplaysAfterRestart()
+    public async Task InMemoryAggregationThroughProjectionRuntimePersistsBothScopesAndReplaysAfterRestart()
     {
         var machineId = MachineId.New();
         var siteId = new SiteId("site-a");
@@ -120,13 +154,18 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
                 inputs),
             CancellationToken.None);
 
+        var change = new MetricAggregationRevisionChange(
+            aggregationCheckpoint,
+            [occurrence],
+            [day]);
+        var adapter = new SingleRevisionAggregationAdapter(aggregationStore, change);
         var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
         var source = new CoherentOperationalMetricEvaluationBatchSource(
             catalog,
-            aggregationStore,
+            adapter,
+            adapter,
             aggregationProcessorId,
             streamId,
-            new OperationalMetricPeriodId.ProductionDay(day),
             OperationalMetricEvaluationContextKey.Unpartitioned);
         var projectionProcessorId = new OperationalMetricProjectionProcessorId("projection-m01");
         var projectionStore = new InMemoryOperationalMetricProjectionStore();
@@ -139,17 +178,30 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             factory,
             projectionStore);
 
-        Assert.Equal(5, await runtime.RunCycleAsync());
+        Assert.Equal(10, await runtime.RunCycleAsync());
 
-        var oeeKey = Key(machineId, day, BuiltInOperationalMetricDefinitions.OeeId);
-        var oee = await projectionStore.ReadProjectionAsync(
+        var dayOee = await projectionStore.ReadProjectionAsync(
             projectionProcessorId,
-            oeeKey,
+            new OperationalMetricEvaluationKey(
+                machineId,
+                new OperationalMetricPeriodId.ProductionDay(day),
+                BuiltInOperationalMetricDefinitions.OeeId,
+                OperationalMetricEvaluationContextKey.Unpartitioned),
             CancellationToken.None);
-        Assert.NotNull(oee);
-        Assert.Equal(0.36m, oee.Value);
-        Assert.Equal(3, oee.DependencyEvidence.Count);
-        Assert.Equal(aggregationCheckpoint, oee.SourceRevision);
+        var shiftOee = await projectionStore.ReadProjectionAsync(
+            projectionProcessorId,
+            new OperationalMetricEvaluationKey(
+                machineId,
+                new OperationalMetricPeriodId.Shift(occurrence),
+                BuiltInOperationalMetricDefinitions.OeeId,
+                OperationalMetricEvaluationContextKey.Unpartitioned),
+            CancellationToken.None);
+        Assert.NotNull(dayOee);
+        Assert.NotNull(shiftOee);
+        Assert.Equal(0.36m, dayOee.Value);
+        Assert.Equal(0.36m, shiftOee.Value);
+        Assert.Equal(3, dayOee.DependencyEvidence.Count);
+        Assert.Equal(aggregationCheckpoint, dayOee.SourceRevision);
 
         var restarted = new OperationalMetricProjectionProcessingRuntime(
             projectionProcessorId,
@@ -166,10 +218,11 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             CancellationToken.None);
         Assert.NotNull(checkpoint);
         Assert.Equal(aggregationCheckpoint, checkpoint.SourceRevision);
-        Assert.Equal(5, checkpoint.BatchManifest.EvaluationKeys.Count);
+        Assert.Equal(10, checkpoint.BatchManifest.EvaluationKeys.Count);
     }
 
     private static ReaderFixture CreateReaderFixture(
+        bool includeShift,
         decimal actualProductionTime = 300m,
         decimal plannedOperatingTime = 600m,
         decimal productionReferenceTime = 240m,
@@ -184,8 +237,15 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             aggregationProcessorId,
             streamId,
             new MetricInputPosition(42));
-        var periodId = new OperationalMetricPeriodId.ProductionDay(
-            new ProductionDayId(new SiteId("site-a"), new DateOnly(2026, 8, 29)));
+        var siteId = new SiteId("site-a");
+        var day = new ProductionDayId(siteId, new DateOnly(2026, 8, 29));
+        var occurrence = new ShiftOccurrenceId(
+            siteId,
+            new ShiftScheduleAssignmentId("schedule-a"),
+            new ShiftId("shift-a"),
+            StartsAt,
+            new DateTimeOffset(2026, 8, 29, 8, 0, 0, TimeSpan.Zero));
+        var dayPeriod = new OperationalMetricPeriodId.ProductionDay(day);
         var reader = new CapturingSnapshotReader(revision, new Dictionary<string, MetricAggregateValue>(StringComparer.Ordinal)
         {
             [MetricInputKeys.ActualProductionTime] = Aggregate(actualProductionTime, MetricInputFactUnits.Seconds),
@@ -195,19 +255,25 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             [MetricInputKeys.GoodQuantity] = Aggregate(goodQuantity, MetricInputFactUnits.Count),
             [MetricInputKeys.MachinePowerOnTime] = Aggregate(machinePowerOnTime, MetricInputFactUnits.Seconds),
         });
+        var change = new MetricAggregationRevisionChange(
+            revision,
+            includeShift ? [occurrence] : [],
+            [day]);
+        var adapter = new SingleRevisionAggregationAdapter(reader, change);
         var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
         var source = new CoherentOperationalMetricEvaluationBatchSource(
             catalog,
-            reader,
+            adapter,
+            adapter,
             aggregationProcessorId,
             streamId,
-            periodId,
             OperationalMetricEvaluationContextKey.Unpartitioned);
 
         return new ReaderFixture(
             aggregationProcessorId,
             streamId,
             revision,
+            dayPeriod,
             reader,
             source);
     }
@@ -217,17 +283,11 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
 
     private static OperationalMetricEvaluation Find(
         OperationalMetricEvaluationBatch batch,
+        OperationalMetricPeriodId periodId,
         OperationalMetricDefinitionId definitionId) =>
-        Assert.Single(batch.Evaluations.Where(evaluation => evaluation.Key.DefinitionId == definitionId));
-
-    private static OperationalMetricEvaluationKey Key(
-        MachineId machineId,
-        ProductionDayId day,
-        OperationalMetricDefinitionId definitionId) => new(
-            machineId,
-            new OperationalMetricPeriodId.ProductionDay(day),
-            definitionId,
-            OperationalMetricEvaluationContextKey.Unpartitioned);
+        Assert.Single(batch.Evaluations.Where(evaluation =>
+            evaluation.Key.PeriodId == periodId &&
+            evaluation.Key.DefinitionId == definitionId));
 
     private static PositionedMetricInputFact Input(
         MetricInputStreamId streamId,
@@ -301,10 +361,74 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
         }
     }
 
+    private sealed class SingleRevisionAggregationAdapter :
+        IMetricAggregationRevisionReader,
+        IRevisionedOperationalMetricComponentSnapshotReader
+    {
+        private readonly IOperationalMetricComponentSnapshotReader _snapshotReader;
+        private readonly MetricAggregationRevisionChange _change;
+
+        public SingleRevisionAggregationAdapter(
+            IOperationalMetricComponentSnapshotReader snapshotReader,
+            MetricAggregationRevisionChange change)
+        {
+            _snapshotReader = snapshotReader;
+            _change = change;
+        }
+
+        public ValueTask<MetricAggregationRevisionChange?> ReadNextAsync(
+            MetricAggregationProcessorId processorId,
+            MetricInputStreamId streamId,
+            MetricAggregationCheckpoint? afterRevision,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_change.Revision.ProcessorId != processorId ||
+                _change.Revision.StreamId != streamId)
+            {
+                return ValueTask.FromResult<MetricAggregationRevisionChange?>(null);
+            }
+
+            return ValueTask.FromResult<MetricAggregationRevisionChange?>(
+                afterRevision is null || _change.Revision.Position > afterRevision.Position
+                    ? _change
+                    : null);
+        }
+
+        public ValueTask<MetricAggregationRevisionChange?> ReadExactAsync(
+            MetricAggregationCheckpoint revision,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<MetricAggregationRevisionChange?>(
+                _change.Revision == revision ? _change : null);
+        }
+
+        public async ValueTask<OperationalMetricComponentSnapshot> ReadAtRevisionAsync(
+            OperationalMetricComponentSnapshotRequest request,
+            MetricAggregationCheckpoint requiredRevision,
+            CancellationToken cancellationToken)
+        {
+            if (requiredRevision != _change.Revision)
+            {
+                throw new InvalidDataException("Requested component revision is not available.");
+            }
+
+            var snapshot = await _snapshotReader.ReadAsync(request, cancellationToken);
+            if (snapshot.Revision != requiredRevision)
+            {
+                throw new InvalidDataException("Component snapshot did not preserve the required revision.");
+            }
+
+            return snapshot;
+        }
+    }
+
     private sealed record ReaderFixture(
         MetricAggregationProcessorId AggregationProcessorId,
         MetricInputStreamId StreamId,
         MetricAggregationCheckpoint Revision,
+        OperationalMetricPeriodId DayPeriod,
         CapturingSnapshotReader Reader,
         CoherentOperationalMetricEvaluationBatchSource Source);
 }
