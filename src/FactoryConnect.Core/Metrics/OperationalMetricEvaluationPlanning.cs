@@ -10,6 +10,8 @@ internal sealed record OperationalMetricComponentRequirement(
 
 internal sealed class OperationalMetricEvaluationPlan
 {
+    private readonly IReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> _definitionsById;
+
     public OperationalMetricEvaluationPlan(
         OperationalMetricEvaluationKey rootKey,
         OperationalMetricDefinition rootDefinition,
@@ -45,10 +47,13 @@ internal sealed class OperationalMetricEvaluationPlan
                 nameof(dependencyOrder));
         }
 
+        var definitionsById = dependencySnapshot.ToDictionary(definition => definition.Id);
+
         RootKey = rootKey;
         RootDefinition = rootDefinition;
         DependencyOrder = new ReadOnlyCollection<OperationalMetricDefinition>(dependencySnapshot);
         ComponentRequirements = new ReadOnlyCollection<OperationalMetricComponentRequirement>(componentRequirements.ToArray());
+        _definitionsById = new ReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition>(definitionsById);
     }
 
     public OperationalMetricEvaluationKey RootKey { get; }
@@ -58,6 +63,15 @@ internal sealed class OperationalMetricEvaluationPlan
     public IReadOnlyList<OperationalMetricDefinition> DependencyOrder { get; }
 
     public IReadOnlyList<OperationalMetricComponentRequirement> ComponentRequirements { get; }
+
+    public OperationalMetricDefinition GetRequiredDefinition(OperationalMetricDefinitionId definitionId)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        return _definitionsById.TryGetValue(definitionId, out var definition)
+            ? definition
+            : throw new InvalidOperationException(
+                $"Metric '{definitionId.MetricKey}/{definitionId.Version}' is not part of this evaluation plan.");
+    }
 }
 
 internal sealed class OperationalMetricEvaluationPlanner
@@ -218,6 +232,7 @@ internal sealed class OperationalMetricEvaluationSession
         out OperationalMetricEvaluation? evaluation)
     {
         ArgumentNullException.ThrowIfNull(definitionId);
+        EnsurePlanned(definitionId);
         return _completedEvaluations.TryGetValue(definitionId, out evaluation);
     }
 
@@ -276,6 +291,7 @@ internal sealed class OperationalMetricEvaluationSession
     public void AbandonEvaluation(OperationalMetricDefinitionId definitionId)
     {
         ArgumentNullException.ThrowIfNull(definitionId);
+        EnsurePlanned(definitionId);
         _activeEvaluations.Remove(definitionId);
     }
 
