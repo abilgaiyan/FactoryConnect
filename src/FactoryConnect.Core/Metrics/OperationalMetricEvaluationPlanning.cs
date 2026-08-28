@@ -198,6 +198,13 @@ internal sealed class OperationalMetricEvaluationSession
     public void BeginEvaluation(OperationalMetricDefinitionId definitionId)
     {
         ArgumentNullException.ThrowIfNull(definitionId);
+
+        if (_completedEvaluations.ContainsKey(definitionId))
+        {
+            throw new InvalidOperationException(
+                $"Operational metric '{definitionId.MetricKey}/{definitionId.Version}' is already completed in this evaluation session.");
+        }
+
         if (!_activeEvaluations.Add(definitionId))
         {
             throw new InvalidDataException(
@@ -212,19 +219,30 @@ internal sealed class OperationalMetricEvaluationSession
         ArgumentNullException.ThrowIfNull(definitionId);
         ArgumentNullException.ThrowIfNull(evaluation);
 
-        if (!_activeEvaluations.Remove(definitionId))
+        if (!_activeEvaluations.Contains(definitionId))
         {
             throw new InvalidOperationException("Metric evaluation must be active before completion.");
         }
 
-        if (evaluation.Key.DefinitionId != definitionId)
+        var expectedKey = new OperationalMetricEvaluationKey(
+            Plan.RootKey.MachineId,
+            Plan.RootKey.PeriodId,
+            definitionId,
+            Plan.RootKey.ContextKey);
+
+        if (evaluation.Key != expectedKey || evaluation.SourceRevision != Snapshot.Revision)
         {
-            throw new ArgumentException(
-                "Completed evaluation must match the exact active definition ID.",
-                nameof(evaluation));
+            throw new InvalidDataException(
+                "Completed evaluation does not belong to the evaluation session identity and coherent source revision.");
         }
 
-        _completedEvaluations[definitionId] = evaluation;
+        if (!_completedEvaluations.TryAdd(definitionId, evaluation))
+        {
+            throw new InvalidOperationException(
+                $"Operational metric '{definitionId.MetricKey}/{definitionId.Version}' is already completed in this evaluation session.");
+        }
+
+        _activeEvaluations.Remove(definitionId);
     }
 
     public void AbandonEvaluation(OperationalMetricDefinitionId definitionId)
