@@ -9,19 +9,11 @@ public sealed class OperationalMetricEvaluatorTests
     private static readonly DateTimeOffset LastTimestamp = new(2026, 8, 28, 1, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task AvailabilityUsesProductionDayFc026Components()
+    public async Task AvailabilityUsesOneCoherentProductionDaySnapshot()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(450m, MetricInputFactUnits.Seconds));
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.PlannedOperatingTime,
-            Aggregate(600m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(450m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(600m, MetricInputFactUnits.Seconds));
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
@@ -29,22 +21,18 @@ public sealed class OperationalMetricEvaluatorTests
 
         Assert.Equal(OperationalMetricEvaluationStatus.Calculated, result.Status);
         Assert.Equal(0.75m, result.Value);
-        Assert.Equal(OperationalMetricUnits.Ratio, result.Unit);
-        Assert.Null(result.ReasonCode);
-        Assert.Equal(2, result.OperandEvidence.Count);
-        Assert.Equal("ActualProductionTime", result.OperandEvidence[0].OperandName);
-        Assert.Equal("PlannedOperatingTime", result.OperandEvidence[1].OperandName);
+        Assert.Equal(fixture.Revision, result.SourceRevision);
+        Assert.Equal(1, fixture.Reader.ReadCount);
+        Assert.All(result.OperandEvidence, evidence => Assert.Equal(fixture.Revision, evidence.SourceRevision));
+        Assert.Equal(MetricInputKeys.ActualProductionTime, result.OperandEvidence[0].SourceIdentity.ComponentKey);
+        Assert.Equal(MetricInputKeys.PlannedOperatingTime, result.OperandEvidence[1].SourceIdentity.ComponentKey);
     }
 
     [Fact]
-    public async Task MissingComponentProducesInsufficientEvidence()
+    public async Task MissingComponentProducesInsufficientEvidenceWithSnapshotRevision()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(450m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(450m, MetricInputFactUnits.Seconds));
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
@@ -54,6 +42,7 @@ public sealed class OperationalMetricEvaluatorTests
         Assert.Null(result.Value);
         Assert.Equal(OperationalMetricEvaluationReasonCode.MissingOperand, result.ReasonCode);
         Assert.Equal("PlannedOperatingTime", result.ReasonOperandName);
+        Assert.Equal(fixture.Revision, result.SourceRevision);
         Assert.Single(result.OperandEvidence);
     }
 
@@ -61,11 +50,7 @@ public sealed class OperationalMetricEvaluatorTests
     public async Task MissingPerformanceReferenceTimeUsesStableReason()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(300m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(300m, MetricInputFactUnits.Seconds));
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.PerformanceId),
@@ -80,16 +65,8 @@ public sealed class OperationalMetricEvaluatorTests
     public async Task ZeroDenominatorProducesUnavailableWithoutDivision()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(10m, MetricInputFactUnits.Seconds));
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.PlannedOperatingTime,
-            Aggregate(0m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(10m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(0m, MetricInputFactUnits.Seconds));
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
@@ -102,62 +79,39 @@ public sealed class OperationalMetricEvaluatorTests
     }
 
     [Fact]
-    public async Task FinalPrecisionIsAppliedOnceToRatioResult()
+    public async Task LogicalRatioIsNotRoundedToDurableScale()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(1m, MetricInputFactUnits.Seconds));
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.PlannedOperatingTime,
-            Aggregate(3m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(1m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(3m, MetricInputFactUnits.Seconds));
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
             CancellationToken.None);
 
-        Assert.Equal(0.33333333m, result.Value);
-        Assert.Equal(1m, result.OperandEvidence[0].Value);
-        Assert.Equal(3m, result.OperandEvidence[1].Value);
+        Assert.Equal(1m / 3m, result.Value);
+        Assert.NotEqual(0.33333333m, result.Value);
     }
 
     [Fact]
-    public async Task DomainViolationIsExplicitAndNeverClamped()
+    public async Task DomainViolationFailsInvalidProcessingState()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(120m, MetricInputFactUnits.Seconds));
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.PlannedOperatingTime,
-            Aggregate(100m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(120m, MetricInputFactUnits.Seconds));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(100m, MetricInputFactUnits.Seconds));
 
-        var result = await fixture.Evaluator.EvaluateAsync(
-            Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-            CancellationToken.None);
-
-        Assert.Equal(OperationalMetricEvaluationStatus.Unavailable, result.Status);
-        Assert.Equal(OperationalMetricEvaluationReasonCode.DomainViolation, result.ReasonCode);
-        Assert.Null(result.Value);
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await fixture.Evaluator.EvaluateAsync(
+                Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
+                CancellationToken.None));
     }
 
     [Fact]
     public async Task IncompatibleDurableComponentUnitFailsProcessing()
     {
         var fixture = CreateFixture();
-        fixture.Store.SetProductionDay(
-            fixture.MachineId,
-            fixture.ProductionDayId,
-            MetricInputKeys.ActualProductionTime,
-            Aggregate(10m, MetricInputFactUnits.Count));
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, Aggregate(10m, MetricInputFactUnits.Count));
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, Aggregate(20m, MetricInputFactUnits.Seconds));
 
         await Assert.ThrowsAsync<InvalidDataException>(async () =>
             await fixture.Evaluator.EvaluateAsync(
@@ -180,14 +134,16 @@ public sealed class OperationalMetricEvaluatorTests
     {
         var machineId = MachineId.New();
         var productionDayId = new ProductionDayId(new SiteId("site-a"), new DateOnly(2026, 8, 28));
-        var store = new FakeMetricAggregationStore();
+        var processorId = new MetricAggregationProcessorId("fc-026-test");
+        var revision = new MetricAggregationCheckpoint(
+            processorId,
+            MetricInputStreamId.ForMachine(machineId),
+            new MetricInputPosition(42));
+        var reader = new FakeOperationalMetricComponentSnapshotReader(revision);
         var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
-        var evaluator = new OperationalMetricEvaluator(
-            catalog,
-            store,
-            new MetricAggregationProcessorId("fc-026-test"));
+        var evaluator = new OperationalMetricEvaluator(catalog, reader, processorId);
 
-        return new EvaluationFixture(machineId, productionDayId, store, evaluator);
+        return new EvaluationFixture(machineId, productionDayId, revision, reader, evaluator);
     }
 
     private static OperationalMetricEvaluationKey Key(
@@ -204,41 +160,54 @@ public sealed class OperationalMetricEvaluatorTests
     private sealed record EvaluationFixture(
         MachineId MachineId,
         ProductionDayId ProductionDayId,
-        FakeMetricAggregationStore Store,
+        MetricAggregationCheckpoint Revision,
+        FakeOperationalMetricComponentSnapshotReader Reader,
         OperationalMetricEvaluator Evaluator);
 
-    private sealed class FakeMetricAggregationStore : IMetricAggregationStore
+    private sealed class FakeOperationalMetricComponentSnapshotReader : IOperationalMetricComponentSnapshotReader
     {
-        private readonly Dictionary<ProductionDayMetricAggregateKey, MetricAggregateValue> _productionDay = [];
+        private readonly MetricAggregationCheckpoint _revision;
+        private readonly Dictionary<string, MetricAggregateValue> _aggregates = new(StringComparer.Ordinal);
 
-        public void SetProductionDay(
-            MachineId machineId,
-            ProductionDayId productionDayId,
-            string metricInputKey,
-            MetricAggregateValue value) =>
-            _productionDay[new ProductionDayMetricAggregateKey(machineId, productionDayId, metricInputKey)] = value;
+        public FakeOperationalMetricComponentSnapshotReader(MetricAggregationCheckpoint revision)
+        {
+            _revision = revision;
+        }
 
-        public ValueTask<MetricAggregationCheckpoint?> ReadCheckpointAsync(
-            MetricAggregationProcessorId processorId,
-            MetricInputStreamId streamId,
-            CancellationToken cancellationToken) =>
-            ValueTask.FromResult<MetricAggregationCheckpoint?>(null);
+        public int ReadCount { get; private set; }
 
-        public ValueTask<MetricAggregateValue?> ReadShiftAggregateAsync(
-            MetricAggregationProcessorId processorId,
-            ShiftMetricAggregateKey key,
-            CancellationToken cancellationToken) =>
-            ValueTask.FromResult<MetricAggregateValue?>(null);
+        public void Set(string componentKey, MetricAggregateValue value) =>
+            _aggregates[componentKey] = value;
 
-        public ValueTask<MetricAggregateValue?> ReadProductionDayAggregateAsync(
-            MetricAggregationProcessorId processorId,
-            ProductionDayMetricAggregateKey key,
-            CancellationToken cancellationToken) =>
-            ValueTask.FromResult(_productionDay.TryGetValue(key, out var value) ? value : null);
+        public ValueTask<OperationalMetricComponentSnapshot> ReadAsync(
+            OperationalMetricComponentSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
 
-        public ValueTask CommitAsync(
-            MetricAggregationCommit commit,
-            CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+            var components = new List<OperationalMetricComponent>();
+            foreach (var operand in request.Operands)
+            {
+                var source = Assert.IsType<OperationalMetricOperandSource.Component>(operand.Source);
+                if (!_aggregates.TryGetValue(source.ComponentKey, out var aggregate))
+                {
+                    continue;
+                }
+
+                components.Add(new OperationalMetricComponent(
+                    operand.OperandName,
+                    new OperationalMetricAggregateSourceIdentity(
+                        request.ProcessorId,
+                        request.EvaluationKey.MachineId,
+                        request.EvaluationKey.PeriodId,
+                        source.ComponentKey),
+                    operand.RequiredDimension,
+                    aggregate));
+            }
+
+            return ValueTask.FromResult(
+                new OperationalMetricComponentSnapshot(request.EvaluationKey, _revision, components));
+        }
     }
 }
