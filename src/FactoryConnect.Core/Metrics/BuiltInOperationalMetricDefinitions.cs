@@ -35,11 +35,9 @@ public static class BuiltInOperationalMetricDefinitions
         Id = AvailabilityId,
         DisplayName = "Availability",
         SupportedScopes = BothScopes(),
-        Operands =
-        [
+        Operands = ReadOnlyOperands(
             Component("ActualProductionTime", MetricInputKeys.ActualProductionTime, MetricDimension.Duration, MetricInputFactUnits.Seconds),
-            Component("PlannedOperatingTime", MetricInputKeys.PlannedOperatingTime, MetricDimension.Duration, MetricInputFactUnits.Seconds),
-        ],
+            Component("PlannedOperatingTime", MetricInputKeys.PlannedOperatingTime, MetricDimension.Duration, MetricInputFactUnits.Seconds)),
         ResultUnit = OperationalMetricUnits.Ratio,
         Formula = new OperationalMetricFormula.Ratio("ActualProductionTime", "PlannedOperatingTime"),
         DomainConstraints = BoundedRatio(),
@@ -51,11 +49,9 @@ public static class BuiltInOperationalMetricDefinitions
         Id = UtilizationId,
         DisplayName = "Utilization",
         SupportedScopes = BothScopes(),
-        Operands =
-        [
+        Operands = ReadOnlyOperands(
             Component("ActualProductionTime", MetricInputKeys.ActualProductionTime, MetricDimension.Duration, MetricInputFactUnits.Seconds),
-            Component("AvailableDuration", MetricInputKeys.MachinePowerOnTime, MetricDimension.Duration, MetricInputFactUnits.Seconds),
-        ],
+            Component("AvailableDuration", MetricInputKeys.MachinePowerOnTime, MetricDimension.Duration, MetricInputFactUnits.Seconds)),
         ResultUnit = OperationalMetricUnits.Ratio,
         Formula = new OperationalMetricFormula.Ratio("ActualProductionTime", "AvailableDuration"),
         DomainConstraints = NonNegative(),
@@ -67,11 +63,9 @@ public static class BuiltInOperationalMetricDefinitions
         Id = PerformanceId,
         DisplayName = "Performance",
         SupportedScopes = BothScopes(),
-        Operands =
-        [
+        Operands = ReadOnlyOperands(
             Component("IdealProductionDuration", MetricInputKeys.ProductionReferenceTime, MetricDimension.Duration, MetricInputFactUnits.Seconds),
-            Component("ActualProductionTime", MetricInputKeys.ActualProductionTime, MetricDimension.Duration, MetricInputFactUnits.Seconds),
-        ],
+            Component("ActualProductionTime", MetricInputKeys.ActualProductionTime, MetricDimension.Duration, MetricInputFactUnits.Seconds)),
         ResultUnit = OperationalMetricUnits.Ratio,
         Formula = new OperationalMetricFormula.Ratio("IdealProductionDuration", "ActualProductionTime"),
         DomainConstraints = NonNegative(),
@@ -83,11 +77,9 @@ public static class BuiltInOperationalMetricDefinitions
         Id = QualityId,
         DisplayName = "Quality",
         SupportedScopes = BothScopes(),
-        Operands =
-        [
+        Operands = ReadOnlyOperands(
             Component("GoodQuantity", MetricInputKeys.GoodQuantity, MetricDimension.Quantity, MetricInputFactUnits.Count),
-            Component("TotalQuantity", MetricInputKeys.ProducedQuantity, MetricDimension.Quantity, MetricInputFactUnits.Count),
-        ],
+            Component("TotalQuantity", MetricInputKeys.ProducedQuantity, MetricDimension.Quantity, MetricInputFactUnits.Count)),
         ResultUnit = OperationalMetricUnits.Ratio,
         Formula = new OperationalMetricFormula.Ratio("GoodQuantity", "TotalQuantity"),
         DomainConstraints = BoundedRatio(),
@@ -99,14 +91,13 @@ public static class BuiltInOperationalMetricDefinitions
         Id = OeeId,
         DisplayName = "OEE",
         SupportedScopes = BothScopes(),
-        Operands =
-        [
+        Operands = ReadOnlyOperands(
             Evaluated("Availability", AvailabilityId),
             Evaluated("Performance", PerformanceId),
-            Evaluated("Quality", QualityId),
-        ],
+            Evaluated("Quality", QualityId)),
         ResultUnit = OperationalMetricUnits.Ratio,
-        Formula = new OperationalMetricFormula.Product(["Availability", "Performance", "Quality"]),
+        Formula = new OperationalMetricFormula.Product(
+            new ReadOnlyCollection<string>(["Availability", "Performance", "Quality"])),
         DomainConstraints = BoundedRatio(),
         PrecisionPolicy = DefaultPrecision(),
     };
@@ -132,6 +123,10 @@ public static class BuiltInOperationalMetricDefinitions
         RequiredDimension = MetricDimension.Ratio,
         RequiredUnit = OperationalMetricUnits.Ratio,
     };
+
+    private static IReadOnlyList<OperationalMetricOperandDefinition> ReadOnlyOperands(
+        params OperationalMetricOperandDefinition[] operands) =>
+        new ReadOnlyCollection<OperationalMetricOperandDefinition>(operands);
 
     private static OperationalMetricScopeSet BothScopes() => new()
     {
