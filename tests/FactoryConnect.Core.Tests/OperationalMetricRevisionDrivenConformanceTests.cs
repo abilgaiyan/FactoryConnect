@@ -125,7 +125,7 @@ public sealed class OperationalMetricRevisionDrivenConformanceTests
             CancellationToken.None);
         Assert.NotNull(checkpoint);
         Assert.Equal(revision7, checkpoint.SourceRevision);
-        Assert.Equal(10, checkpoint.BatchManifest.EvaluationKeys.Count);
+        Assert.Equal(10, checkpoint.BatchManifest.ProjectionKeys.Count);
     }
 
     private static PositionedMetricInputFact Input(
