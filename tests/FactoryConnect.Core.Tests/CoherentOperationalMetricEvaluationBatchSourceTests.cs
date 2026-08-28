@@ -218,7 +218,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             CancellationToken.None);
         Assert.NotNull(checkpoint);
         Assert.Equal(aggregationCheckpoint, checkpoint.SourceRevision);
-        Assert.Equal(10, checkpoint.BatchManifest.EvaluationKeys.Count);
+        Assert.Equal(10, checkpoint.BatchManifest.ProjectionKeys.Count);
     }
 
     private static ReaderFixture CreateReaderFixture(
@@ -285,9 +285,11 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
         OperationalMetricEvaluationBatch batch,
         OperationalMetricPeriodId periodId,
         OperationalMetricDefinitionId definitionId) =>
-        Assert.Single(batch.Evaluations.Where(evaluation =>
-            evaluation.Key.PeriodId == periodId &&
-            evaluation.Key.DefinitionId == definitionId));
+        Assert.Single(
+            batch.Evaluations,
+            evaluation =>
+                evaluation.Key.PeriodId == periodId &&
+                evaluation.Key.DefinitionId == definitionId);
 
     private static PositionedMetricInputFact Input(
         MetricInputStreamId streamId,
