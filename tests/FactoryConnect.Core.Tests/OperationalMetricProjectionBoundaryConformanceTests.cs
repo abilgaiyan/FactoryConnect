@@ -362,7 +362,7 @@ public sealed class OperationalMetricProjectionBoundaryConformanceTests
 
     private static OperationalMetricProjectionProcessingRuntime Runtime(
         RuntimeFailureFixture fixture,
-        IOperationalMetricProjectionStore projectionStore) => new(
+        InMemoryOperationalMetricProjectionStore projectionStore) => new(
             fixture.ProjectionProcessorId,
             fixture.AggregationProcessorId,
             fixture.StreamId,
