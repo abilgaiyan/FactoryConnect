@@ -5,9 +5,8 @@ namespace FactoryConnect.Core.Metrics;
 
 public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
 {
-    private readonly IOperationalMetricDefinitionCatalog _catalog;
-    private readonly IOperationalMetricComponentSnapshotReader _snapshotReader;
-    private readonly MetricAggregationProcessorId _aggregationProcessorId;
+    private readonly OperationalMetricEvaluationPlanner _planner;
+    private readonly OperationalMetricEvaluationSessionFactory _sessionFactory;
 
     public OperationalMetricEvaluator(
         IOperationalMetricDefinitionCatalog catalog,
@@ -18,9 +17,8 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         ArgumentNullException.ThrowIfNull(snapshotReader);
         ArgumentNullException.ThrowIfNull(aggregationProcessorId);
 
-        _catalog = catalog;
-        _snapshotReader = snapshotReader;
-        _aggregationProcessorId = aggregationProcessorId;
+        _planner = new OperationalMetricEvaluationPlanner(catalog);
+        _sessionFactory = new OperationalMetricEvaluationSessionFactory(snapshotReader, aggregationProcessorId);
     }
 
     public async ValueTask<OperationalMetricEvaluation> EvaluateAsync(
@@ -28,112 +26,130 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(evaluationKey);
-
-        var definition = _catalog.GetRequired(evaluationKey.DefinitionId);
-        if (!definition.SupportedScopes.Supports(evaluationKey.Scope))
-        {
-            throw new InvalidOperationException(
-                $"Metric definition '{definition.Id}' does not support evaluation scope '{evaluationKey.Scope}'.");
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (evaluationKey.ContextKey != OperationalMetricEvaluationContextKey.Unpartitioned)
         {
             throw new NotSupportedException(
-                "FC-027.2 can evaluate only the unpartitioned FC-026 aggregate grain.");
+                "FC-027.3 can evaluate only the unpartitioned FC-026 aggregate grain.");
         }
 
-        if (definition.Formula is not OperationalMetricFormula.Ratio ratio)
-        {
-            throw new NotSupportedException(
-                "FC-027.2 supports only component-based Ratio formulas. Dependent metric formulas are introduced in FC-027.3.");
-        }
+        var plan = _planner.CreatePlan(evaluationKey);
+        var session = await _sessionFactory.CreateAsync(plan, cancellationToken).ConfigureAwait(false);
+        ValidateSnapshotComponents(session);
 
-        if (definition.Operands.Any(operand => operand.Source is not OperationalMetricOperandSource.Component))
-        {
-            throw new NotSupportedException(
-                "FC-027.2 Ratio operands must bind directly to FC-026 components.");
-        }
-
-        var snapshot = await _snapshotReader.ReadAsync(
-            new OperationalMetricComponentSnapshotRequest(
-                evaluationKey,
-                _aggregationProcessorId,
-                definition.Operands),
-            cancellationToken).ConfigureAwait(false);
-
-        ValidateSnapshotIdentity(evaluationKey, snapshot);
-        ValidateAllComponents(definition, snapshot);
-
-        return EvaluateRatio(evaluationKey, definition, ratio, snapshot);
+        return EvaluateDefinition(session, plan.RootDefinition);
     }
 
-    private void ValidateSnapshotIdentity(
-        OperationalMetricEvaluationKey evaluationKey,
-        OperationalMetricComponentSnapshot snapshot)
+    private static OperationalMetricEvaluation EvaluateDefinition(
+        OperationalMetricEvaluationSession session,
+        OperationalMetricDefinition definition)
     {
-        if (snapshot.EvaluationKey != evaluationKey ||
-            snapshot.Revision.ProcessorId != _aggregationProcessorId ||
-            snapshot.Revision.StreamId.MachineId != evaluationKey.MachineId)
+        if (session.TryGetEvaluation(definition.Id, out var cached))
         {
-            throw new InvalidDataException(
-                "Operational metric component snapshot does not match the requested evaluation identity.");
+            return cached!;
+        }
+
+        session.BeginEvaluation(definition.Id);
+        try
+        {
+            var evaluation = definition.Formula switch
+            {
+                OperationalMetricFormula.Ratio ratio => EvaluateRatio(session, definition, ratio),
+                OperationalMetricFormula.Product => throw new NotSupportedException(
+                    "FC-027.3B evaluates component-backed Ratio definitions. Product dependency composition is introduced in a later FC-027.3 slice."),
+                _ => throw new InvalidDataException(
+                    $"Metric '{definition.Id}' has an unsupported formula contract."),
+            };
+
+            session.CompleteEvaluation(definition.Id, evaluation);
+            return evaluation;
+        }
+        catch
+        {
+            session.AbandonEvaluation(definition.Id);
+            throw;
         }
     }
 
-    private static void ValidateAllComponents(
-        OperationalMetricDefinition definition,
-        OperationalMetricComponentSnapshot snapshot)
+    private static void ValidateSnapshotComponents(OperationalMetricEvaluationSession session)
     {
-        var operandsByName = definition.Operands.ToDictionary(
-            operand => operand.OperandName,
+        var requirements = session.Plan.ComponentRequirements.ToDictionary(
+            requirement => requirement.ComponentKey,
             StringComparer.Ordinal);
 
-        foreach (var component in snapshot.Components)
+        foreach (var component in session.Snapshot.Components)
         {
-            if (!operandsByName.TryGetValue(component.OperandName, out var operand))
+            if (!requirements.TryGetValue(component.SourceIdentity.ComponentKey, out var requirement))
             {
                 throw new InvalidDataException(
-                    $"Snapshot returned unexpected operand '{component.OperandName}'.");
+                    $"Snapshot returned unexpected component '{component.SourceIdentity.ComponentKey}'.");
             }
 
-            ValidateComponent(component, operand, snapshot.Revision);
+            if (!string.Equals(component.OperandName, requirement.ComponentKey, StringComparison.Ordinal) ||
+                component.SourceIdentity.ProcessorId != session.Snapshot.Revision.ProcessorId ||
+                component.SourceIdentity.MachineId != session.Plan.RootKey.MachineId ||
+                component.SourceIdentity.PeriodId != session.Plan.RootKey.PeriodId ||
+                component.Dimension != requirement.RequiredDimension ||
+                !string.Equals(component.Aggregate.Unit, requirement.RequiredUnit, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Component '{requirement.ComponentKey}' does not match its canonical evaluation-plan requirement.");
+            }
         }
     }
 
     private static OperationalMetricEvaluation EvaluateRatio(
-        OperationalMetricEvaluationKey evaluationKey,
+        OperationalMetricEvaluationSession session,
         OperationalMetricDefinition definition,
-        OperationalMetricFormula.Ratio ratio,
-        OperationalMetricComponentSnapshot snapshot)
+        OperationalMetricFormula.Ratio ratio)
     {
-        var byOperand = snapshot.Components.ToDictionary(
-            component => component.OperandName,
+        if (definition.Operands.Any(operand => operand.Source is not OperationalMetricOperandSource.Component))
+        {
+            throw new NotSupportedException(
+                "FC-027.3B Ratio evaluation requires component-backed operands. Evaluated-metric operands are introduced in FC-027.3C.");
+        }
+
+        var evaluationKey = DependencyKey(session.Plan.RootKey, definition.Id);
+        var componentsByKey = session.Snapshot.Components.ToDictionary(
+            component => component.SourceIdentity.ComponentKey,
+            StringComparer.Ordinal);
+        var operandsByName = definition.Operands.ToDictionary(
+            operand => operand.OperandName,
             StringComparer.Ordinal);
 
-        if (!byOperand.TryGetValue(ratio.NumeratorOperand, out var numerator))
+        var numeratorOperand = operandsByName[ratio.NumeratorOperand];
+        var denominatorOperand = operandsByName[ratio.DenominatorOperand];
+        var numeratorKey = GetComponentKey(numeratorOperand);
+        var denominatorKey = GetComponentKey(denominatorOperand);
+
+        if (!componentsByKey.TryGetValue(numeratorKey, out var numerator))
         {
             return MissingOperand(
                 evaluationKey,
                 definition,
-                ratio.NumeratorOperand,
-                snapshot.Revision,
-                byOperand.Values);
+                numeratorOperand,
+                session.Snapshot.Revision,
+                componentsByKey);
         }
 
-        if (!byOperand.TryGetValue(ratio.DenominatorOperand, out var denominator))
+        if (!componentsByKey.TryGetValue(denominatorKey, out var denominator))
         {
             return MissingOperand(
                 evaluationKey,
                 definition,
-                ratio.DenominatorOperand,
-                snapshot.Revision,
-                byOperand.Values);
+                denominatorOperand,
+                session.Snapshot.Revision,
+                componentsByKey);
         }
+
+        ValidateComponentForOperand(numerator, numeratorOperand, session.Snapshot.Revision);
+        ValidateComponentForOperand(denominator, denominatorOperand, session.Snapshot.Revision);
 
         var evidence = new ReadOnlyCollection<MetricOperandEvidence>(
         [
-            ToEvidence(numerator, snapshot.Revision),
-            ToEvidence(denominator, snapshot.Revision),
+            ToEvidence(numeratorOperand.OperandName, numerator, session.Snapshot.Revision),
+            ToEvidence(denominatorOperand.OperandName, denominator, session.Snapshot.Revision),
         ]);
 
         if (denominator.Aggregate.Value == 0m)
@@ -143,8 +159,8 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                 definition.ResultUnit,
                 OperationalMetricEvaluationStatus.Unavailable,
                 OperationalMetricEvaluationReasonCode.ZeroDenominator,
-                denominator.OperandName,
-                snapshot.Revision,
+                denominatorOperand.OperandName,
+                session.Snapshot.Revision,
                 evidence);
         }
 
@@ -158,11 +174,25 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
             definition.ResultUnit,
             null,
             null,
-            snapshot.Revision,
+            session.Snapshot.Revision,
             evidence);
     }
 
-    private static void ValidateComponent(
+    private static OperationalMetricEvaluationKey DependencyKey(
+        OperationalMetricEvaluationKey rootKey,
+        OperationalMetricDefinitionId definitionId) => new(
+            rootKey.MachineId,
+            rootKey.PeriodId,
+            definitionId,
+            rootKey.ContextKey);
+
+    private static string GetComponentKey(OperationalMetricOperandDefinition operand) =>
+        operand.Source is OperationalMetricOperandSource.Component component
+            ? component.ComponentKey
+            : throw new InvalidDataException(
+                $"Operand '{operand.OperandName}' is not component-backed.");
+
+    private static void ValidateComponentForOperand(
         OperationalMetricComponent component,
         OperationalMetricOperandDefinition operand,
         MetricAggregationCheckpoint revision)
@@ -175,7 +205,7 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
             !string.Equals(component.Aggregate.Unit, operand.RequiredUnit, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
-                $"Component evidence for operand '{component.OperandName}' does not match its validated definition contract.");
+                $"Component evidence for operand '{operand.OperandName}' does not match its validated definition contract.");
         }
     }
 
@@ -194,31 +224,39 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
     private static OperationalMetricEvaluation MissingOperand(
         OperationalMetricEvaluationKey evaluationKey,
         OperationalMetricDefinition definition,
-        string operandName,
+        OperationalMetricOperandDefinition missingOperand,
         MetricAggregationCheckpoint revision,
-        IEnumerable<OperationalMetricComponent> availableComponents)
+        IReadOnlyDictionary<string, OperationalMetricComponent> availableComponents)
     {
-        var operand = definition.Operands.Single(candidate =>
-            string.Equals(candidate.OperandName, operandName, StringComparison.Ordinal));
-        var reasonCode = operand.Source is OperationalMetricOperandSource.Component component &&
-            string.Equals(component.ComponentKey, MetricInputKeys.ProductionReferenceTime, StringComparison.Ordinal)
-                ? OperationalMetricEvaluationReasonCode.MissingReferenceTime
-                : OperationalMetricEvaluationReasonCode.MissingOperand;
+        var componentKey = GetComponentKey(missingOperand);
+        var reasonCode = string.Equals(componentKey, MetricInputKeys.ProductionReferenceTime, StringComparison.Ordinal)
+            ? OperationalMetricEvaluationReasonCode.MissingReferenceTime
+            : OperationalMetricEvaluationReasonCode.MissingOperand;
+
+        var evidence = definition.Operands
+            .Where(operand => operand.Source is OperationalMetricOperandSource.Component)
+            .Select(operand => (Operand: operand, ComponentKey: GetComponentKey(operand)))
+            .Where(candidate => availableComponents.ContainsKey(candidate.ComponentKey))
+            .Select(candidate => ToEvidence(
+                candidate.Operand.OperandName,
+                availableComponents[candidate.ComponentKey],
+                revision));
 
         return Failure(
             evaluationKey,
             definition.ResultUnit,
             OperationalMetricEvaluationStatus.InsufficientEvidence,
             reasonCode,
-            operandName,
+            missingOperand.OperandName,
             revision,
-            availableComponents.Select(component => ToEvidence(component, revision)));
+            evidence);
     }
 
     private static MetricOperandEvidence ToEvidence(
+        string operandName,
         OperationalMetricComponent component,
         MetricAggregationCheckpoint revision) => new(
-            component.OperandName,
+            operandName,
             component.SourceIdentity,
             revision,
             component.Dimension,
