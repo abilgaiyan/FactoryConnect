@@ -241,22 +241,86 @@ public sealed record OperationalMetricProjection
     public IReadOnlyList<OperationalMetricProjectionEvidence> Evidence { get; }
 }
 
+public sealed class OperationalMetricProjectionBatchManifest :
+    IEquatable<OperationalMetricProjectionBatchManifest>
+{
+    public static OperationalMetricProjectionBatchManifest Empty { get; } = new([]);
+
+    public OperationalMetricProjectionBatchManifest(
+        IEnumerable<OperationalMetricEvaluationKey> projectionKeys)
+    {
+        ArgumentNullException.ThrowIfNull(projectionKeys);
+
+        var snapshot = projectionKeys.ToArray();
+        if (snapshot.Any(static key => key is null))
+        {
+            throw new ArgumentException(
+                "Projection batch manifests cannot contain null evaluation keys.",
+                nameof(projectionKeys));
+        }
+
+        if (snapshot.Distinct().Count() != snapshot.Length)
+        {
+            throw new ArgumentException(
+                "Projection batch manifests cannot contain duplicate evaluation keys.",
+                nameof(projectionKeys));
+        }
+
+        ProjectionKeys = new ReadOnlyCollection<OperationalMetricEvaluationKey>(snapshot);
+    }
+
+    public IReadOnlyList<OperationalMetricEvaluationKey> ProjectionKeys { get; }
+
+    public bool Equals(OperationalMetricProjectionBatchManifest? other)
+    {
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        if (other is null || ProjectionKeys.Count != other.ProjectionKeys.Count)
+        {
+            return false;
+        }
+
+        return ProjectionKeys.ToHashSet().SetEquals(other.ProjectionKeys);
+    }
+
+    public override bool Equals(object? obj) =>
+        obj is OperationalMetricProjectionBatchManifest other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var keysHash = 0;
+        foreach (var key in ProjectionKeys)
+        {
+            keysHash ^= key.GetHashCode();
+        }
+
+        return HashCode.Combine(ProjectionKeys.Count, keysHash);
+    }
+}
+
 public sealed record OperationalMetricProjectionCheckpoint
 {
     public OperationalMetricProjectionCheckpoint(
         OperationalMetricProjectionProcessorId processorId,
-        MetricAggregationCheckpoint sourceRevision)
+        MetricAggregationCheckpoint sourceRevision,
+        OperationalMetricProjectionBatchManifest? batchManifest = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(sourceRevision);
 
         ProcessorId = processorId;
         SourceRevision = sourceRevision;
+        BatchManifest = batchManifest ?? OperationalMetricProjectionBatchManifest.Empty;
     }
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
 
     public MetricAggregationCheckpoint SourceRevision { get; }
+
+    public OperationalMetricProjectionBatchManifest BatchManifest { get; }
 }
 
 public sealed record OperationalMetricProjectionCommit
@@ -322,6 +386,15 @@ public sealed record OperationalMetricProjectionCommit
         {
             throw new ArgumentException(
                 "Projection commits cannot contain duplicate evaluation keys.",
+                nameof(projections));
+        }
+
+        var committedManifest = new OperationalMetricProjectionBatchManifest(
+            snapshot.Select(static projection => projection.Key));
+        if (!committedManifest.Equals(proposedCheckpoint.BatchManifest))
+        {
+            throw new ArgumentException(
+                "Proposed projection checkpoint manifest must exactly match the committed projection batch.",
                 nameof(projections));
         }
 
