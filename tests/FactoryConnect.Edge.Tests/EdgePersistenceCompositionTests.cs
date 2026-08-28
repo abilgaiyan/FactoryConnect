@@ -27,41 +27,22 @@ public sealed class EdgePersistenceCompositionTests
         var production = provider.GetRequiredService<IProductionContextProcessingStore>();
         var reader = provider.GetRequiredService<IMetricInputReader>();
         var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
+        var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
+        var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
+        var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
+        var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
 
         Assert.IsType<InMemoryObservationIngestionStore>(observation);
         Assert.Same(production, reader);
         Assert.Equal(
             "FactoryConnect.Core.InMemoryMetricAggregationStore",
             aggregation.GetType().FullName);
-    }
-
-    [Fact]
-    public void InMemoryFullCapabilitySelectionOwnsProjectionAndHistoricalReaders()
-    {
-        var configuration = CreateConfiguration(
-            new Dictionary<string, string?>
-            {
-                ["Persistence:Provider"] = "InMemory",
-            });
-        var services = new ServiceCollection();
-
-        services.AddFactoryConnectEdgePersistence(
-            configuration,
-            PersistenceProviderCapabilities.All);
-
-        using var provider = services.BuildServiceProvider();
-        var bundle = provider.GetRequiredService<PersistenceProviderServices>();
-        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
-        var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
-        var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
-        var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
-        var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
-
         Assert.Same(aggregation, revisionReader);
         Assert.Same(aggregation, snapshotReader);
-        Assert.Same(bundle.OperationalMetricProjectionStore, projectionStore);
-        Assert.Same(bundle.OperationalMetricProjectionQueryReader, projectionReader);
         Assert.Same(projectionStore, projectionReader);
+        Assert.Equal(
+            "FactoryConnect.Core.InMemoryOperationalMetricProjectionStore",
+            projectionStore.GetType().FullName);
     }
 
     [Fact]
@@ -76,7 +57,12 @@ public sealed class EdgePersistenceCompositionTests
             });
         var services = new ServiceCollection();
 
-        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddInMemoryPersistenceProvider();
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection("PersistenceProviders:SqlServer"));
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.Core);
 
         using var provider = services.BuildServiceProvider();
         var observation = provider.GetRequiredService<IObservationIngestionStore>();
@@ -115,7 +101,7 @@ public sealed class EdgePersistenceCompositionTests
                 configuration,
                 PersistenceProviderCapabilities.All));
 
-        Assert.Contains("SqlServer", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
         Assert.Contains("OperationalMetricProjectionStorage", exception.Message, StringComparison.Ordinal);
     }
 
