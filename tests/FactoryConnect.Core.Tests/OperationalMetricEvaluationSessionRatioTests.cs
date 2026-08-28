@@ -14,8 +14,8 @@ public sealed class OperationalMetricEvaluationSessionRatioTests
         var definition = AvailabilityDefinition();
         var session = CreateSession(definition, 30m, 60m);
 
-        var first = OperationalMetricEvaluator.EvaluateDefinition(session, definition);
-        var second = OperationalMetricEvaluator.EvaluateDefinition(session, definition);
+        var first = OperationalMetricEvaluator.EvaluateDefinition(session, definition.Id);
+        var second = OperationalMetricEvaluator.EvaluateDefinition(session, definition.Id);
 
         Assert.Same(first, second);
         Assert.Equal(0.5m, first.Value);
@@ -30,11 +30,46 @@ public sealed class OperationalMetricEvaluationSessionRatioTests
         var session = CreateSession(definition, 120m, 100m);
 
         Assert.Throws<InvalidDataException>(() =>
-            OperationalMetricEvaluator.EvaluateDefinition(session, definition));
+            OperationalMetricEvaluator.EvaluateDefinition(session, definition.Id));
 
         session.BeginEvaluation(definition.Id);
         session.AbandonEvaluation(definition.Id);
         Assert.False(session.TryGetEvaluation(definition.Id, out _));
+    }
+
+    [Fact]
+    public void RecursiveEvaluationUsesOnlyCanonicalPlanDefinition()
+    {
+        var canonical = AvailabilityDefinition();
+        var session = CreateSession(canonical, 30m, 60m);
+        var conflicting = canonical with
+        {
+            Formula = new OperationalMetricFormula.Ratio(
+                "PlannedOperatingTime",
+                "ActualProductionTime"),
+        };
+
+        Assert.Equal(canonical.Id, conflicting.Id);
+        Assert.NotEqual(canonical.Formula, conflicting.Formula);
+
+        var result = OperationalMetricEvaluator.EvaluateDefinition(session, conflicting.Id);
+
+        Assert.Equal(0.5m, result.Value);
+        Assert.Same(canonical, session.Plan.GetRequiredDefinition(canonical.Id));
+    }
+
+    [Fact]
+    public void RecursiveEvaluationRejectsUnplannedExactIdAndDifferentVersion()
+    {
+        var definition = AvailabilityDefinition();
+        var session = CreateSession(definition, 30m, 60m);
+        var unrelated = new OperationalMetricDefinitionId("unrelated", "9.0");
+        var availabilityV2 = new OperationalMetricDefinitionId(definition.Id.MetricKey, "2.0");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            OperationalMetricEvaluator.EvaluateDefinition(session, unrelated));
+        Assert.Throws<InvalidOperationException>(() =>
+            OperationalMetricEvaluator.EvaluateDefinition(session, availabilityV2));
     }
 
     [Fact]
