@@ -112,12 +112,13 @@ public sealed class OperationalMetricEvaluationSessionIntegrityTests
         out MetricAggregationCheckpoint revision)
     {
         definitionId = BuiltInOperationalMetricDefinitions.AvailabilityId;
-        var key = ExpectedKey(definitionId);
+        var localDefinitionId = definitionId;
+        var key = ExpectedKey(localDefinitionId);
         revision = new MetricAggregationCheckpoint(
             new MetricAggregationProcessorId("aggregate-m01"),
             MetricInputStreamId.ForMachine(key.MachineId),
             new MetricInputPosition(10));
-        var definition = BuiltInOperationalMetricDefinitions.All.Single(candidate => candidate.Id == definitionId);
+        var definition = BuiltInOperationalMetricDefinitions.All.Single(candidate => candidate.Id == localDefinitionId);
         var plan = new OperationalMetricEvaluationPlan(key, definition, [definition], []);
         var snapshot = new OperationalMetricComponentSnapshot(key, revision, []);
         return new OperationalMetricEvaluationSession(plan, snapshot);
