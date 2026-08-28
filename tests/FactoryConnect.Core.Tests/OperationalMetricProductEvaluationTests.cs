@@ -67,7 +67,7 @@ public sealed class OperationalMetricProductEvaluationTests
     }
 
     [Fact]
-    public async Task UnavailableDependencyPropagatesWithExactDependencyEvidence()
+    public async Task UnavailableDependencyPropagatesAfterCollectingCompleteEvidence()
     {
         var fixture = CreateFixture();
         fixture.Reader.Set(MetricInputKeys.ActualProductionTime, 1m);
@@ -83,13 +83,18 @@ public sealed class OperationalMetricProductEvaluationTests
         Assert.Equal(OperationalMetricEvaluationStatus.Unavailable, result.Status);
         Assert.Equal(OperationalMetricEvaluationReasonCode.DependencyUnavailable, result.ReasonCode);
         Assert.Equal("Availability", result.ReasonOperandName);
-        var evidence = Assert.Single(result.DependencyEvidence);
-        Assert.Equal(BuiltInOperationalMetricDefinitions.AvailabilityId, evidence.DefinitionId);
-        Assert.Equal(OperationalMetricEvaluationReasonCode.ZeroDenominator, evidence.Evaluation.ReasonCode);
+        Assert.Equal(
+            ["Availability", "Performance", "Quality"],
+            result.DependencyEvidence.Select(evidence => evidence.OperandName));
+        Assert.Equal(
+            OperationalMetricEvaluationReasonCode.ZeroDenominator,
+            result.DependencyEvidence[0].Evaluation.ReasonCode);
+        Assert.Equal(OperationalMetricEvaluationStatus.Calculated, result.DependencyEvidence[1].Evaluation.Status);
+        Assert.Equal(OperationalMetricEvaluationStatus.Calculated, result.DependencyEvidence[2].Evaluation.Status);
     }
 
     [Fact]
-    public async Task InsufficientDependencyPropagatesInAuthoredOrder()
+    public async Task InsufficientDependencyPropagatesAfterCollectingCompleteEvidence()
     {
         var fixture = CreateFixture();
         fixture.Reader.Set(MetricInputKeys.ActualProductionTime, 1m);
@@ -105,11 +110,28 @@ public sealed class OperationalMetricProductEvaluationTests
         Assert.Equal(OperationalMetricEvaluationReasonCode.DependencyInsufficientEvidence, result.ReasonCode);
         Assert.Equal("Performance", result.ReasonOperandName);
         Assert.Equal(
-            ["Availability", "Performance"],
+            ["Availability", "Performance", "Quality"],
             result.DependencyEvidence.Select(evidence => evidence.OperandName));
         Assert.Equal(
             OperationalMetricEvaluationReasonCode.MissingReferenceTime,
             result.DependencyEvidence[1].Evaluation.ReasonCode);
+        Assert.Equal(OperationalMetricEvaluationStatus.Calculated, result.DependencyEvidence[2].Evaluation.Status);
+    }
+
+    [Fact]
+    public async Task UnavailableEarlierDependencyCannotHideInvalidLaterDependency()
+    {
+        var fixture = CreateFixture();
+        fixture.Reader.Set(MetricInputKeys.ActualProductionTime, 1m);
+        fixture.Reader.Set(MetricInputKeys.PlannedOperatingTime, 0m);
+        fixture.Reader.Set(MetricInputKeys.ProductionReferenceTime, 1m);
+        fixture.Reader.Set(MetricInputKeys.GoodQuantity, 2m);
+        fixture.Reader.Set(MetricInputKeys.ProducedQuantity, 1m);
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await fixture.Evaluator.EvaluateAsync(
+                Key(fixture, BuiltInOperationalMetricDefinitions.OeeId),
+                CancellationToken.None));
     }
 
     [Fact]
