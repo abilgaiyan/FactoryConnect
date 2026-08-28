@@ -43,6 +43,16 @@ public sealed class OperationalMetricProjectionFactory
                 definition.PrecisionPolicy.RoundingMode);
         }
 
+        var operandEvidence = evaluation.OperandEvidence
+            .Select(ToDurableComponentEvidence)
+            .ToArray();
+        var dependencyEvidence = evaluation.DependencyEvidence
+            .Select(evidence => new OperationalMetricDependencyProjectionEvidence(
+                evidence.OperandName,
+                evidence.DefinitionId,
+                Create(evidence.Evaluation)))
+            .ToArray();
+
         return new OperationalMetricProjection(
             _processorId,
             evaluation.Key,
@@ -51,6 +61,20 @@ public sealed class OperationalMetricProjectionFactory
             evaluation.Unit,
             evaluation.ReasonCode,
             evaluation.ReasonOperandName,
-            evaluation.SourceRevision);
+            evaluation.SourceRevision,
+            operandEvidence,
+            dependencyEvidence);
     }
+
+    private static OperationalMetricComponentProjectionEvidence ToDurableComponentEvidence(
+        MetricOperandEvidence evidence) => new(
+            evidence.OperandName,
+            evidence.SourceIdentity,
+            evidence.SourceRevision,
+            evidence.Dimension,
+            evidence.Value,
+            evidence.Unit,
+            evidence.InputCount,
+            evidence.FirstInputTimestamp,
+            evidence.LastInputTimestamp);
 }
