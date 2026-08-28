@@ -73,7 +73,7 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
                             sourceProcessorId,
                             streamId,
                             source,
-                            new OperationalMetricProjectionFactory(projectionProcessorId, catalog),
+                            new OperationalMetricProjectionFactory(catalog, projectionProcessorId),
                             projectionStore);
                     })
                     .ToArray();
