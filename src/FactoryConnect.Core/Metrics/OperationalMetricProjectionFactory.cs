@@ -5,7 +5,6 @@ namespace FactoryConnect.Core.Metrics;
 public sealed class OperationalMetricProjectionFactory
 {
     private readonly IOperationalMetricDefinitionCatalog _catalog;
-    private readonly OperationalMetricProjectionProcessorId _processorId;
 
     public OperationalMetricProjectionFactory(
         IOperationalMetricDefinitionCatalog catalog,
@@ -15,8 +14,10 @@ public sealed class OperationalMetricProjectionFactory
         ArgumentNullException.ThrowIfNull(processorId);
 
         _catalog = catalog;
-        _processorId = processorId;
+        ProcessorId = processorId;
     }
+
+    public OperationalMetricProjectionProcessorId ProcessorId { get; }
 
     public OperationalMetricProjection Create(OperationalMetricEvaluation evaluation)
     {
@@ -54,7 +55,7 @@ public sealed class OperationalMetricProjectionFactory
             .ToArray();
 
         return new OperationalMetricProjection(
-            _processorId,
+            ProcessorId,
             evaluation.Key,
             evaluation.Status,
             durableValue,
