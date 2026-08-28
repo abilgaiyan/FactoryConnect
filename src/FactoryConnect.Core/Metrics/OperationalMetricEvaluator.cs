@@ -76,7 +76,7 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         }
     }
 
-    private static void ValidateSnapshotComponents(OperationalMetricEvaluationSession session)
+    internal static void ValidateSnapshotComponents(OperationalMetricEvaluationSession session)
     {
         var requirements = session.Plan.ComponentRequirements.ToDictionary(
             requirement => requirement.ComponentKey,
