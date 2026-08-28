@@ -53,7 +53,7 @@ public sealed class InMemoryOperationalMetricProjectionStore :
         }
     }
 
-    public ValueTask<IReadOnlyList<OperationalMetricProjection>> ReadPeriodAsync(
+    public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,
         OperationalMetricPeriodId periodId,
@@ -79,15 +79,21 @@ public sealed class InMemoryOperationalMetricProjectionStore :
                     pair.Key.Key.MachineId == machineId &&
                     pair.Key.Key.PeriodId == periodId &&
                     pair.Key.Key.ContextKey == contextKey)
-                .Select(static pair => pair.Value)
-                .OrderBy(static projection => projection.Key.DefinitionId.MetricKey, StringComparer.Ordinal)
-                .ThenBy(static projection => projection.Key.DefinitionId.Version, StringComparer.Ordinal)
+                .Select(static pair => new OperationalMetricProjectionSummary(pair.Value))
+                .OrderBy(static summary => summary.Key.DefinitionId.MetricKey, StringComparer.Ordinal)
+                .ThenBy(static summary => summary.Key.DefinitionId.Version, StringComparer.Ordinal)
                 .ToArray();
 
-            return ValueTask.FromResult<IReadOnlyList<OperationalMetricProjection>>(
-                new ReadOnlyCollection<OperationalMetricProjection>(snapshot));
+            return ValueTask.FromResult<IReadOnlyList<OperationalMetricProjectionSummary>>(
+                new ReadOnlyCollection<OperationalMetricProjectionSummary>(snapshot));
         }
     }
+
+    public ValueTask<OperationalMetricProjection?> ReadDetailAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        OperationalMetricEvaluationKey key,
+        CancellationToken cancellationToken) =>
+        ReadProjectionAsync(processorId, key, cancellationToken);
 
     public ValueTask CommitAsync(
         OperationalMetricProjectionCommit commit,
