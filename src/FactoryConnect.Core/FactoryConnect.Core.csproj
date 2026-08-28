@@ -6,4 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FactoryConnect.Core.Tests" />
+  </ItemGroup>
 </Project>
