@@ -10,7 +10,7 @@ internal sealed record OperationalMetricComponentRequirement(
 
 internal sealed class OperationalMetricEvaluationPlan
 {
-    private readonly IReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> _definitionsById;
+    private readonly ReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> _definitionsById;
 
     public OperationalMetricEvaluationPlan(
         OperationalMetricEvaluationKey rootKey,
