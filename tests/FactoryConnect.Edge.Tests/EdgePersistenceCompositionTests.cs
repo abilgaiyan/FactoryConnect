@@ -2,6 +2,7 @@ using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
+using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -46,7 +47,7 @@ public sealed class EdgePersistenceCompositionTests
     }
 
     [Fact]
-    public void SqlServerCoreSelectionUsesConfiguredProviderWithoutRuntimeChanges()
+    public void SqlServerSelectionUsesConfiguredProviderWithoutRuntimeChanges()
     {
         var configuration = CreateConfiguration(
             new Dictionary<string, string?>
@@ -56,13 +57,9 @@ public sealed class EdgePersistenceCompositionTests
                     "Server=test;Database=FactoryConnect;Integrated Security=True",
             });
         var services = new ServiceCollection();
-
-        services.AddInMemoryPersistenceProvider();
         services.AddSqlServerPersistenceProvider(
-            configuration.GetSection("PersistenceProviders:SqlServer"));
-        services.AddFactoryConnectPersistence(
-            configuration,
-            PersistenceProviderCapabilities.Core);
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
         var observation = provider.GetRequiredService<IObservationIngestionStore>();
