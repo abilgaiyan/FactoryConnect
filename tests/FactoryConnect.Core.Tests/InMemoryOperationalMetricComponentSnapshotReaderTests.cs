@@ -11,7 +11,7 @@ public sealed class InMemoryOperationalMetricComponentSnapshotReaderTests
     public async Task SnapshotBindsAggregateValuesAndCheckpointFromSameCommittedRevision()
     {
         var store = new InMemoryMetricAggregationStore();
-        var reader = (IOperationalMetricComponentSnapshotReader)store;
+        var reader = store;
         var processor = new MetricAggregationProcessorId("aggregate-m01");
         var stream = MetricInputStreamId.ForMachine(Machine);
         var occurrence = CreateOccurrence();
@@ -72,7 +72,7 @@ public sealed class InMemoryOperationalMetricComponentSnapshotReaderTests
     public async Task SnapshotRejectsProcessorCheckpointOwnedByAnotherMachine()
     {
         var store = new InMemoryMetricAggregationStore();
-        var reader = (IOperationalMetricComponentSnapshotReader)store;
+        var reader = store;
         var processor = new MetricAggregationProcessorId("aggregate-m01");
         var otherMachine = MachineId.New();
         var otherStream = MetricInputStreamId.ForMachine(otherMachine);
