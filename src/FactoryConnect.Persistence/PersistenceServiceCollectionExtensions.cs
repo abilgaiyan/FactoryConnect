@@ -12,11 +12,16 @@ public static class PersistenceServiceCollectionExtensions
         typeof(IProductionContextProcessingStore),
         typeof(IMetricInputReader),
         typeof(IMetricAggregationStore),
+        typeof(IMetricAggregationRevisionReader),
+        typeof(IRevisionedOperationalMetricComponentSnapshotReader),
+        typeof(IOperationalMetricProjectionStore),
+        typeof(IOperationalMetricProjectionQueryReader),
     ];
 
     public static IServiceCollection AddFactoryConnectPersistence(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        PersistenceProviderCapabilities requiredCapabilities = PersistenceProviderCapabilities.Core)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -61,6 +66,13 @@ public static class PersistenceServiceCollectionExtensions
                 $"Persistence provider '{options.Provider}' is not registered.");
         }
 
+        var missingCapabilities = requiredCapabilities & ~selected.Capabilities;
+        if (missingCapabilities != PersistenceProviderCapabilities.None)
+        {
+            throw new InvalidOperationException(
+                $"Persistence provider '{options.Provider}' does not support required capabilities: {missingCapabilities}.");
+        }
+
         services.AddSingleton(options);
         services.AddSingleton<PersistenceProviderServices>(
             serviceProvider => selected.Create(serviceProvider));
@@ -80,6 +92,30 @@ public static class PersistenceServiceCollectionExtensions
             static serviceProvider => serviceProvider
                 .GetRequiredService<PersistenceProviderServices>()
                 .MetricAggregationStore);
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetrics) != 0)
+        {
+            services.AddSingleton<IMetricAggregationRevisionReader>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .MetricAggregationRevisionReader
+                    ?? throw MissingProviderService(nameof(IMetricAggregationRevisionReader)));
+            services.AddSingleton<IRevisionedOperationalMetricComponentSnapshotReader>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .RevisionedOperationalMetricComponentSnapshotReader
+                    ?? throw MissingProviderService(nameof(IRevisionedOperationalMetricComponentSnapshotReader)));
+            services.AddSingleton<IOperationalMetricProjectionStore>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .OperationalMetricProjectionStore
+                    ?? throw MissingProviderService(nameof(IOperationalMetricProjectionStore)));
+            services.AddSingleton<IOperationalMetricProjectionQueryReader>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .OperationalMetricProjectionQueryReader
+                    ?? throw MissingProviderService(nameof(IOperationalMetricProjectionQueryReader)));
+        }
 
         return services;
     }
@@ -105,6 +141,9 @@ public static class PersistenceServiceCollectionExtensions
 
         return services;
     }
+
+    private static InvalidOperationException MissingProviderService(string capabilityName) =>
+        new($"Selected persistence provider declared capability '{capabilityName}' but returned no implementation.");
 
     private static IPersistenceProviderRegistration[] GetRegistrations(
         IServiceCollection services)
