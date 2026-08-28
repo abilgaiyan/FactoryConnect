@@ -11,13 +11,20 @@ public sealed class OperationalMetricEvaluationSessionIntegrityTests
         var session = CreateSession(out var definitionId, out var revision);
         session.BeginEvaluation(definitionId);
 
-        var key = ExpectedKey(definitionId) with
-        {
-            MachineId = new MachineId(new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")),
-        };
+        var wrongMachine = new MachineId(new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+        var expected = ExpectedKey(definitionId);
+        var key = new OperationalMetricEvaluationKey(
+            wrongMachine,
+            expected.PeriodId,
+            definitionId,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
+        var wrongRevision = new MetricAggregationCheckpoint(
+            revision.ProcessorId,
+            MetricInputStreamId.ForMachine(wrongMachine),
+            revision.Position);
 
         Assert.Throws<InvalidDataException>(() =>
-            session.CompleteEvaluation(definitionId, Evaluation(key, revision)));
+            session.CompleteEvaluation(definitionId, Evaluation(key, wrongRevision)));
     }
 
     [Fact]
