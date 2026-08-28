@@ -53,7 +53,7 @@ public sealed record OperationalMetricAggregateSourceIdentity
 
 public abstract record OperationalMetricOperandEvidence
 {
-    protected OperationalMetricOperandEvidence(string operandName)
+    private protected OperationalMetricOperandEvidence(string operandName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operandName);
         OperandName = operandName;
