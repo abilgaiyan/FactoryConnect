@@ -124,9 +124,9 @@ public static class BuiltInOperationalMetricDefinitions
         RequiredUnit = OperationalMetricUnits.Ratio,
     };
 
-    private static IReadOnlyList<OperationalMetricOperandDefinition> ReadOnlyOperands(
+    private static ReadOnlyCollection<OperationalMetricOperandDefinition> ReadOnlyOperands(
         params OperationalMetricOperandDefinition[] operands) =>
-        new ReadOnlyCollection<OperationalMetricOperandDefinition>(operands);
+        new(operands);
 
     private static OperationalMetricScopeSet BothScopes() => new()
     {
