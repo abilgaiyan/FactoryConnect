@@ -7,17 +7,21 @@ public sealed class PersistenceProviderRegistration :
         IServiceProvider,
         PersistenceProviderServices> _factory;
 
-    public string ProviderKey { get; }
-
     public PersistenceProviderRegistration(
         string providerKey,
+        PersistenceProviderCapabilities capabilities,
         Func<IServiceProvider, PersistenceProviderServices> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
 
         ProviderKey = PersistenceProviderKey.Normalize(providerKey);
+        Capabilities = capabilities;
         _factory = factory;
     }
+
+    public string ProviderKey { get; }
+
+    public PersistenceProviderCapabilities Capabilities { get; }
 
     public PersistenceProviderServices Create(IServiceProvider services)
     {
