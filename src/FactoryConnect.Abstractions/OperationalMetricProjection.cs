@@ -1,4 +1,111 @@
+using System.Collections.ObjectModel;
+
 namespace FactoryConnect.Abstractions;
+
+public abstract record OperationalMetricProjectionEvidence
+{
+    private protected OperationalMetricProjectionEvidence(string operandName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operandName);
+        OperandName = operandName;
+    }
+
+    public string OperandName { get; }
+}
+
+public sealed record OperationalMetricComponentProjectionEvidence : OperationalMetricProjectionEvidence
+{
+    public OperationalMetricComponentProjectionEvidence(
+        string operandName,
+        OperationalMetricAggregateSourceIdentity sourceIdentity,
+        MetricAggregationCheckpoint sourceRevision,
+        MetricDimension dimension,
+        decimal value,
+        string unit,
+        long inputCount,
+        DateTimeOffset firstInputTimestamp,
+        DateTimeOffset lastInputTimestamp)
+        : base(operandName)
+    {
+        ArgumentNullException.ThrowIfNull(sourceIdentity);
+        ArgumentNullException.ThrowIfNull(sourceRevision);
+        ArgumentException.ThrowIfNullOrWhiteSpace(unit);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(inputCount);
+
+        if (sourceIdentity.ProcessorId != sourceRevision.ProcessorId)
+        {
+            throw new ArgumentException(
+                "Durable component evidence must belong to the source revision aggregation processor.",
+                nameof(sourceRevision));
+        }
+
+        if (sourceRevision.StreamId.MachineId != sourceIdentity.MachineId)
+        {
+            throw new ArgumentException(
+                "Durable component evidence source revision must belong to the source machine stream.",
+                nameof(sourceRevision));
+        }
+
+        if (lastInputTimestamp < firstInputTimestamp)
+        {
+            throw new ArgumentException(
+                "Last input timestamp must not precede the first input timestamp.",
+                nameof(lastInputTimestamp));
+        }
+
+        SourceIdentity = sourceIdentity;
+        SourceRevision = sourceRevision;
+        Dimension = dimension;
+        Value = value;
+        Unit = unit;
+        InputCount = inputCount;
+        FirstInputTimestamp = firstInputTimestamp;
+        LastInputTimestamp = lastInputTimestamp;
+    }
+
+    public OperationalMetricAggregateSourceIdentity SourceIdentity { get; }
+
+    public MetricAggregationCheckpoint SourceRevision { get; }
+
+    public MetricDimension Dimension { get; }
+
+    public decimal Value { get; }
+
+    public string Unit { get; }
+
+    public long InputCount { get; }
+
+    public DateTimeOffset FirstInputTimestamp { get; }
+
+    public DateTimeOffset LastInputTimestamp { get; }
+}
+
+public sealed record OperationalMetricDependencyProjectionEvidence : OperationalMetricProjectionEvidence
+{
+    public OperationalMetricDependencyProjectionEvidence(
+        string operandName,
+        OperationalMetricDefinitionId definitionId,
+        OperationalMetricProjection projection)
+        : base(operandName)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        ArgumentNullException.ThrowIfNull(projection);
+
+        if (projection.Key.DefinitionId != definitionId)
+        {
+            throw new ArgumentException(
+                "Durable dependency evidence must reference the exact projected metric definition.",
+                nameof(projection));
+        }
+
+        DefinitionId = definitionId;
+        Projection = projection;
+    }
+
+    public OperationalMetricDefinitionId DefinitionId { get; }
+
+    public OperationalMetricProjection Projection { get; }
+}
 
 public sealed record OperationalMetricProjection
 {
@@ -10,7 +117,9 @@ public sealed record OperationalMetricProjection
         string unit,
         OperationalMetricEvaluationReasonCode? reasonCode,
         string? reasonOperandName,
-        MetricAggregationCheckpoint sourceRevision)
+        MetricAggregationCheckpoint sourceRevision,
+        IEnumerable<OperationalMetricComponentProjectionEvidence>? operandEvidence = null,
+        IEnumerable<OperationalMetricDependencyProjectionEvidence>? dependencyEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(key);
@@ -22,6 +131,61 @@ public sealed record OperationalMetricProjection
             throw new ArgumentException(
                 "Projection source revision must belong to the evaluation machine stream.",
                 nameof(sourceRevision));
+        }
+
+        var operandSnapshot = operandEvidence?.ToArray() ?? [];
+        if (operandSnapshot.Any(static evidence => evidence is null))
+        {
+            throw new ArgumentException(
+                "Durable component evidence cannot contain null values.",
+                nameof(operandEvidence));
+        }
+
+        foreach (var evidence in operandSnapshot)
+        {
+            if (evidence.SourceRevision != sourceRevision ||
+                evidence.SourceIdentity.MachineId != key.MachineId ||
+                evidence.SourceIdentity.PeriodId != key.PeriodId)
+            {
+                throw new ArgumentException(
+                    "Durable component evidence must belong to the projection identity and coherent source revision.",
+                    nameof(operandEvidence));
+            }
+        }
+
+        var dependencySnapshot = dependencyEvidence?.ToArray() ?? [];
+        if (dependencySnapshot.Any(static evidence => evidence is null))
+        {
+            throw new ArgumentException(
+                "Durable dependency evidence cannot contain null values.",
+                nameof(dependencyEvidence));
+        }
+
+        foreach (var evidence in dependencySnapshot)
+        {
+            var dependency = evidence.Projection;
+            if (dependency.ProcessorId != processorId ||
+                dependency.SourceRevision != sourceRevision ||
+                dependency.Key.MachineId != key.MachineId ||
+                dependency.Key.PeriodId != key.PeriodId ||
+                dependency.Key.ContextKey != key.ContextKey)
+            {
+                throw new ArgumentException(
+                    "Durable dependency evidence must belong to the projection processor, identity, and coherent source revision.",
+                    nameof(dependencyEvidence));
+            }
+        }
+
+        var duplicateEvidence = operandSnapshot
+            .Select(static evidence => evidence.OperandName)
+            .Concat(dependencySnapshot.Select(static evidence => evidence.OperandName))
+            .GroupBy(static operandName => operandName, StringComparer.Ordinal)
+            .FirstOrDefault(static group => group.Count() > 1);
+        if (duplicateEvidence is not null)
+        {
+            throw new ArgumentException(
+                $"Durable projection evidence cannot contain duplicate operand '{duplicateEvidence.Key}'.",
+                nameof(operandEvidence));
         }
 
         if (status == OperationalMetricEvaluationStatus.Calculated)
@@ -48,6 +212,10 @@ public sealed record OperationalMetricProjection
         ReasonCode = reasonCode;
         ReasonOperandName = reasonOperandName;
         SourceRevision = sourceRevision;
+        OperandEvidence = new ReadOnlyCollection<OperationalMetricComponentProjectionEvidence>(operandSnapshot);
+        DependencyEvidence = new ReadOnlyCollection<OperationalMetricDependencyProjectionEvidence>(dependencySnapshot);
+        Evidence = new ReadOnlyCollection<OperationalMetricProjectionEvidence>(
+            [.. operandSnapshot, .. dependencySnapshot]);
     }
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
@@ -65,6 +233,12 @@ public sealed record OperationalMetricProjection
     public string? ReasonOperandName { get; }
 
     public MetricAggregationCheckpoint SourceRevision { get; }
+
+    public IReadOnlyList<OperationalMetricComponentProjectionEvidence> OperandEvidence { get; }
+
+    public IReadOnlyList<OperationalMetricDependencyProjectionEvidence> DependencyEvidence { get; }
+
+    public IReadOnlyList<OperationalMetricProjectionEvidence> Evidence { get; }
 }
 
 public sealed record OperationalMetricProjectionCheckpoint
@@ -154,7 +328,7 @@ public sealed record OperationalMetricProjectionCommit
         ProcessorId = processorId;
         ExpectedCheckpoint = expectedCheckpoint;
         ProposedCheckpoint = proposedCheckpoint;
-        Projections = snapshot;
+        Projections = new ReadOnlyCollection<OperationalMetricProjection>(snapshot);
     }
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
