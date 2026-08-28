@@ -4,17 +4,65 @@ namespace FactoryConnect.Abstractions;
 
 public sealed record OperationalMetricProjectionSummary
 {
-    public OperationalMetricProjectionSummary(OperationalMetricProjection projection)
+    public OperationalMetricProjectionSummary(
+        OperationalMetricProjectionProcessorId processorId,
+        OperationalMetricEvaluationKey key,
+        OperationalMetricEvaluationStatus status,
+        decimal? value,
+        string unit,
+        OperationalMetricEvaluationReasonCode? reasonCode,
+        string? reasonOperandName,
+        MetricAggregationCheckpoint sourceRevision)
     {
-        ArgumentNullException.ThrowIfNull(projection);
-        ProcessorId = projection.ProcessorId;
-        Key = projection.Key;
-        Status = projection.Status;
-        Value = projection.Value;
-        Unit = projection.Unit;
-        ReasonCode = projection.ReasonCode;
-        ReasonOperandName = projection.ReasonOperandName;
-        SourceRevision = projection.SourceRevision;
+        ArgumentNullException.ThrowIfNull(processorId);
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(unit);
+        ArgumentNullException.ThrowIfNull(sourceRevision);
+
+        if (sourceRevision.StreamId.MachineId != key.MachineId)
+        {
+            throw new ArgumentException(
+                "Projection summary source revision must belong to the evaluation machine stream.",
+                nameof(sourceRevision));
+        }
+
+        if (status == OperationalMetricEvaluationStatus.Calculated)
+        {
+            if (value is null || reasonCode is not null || reasonOperandName is not null)
+            {
+                throw new ArgumentException(
+                    "Calculated projection summaries require a value and no failure reason.",
+                    nameof(status));
+            }
+        }
+        else if (value is not null || reasonCode is null)
+        {
+            throw new ArgumentException(
+                "Non-calculated projection summaries require a reason and no value.",
+                nameof(status));
+        }
+
+        ProcessorId = processorId;
+        Key = key;
+        Status = status;
+        Value = value;
+        Unit = unit;
+        ReasonCode = reasonCode;
+        ReasonOperandName = reasonOperandName;
+        SourceRevision = sourceRevision;
+    }
+
+    public OperationalMetricProjectionSummary(OperationalMetricProjection projection)
+        : this(
+            projection?.ProcessorId ?? throw new ArgumentNullException(nameof(projection)),
+            projection.Key,
+            projection.Status,
+            projection.Value,
+            projection.Unit,
+            projection.ReasonCode,
+            projection.ReasonOperandName,
+            projection.SourceRevision)
+    {
     }
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
