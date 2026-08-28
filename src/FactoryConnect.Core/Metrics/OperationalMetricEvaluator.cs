@@ -61,8 +61,7 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
             var evaluation = definition.Formula switch
             {
                 OperationalMetricFormula.Ratio ratio => EvaluateRatio(session, definition, ratio),
-                OperationalMetricFormula.Product => throw new NotSupportedException(
-                    "FC-027.3B evaluates component-backed Ratio definitions. Product dependency composition is introduced in a later FC-027.3 slice."),
+                OperationalMetricFormula.Product product => EvaluateProduct(session, definition, product),
                 _ => throw new InvalidDataException(
                     $"Metric '{definition.Id}' has an unsupported formula contract."),
             };
@@ -182,6 +181,122 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
             session.Snapshot.Revision,
             evidence);
     }
+
+    private static OperationalMetricEvaluation EvaluateProduct(
+        OperationalMetricEvaluationSession session,
+        OperationalMetricDefinition definition,
+        OperationalMetricFormula.Product product)
+    {
+        var operandsByName = definition.Operands.ToDictionary(
+            operand => operand.OperandName,
+            StringComparer.Ordinal);
+        var dependencyEvidence = new List<OperationalMetricDependencyEvidence>(product.FactorOperands.Count);
+        var value = 1m;
+
+        foreach (var factorName in product.FactorOperands)
+        {
+            if (!operandsByName.TryGetValue(factorName, out var operand) ||
+                operand.Source is not OperationalMetricOperandSource.EvaluatedMetric source)
+            {
+                throw new InvalidDataException(
+                    $"Product factor '{factorName}' must reference an evaluated metric operand.");
+            }
+
+            if (operand.RequiredDimension != MetricDimension.Ratio ||
+                !string.Equals(operand.RequiredUnit, OperationalMetricUnits.Ratio, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Product factor '{factorName}' must require ratio-valued dependency evidence.");
+            }
+
+            var dependency = EvaluateDefinition(session, source.DefinitionId);
+            ValidateDependencyForOperand(session, operand, source, dependency);
+            dependencyEvidence.Add(new OperationalMetricDependencyEvidence(
+                operand.OperandName,
+                source.DefinitionId,
+                dependency));
+
+            if (dependency.Status == OperationalMetricEvaluationStatus.Unavailable)
+            {
+                return DependencyFailure(
+                    session,
+                    definition,
+                    OperationalMetricEvaluationStatus.Unavailable,
+                    OperationalMetricEvaluationReasonCode.DependencyUnavailable,
+                    operand.OperandName,
+                    dependencyEvidence);
+            }
+
+            if (dependency.Status == OperationalMetricEvaluationStatus.InsufficientEvidence)
+            {
+                return DependencyFailure(
+                    session,
+                    definition,
+                    OperationalMetricEvaluationStatus.InsufficientEvidence,
+                    OperationalMetricEvaluationReasonCode.DependencyInsufficientEvidence,
+                    operand.OperandName,
+                    dependencyEvidence);
+            }
+
+            if (dependency.Status != OperationalMetricEvaluationStatus.Calculated || dependency.Value is null)
+            {
+                throw new InvalidDataException(
+                    $"Dependency '{source.DefinitionId.MetricKey}/{source.DefinitionId.Version}' returned an invalid evaluation state.");
+            }
+
+            value *= dependency.Value.Value;
+        }
+
+        ValidateDomain(definition, value);
+
+        return new OperationalMetricEvaluation(
+            DependencyKey(session.Plan.RootKey, definition.Id),
+            OperationalMetricEvaluationStatus.Calculated,
+            value,
+            definition.ResultUnit,
+            null,
+            null,
+            session.Snapshot.Revision,
+            [],
+            dependencyEvidence);
+    }
+
+    private static void ValidateDependencyForOperand(
+        OperationalMetricEvaluationSession session,
+        OperationalMetricOperandDefinition operand,
+        OperationalMetricOperandSource.EvaluatedMetric source,
+        OperationalMetricEvaluation dependency)
+    {
+        var expectedKey = DependencyKey(session.Plan.RootKey, source.DefinitionId);
+        var dependencyDefinition = session.Plan.GetRequiredDefinition(source.DefinitionId);
+
+        if (dependency.Key != expectedKey ||
+            dependency.SourceRevision != session.Snapshot.Revision ||
+            dependencyDefinition.Id != source.DefinitionId ||
+            !string.Equals(dependency.Unit, operand.RequiredUnit, StringComparison.Ordinal) ||
+            !string.Equals(dependencyDefinition.ResultUnit, operand.RequiredUnit, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Dependency evidence for operand '{operand.OperandName}' does not match its exact planned definition and coherent session identity.");
+        }
+    }
+
+    private static OperationalMetricEvaluation DependencyFailure(
+        OperationalMetricEvaluationSession session,
+        OperationalMetricDefinition definition,
+        OperationalMetricEvaluationStatus status,
+        OperationalMetricEvaluationReasonCode reasonCode,
+        string operandName,
+        IEnumerable<OperationalMetricDependencyEvidence> dependencyEvidence) => new(
+            DependencyKey(session.Plan.RootKey, definition.Id),
+            status,
+            null,
+            definition.ResultUnit,
+            reasonCode,
+            operandName,
+            session.Snapshot.Revision,
+            [],
+            dependencyEvidence);
 
     private static OperationalMetricEvaluationKey DependencyKey(
         OperationalMetricEvaluationKey rootKey,
