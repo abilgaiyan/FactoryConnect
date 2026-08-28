@@ -9,19 +9,15 @@ public sealed record PersistenceProviderServices
         IProductionContextProcessingStore productionContextProcessingStore,
         IMetricInputReader metricInputReader,
         IMetricAggregationStore metricAggregationStore,
-        IMetricAggregationRevisionReader metricAggregationRevisionReader,
-        IRevisionedOperationalMetricComponentSnapshotReader revisionedOperationalMetricComponentSnapshotReader,
-        IOperationalMetricProjectionStore operationalMetricProjectionStore,
-        IOperationalMetricProjectionQueryReader operationalMetricProjectionQueryReader)
+        IMetricAggregationRevisionReader? metricAggregationRevisionReader = null,
+        IRevisionedOperationalMetricComponentSnapshotReader? revisionedOperationalMetricComponentSnapshotReader = null,
+        IOperationalMetricProjectionStore? operationalMetricProjectionStore = null,
+        IOperationalMetricProjectionQueryReader? operationalMetricProjectionQueryReader = null)
     {
         ArgumentNullException.ThrowIfNull(observationIngestionStore);
         ArgumentNullException.ThrowIfNull(productionContextProcessingStore);
         ArgumentNullException.ThrowIfNull(metricInputReader);
         ArgumentNullException.ThrowIfNull(metricAggregationStore);
-        ArgumentNullException.ThrowIfNull(metricAggregationRevisionReader);
-        ArgumentNullException.ThrowIfNull(revisionedOperationalMetricComponentSnapshotReader);
-        ArgumentNullException.ThrowIfNull(operationalMetricProjectionStore);
-        ArgumentNullException.ThrowIfNull(operationalMetricProjectionQueryReader);
 
         ObservationIngestionStore = observationIngestionStore;
         ProductionContextProcessingStore = productionContextProcessingStore;
@@ -41,11 +37,11 @@ public sealed record PersistenceProviderServices
 
     public IMetricAggregationStore MetricAggregationStore { get; }
 
-    public IMetricAggregationRevisionReader MetricAggregationRevisionReader { get; }
+    public IMetricAggregationRevisionReader? MetricAggregationRevisionReader { get; }
 
-    public IRevisionedOperationalMetricComponentSnapshotReader RevisionedOperationalMetricComponentSnapshotReader { get; }
+    public IRevisionedOperationalMetricComponentSnapshotReader? RevisionedOperationalMetricComponentSnapshotReader { get; }
 
-    public IOperationalMetricProjectionStore OperationalMetricProjectionStore { get; }
+    public IOperationalMetricProjectionStore? OperationalMetricProjectionStore { get; }
 
-    public IOperationalMetricProjectionQueryReader OperationalMetricProjectionQueryReader { get; }
+    public IOperationalMetricProjectionQueryReader? OperationalMetricProjectionQueryReader { get; }
 }
