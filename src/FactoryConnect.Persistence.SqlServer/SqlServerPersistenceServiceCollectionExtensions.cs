@@ -26,8 +26,11 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                     var connectionString =
                         options.GetRequiredConnectionString();
 
-                    throw new InvalidOperationException(
-                        "SQL Server persistence does not yet provide FC-027 operational metric durability capabilities.");
+                    return new PersistenceProviderServices(
+                        new SqlServerObservationIngestionStore(connectionString),
+                        new SqlServerProductionContextProcessingStore(connectionString),
+                        new SqlServerMetricInputStore(connectionString),
+                        new SqlServerMetricAggregationStore(connectionString));
                 }));
     }
 }
