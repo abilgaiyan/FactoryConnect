@@ -229,7 +229,7 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         OperationalMetricDefinition definition,
         OperationalMetricOperandDefinition missingOperand,
         MetricAggregationCheckpoint revision,
-        IReadOnlyDictionary<string, OperationalMetricComponent> availableComponents)
+        Dictionary<string, OperationalMetricComponent> availableComponents)
     {
         var componentKey = GetComponentKey(missingOperand);
         var reasonCode = string.Equals(componentKey, MetricInputKeys.ProductionReferenceTime, StringComparison.Ordinal)
