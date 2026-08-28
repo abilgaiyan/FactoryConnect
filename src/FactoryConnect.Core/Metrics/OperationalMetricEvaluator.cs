@@ -61,14 +61,43 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                 definition.Operands),
             cancellationToken).ConfigureAwait(false);
 
+        ValidateSnapshotIdentity(evaluationKey, snapshot);
+        ValidateAllComponents(definition, snapshot);
+
+        return EvaluateRatio(evaluationKey, definition, ratio, snapshot);
+    }
+
+    private void ValidateSnapshotIdentity(
+        OperationalMetricEvaluationKey evaluationKey,
+        OperationalMetricComponentSnapshot snapshot)
+    {
         if (snapshot.EvaluationKey != evaluationKey ||
-            snapshot.Revision.ProcessorId != _aggregationProcessorId)
+            snapshot.Revision.ProcessorId != _aggregationProcessorId ||
+            snapshot.Revision.StreamId.MachineId != evaluationKey.MachineId)
         {
             throw new InvalidDataException(
                 "Operational metric component snapshot does not match the requested evaluation identity.");
         }
+    }
 
-        return EvaluateRatio(evaluationKey, definition, ratio, snapshot);
+    private static void ValidateAllComponents(
+        OperationalMetricDefinition definition,
+        OperationalMetricComponentSnapshot snapshot)
+    {
+        var operandsByName = definition.Operands.ToDictionary(
+            operand => operand.OperandName,
+            StringComparer.Ordinal);
+
+        foreach (var component in snapshot.Components)
+        {
+            if (!operandsByName.TryGetValue(component.OperandName, out var operand))
+            {
+                throw new InvalidDataException(
+                    $"Snapshot returned unexpected operand '{component.OperandName}'.");
+            }
+
+            ValidateComponent(component, operand, snapshot.Revision);
+        }
     }
 
     private static OperationalMetricEvaluation EvaluateRatio(
@@ -100,9 +129,6 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                 snapshot.Revision,
                 byOperand.Values);
         }
-
-        ValidateComponent(numerator, definition, snapshot.Revision);
-        ValidateComponent(denominator, definition, snapshot.Revision);
 
         var evidence = new ReadOnlyCollection<MetricOperandEvidence>(
         [
@@ -138,15 +164,13 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
 
     private static void ValidateComponent(
         OperationalMetricComponent component,
-        OperationalMetricDefinition definition,
+        OperationalMetricOperandDefinition operand,
         MetricAggregationCheckpoint revision)
     {
-        var operand = definition.Operands.Single(candidate =>
-            string.Equals(candidate.OperandName, component.OperandName, StringComparison.Ordinal));
-
         if (operand.Source is not OperationalMetricOperandSource.Component source ||
             !string.Equals(source.ComponentKey, component.SourceIdentity.ComponentKey, StringComparison.Ordinal) ||
             component.SourceIdentity.ProcessorId != revision.ProcessorId ||
+            component.SourceIdentity.MachineId != revision.StreamId.MachineId ||
             component.Dimension != operand.RequiredDimension ||
             !string.Equals(component.Aggregate.Unit, operand.RequiredUnit, StringComparison.Ordinal))
         {
