@@ -15,6 +15,8 @@ public enum OperationalMetricEvaluationReasonCode
     MissingReferenceTime,
     ZeroDenominator,
     UnsupportedScope,
+    DependencyUnavailable,
+    DependencyInsufficientEvidence,
 }
 
 public sealed record OperationalMetricAggregateSourceIdentity
@@ -49,7 +51,18 @@ public sealed record OperationalMetricAggregateSourceIdentity
     public string ComponentKey { get; }
 }
 
-public sealed record MetricOperandEvidence
+public abstract record OperationalMetricOperandEvidence
+{
+    protected OperationalMetricOperandEvidence(string operandName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operandName);
+        OperandName = operandName;
+    }
+
+    public string OperandName { get; }
+}
+
+public sealed record MetricOperandEvidence : OperationalMetricOperandEvidence
 {
     public MetricOperandEvidence(
         string operandName,
@@ -61,8 +74,8 @@ public sealed record MetricOperandEvidence
         long inputCount,
         DateTimeOffset firstInputTimestamp,
         DateTimeOffset lastInputTimestamp)
+        : base(operandName)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(operandName);
         ArgumentNullException.ThrowIfNull(sourceIdentity);
         ArgumentNullException.ThrowIfNull(sourceRevision);
         ArgumentException.ThrowIfNullOrWhiteSpace(unit);
@@ -89,7 +102,6 @@ public sealed record MetricOperandEvidence
                 nameof(lastInputTimestamp));
         }
 
-        OperandName = operandName;
         SourceIdentity = sourceIdentity;
         SourceRevision = sourceRevision;
         Dimension = dimension;
@@ -99,8 +111,6 @@ public sealed record MetricOperandEvidence
         FirstInputTimestamp = firstInputTimestamp;
         LastInputTimestamp = lastInputTimestamp;
     }
-
-    public string OperandName { get; }
 
     public OperationalMetricAggregateSourceIdentity SourceIdentity { get; }
 
@@ -117,6 +127,33 @@ public sealed record MetricOperandEvidence
     public DateTimeOffset FirstInputTimestamp { get; }
 
     public DateTimeOffset LastInputTimestamp { get; }
+}
+
+public sealed record OperationalMetricDependencyEvidence : OperationalMetricOperandEvidence
+{
+    public OperationalMetricDependencyEvidence(
+        string operandName,
+        OperationalMetricDefinitionId definitionId,
+        OperationalMetricEvaluation evaluation)
+        : base(operandName)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        ArgumentNullException.ThrowIfNull(evaluation);
+
+        if (evaluation.Key.DefinitionId != definitionId)
+        {
+            throw new ArgumentException(
+                "Dependency evidence must reference the exact evaluated metric definition.",
+                nameof(evaluation));
+        }
+
+        DefinitionId = definitionId;
+        Evaluation = evaluation;
+    }
+
+    public OperationalMetricDefinitionId DefinitionId { get; }
+
+    public OperationalMetricEvaluation Evaluation { get; }
 }
 
 public sealed record OperationalMetricComponent
@@ -257,7 +294,8 @@ public sealed record OperationalMetricEvaluation
         OperationalMetricEvaluationReasonCode? reasonCode,
         string? reasonOperandName,
         MetricAggregationCheckpoint sourceRevision,
-        IEnumerable<MetricOperandEvidence> operandEvidence)
+        IEnumerable<MetricOperandEvidence> operandEvidence,
+        IEnumerable<OperationalMetricDependencyEvidence>? dependencyEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(unit);
@@ -284,6 +322,25 @@ public sealed record OperationalMetricEvaluation
                 nameof(operandEvidence));
         }
 
+        var dependencySnapshot = dependencyEvidence?.ToArray() ?? [];
+        if (dependencySnapshot.Any(evidence => evidence is null))
+        {
+            throw new ArgumentException("Dependency evidence cannot contain null values.", nameof(dependencyEvidence));
+        }
+
+        foreach (var dependency in dependencySnapshot)
+        {
+            if (dependency.Evaluation.SourceRevision != sourceRevision ||
+                dependency.Evaluation.Key.MachineId != key.MachineId ||
+                dependency.Evaluation.Key.PeriodId != key.PeriodId ||
+                dependency.Evaluation.Key.ContextKey != key.ContextKey)
+            {
+                throw new ArgumentException(
+                    "Dependency evidence must belong to the evaluation identity and coherent source revision.",
+                    nameof(dependencyEvidence));
+            }
+        }
+
         if (status == OperationalMetricEvaluationStatus.Calculated)
         {
             if (value is null || reasonCode is not null || reasonOperandName is not null)
@@ -304,6 +361,9 @@ public sealed record OperationalMetricEvaluation
         ReasonOperandName = reasonOperandName;
         SourceRevision = sourceRevision;
         OperandEvidence = new ReadOnlyCollection<MetricOperandEvidence>(evidenceSnapshot);
+        DependencyEvidence = new ReadOnlyCollection<OperationalMetricDependencyEvidence>(dependencySnapshot);
+        Evidence = new ReadOnlyCollection<OperationalMetricOperandEvidence>(
+            [.. evidenceSnapshot, .. dependencySnapshot]);
     }
 
     public OperationalMetricEvaluationKey Key { get; }
@@ -321,6 +381,10 @@ public sealed record OperationalMetricEvaluation
     public MetricAggregationCheckpoint SourceRevision { get; }
 
     public IReadOnlyList<MetricOperandEvidence> OperandEvidence { get; }
+
+    public IReadOnlyList<OperationalMetricDependencyEvidence> DependencyEvidence { get; }
+
+    public IReadOnlyList<OperationalMetricOperandEvidence> Evidence { get; }
 }
 
 public interface IOperationalMetricEvaluator
