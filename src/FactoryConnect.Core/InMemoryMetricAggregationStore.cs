@@ -2,7 +2,9 @@ using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core;
 
-public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
+public sealed class InMemoryMetricAggregationStore :
+    IMetricAggregationStore,
+    IOperationalMetricComponentSnapshotReader
 {
     private readonly object _sync = new();
     private readonly Dictionary<MetricAggregationProcessorId, MetricAggregationCheckpoint> _checkpoints = [];
@@ -69,6 +71,59 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
         }
     }
 
+    public ValueTask<OperationalMetricComponentSnapshot> ReadAsync(
+        OperationalMetricComponentSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_sync)
+        {
+            if (!_checkpoints.TryGetValue(request.ProcessorId, out var revision))
+            {
+                throw new InvalidOperationException(
+                    "Operational metric component snapshots require an existing aggregation checkpoint.");
+            }
+
+            if (revision.StreamId.MachineId != request.EvaluationKey.MachineId)
+            {
+                throw new InvalidOperationException(
+                    "Aggregation checkpoint belongs to a different machine stream than the requested evaluation.");
+            }
+
+            var components = new List<OperationalMetricComponent>(request.Operands.Count);
+            foreach (var operand in request.Operands)
+            {
+                var source = (OperationalMetricOperandSource.Component)operand.Source;
+                var aggregate = ReadAggregateUnderLock(
+                    request.ProcessorId,
+                    request.EvaluationKey,
+                    source.ComponentKey);
+
+                if (aggregate is null)
+                {
+                    continue;
+                }
+
+                components.Add(new OperationalMetricComponent(
+                    operand.OperandName,
+                    new OperationalMetricAggregateSourceIdentity(
+                        request.ProcessorId,
+                        request.EvaluationKey.MachineId,
+                        request.EvaluationKey.PeriodId,
+                        source.ComponentKey),
+                    operand.RequiredDimension,
+                    aggregate));
+            }
+
+            return ValueTask.FromResult(new OperationalMetricComponentSnapshot(
+                request.EvaluationKey,
+                revision,
+                components));
+        }
+    }
+
     public ValueTask CommitAsync(
         MetricAggregationCommit commit,
         CancellationToken cancellationToken)
@@ -119,6 +174,33 @@ public sealed class InMemoryMetricAggregationStore : IMetricAggregationStore
             return ValueTask.CompletedTask;
         }
     }
+
+    private MetricAggregateValue? ReadAggregateUnderLock(
+        MetricAggregationProcessorId processorId,
+        OperationalMetricEvaluationKey evaluationKey,
+        string componentKey) =>
+        evaluationKey.PeriodId switch
+        {
+            OperationalMetricPeriodId.Shift shift =>
+                _shiftAggregates.TryGetValue(
+                    (processorId, new ShiftMetricAggregateKey(
+                        evaluationKey.MachineId,
+                        shift.ShiftOccurrenceId,
+                        componentKey)),
+                    out var shiftValue)
+                        ? shiftValue
+                        : null,
+            OperationalMetricPeriodId.ProductionDay productionDay =>
+                _productionDayAggregates.TryGetValue(
+                    (processorId, new ProductionDayMetricAggregateKey(
+                        evaluationKey.MachineId,
+                        productionDay.ProductionDayId,
+                        componentKey)),
+                    out var productionDayValue)
+                        ? productionDayValue
+                        : null,
+            _ => throw new InvalidOperationException("Unsupported operational metric period type."),
+        };
 
     private List<PositionedMetricInputFact> StageNewInputs(MetricAggregationCommit commit)
     {
