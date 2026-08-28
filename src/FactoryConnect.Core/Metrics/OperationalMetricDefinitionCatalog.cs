@@ -1,10 +1,11 @@
+using System.Collections.ObjectModel;
 using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core.Metrics;
 
-public sealed class OperationalMetricDefinitionValidator
+public static class OperationalMetricDefinitionValidator
 {
-    public void Validate(OperationalMetricDefinition definition)
+    public static void Validate(OperationalMetricDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(definition.Id);
@@ -34,6 +35,13 @@ public sealed class OperationalMetricDefinitionValidator
         {
             ArgumentNullException.ThrowIfNull(operand);
             ArgumentException.ThrowIfNullOrWhiteSpace(operand.OperandName);
+            if (!string.Equals(operand.OperandName, operand.OperandName.Trim(), StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Operand names must not contain leading or trailing whitespace.",
+                    nameof(definition));
+            }
+
             ArgumentNullException.ThrowIfNull(operand.Source);
             ArgumentException.ThrowIfNullOrWhiteSpace(operand.RequiredUnit);
 
@@ -192,12 +200,19 @@ public sealed class OperationalMetricDefinitionValidator
                 nameof(precisionPolicy),
                 "Durable decimal scale must be between 0 and 28.");
         }
+
+        if (!Enum.IsDefined(precisionPolicy.RoundingMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(precisionPolicy),
+                "Rounding mode must be a defined MidpointRounding value.");
+        }
     }
 }
 
-public sealed class OperationalMetricDefinitionSemanticComparer
+public static class OperationalMetricDefinitionSemanticComparer
 {
-    public bool AreEquivalent(OperationalMetricDefinition left, OperationalMetricDefinition right)
+    public static bool AreEquivalent(OperationalMetricDefinition left, OperationalMetricDefinition right)
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
@@ -205,13 +220,26 @@ public sealed class OperationalMetricDefinitionSemanticComparer
         return left.Id == right.Id &&
             left.SupportedScopes == right.SupportedScopes &&
             string.Equals(left.ResultUnit, right.ResultUnit, StringComparison.Ordinal) &&
-            left.Formula == right.Formula &&
+            FormulasAreEquivalent(left.Formula, right.Formula) &&
             left.DomainConstraints == right.DomainConstraints &&
             left.PrecisionPolicy == right.PrecisionPolicy &&
-            SequenceEqual(left.Operands, right.Operands);
+            OperandsAreEquivalent(left.Operands, right.Operands);
     }
 
-    private static bool SequenceEqual(
+    private static bool FormulasAreEquivalent(
+        OperationalMetricFormula left,
+        OperationalMetricFormula right) =>
+        (left, right) switch
+        {
+            (OperationalMetricFormula.Ratio leftRatio, OperationalMetricFormula.Ratio rightRatio) =>
+                StringComparer.Ordinal.Equals(leftRatio.NumeratorOperand, rightRatio.NumeratorOperand) &&
+                StringComparer.Ordinal.Equals(leftRatio.DenominatorOperand, rightRatio.DenominatorOperand),
+            (OperationalMetricFormula.Product leftProduct, OperationalMetricFormula.Product rightProduct) =>
+                leftProduct.FactorOperands.SequenceEqual(rightProduct.FactorOperands, StringComparer.Ordinal),
+            _ => false,
+        };
+
+    private static bool OperandsAreEquivalent(
         IReadOnlyList<OperationalMetricOperandDefinition> left,
         IReadOnlyList<OperationalMetricOperandDefinition> right)
     {
@@ -220,38 +248,32 @@ public sealed class OperationalMetricDefinitionSemanticComparer
             return false;
         }
 
-        for (var index = 0; index < left.Count; index++)
-        {
-            if (left[index] != right[index])
-            {
-                return false;
-            }
-        }
-
-        return true;
+        var leftByName = left.OrderBy(operand => operand.OperandName, StringComparer.Ordinal);
+        var rightByName = right.OrderBy(operand => operand.OperandName, StringComparer.Ordinal);
+        return leftByName.SequenceEqual(rightByName);
     }
 }
 
 public sealed class OperationalMetricDefinitionCatalog : IOperationalMetricDefinitionCatalog
 {
-    private readonly IReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> _definitions;
-    private readonly IReadOnlyDictionary<OperationalMetricEvaluationScope, IReadOnlyList<OperationalMetricDefinition>> _orders;
+    private readonly Dictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> _definitions;
+    private readonly Dictionary<OperationalMetricEvaluationScope, IReadOnlyList<OperationalMetricDefinition>> _orders;
 
     public OperationalMetricDefinitionCatalog(IEnumerable<OperationalMetricDefinition> definitions)
     {
         ArgumentNullException.ThrowIfNull(definitions);
 
-        var definitionValidator = new OperationalMetricDefinitionValidator();
-        var semanticComparer = new OperationalMetricDefinitionSemanticComparer();
         var byId = new Dictionary<OperationalMetricDefinitionId, OperationalMetricDefinition>();
 
-        foreach (var definition in definitions)
+        foreach (var incomingDefinition in definitions)
         {
-            definitionValidator.Validate(definition);
+            ArgumentNullException.ThrowIfNull(incomingDefinition);
+            var definition = Snapshot(incomingDefinition);
+            OperationalMetricDefinitionValidator.Validate(definition);
 
             if (byId.TryGetValue(definition.Id, out var existing))
             {
-                if (!semanticComparer.AreEquivalent(existing, definition))
+                if (!OperationalMetricDefinitionSemanticComparer.AreEquivalent(existing, definition))
                 {
                     throw new ArgumentException(
                         $"Conflicting operational metric definition '{definition.Id.MetricKey}/{definition.Id.Version}'.",
@@ -268,8 +290,10 @@ public sealed class OperationalMetricDefinitionCatalog : IOperationalMetricDefin
         _definitions = byId;
         _orders = new Dictionary<OperationalMetricEvaluationScope, IReadOnlyList<OperationalMetricDefinition>>
         {
-            [OperationalMetricEvaluationScope.Shift] = BuildOrder(byId, OperationalMetricEvaluationScope.Shift),
-            [OperationalMetricEvaluationScope.ProductionDay] = BuildOrder(byId, OperationalMetricEvaluationScope.ProductionDay),
+            [OperationalMetricEvaluationScope.Shift] = new ReadOnlyCollection<OperationalMetricDefinition>(
+                BuildOrder(byId, OperationalMetricEvaluationScope.Shift)),
+            [OperationalMetricEvaluationScope.ProductionDay] = new ReadOnlyCollection<OperationalMetricDefinition>(
+                BuildOrder(byId, OperationalMetricEvaluationScope.ProductionDay)),
         };
     }
 
@@ -287,8 +311,38 @@ public sealed class OperationalMetricDefinitionCatalog : IOperationalMetricDefin
             ? order
             : throw new ArgumentOutOfRangeException(nameof(scope));
 
+    private static OperationalMetricDefinition Snapshot(OperationalMetricDefinition source)
+    {
+        var operands = source.Operands
+            .Select(operand => operand with { })
+            .ToArray();
+        var readOnlyOperands = new ReadOnlyCollection<OperationalMetricOperandDefinition>(operands);
+
+        OperationalMetricFormula formula = source.Formula switch
+        {
+            OperationalMetricFormula.Ratio ratio =>
+                new OperationalMetricFormula.Ratio(ratio.NumeratorOperand, ratio.DenominatorOperand),
+            OperationalMetricFormula.Product product =>
+                new OperationalMetricFormula.Product(
+                    new ReadOnlyCollection<string>(product.FactorOperands.ToArray())),
+            _ => source.Formula,
+        };
+
+        return new OperationalMetricDefinition
+        {
+            Id = new OperationalMetricDefinitionId(source.Id.MetricKey, source.Id.Version),
+            DisplayName = source.DisplayName,
+            SupportedScopes = source.SupportedScopes with { },
+            Operands = readOnlyOperands,
+            ResultUnit = source.ResultUnit,
+            Formula = formula,
+            DomainConstraints = source.DomainConstraints with { },
+            PrecisionPolicy = source.PrecisionPolicy with { },
+        };
+    }
+
     private static void ValidateDependencies(
-        IReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> definitions)
+        Dictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> definitions)
     {
         foreach (var definition in definitions.Values)
         {
@@ -315,8 +369,8 @@ public sealed class OperationalMetricDefinitionCatalog : IOperationalMetricDefin
         _ = BuildOrder(definitions, OperationalMetricEvaluationScope.ProductionDay);
     }
 
-    private static IReadOnlyList<OperationalMetricDefinition> BuildOrder(
-        IReadOnlyDictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> definitions,
+    private static List<OperationalMetricDefinition> BuildOrder(
+        Dictionary<OperationalMetricDefinitionId, OperationalMetricDefinition> definitions,
         OperationalMetricEvaluationScope scope)
     {
         var applicable = definitions.Values
