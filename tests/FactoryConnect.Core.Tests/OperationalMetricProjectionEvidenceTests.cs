@@ -107,9 +107,6 @@ public sealed class OperationalMetricProjectionEvidenceTests
     {
         var fixture = CreateFixture();
         var availability = fixture.Factory.Create(AvailabilityEvaluation(fixture));
-        var performanceEvaluation = AvailabilityEvaluation(fixture) with
-        {
-        };
         var performance = new OperationalMetricProjection(
             fixture.ProjectionProcessorId,
             new OperationalMetricEvaluationKey(
@@ -123,7 +120,6 @@ public sealed class OperationalMetricProjectionEvidenceTests
             null,
             null,
             fixture.SourceRevision);
-        _ = performanceEvaluation;
 
         var key = new OperationalMetricEvaluationKey(
             fixture.MachineId,
