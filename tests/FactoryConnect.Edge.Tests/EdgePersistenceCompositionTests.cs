@@ -12,7 +12,7 @@ namespace FactoryConnect.Edge.Tests;
 public sealed class EdgePersistenceCompositionTests
 {
     [Fact]
-    public void InMemorySelectionDoesNotRequireSqlServerConfiguration()
+    public void InMemoryCoreSelectionDoesNotRequireSqlServerConfiguration()
     {
         var configuration = CreateConfiguration(
             new Dictionary<string, string?>
@@ -28,16 +28,39 @@ public sealed class EdgePersistenceCompositionTests
         var production = provider.GetRequiredService<IProductionContextProcessingStore>();
         var reader = provider.GetRequiredService<IMetricInputReader>();
         var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
-        var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
-        var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
-        var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
-        var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
 
         Assert.IsType<InMemoryObservationIngestionStore>(observation);
         Assert.Same(production, reader);
         Assert.Equal(
             "FactoryConnect.Core.InMemoryMetricAggregationStore",
             aggregation.GetType().FullName);
+        Assert.Null(provider.GetService<IMetricAggregationRevisionReader>());
+        Assert.Null(provider.GetService<IRevisionedOperationalMetricComponentSnapshotReader>());
+        Assert.Null(provider.GetService<IOperationalMetricProjectionStore>());
+        Assert.Null(provider.GetService<IOperationalMetricProjectionQueryReader>());
+    }
+
+    [Fact]
+    public void InMemoryFullCapabilitySelectionUsesOneProviderOwnedCapabilitySet()
+    {
+        var configuration = CreateConfiguration(
+            new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = "InMemory",
+            });
+        var services = new ServiceCollection();
+
+        services.AddFactoryConnectEdgePersistence(
+            configuration,
+            PersistenceProviderCapabilities.All);
+
+        using var provider = services.BuildServiceProvider();
+        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
+        var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
+        var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
+        var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
+        var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
+
         Assert.Same(aggregation, revisionReader);
         Assert.Same(aggregation, snapshotReader);
         Assert.Same(projectionStore, projectionReader);
