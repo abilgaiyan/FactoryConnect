@@ -53,3 +53,11 @@ public interface IMetricAggregationRevisionReader
         MetricAggregationCheckpoint revision,
         CancellationToken cancellationToken);
 }
+
+public interface IRevisionedOperationalMetricComponentSnapshotReader
+{
+    ValueTask<OperationalMetricComponentSnapshot> ReadAtRevisionAsync(
+        OperationalMetricComponentSnapshotRequest request,
+        MetricAggregationCheckpoint requiredRevision,
+        CancellationToken cancellationToken);
+}
