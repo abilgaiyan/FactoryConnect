@@ -22,7 +22,7 @@ public sealed class OperationalMetricEvaluationSessionAuthorizationTests
         var evaluation = EvaluationFor(session.Plan.RootKey, unplanned, revision);
 
         Assert.Throws<InvalidOperationException>(() => session.CompleteEvaluation(unplanned, evaluation));
-        Assert.False(session.TryGetEvaluation(unplanned, out _));
+        Assert.Throws<InvalidOperationException>(() => session.TryGetEvaluation(unplanned, out _));
     }
 
     [Fact]
