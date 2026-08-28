@@ -57,11 +57,12 @@ internal sealed class OperationalMetricEvaluationPlanner
                 $"Metric definition '{root.Id}' does not support evaluation scope '{rootKey.Scope}'.");
         }
 
-        var visited = new HashSet<OperationalMetricDefinitionId>();
+        var active = new HashSet<OperationalMetricDefinitionId>();
+        var completed = new HashSet<OperationalMetricDefinitionId>();
         var ordered = new List<OperationalMetricDefinition>();
         var requirements = new Dictionary<string, OperationalMetricComponentRequirement>(StringComparer.Ordinal);
 
-        Visit(root, rootKey.Scope, visited, ordered, requirements);
+        Visit(root, rootKey.Scope, active, completed, ordered, requirements);
 
         var canonicalRequirements = requirements.Values
             .OrderBy(requirement => requirement.ComponentKey, StringComparer.Ordinal)
@@ -75,23 +76,23 @@ internal sealed class OperationalMetricEvaluationPlanner
     private void Visit(
         OperationalMetricDefinition definition,
         OperationalMetricEvaluationScope scope,
-        HashSet<OperationalMetricDefinitionId> visited,
+        HashSet<OperationalMetricDefinitionId> active,
+        HashSet<OperationalMetricDefinitionId> completed,
         List<OperationalMetricDefinition> ordered,
         Dictionary<string, OperationalMetricComponentRequirement> requirements)
     {
-        if (!visited.Add(definition.Id))
+        if (completed.Contains(definition.Id))
         {
             return;
         }
 
-        var dependencies = definition.Operands
-            .Select(operand => operand.Source)
-            .OfType<OperationalMetricOperandSource.EvaluatedMetric>()
-            .Select(source => _catalog.GetRequired(source.DefinitionId))
-            .OrderBy(dependency => dependency.Id.MetricKey, StringComparer.Ordinal)
-            .ThenBy(dependency => dependency.Id.Version, StringComparer.Ordinal);
+        if (!active.Add(definition.Id))
+        {
+            throw new InvalidDataException(
+                $"Operational metric dependency cycle detected at '{definition.Id.MetricKey}/{definition.Id.Version}'.");
+        }
 
-        foreach (var dependency in dependencies)
+        foreach (var dependency in GetDependenciesInAuthoredOrder(definition))
         {
             if (!dependency.SupportedScopes.Supports(scope))
             {
@@ -99,7 +100,7 @@ internal sealed class OperationalMetricEvaluationPlanner
                     $"Metric dependency '{dependency.Id}' does not support root evaluation scope '{scope}'.");
             }
 
-            Visit(dependency, scope, visited, ordered, requirements);
+            Visit(dependency, scope, active, completed, ordered, requirements);
         }
 
         foreach (var operand in definition.Operands)
@@ -128,12 +129,44 @@ internal sealed class OperationalMetricEvaluationPlanner
             requirements.Add(component.ComponentKey, requirement);
         }
 
+        active.Remove(definition.Id);
+        completed.Add(definition.Id);
         ordered.Add(definition);
+    }
+
+    private IEnumerable<OperationalMetricDefinition> GetDependenciesInAuthoredOrder(
+        OperationalMetricDefinition definition)
+    {
+        if (definition.Formula is OperationalMetricFormula.Product product)
+        {
+            var byName = definition.Operands.ToDictionary(operand => operand.OperandName, StringComparer.Ordinal);
+            foreach (var factorName in product.FactorOperands)
+            {
+                var operand = byName[factorName];
+                var source = operand.Source as OperationalMetricOperandSource.EvaluatedMetric
+                    ?? throw new InvalidDataException(
+                        $"Product factor '{factorName}' must reference an evaluated metric.");
+                yield return _catalog.GetRequired(source.DefinitionId);
+            }
+
+            yield break;
+        }
+
+        foreach (var operand in definition.Operands)
+        {
+            if (operand.Source is OperationalMetricOperandSource.EvaluatedMetric evaluated)
+            {
+                yield return _catalog.GetRequired(evaluated.DefinitionId);
+            }
+        }
     }
 }
 
 internal sealed class OperationalMetricEvaluationSession
 {
+    private readonly Dictionary<OperationalMetricDefinitionId, OperationalMetricEvaluation> _completedEvaluations = new();
+    private readonly HashSet<OperationalMetricDefinitionId> _activeEvaluations = [];
+
     public OperationalMetricEvaluationSession(
         OperationalMetricEvaluationPlan plan,
         OperationalMetricComponentSnapshot snapshot)
@@ -153,6 +186,52 @@ internal sealed class OperationalMetricEvaluationSession
     public OperationalMetricEvaluationPlan Plan { get; }
 
     public OperationalMetricComponentSnapshot Snapshot { get; }
+
+    public bool TryGetEvaluation(
+        OperationalMetricDefinitionId definitionId,
+        out OperationalMetricEvaluation? evaluation)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        return _completedEvaluations.TryGetValue(definitionId, out evaluation);
+    }
+
+    public void BeginEvaluation(OperationalMetricDefinitionId definitionId)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        if (!_activeEvaluations.Add(definitionId))
+        {
+            throw new InvalidDataException(
+                $"Operational metric evaluation cycle detected at '{definitionId.MetricKey}/{definitionId.Version}'.");
+        }
+    }
+
+    public void CompleteEvaluation(
+        OperationalMetricDefinitionId definitionId,
+        OperationalMetricEvaluation evaluation)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        ArgumentNullException.ThrowIfNull(evaluation);
+
+        if (!_activeEvaluations.Remove(definitionId))
+        {
+            throw new InvalidOperationException("Metric evaluation must be active before completion.");
+        }
+
+        if (evaluation.Key.DefinitionId != definitionId)
+        {
+            throw new ArgumentException(
+                "Completed evaluation must match the exact active definition ID.",
+                nameof(evaluation));
+        }
+
+        _completedEvaluations[definitionId] = evaluation;
+    }
+
+    public void AbandonEvaluation(OperationalMetricDefinitionId definitionId)
+    {
+        ArgumentNullException.ThrowIfNull(definitionId);
+        _activeEvaluations.Remove(definitionId);
+    }
 }
 
 internal sealed class OperationalMetricEvaluationSessionFactory
@@ -189,6 +268,13 @@ internal sealed class OperationalMetricEvaluationSessionFactory
         var snapshot = await _snapshotReader.ReadAsync(
             new OperationalMetricComponentSnapshotRequest(plan.RootKey, _aggregationProcessorId, operands),
             cancellationToken).ConfigureAwait(false);
+
+        if (snapshot.EvaluationKey != plan.RootKey ||
+            snapshot.Revision.ProcessorId != _aggregationProcessorId)
+        {
+            throw new InvalidDataException(
+                "Operational metric evaluation session snapshot does not match the requested root identity and aggregation processor.");
+        }
 
         return new OperationalMetricEvaluationSession(plan, snapshot);
     }
