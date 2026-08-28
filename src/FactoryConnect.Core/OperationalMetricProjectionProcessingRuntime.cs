@@ -28,6 +28,13 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         ArgumentNullException.ThrowIfNull(projectionFactory);
         ArgumentNullException.ThrowIfNull(store);
 
+        if (projectionFactory.ProcessorId != processorId)
+        {
+            throw new ArgumentException(
+                "Projection factory must belong to the runtime projection processor.",
+                nameof(projectionFactory));
+        }
+
         ProcessorId = processorId;
         _sourceProcessorId = sourceProcessorId;
         _sourceStreamId = sourceStreamId;
