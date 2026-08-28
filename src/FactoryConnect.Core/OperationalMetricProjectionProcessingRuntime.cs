@@ -31,7 +31,7 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         if (projectionFactory.ProcessorId != processorId)
         {
             throw new ArgumentException(
-                "Projection factory must belong to the runtime projection processor.",
+                "Projection factory must belong to the projection runtime processor.",
                 nameof(projectionFactory));
         }
 
@@ -60,6 +60,9 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         }
 
         ValidateBatchIdentity(batch);
+        var projections = ProjectBatch(batch);
+        var manifest = new OperationalMetricProjectionBatchManifest(
+            projections.Select(static projection => projection.Key));
 
         if (_checkpoint is not null)
         {
@@ -73,40 +76,25 @@ public sealed class OperationalMetricProjectionProcessingRuntime
 
             if (comparison == 0)
             {
-                await ValidateReplayAsync(batch, cancellationToken);
+                await ValidateReplayAsync(projections, manifest, cancellationToken);
                 return 0;
-            }
-        }
-
-        var changed = new List<OperationalMetricProjection>(batch.Evaluations.Count);
-        foreach (var evaluation in batch.Evaluations)
-        {
-            var projection = _projectionFactory.Create(evaluation);
-            var existing = await _store.ReadProjectionAsync(
-                ProcessorId,
-                projection.Key,
-                cancellationToken);
-
-            if (existing is null ||
-                !OperationalMetricProjectionEquivalence.AreEquivalent(existing, projection))
-            {
-                changed.Add(projection);
             }
         }
 
         var nextCheckpoint = new OperationalMetricProjectionCheckpoint(
             ProcessorId,
-            batch.SourceRevision);
+            batch.SourceRevision,
+            manifest);
         await _store.CommitAsync(
             new OperationalMetricProjectionCommit(
                 ProcessorId,
                 _checkpoint,
                 nextCheckpoint,
-                changed),
+                projections),
             cancellationToken);
 
         _checkpoint = nextCheckpoint;
-        return changed.Count;
+        return projections.Count;
     }
 
     private async ValueTask RestoreCheckpointAsync(CancellationToken cancellationToken)
@@ -141,13 +129,37 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         }
     }
 
-    private async ValueTask ValidateReplayAsync(
-        OperationalMetricEvaluationBatch batch,
-        CancellationToken cancellationToken)
+    private List<OperationalMetricProjection> ProjectBatch(
+        OperationalMetricEvaluationBatch batch)
     {
+        var projections = new List<OperationalMetricProjection>(batch.Evaluations.Count);
         foreach (var evaluation in batch.Evaluations)
         {
-            var projected = _projectionFactory.Create(evaluation);
+            projections.Add(_projectionFactory.Create(evaluation));
+        }
+
+        return projections;
+    }
+
+    private async ValueTask ValidateReplayAsync(
+        IReadOnlyList<OperationalMetricProjection> projections,
+        OperationalMetricProjectionBatchManifest replayManifest,
+        CancellationToken cancellationToken)
+    {
+        if (_checkpoint is null)
+        {
+            throw new InvalidOperationException(
+                "Replay validation requires a restored durable projection checkpoint.");
+        }
+
+        if (!_checkpoint.BatchManifest.Equals(replayManifest))
+        {
+            throw new InvalidDataException(
+                "Replay at the durable projection checkpoint does not contain the exact committed projection key set.");
+        }
+
+        foreach (var projected in projections)
+        {
             var existing = await _store.ReadProjectionAsync(
                 ProcessorId,
                 projected.Key,
