@@ -21,9 +21,33 @@ internal sealed class OperationalMetricEvaluationPlan
         ArgumentNullException.ThrowIfNull(dependencyOrder);
         ArgumentNullException.ThrowIfNull(componentRequirements);
 
+        var dependencySnapshot = dependencyOrder.ToArray();
+        if (dependencySnapshot.Any(definition => definition is null))
+        {
+            throw new ArgumentException("Evaluation plans cannot contain null definitions.", nameof(dependencyOrder));
+        }
+
+        var rootCount = dependencySnapshot.Count(definition => definition.Id == rootDefinition.Id);
+        if (rootDefinition.Id != rootKey.DefinitionId || rootCount != 1)
+        {
+            throw new ArgumentException(
+                "Evaluation plan must contain its exact root definition exactly once.",
+                nameof(dependencyOrder));
+        }
+
+        var duplicateDefinition = dependencySnapshot
+            .GroupBy(definition => definition.Id)
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateDefinition is not null)
+        {
+            throw new ArgumentException(
+                $"Evaluation plan contains duplicate definition '{duplicateDefinition.Key.MetricKey}/{duplicateDefinition.Key.Version}'.",
+                nameof(dependencyOrder));
+        }
+
         RootKey = rootKey;
         RootDefinition = rootDefinition;
-        DependencyOrder = new ReadOnlyCollection<OperationalMetricDefinition>(dependencyOrder.ToArray());
+        DependencyOrder = new ReadOnlyCollection<OperationalMetricDefinition>(dependencySnapshot);
         ComponentRequirements = new ReadOnlyCollection<OperationalMetricComponentRequirement>(componentRequirements.ToArray());
     }
 
@@ -164,6 +188,7 @@ internal sealed class OperationalMetricEvaluationPlanner
 
 internal sealed class OperationalMetricEvaluationSession
 {
+    private readonly HashSet<OperationalMetricDefinitionId> _plannedDefinitionIds;
     private readonly Dictionary<OperationalMetricDefinitionId, OperationalMetricEvaluation> _completedEvaluations = new();
     private readonly HashSet<OperationalMetricDefinitionId> _activeEvaluations = [];
 
@@ -181,6 +206,7 @@ internal sealed class OperationalMetricEvaluationSession
 
         Plan = plan;
         Snapshot = snapshot;
+        _plannedDefinitionIds = plan.DependencyOrder.Select(definition => definition.Id).ToHashSet();
     }
 
     public OperationalMetricEvaluationPlan Plan { get; }
@@ -198,6 +224,7 @@ internal sealed class OperationalMetricEvaluationSession
     public void BeginEvaluation(OperationalMetricDefinitionId definitionId)
     {
         ArgumentNullException.ThrowIfNull(definitionId);
+        EnsurePlanned(definitionId);
 
         if (_completedEvaluations.ContainsKey(definitionId))
         {
@@ -218,6 +245,7 @@ internal sealed class OperationalMetricEvaluationSession
     {
         ArgumentNullException.ThrowIfNull(definitionId);
         ArgumentNullException.ThrowIfNull(evaluation);
+        EnsurePlanned(definitionId);
 
         if (!_activeEvaluations.Contains(definitionId))
         {
@@ -249,6 +277,15 @@ internal sealed class OperationalMetricEvaluationSession
     {
         ArgumentNullException.ThrowIfNull(definitionId);
         _activeEvaluations.Remove(definitionId);
+    }
+
+    private void EnsurePlanned(OperationalMetricDefinitionId definitionId)
+    {
+        if (!_plannedDefinitionIds.Contains(definitionId))
+        {
+            throw new InvalidOperationException(
+                $"Metric '{definitionId.MetricKey}/{definitionId.Version}' is not part of this evaluation plan.");
+        }
     }
 }
 
