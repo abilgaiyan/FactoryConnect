@@ -135,6 +135,8 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
                 "Exact-revision component snapshot does not match the requested period identity and FC-026 revision.");
         }
 
+        ValidateUnionSnapshot(snapshot, snapshotOperands, revision);
+
         var componentsByKey = snapshot.Components.ToDictionary(
             component => component.SourceIdentity.ComponentKey,
             StringComparer.Ordinal);
@@ -198,6 +200,44 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
             .ToArray();
 
         return new ReadOnlyCollection<OperationalMetricOperandDefinition>(operands);
+    }
+
+    private static void ValidateUnionSnapshot(
+        OperationalMetricComponentSnapshot snapshot,
+        IReadOnlyList<OperationalMetricOperandDefinition> operands,
+        MetricAggregationCheckpoint revision)
+    {
+        var requirements = operands.ToDictionary(
+            operand => ((OperationalMetricOperandSource.Component)operand.Source).ComponentKey,
+            StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var component in snapshot.Components)
+        {
+            var componentKey = component.SourceIdentity.ComponentKey;
+            if (!seen.Add(componentKey))
+            {
+                throw new InvalidDataException(
+                    $"Exact-revision component snapshot returned duplicate component '{componentKey}'.");
+            }
+
+            if (!requirements.TryGetValue(componentKey, out var requirement))
+            {
+                throw new InvalidDataException(
+                    $"Exact-revision component snapshot returned unexpected component '{componentKey}'.");
+            }
+
+            if (!string.Equals(component.OperandName, componentKey, StringComparison.Ordinal) ||
+                component.SourceIdentity.ProcessorId != revision.ProcessorId ||
+                component.SourceIdentity.MachineId != revision.StreamId.MachineId ||
+                component.SourceIdentity.PeriodId != snapshot.EvaluationKey.PeriodId ||
+                component.Dimension != requirement.RequiredDimension ||
+                !string.Equals(component.Aggregate.Unit, requirement.RequiredUnit, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    $"Exact-revision component '{componentKey}' does not match its canonical batch requirement.");
+            }
+        }
     }
 
     private static IEnumerable<OperationalMetricPeriodId> GetAffectedPeriods(
