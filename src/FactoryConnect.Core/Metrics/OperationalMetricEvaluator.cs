@@ -191,6 +191,9 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
             operand => operand.OperandName,
             StringComparer.Ordinal);
         var dependencyEvidence = new List<OperationalMetricDependencyEvidence>(product.FactorOperands.Count);
+        OperationalMetricEvaluationStatus? failureStatus = null;
+        OperationalMetricEvaluationReasonCode? failureReasonCode = null;
+        string? failureOperandName = null;
         var value = 1m;
 
         foreach (var factorName in product.FactorOperands)
@@ -216,35 +219,39 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                 source.DefinitionId,
                 dependency));
 
-            if (dependency.Status == OperationalMetricEvaluationStatus.Unavailable)
+            switch (dependency.Status)
             {
-                return DependencyFailure(
-                    session,
-                    definition,
-                    OperationalMetricEvaluationStatus.Unavailable,
-                    OperationalMetricEvaluationReasonCode.DependencyUnavailable,
-                    operand.OperandName,
-                    dependencyEvidence);
-            }
+                case OperationalMetricEvaluationStatus.Calculated when dependency.Value is not null:
+                    value *= dependency.Value.Value;
+                    break;
 
-            if (dependency.Status == OperationalMetricEvaluationStatus.InsufficientEvidence)
-            {
-                return DependencyFailure(
-                    session,
-                    definition,
-                    OperationalMetricEvaluationStatus.InsufficientEvidence,
-                    OperationalMetricEvaluationReasonCode.DependencyInsufficientEvidence,
-                    operand.OperandName,
-                    dependencyEvidence);
-            }
+                case OperationalMetricEvaluationStatus.Unavailable:
+                    failureStatus ??= OperationalMetricEvaluationStatus.Unavailable;
+                    failureReasonCode ??= OperationalMetricEvaluationReasonCode.DependencyUnavailable;
+                    failureOperandName ??= operand.OperandName;
+                    break;
 
-            if (dependency.Status != OperationalMetricEvaluationStatus.Calculated || dependency.Value is null)
-            {
-                throw new InvalidDataException(
-                    $"Dependency '{source.DefinitionId.MetricKey}/{source.DefinitionId.Version}' returned an invalid evaluation state.");
-            }
+                case OperationalMetricEvaluationStatus.InsufficientEvidence:
+                    failureStatus ??= OperationalMetricEvaluationStatus.InsufficientEvidence;
+                    failureReasonCode ??= OperationalMetricEvaluationReasonCode.DependencyInsufficientEvidence;
+                    failureOperandName ??= operand.OperandName;
+                    break;
 
-            value *= dependency.Value.Value;
+                default:
+                    throw new InvalidDataException(
+                        $"Dependency '{source.DefinitionId.MetricKey}/{source.DefinitionId.Version}' returned an invalid evaluation state.");
+            }
+        }
+
+        if (failureStatus is not null)
+        {
+            return DependencyFailure(
+                session,
+                definition,
+                failureStatus.Value,
+                failureReasonCode!.Value,
+                failureOperandName!,
+                dependencyEvidence);
         }
 
         ValidateDomain(definition, value);
