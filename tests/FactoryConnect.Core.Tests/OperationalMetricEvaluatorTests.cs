@@ -25,7 +25,7 @@ public sealed class OperationalMetricEvaluatorTests
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(OperationalMetricEvaluationStatus.Calculated, result.Status);
         Assert.Equal(0.75m, result.Value);
@@ -48,7 +48,7 @@ public sealed class OperationalMetricEvaluatorTests
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(OperationalMetricEvaluationStatus.InsufficientEvidence, result.Status);
         Assert.Null(result.Value);
@@ -69,7 +69,7 @@ public sealed class OperationalMetricEvaluatorTests
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.PerformanceId),
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(OperationalMetricEvaluationStatus.InsufficientEvidence, result.Status);
         Assert.Equal(OperationalMetricEvaluationReasonCode.MissingReferenceTime, result.ReasonCode);
@@ -93,7 +93,7 @@ public sealed class OperationalMetricEvaluatorTests
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(OperationalMetricEvaluationStatus.Unavailable, result.Status);
         Assert.Equal(OperationalMetricEvaluationReasonCode.ZeroDenominator, result.ReasonCode);
@@ -118,7 +118,7 @@ public sealed class OperationalMetricEvaluatorTests
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(0.33333333m, result.Value);
         Assert.Equal(1m, result.OperandEvidence[0].Value);
@@ -142,7 +142,7 @@ public sealed class OperationalMetricEvaluatorTests
 
         var result = await fixture.Evaluator.EvaluateAsync(
             Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(OperationalMetricEvaluationStatus.Unavailable, result.Status);
         Assert.Equal(OperationalMetricEvaluationReasonCode.DomainViolation, result.ReasonCode);
@@ -162,7 +162,7 @@ public sealed class OperationalMetricEvaluatorTests
         await Assert.ThrowsAsync<InvalidDataException>(async () =>
             await fixture.Evaluator.EvaluateAsync(
                 Key(fixture, BuiltInOperationalMetricDefinitions.AvailabilityId),
-                TestContext.Current.CancellationToken));
+                CancellationToken.None));
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class OperationalMetricEvaluatorTests
         await Assert.ThrowsAsync<NotSupportedException>(async () =>
             await fixture.Evaluator.EvaluateAsync(
                 Key(fixture, BuiltInOperationalMetricDefinitions.OeeId),
-                TestContext.Current.CancellationToken));
+                CancellationToken.None));
     }
 
     private static EvaluationFixture CreateFixture()
