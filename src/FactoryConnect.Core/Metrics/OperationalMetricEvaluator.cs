@@ -41,10 +41,13 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         return EvaluateDefinition(session, plan.RootDefinition);
     }
 
-    private static OperationalMetricEvaluation EvaluateDefinition(
+    internal static OperationalMetricEvaluation EvaluateDefinition(
         OperationalMetricEvaluationSession session,
         OperationalMetricDefinition definition)
     {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(definition);
+
         if (session.TryGetEvaluation(definition.Id, out var cached))
         {
             return cached!;
