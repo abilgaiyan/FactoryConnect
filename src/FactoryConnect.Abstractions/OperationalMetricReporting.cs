@@ -2,13 +2,71 @@ using System.Collections.ObjectModel;
 
 namespace FactoryConnect.Abstractions;
 
-public sealed record OperationalMetricReportItem
+public sealed record OperationalMetricProjectionSummary
 {
-    public OperationalMetricReportItem(OperationalMetricProjection projection)
+    public OperationalMetricProjectionSummary(OperationalMetricProjection projection)
     {
         ArgumentNullException.ThrowIfNull(projection);
+        ProcessorId = projection.ProcessorId;
+        Key = projection.Key;
+        Status = projection.Status;
+        Value = projection.Value;
+        Unit = projection.Unit;
+        ReasonCode = projection.ReasonCode;
+        ReasonOperandName = projection.ReasonOperandName;
+        SourceRevision = projection.SourceRevision;
+    }
 
-        DefinitionId = projection.Key.DefinitionId;
+    public OperationalMetricProjectionProcessorId ProcessorId { get; }
+
+    public OperationalMetricEvaluationKey Key { get; }
+
+    public OperationalMetricEvaluationStatus Status { get; }
+
+    public decimal? Value { get; }
+
+    public string Unit { get; }
+
+    public OperationalMetricEvaluationReasonCode? ReasonCode { get; }
+
+    public string? ReasonOperandName { get; }
+
+    public MetricAggregationCheckpoint SourceRevision { get; }
+}
+
+public sealed record OperationalMetricReportItem
+{
+    public OperationalMetricReportItem(OperationalMetricProjectionSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+        DefinitionId = summary.Key.DefinitionId;
+        Status = summary.Status;
+        Value = summary.Value;
+        Unit = summary.Unit;
+        ReasonCode = summary.ReasonCode;
+        ReasonOperandName = summary.ReasonOperandName;
+    }
+
+    public OperationalMetricDefinitionId DefinitionId { get; }
+
+    public OperationalMetricEvaluationStatus Status { get; }
+
+    public decimal? Value { get; }
+
+    public string Unit { get; }
+
+    public OperationalMetricEvaluationReasonCode? ReasonCode { get; }
+
+    public string? ReasonOperandName { get; }
+}
+
+public sealed record OperationalMetricReportDetail
+{
+    public OperationalMetricReportDetail(OperationalMetricProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        ProcessorId = projection.ProcessorId;
+        Key = projection.Key;
         Status = projection.Status;
         Value = projection.Value;
         Unit = projection.Unit;
@@ -21,7 +79,9 @@ public sealed record OperationalMetricReportItem
             projection.DependencyEvidence.ToArray());
     }
 
-    public OperationalMetricDefinitionId DefinitionId { get; }
+    public OperationalMetricProjectionProcessorId ProcessorId { get; }
+
+    public OperationalMetricEvaluationKey Key { get; }
 
     public OperationalMetricEvaluationStatus Status { get; }
 
@@ -46,6 +106,7 @@ public abstract record OperationalMetricPeriodReport
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,
         OperationalMetricEvaluationContextKey contextKey,
+        MetricAggregationCheckpoint sourceRevision,
         IEnumerable<OperationalMetricReportItem> metrics)
     {
         ArgumentNullException.ThrowIfNull(processorId);
@@ -55,8 +116,16 @@ public abstract record OperationalMetricPeriodReport
         }
 
         ArgumentNullException.ThrowIfNull(contextKey);
+        ArgumentNullException.ThrowIfNull(sourceRevision);
         ArgumentNullException.ThrowIfNull(metrics);
         contextKey.Validate();
+
+        if (sourceRevision.StreamId.MachineId != machineId)
+        {
+            throw new ArgumentException(
+                "Report source revision must belong to the report machine stream.",
+                nameof(sourceRevision));
+        }
 
         var snapshot = metrics.ToArray();
         if (snapshot.Any(static metric => metric is null))
@@ -77,6 +146,7 @@ public abstract record OperationalMetricPeriodReport
         ProcessorId = processorId;
         MachineId = machineId;
         ContextKey = contextKey;
+        SourceRevision = sourceRevision;
         Metrics = new ReadOnlyCollection<OperationalMetricReportItem>(snapshot);
     }
 
@@ -85,6 +155,8 @@ public abstract record OperationalMetricPeriodReport
     public MachineId MachineId { get; }
 
     public OperationalMetricEvaluationContextKey ContextKey { get; }
+
+    public MetricAggregationCheckpoint SourceRevision { get; }
 
     public IReadOnlyList<OperationalMetricReportItem> Metrics { get; }
 }
@@ -96,8 +168,9 @@ public sealed record ShiftOperationalMetricReport : OperationalMetricPeriodRepor
         MachineId machineId,
         ShiftOccurrenceId shiftOccurrenceId,
         OperationalMetricEvaluationContextKey contextKey,
+        MetricAggregationCheckpoint sourceRevision,
         IEnumerable<OperationalMetricReportItem> metrics)
-        : base(processorId, machineId, contextKey, metrics)
+        : base(processorId, machineId, contextKey, sourceRevision, metrics)
     {
         ArgumentNullException.ThrowIfNull(shiftOccurrenceId);
         ShiftOccurrenceId = shiftOccurrenceId;
@@ -113,8 +186,9 @@ public sealed record ProductionDayOperationalMetricReport : OperationalMetricPer
         MachineId machineId,
         ProductionDayId productionDayId,
         OperationalMetricEvaluationContextKey contextKey,
+        MetricAggregationCheckpoint sourceRevision,
         IEnumerable<OperationalMetricReportItem> metrics)
-        : base(processorId, machineId, contextKey, metrics)
+        : base(processorId, machineId, contextKey, sourceRevision, metrics)
     {
         ArgumentNullException.ThrowIfNull(productionDayId);
         ProductionDayId = productionDayId;
@@ -125,11 +199,16 @@ public sealed record ProductionDayOperationalMetricReport : OperationalMetricPer
 
 public interface IOperationalMetricProjectionQueryReader
 {
-    ValueTask<IReadOnlyList<OperationalMetricProjection>> ReadPeriodAsync(
+    ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,
         OperationalMetricPeriodId periodId,
         OperationalMetricEvaluationContextKey contextKey,
+        CancellationToken cancellationToken);
+
+    ValueTask<OperationalMetricProjection?> ReadDetailAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        OperationalMetricEvaluationKey key,
         CancellationToken cancellationToken);
 }
 
@@ -147,5 +226,13 @@ public interface IOperationalMetricReportReader
         MachineId machineId,
         ProductionDayId productionDayId,
         OperationalMetricEvaluationContextKey contextKey,
+        CancellationToken cancellationToken);
+
+    ValueTask<OperationalMetricReportDetail?> ReadMetricDetailAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        MachineId machineId,
+        OperationalMetricPeriodId periodId,
+        OperationalMetricEvaluationContextKey contextKey,
+        OperationalMetricDefinitionId definitionId,
         CancellationToken cancellationToken);
 }
