@@ -106,6 +106,21 @@ Exact metric detail is a separate lookup requiring an exact `OperationalMetricDe
 
 Mixed source revisions in one period summary are invalid.
 
+## Persistence-provider capabilities
+
+FC-027 durability participates in the same provider lifecycle established by FC-022. A selected persistence provider declares the capabilities it supports before activation.
+
+The FC-027 runtime requires:
+
+- `IMetricAggregationRevisionReader`;
+- `IRevisionedOperationalMetricComponentSnapshotReader`;
+- `IOperationalMetricProjectionStore`; and
+- `IOperationalMetricProjectionQueryReader`.
+
+The in-memory provider currently supplies the complete capability set. It shares one `InMemoryMetricAggregationStore` across ordinary aggregation, revision discovery, and exact historical snapshots, and one `InMemoryOperationalMetricProjectionStore` across durable projection writes and reporting queries.
+
+The current SQL Server provider remains **core-only**. It continues to support the existing observation, production-context, metric-input, and FC-026 aggregate persistence contracts, but it does not yet implement the four FC-027 capabilities above. Therefore a full Edge application configured with `Persistence:Provider = SqlServer` is rejected during persistence finalization rather than silently mixing SQL FC-026 state with in-memory FC-027 state. SQL remains valid for core-only composition until SQL-backed FC-027 durability is implemented.
+
 ## Runtime composition
 
 Edge composition creates one operational metric projection runtime per configured machine. Each runtime has:
@@ -120,7 +135,7 @@ Edge composition creates one operational metric projection runtime per configure
 
 Machine loops run independently. A failure in one machine's projection loop is logged and retried without terminating another machine loop.
 
-The selected FC-026 aggregation provider must expose `IMetricAggregationRevisionReader` and `IRevisionedOperationalMetricComponentSnapshotReader`. These capabilities are required because FC-027 must reconstruct exact historical revisions rather than evaluate old checkpoints from current aggregate values.
+The selected persistence provider must expose the FC-027 revision, historical-snapshot, projection-store, and projection-query capabilities. These capabilities are required because FC-027 must reconstruct exact historical revisions rather than evaluate old checkpoints from current aggregate values, and its durable checkpoint/evidence state must survive according to the selected provider's durability semantics.
 
 ## Explicitly deferred
 
@@ -132,7 +147,7 @@ FC-027 does not provide:
 - incentives or ranking;
 - downtime classification workflows;
 - manual correction/backfill orchestration;
-- SQL-specific reporting optimization;
+- SQL-specific reporting optimization or SQL-backed FC-027 projection persistence;
 - alerting or predictive metrics; or
 - unresolved plant-specific metric formulas.
 
