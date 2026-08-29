@@ -1,6 +1,5 @@
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
-using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,11 +15,7 @@ public static class EdgePersistenceServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddInMemoryPersistenceProvider();
-        services.AddSqlServerPersistenceProvider(
-            configuration.GetSection(
-                SqlServerPersistenceOptions.SectionName));
-
+        services.AddFactoryConnectPersistenceProviders(configuration);
         services.AddFactoryConnectPersistence(configuration, requiredCapabilities);
 
         return services;
