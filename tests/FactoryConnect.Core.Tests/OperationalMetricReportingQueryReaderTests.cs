@@ -374,7 +374,7 @@ public sealed class OperationalMetricReportingQueryReaderTests
                 OperationalMetricReportOrder.PeriodAscending,
                 new ReportingPageRequest(pageSize, token));
 
-        public OperationalMetricProjection Projection(
+        public static OperationalMetricProjection Projection(
             OperationalMetricReportingSource source,
             DateOnly day,
             string metricKey,
@@ -402,7 +402,7 @@ public sealed class OperationalMetricReportingQueryReaderTests
                 revision);
         }
 
-        public OperationalMetricProjection ShiftProjection(
+        public static OperationalMetricProjection ShiftProjection(
             OperationalMetricReportingSource source,
             DateTimeOffset startsAtUtc,
             string scheduleId)
