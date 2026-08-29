@@ -13,6 +13,8 @@ builder.Services.AddFactoryConnectOperationalMetricReporting();
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
+
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
