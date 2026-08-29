@@ -12,6 +12,13 @@ internal static class OperationalMetricReportingProblemDetails
     private const string IncompatibleContinuationTokenType =
         "urn:factoryconnect:problem:reporting:incompatible-continuation-token";
 
+    public static IResult InvalidRequest() =>
+        Problem(
+            InvalidRequestType,
+            "Invalid reporting query",
+            "The reporting query request contains invalid or contradictory filters.",
+            "invalid-reporting-query");
+
     public static async Task<IResult> ExecuteAsync(
         Func<CancellationToken, ValueTask<ReportingPage<OperationalMetricQueryItem>>> operation,
         CancellationToken cancellationToken)
@@ -25,16 +32,13 @@ internal static class OperationalMetricReportingProblemDetails
         }
         catch (ArgumentException exception)
         {
-            return ToProblem(exception);
-        }
-    }
+            if (!OperationalMetricReportingQueryFailureClassifier.TryClassify(
+                    exception,
+                    out var failure))
+            {
+                throw;
+            }
 
-    private static IResult ToProblem(ArgumentException exception)
-    {
-        if (OperationalMetricReportingQueryFailureClassifier.TryClassify(
-                exception,
-                out var failure))
-        {
             return failure switch
             {
                 OperationalMetricReportingQueryFailure.MalformedContinuationToken => Problem(
@@ -50,12 +54,6 @@ internal static class OperationalMetricReportingProblemDetails
                 _ => throw new ArgumentOutOfRangeException(nameof(failure)),
             };
         }
-
-        return Problem(
-            InvalidRequestType,
-            "Invalid reporting query",
-            "The reporting query request contains invalid or contradictory filters.",
-            "invalid-reporting-query");
     }
 
     private static IResult Problem(
