@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
     <ProjectReference Include="../FactoryConnect.Core/FactoryConnect.Core.csproj" />
     <ProjectReference Include="../FactoryConnect.Infrastructure/FactoryConnect.Infrastructure.csproj" />
