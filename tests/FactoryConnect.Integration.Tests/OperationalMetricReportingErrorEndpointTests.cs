@@ -415,7 +415,7 @@ public sealed class OperationalMetricReportingErrorEndpointTests
                 new MetricInputPosition((ulong)businessDate.Day)));
     }
 
-    private static IOperationalMetricQueryReader CreateRealQueryReader(
+    private static OperationalMetricQueryReader CreateRealQueryReader(
         IOperationalMetricReportingQueryProvider provider) =>
         new OperationalMetricQueryReader(
             new OperationalMetricReportingQueryReader(provider));
