@@ -232,7 +232,7 @@ internal static class OperationalMetricReportingCursor
     private static byte[] FromBase64Url(string value)
     {
         var normalized = value.Replace('-', '+').Replace('_', '/');
-        normalized = normalized.Length % 4 switch
+        normalized = (normalized.Length % 4) switch
         {
             0 => normalized,
             2 => normalized + "==",
