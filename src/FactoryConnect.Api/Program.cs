@@ -8,7 +8,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
 builder.Services.AddFactoryConnectPersistence(
     builder.Configuration,
-    PersistenceProviderCapabilities.Reporting);
+    PersistenceProviderCapabilities.OperationalMetricReportingQuery);
 builder.Services.AddFactoryConnectOperationalMetricReporting();
 
 var app = builder.Build();
