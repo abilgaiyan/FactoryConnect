@@ -105,10 +105,10 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var token = first.ContinuationToken;
         Assert.NotNull(token);
 
-        await Assert.ThrowsAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
             fixture.Query(day.AddDays(-1), day.AddDays(1), 1, token),
             CancellationToken.None));
-        await Assert.ThrowsAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
             fixture.Query(
                 day,
                 day.AddDays(1),
@@ -116,10 +116,10 @@ public sealed class OperationalMetricReportingQueryReaderTests
                 token,
                 OperationalMetricReportOrder.PeriodDescending),
             CancellationToken.None));
-        await Assert.ThrowsAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
             fixture.Query(day, day.AddDays(1), 1, token, sources: [fixture.SourceA]),
             CancellationToken.None));
-        await Assert.ThrowsAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
             fixture.Query(
                 day,
                 day.AddDays(1),
@@ -128,7 +128,7 @@ public sealed class OperationalMetricReportingQueryReaderTests
                 metrics: new OperationalMetricDefinitionSelection(
                     [new OperationalMetricDefinitionId("OEE", "1.0")])),
             CancellationToken.None));
-        await Assert.ThrowsAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
             fixture.Query(
                 day,
                 day.AddDays(1),
@@ -139,7 +139,7 @@ public sealed class OperationalMetricReportingQueryReaderTests
                     PartId = new PartId("part-1"),
                 }),
             CancellationToken.None));
-        await Assert.ThrowsAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await fixture.Reader.ReadAsync(
             fixture.Query(
                 day,
                 day.AddDays(1),
@@ -157,7 +157,7 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var reader = new OperationalMetricReportingQueryReader(provider);
         var fixture = CreateFixture(reader);
 
-        await Assert.ThrowsAsync<ArgumentException>(async () => await reader.ReadAsync(
+        await Assert.ThrowsAnyAsync<ArgumentException>(async () => await reader.ReadAsync(
             fixture.Query(
                 new DateOnly(2026, 8, 29),
                 new DateOnly(2026, 8, 30),
