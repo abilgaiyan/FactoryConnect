@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="../FactoryConnect.Reporting.Tests.Shared/**/*.cs"
              Link="ReportingConformance/%(RecursiveDir)%(Filename)%(Extension)" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
