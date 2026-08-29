@@ -168,6 +168,23 @@ public sealed class OperationalMetricReportingQueryReaderTests
         Assert.Equal(0, provider.ReadCount);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GenericTokenArgumentExceptionIsNotClassifiedAsCursorFailure(
+        bool hasInnerException)
+    {
+        var exception = hasInnerException
+            ? new ArgumentException("Provider failure.", "token", new InvalidOperationException())
+            : new ArgumentException("Provider failure.", "token");
+
+        var classified = OperationalMetricReportingQueryFailureClassifier.TryClassify(
+            exception,
+            out _);
+
+        Assert.False(classified);
+    }
+
     [Fact]
     public async Task ContextStatusAndExactVersionFiltersUseCanonicalSemantics()
     {
