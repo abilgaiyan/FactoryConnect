@@ -1,6 +1,6 @@
-using FactoryConnect.Api.Reporting;
-
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -10,6 +10,8 @@ app.MapGet("/health", () => Results.Ok(new
     service = "FactoryConnect.Api"
 }));
 
-app.MapOperationalMetricReportingEndpoints();
+app.MapOpenApi();
 
 app.Run();
+
+public partial class Program;
