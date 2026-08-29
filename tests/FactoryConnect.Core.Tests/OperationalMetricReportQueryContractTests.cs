@@ -181,10 +181,125 @@ public sealed class OperationalMetricReportQueryContractTests
     }
 
     [Fact]
-    public void ContinuationTokenIsRequiredOpaqueAndNormalized()
+    public void ContinuationTokenIsRequiredAndPreservedExactly()
     {
         Assert.Throws<ArgumentException>(() => new ReportingContinuationToken(" "));
-        Assert.Equal("opaque-token", new ReportingContinuationToken(" opaque-token ").Value);
+        Assert.Equal(" opaque-token ", new ReportingContinuationToken(" opaque-token ").Value);
+    }
+
+    [Fact]
+    public void ProductionDayOrderingDefinesCanonicalTieBreakersForEveryEvaluationIdentity()
+    {
+        var machineA = new MachineId(Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        var machineB = new MachineId(Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        var day = new DateOnly(2026, 8, 29);
+        var nextDay = day.AddDays(1);
+        var availability = new OperationalMetricDefinitionId("Availability", "1.0");
+        var availabilityV2 = new OperationalMetricDefinitionId("Availability", "2.0");
+        var oee = new OperationalMetricDefinitionId("OEE", "1.0");
+        var partitioned = new OperationalMetricEvaluationContextKey
+        {
+            ProductionOrderId = new ProductionOrderId("order-1"),
+        };
+        var expected = new[]
+        {
+            EvaluationKey(machineA, "site-a", day, availability),
+            EvaluationKey(machineA, "site-a", day, availabilityV2),
+            EvaluationKey(machineA, "site-a", day, oee),
+            EvaluationKey(machineA, "site-a", day, availability, partitioned),
+            EvaluationKey(machineA, "site-b", day, availability),
+            EvaluationKey(machineB, "site-a", day, availability),
+            EvaluationKey(machineA, "site-a", nextDay, availability),
+        };
+        var shuffled = new[]
+        {
+            expected[4],
+            expected[2],
+            expected[6],
+            expected[1],
+            expected[5],
+            expected[0],
+            expected[3],
+        };
+
+        Array.Sort(
+            shuffled,
+            OperationalMetricReportOrdering.GetEvaluationKeyComparer(
+                OperationalMetricReportOrder.PeriodAscending));
+
+        Assert.Equal(expected, shuffled);
+        Assert.All(
+            expected.Zip(expected.Skip(1)),
+            pair => Assert.True(
+                OperationalMetricReportOrdering.GetEvaluationKeyComparer(
+                    OperationalMetricReportOrder.PeriodAscending)
+                .Compare(pair.First, pair.Second) < 0));
+    }
+
+    [Fact]
+    public void ShiftOrderingUsesCompleteOccurrenceIdentityAfterPeriodAndMachine()
+    {
+        var machineId = new MachineId(Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        var start = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
+        var definition = new OperationalMetricDefinitionId("OEE", "1.0");
+        var scheduleA = ShiftEvaluationKey(machineId, "schedule-a", start, definition);
+        var scheduleB = ShiftEvaluationKey(machineId, "schedule-b", start, definition);
+        var values = new[] { scheduleB, scheduleA };
+
+        Array.Sort(
+            values,
+            OperationalMetricReportOrdering.GetEvaluationKeyComparer(
+                OperationalMetricReportOrder.PeriodAscending));
+
+        Assert.Equal([scheduleA, scheduleB], values);
+    }
+
+    [Fact]
+    public void DescendingPeriodOrderingRetainsAscendingCanonicalTieBreakers()
+    {
+        var machineA = new MachineId(Guid.Parse("00000000-0000-0000-0000-000000000001"));
+        var machineB = new MachineId(Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        var day = new DateOnly(2026, 8, 29);
+        var definition = new OperationalMetricDefinitionId("OEE", "1.0");
+        var earlierA = EvaluationKey(machineA, "site-a", day, definition);
+        var earlierB = EvaluationKey(machineB, "site-a", day, definition);
+        var laterA = EvaluationKey(machineA, "site-a", day.AddDays(1), definition);
+        var values = new[] { earlierB, earlierA, laterA };
+
+        Array.Sort(
+            values,
+            OperationalMetricReportOrdering.GetEvaluationKeyComparer(
+                OperationalMetricReportOrder.PeriodDescending));
+
+        Assert.Equal([laterA, earlierA, earlierB], values);
+    }
+
+    [Fact]
+    public void CanonicalOrderingRejectsMixedPeriodScopes()
+    {
+        var machineId = MachineId.New();
+        var definition = new OperationalMetricDefinitionId("OEE", "1.0");
+        var productionDay = EvaluationKey(
+            machineId,
+            "site-a",
+            new DateOnly(2026, 8, 29),
+            definition);
+        var shift = new ShiftOccurrenceId(
+            new SiteId("site-a"),
+            new ShiftScheduleAssignmentId("schedule-a"),
+            new ShiftId("shift-a"),
+            new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 29, 8, 0, 0, TimeSpan.Zero));
+        var shiftKey = new OperationalMetricEvaluationKey(
+            machineId,
+            new OperationalMetricPeriodId.Shift(shift),
+            definition,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
+
+        Assert.Throws<ArgumentException>(() =>
+            OperationalMetricReportOrdering.GetEvaluationKeyComparer(
+                OperationalMetricReportOrder.PeriodAscending)
+            .Compare(productionDay, shiftKey));
     }
 
     [Fact]
@@ -244,4 +359,34 @@ public sealed class OperationalMetricReportQueryContractTests
             null,
             OperationalMetricReportOrder.PeriodAscending,
             new ReportingPageRequest(10));
+
+    private static OperationalMetricEvaluationKey EvaluationKey(
+        MachineId machineId,
+        string siteId,
+        DateOnly businessDate,
+        OperationalMetricDefinitionId definitionId,
+        OperationalMetricEvaluationContextKey? contextKey = null) =>
+        new(
+            machineId,
+            new OperationalMetricPeriodId.ProductionDay(
+                new ProductionDayId(new SiteId(siteId), businessDate)),
+            definitionId,
+            contextKey ?? OperationalMetricEvaluationContextKey.Unpartitioned);
+
+    private static OperationalMetricEvaluationKey ShiftEvaluationKey(
+        MachineId machineId,
+        string scheduleId,
+        DateTimeOffset startsAtUtc,
+        OperationalMetricDefinitionId definitionId) =>
+        new(
+            machineId,
+            new OperationalMetricPeriodId.Shift(
+                new ShiftOccurrenceId(
+                    new SiteId("site-a"),
+                    new ShiftScheduleAssignmentId(scheduleId),
+                    new ShiftId("shift-a"),
+                    startsAtUtc,
+                    startsAtUtc.AddHours(8))),
+            definitionId,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
 }

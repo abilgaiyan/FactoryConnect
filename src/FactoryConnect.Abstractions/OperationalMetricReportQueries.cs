@@ -8,6 +8,155 @@ public enum OperationalMetricReportOrder
     PeriodDescending,
 }
 
+public static class OperationalMetricReportOrdering
+{
+    private static readonly IComparer<OperationalMetricEvaluationKey> PeriodAscendingComparer =
+        new EvaluationKeyComparer(descendingPeriod: false);
+
+    private static readonly IComparer<OperationalMetricEvaluationKey> PeriodDescendingComparer =
+        new EvaluationKeyComparer(descendingPeriod: true);
+
+    public static IComparer<OperationalMetricEvaluationKey> GetEvaluationKeyComparer(
+        OperationalMetricReportOrder order) => order switch
+    {
+        OperationalMetricReportOrder.PeriodAscending => PeriodAscendingComparer,
+        OperationalMetricReportOrder.PeriodDescending => PeriodDescendingComparer,
+        _ => throw new ArgumentOutOfRangeException(nameof(order)),
+    };
+
+    private sealed class EvaluationKeyComparer(bool descendingPeriod) :
+        IComparer<OperationalMetricEvaluationKey>
+    {
+        public int Compare(
+            OperationalMetricEvaluationKey? x,
+            OperationalMetricEvaluationKey? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return 0;
+            }
+
+            ArgumentNullException.ThrowIfNull(x);
+            ArgumentNullException.ThrowIfNull(y);
+
+            var periodComparison = ComparePeriod(x.PeriodId, y.PeriodId);
+            if (periodComparison != 0)
+            {
+                return descendingPeriod ? -periodComparison : periodComparison;
+            }
+
+            var comparison = x.MachineId.Value.CompareTo(y.MachineId.Value);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = CompareCompletePeriodIdentity(x.PeriodId, y.PeriodId);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = CompareContext(x.ContextKey, y.ContextKey);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(
+                x.DefinitionId.MetricKey,
+                y.DefinitionId.MetricKey);
+            return comparison != 0
+                ? comparison
+                : StringComparer.Ordinal.Compare(
+                    x.DefinitionId.Version,
+                    y.DefinitionId.Version);
+        }
+
+        private static int ComparePeriod(
+            OperationalMetricPeriodId x,
+            OperationalMetricPeriodId y) => (x, y) switch
+        {
+            (OperationalMetricPeriodId.Shift left, OperationalMetricPeriodId.Shift right) =>
+                left.ShiftOccurrenceId.StartsAtUtc.CompareTo(right.ShiftOccurrenceId.StartsAtUtc),
+            (OperationalMetricPeriodId.ProductionDay left, OperationalMetricPeriodId.ProductionDay right) =>
+                left.ProductionDayId.BusinessDate.CompareTo(right.ProductionDayId.BusinessDate),
+            _ => throw new ArgumentException(
+                "Reporting evaluation keys from different period scopes cannot be ordered together."),
+        };
+
+        private static int CompareCompletePeriodIdentity(
+            OperationalMetricPeriodId x,
+            OperationalMetricPeriodId y) => (x, y) switch
+        {
+            (OperationalMetricPeriodId.Shift left, OperationalMetricPeriodId.Shift right) =>
+                CompareShiftIdentity(left.ShiftOccurrenceId, right.ShiftOccurrenceId),
+            (OperationalMetricPeriodId.ProductionDay left, OperationalMetricPeriodId.ProductionDay right) =>
+                StringComparer.Ordinal.Compare(
+                    left.ProductionDayId.SiteId.Value,
+                    right.ProductionDayId.SiteId.Value),
+            _ => throw new ArgumentException(
+                "Reporting evaluation keys from different period scopes cannot be ordered together."),
+        };
+
+        private static int CompareShiftIdentity(
+            ShiftOccurrenceId x,
+            ShiftOccurrenceId y)
+        {
+            var comparison = StringComparer.Ordinal.Compare(x.SiteId.Value, y.SiteId.Value);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(
+                x.ShiftScheduleAssignmentId.Value,
+                y.ShiftScheduleAssignmentId.Value);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = StringComparer.Ordinal.Compare(x.ShiftId.Value, y.ShiftId.Value);
+            return comparison != 0
+                ? comparison
+                : x.EndsAtUtc.CompareTo(y.EndsAtUtc);
+        }
+
+        private static int CompareContext(
+            OperationalMetricEvaluationContextKey x,
+            OperationalMetricEvaluationContextKey y)
+        {
+            var comparison = CompareOptional(x.ProductionOrderId?.Value, y.ProductionOrderId?.Value);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = CompareOptional(x.OperationId?.Value, y.OperationId?.Value);
+            if (comparison != 0)
+            {
+                return comparison;
+            }
+
+            comparison = CompareOptional(x.PartId?.Value, y.PartId?.Value);
+            return comparison != 0
+                ? comparison
+                : CompareOptional(x.OperatorId?.Value, y.OperatorId?.Value);
+        }
+
+        private static int CompareOptional(string? x, string? y)
+        {
+            if (x is null)
+            {
+                return y is null ? 0 : -1;
+            }
+
+            return y is null ? 1 : StringComparer.Ordinal.Compare(x, y);
+        }
+    }
+}
+
 public sealed record ReportingMachineSelection
 {
     public ReportingMachineSelection(IEnumerable<MachineId> machineIds)
@@ -168,7 +317,7 @@ public sealed record ReportingContinuationToken
     public ReportingContinuationToken(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        Value = value.Trim();
+        Value = value;
     }
 
     public string Value { get; }
