@@ -4,9 +4,12 @@ using FactoryConnect.Abstractions;
 using FactoryConnect.Api.Reporting;
 using FactoryConnect.Core;
 using FactoryConnect.Core.Metrics;
+using FactoryConnect.Infrastructure;
+using FactoryConnect.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FactoryConnect.Integration.Tests;
@@ -16,7 +19,6 @@ public sealed class OperationalMetricReportingCompositionTests
     [Fact]
     public async Task DurableProjectionFlowsThroughComposedReaderAndHttpEndpoint()
     {
-        var store = new InMemoryOperationalMetricProjectionStore();
         var machineId = new MachineId(
             Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
         var processorId = new OperationalMetricProjectionProcessorId(
@@ -46,6 +48,24 @@ public sealed class OperationalMetricReportingCompositionTests
             sourceRevision,
             new OperationalMetricProjectionBatchManifest([key]));
 
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = InMemoryPersistenceServiceCollectionExtensions.ProviderKey,
+            })
+            .Build();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddInMemoryPersistenceProvider();
+        builder.Services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.Reporting);
+        builder.Services.AddFactoryConnectOperationalMetricReporting();
+
+        await using var app = builder.Build();
+        var providerServices = app.Services.GetRequiredService<PersistenceProviderServices>();
+        var store = Assert.IsType<InMemoryOperationalMetricProjectionStore>(
+            providerServices.OperationalMetricProjectionStore);
         await store.CommitAsync(
             new OperationalMetricProjectionCommit(
                 processorId,
@@ -54,12 +74,6 @@ public sealed class OperationalMetricReportingCompositionTests
                 [projection]),
             CancellationToken.None);
 
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseTestServer();
-        builder.Services.AddSingleton<IOperationalMetricReportingQueryProvider>(store);
-        builder.Services.AddFactoryConnectOperationalMetricReporting();
-
-        await using var app = builder.Build();
         app.MapOperationalMetricReportingEndpoints();
         await app.StartAsync();
 
