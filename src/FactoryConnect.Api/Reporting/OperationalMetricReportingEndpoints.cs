@@ -34,14 +34,19 @@ public static class OperationalMetricReportingEndpoints
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reader);
 
+        ShiftOperationalMetricReportQuery query;
+        try
+        {
+            OperationalMetricHttpRequestValidator.Validate(request);
+            query = OperationalMetricHttpMapper.ToQuery(request);
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(OperationalMetricReportingProblemDetails.InvalidRequest());
+        }
+
         return OperationalMetricReportingProblemDetails.ExecuteAsync(
-            token =>
-            {
-                OperationalMetricHttpRequestValidator.Validate(request);
-                return reader.ReadAsync(
-                    OperationalMetricHttpMapper.ToQuery(request),
-                    token);
-            },
+            token => reader.ReadAsync(query, token),
             cancellationToken);
     }
 
@@ -53,14 +58,19 @@ public static class OperationalMetricReportingEndpoints
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reader);
 
+        ProductionDayOperationalMetricReportQuery query;
+        try
+        {
+            OperationalMetricHttpRequestValidator.Validate(request);
+            query = OperationalMetricHttpMapper.ToQuery(request);
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(OperationalMetricReportingProblemDetails.InvalidRequest());
+        }
+
         return OperationalMetricReportingProblemDetails.ExecuteAsync(
-            token =>
-            {
-                OperationalMetricHttpRequestValidator.Validate(request);
-                return reader.ReadAsync(
-                    OperationalMetricHttpMapper.ToQuery(request),
-                    token);
-            },
+            token => reader.ReadAsync(query, token),
             cancellationToken);
     }
 }
