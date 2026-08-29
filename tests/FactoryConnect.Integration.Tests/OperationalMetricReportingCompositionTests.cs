@@ -159,7 +159,7 @@ public sealed class OperationalMetricReportingCompositionTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             services.AddFactoryConnectPersistence(
                 configuration,
-                PersistenceProviderCapabilities.Reporting));
+                PersistenceProviderCapabilities.OperationalMetricReportingQuery));
 
         Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
         Assert.Contains(
