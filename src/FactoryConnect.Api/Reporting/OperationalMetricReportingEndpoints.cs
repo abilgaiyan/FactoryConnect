@@ -9,9 +9,20 @@ public static class OperationalMetricReportingEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        var group = endpoints.MapGroup("/api/reporting/operational-metrics");
-        group.MapPost("/shifts/query", QueryShiftsAsync);
-        group.MapPost("/production-days/query", QueryProductionDaysAsync);
+        var group = endpoints
+            .MapGroup("/api/reporting/v1/operational-metrics")
+            .WithTags("Operational Metrics");
+
+        group.MapPost("/shifts/query", QueryShiftsAsync)
+            .WithName("QueryShiftOperationalMetrics")
+            .Produces<OperationalMetricPageResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        group.MapPost("/production-days/query", QueryProductionDaysAsync)
+            .WithName("QueryProductionDayOperationalMetrics")
+            .Produces<OperationalMetricPageResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
         return endpoints;
     }
 
