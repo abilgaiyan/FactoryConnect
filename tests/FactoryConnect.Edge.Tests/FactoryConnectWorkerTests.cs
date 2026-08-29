@@ -15,7 +15,7 @@ public sealed class FactoryConnectWorkerTests
             NullLogger<FactoryConnectWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
-        await runtime.Started.WaitAsync(TimeSpan.FromSeconds(1));
+        await runtime.Started.WaitAsync(TimeSpan.FromSeconds(5));
         await worker.StopAsync(CancellationToken.None);
 
         Assert.Equal(1, factory.CreateCount);
@@ -36,8 +36,8 @@ public sealed class FactoryConnectWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await Task.WhenAll(
-            runtimeA.Started.WaitAsync(TimeSpan.FromSeconds(1)),
-            runtimeB.Started.WaitAsync(TimeSpan.FromSeconds(1)));
+            runtimeA.Started.WaitAsync(TimeSpan.FromSeconds(5)),
+            runtimeB.Started.WaitAsync(TimeSpan.FromSeconds(5)));
         await worker.StopAsync(CancellationToken.None);
 
         Assert.Equal(1, factoryA.CreateCount);

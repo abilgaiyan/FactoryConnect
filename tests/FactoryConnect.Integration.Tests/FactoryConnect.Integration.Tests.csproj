@@ -2,12 +2,18 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../FactoryConnect.Reporting.Tests.Shared/**/*.cs"
+             Link="ReportingConformance/%(RecursiveDir)%(Filename)%(Extension)" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/FactoryConnect.Api/FactoryConnect.Api.csproj" />
+    <ProjectReference Include="../../src/FactoryConnect.Core/FactoryConnect.Core.csproj" />
     <ProjectReference Include="../../src/FactoryConnect.Edge/FactoryConnect.Edge.csproj" />
     <ProjectReference Include="../../src/FactoryConnect.Infrastructure/FactoryConnect.Infrastructure.csproj" />
     <ProjectReference Include="../../src/FactoryConnect.Persistence/FactoryConnect.Persistence.csproj" />

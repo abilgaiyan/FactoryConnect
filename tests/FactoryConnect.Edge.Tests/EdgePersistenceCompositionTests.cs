@@ -38,6 +38,7 @@ public sealed class EdgePersistenceCompositionTests
         Assert.Null(provider.GetService<IRevisionedOperationalMetricComponentSnapshotReader>());
         Assert.Null(provider.GetService<IOperationalMetricProjectionStore>());
         Assert.Null(provider.GetService<IOperationalMetricProjectionQueryReader>());
+        Assert.Null(provider.GetService<IOperationalMetricReportingQueryProvider>());
     }
 
     [Fact]
@@ -60,10 +61,12 @@ public sealed class EdgePersistenceCompositionTests
         var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
         var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
         var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
+        var reportingProvider = provider.GetRequiredService<IOperationalMetricReportingQueryProvider>();
 
         Assert.Same(aggregation, revisionReader);
         Assert.Same(aggregation, snapshotReader);
         Assert.Same(projectionStore, projectionReader);
+        Assert.Same(projectionStore, reportingProvider);
         Assert.Equal(
             "FactoryConnect.Core.InMemoryOperationalMetricProjectionStore",
             projectionStore.GetType().FullName);

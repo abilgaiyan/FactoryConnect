@@ -5,7 +5,8 @@ namespace FactoryConnect.Core;
 
 public sealed class InMemoryOperationalMetricProjectionStore :
     IOperationalMetricProjectionStore,
-    IOperationalMetricProjectionQueryReader
+    IOperationalMetricProjectionQueryReader,
+    IOperationalMetricReportingQueryProvider
 {
     private readonly object _sync = new();
     private readonly Dictionary<OperationalMetricProjectionProcessorId, OperationalMetricProjectionCheckpoint> _checkpoints = [];
@@ -94,6 +95,33 @@ public sealed class InMemoryOperationalMetricProjectionStore :
         OperationalMetricEvaluationKey key,
         CancellationToken cancellationToken) =>
         ReadProjectionAsync(processorId, key, cancellationToken);
+
+    public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadWindowAsync(
+        OperationalMetricReportQuery query,
+        OperationalMetricEvaluationKey? startAfter,
+        int maximumCount,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumCount, 1);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var comparer = OperationalMetricReportOrdering.GetEvaluationKeyComparer(query.Order);
+
+        lock (_sync)
+        {
+            var snapshot = _projections.Values
+                .Select(static projection => new OperationalMetricProjectionSummary(projection))
+                .Where(summary => OperationalMetricReportQuerySemantics.Matches(query, summary))
+                .Where(summary => startAfter is null || comparer.Compare(summary.Key, startAfter) > 0)
+                .OrderBy(static summary => summary.Key, comparer)
+                .Take(maximumCount)
+                .ToArray();
+
+            return ValueTask.FromResult<IReadOnlyList<OperationalMetricProjectionSummary>>(
+                new ReadOnlyCollection<OperationalMetricProjectionSummary>(snapshot));
+        }
+    }
 
     public ValueTask CommitAsync(
         OperationalMetricProjectionCommit commit,

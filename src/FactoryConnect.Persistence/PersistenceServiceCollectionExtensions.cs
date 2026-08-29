@@ -16,6 +16,7 @@ public static class PersistenceServiceCollectionExtensions
         typeof(IRevisionedOperationalMetricComponentSnapshotReader),
         typeof(IOperationalMetricProjectionStore),
         typeof(IOperationalMetricProjectionQueryReader),
+        typeof(IOperationalMetricReportingQueryProvider),
     ];
 
     private static readonly PersistenceProviderCapabilities[] IndividualCapabilities =
@@ -28,6 +29,7 @@ public static class PersistenceServiceCollectionExtensions
         PersistenceProviderCapabilities.RevisionedOperationalMetricSnapshotReading,
         PersistenceProviderCapabilities.OperationalMetricProjectionStorage,
         PersistenceProviderCapabilities.OperationalMetricProjectionQuery,
+        PersistenceProviderCapabilities.OperationalMetricReportingQuery,
     ];
 
     public static IServiceCollection AddFactoryConnectPersistence(
@@ -132,6 +134,15 @@ public static class PersistenceServiceCollectionExtensions
                     .GetRequiredService<PersistenceProviderServices>()
                     .OperationalMetricProjectionQueryReader
                     ?? throw MissingProviderService(nameof(IOperationalMetricProjectionQueryReader)));
+        }
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetricReportingQuery) != 0)
+        {
+            services.AddSingleton<IOperationalMetricReportingQueryProvider>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .OperationalMetricReportingQueryProvider
+                    ?? throw MissingProviderService(nameof(IOperationalMetricReportingQueryProvider)));
         }
 
         return services;
