@@ -32,6 +32,7 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         aggregationStore,
                         aggregationStore,
                         projectionStore,
+                        projectionStore,
                         projectionStore);
                 }));
     }
