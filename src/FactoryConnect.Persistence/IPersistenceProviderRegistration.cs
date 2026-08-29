@@ -24,9 +24,7 @@ public enum PersistenceProviderCapabilities
         OperationalMetricProjectionStorage |
         OperationalMetricProjectionQuery,
 
-    Reporting = OperationalMetricReportingQuery,
-
-    All = Core | OperationalMetrics | Reporting,
+    All = Core | OperationalMetrics | OperationalMetricReportingQuery,
 }
 
 public interface IPersistenceProviderRegistration
