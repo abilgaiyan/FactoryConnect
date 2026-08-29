@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core.Metrics;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace FactoryConnect.Api.Reporting;
@@ -13,6 +14,8 @@ public static class OperationalMetricReportingServiceCollectionExtensions
 
         services.AddProblemDetails();
         services.AddExceptionHandler<OperationalMetricReportingExceptionHandler>();
+        services.Configure<RouteHandlerOptions>(
+            static options => options.ThrowOnBadRequest = true);
         services.TryAddSingleton<IOperationalMetricReportingQueryReader>(
             static provider => new OperationalMetricReportingQueryReader(
                 provider.GetRequiredService<IOperationalMetricReportingQueryProvider>()));
