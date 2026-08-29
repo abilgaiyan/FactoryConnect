@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Api.Reporting;
 using Microsoft.AspNetCore.Builder;
@@ -342,6 +343,41 @@ public sealed class OperationalMetricReportingEndpointTests
         }
     }
 
+    [Fact]
+    public async Task GeneratedOpenApiDocumentContainsVersionedReportingOperations()
+    {
+        var reader = new StubQueryReader((_, _) => new ReportingPage<OperationalMetricQueryItem>([], null));
+        await using var app = await CreateAppAsync(reader);
+        using var client = app.GetTestClient();
+
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
+        var paths = document.RootElement.GetProperty("paths");
+
+        AssertOpenApiOperation(
+            paths,
+            "/api/reporting/v1/operational-metrics/shifts/query",
+            "QueryShiftOperationalMetrics");
+        AssertOpenApiOperation(
+            paths,
+            "/api/reporting/v1/operational-metrics/production-days/query",
+            "QueryProductionDayOperationalMetrics");
+    }
+
+    private static void AssertOpenApiOperation(
+        JsonElement paths,
+        string path,
+        string operationId)
+    {
+        Assert.True(paths.TryGetProperty(path, out var pathItem));
+        var operation = pathItem.GetProperty("post");
+
+        Assert.Equal(operationId, operation.GetProperty("operationId").GetString());
+
+        var responses = operation.GetProperty("responses");
+        Assert.True(responses.TryGetProperty("200", out _));
+        Assert.True(responses.TryGetProperty("400", out _));
+    }
+
     private static OperationalMetricProjectionSummary CreateSummary(
         MachineId machineId,
         OperationalMetricProjectionProcessorId projectionProcessorId,
@@ -372,8 +408,10 @@ public sealed class OperationalMetricReportingEndpointTests
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(reader);
+        builder.Services.AddOpenApi();
 
         var app = builder.Build();
+        app.MapOpenApi();
         app.MapOperationalMetricReportingEndpoints();
         await app.StartAsync();
         return app;
