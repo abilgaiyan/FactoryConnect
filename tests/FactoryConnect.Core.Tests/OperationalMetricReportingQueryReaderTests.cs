@@ -11,9 +11,9 @@ public sealed class OperationalMetricReportingQueryReaderTests
     {
         var fixture = CreateFixture();
         var day = new DateOnly(2026, 8, 29);
-        var first = fixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.75m);
-        var second = fixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.65m);
-        var wrongProcessor = fixture.Projection(
+        var first = QueryFixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.75m);
+        var second = QueryFixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.65m);
+        var wrongProcessor = QueryFixture.Projection(
             new OperationalMetricReportingSource(
                 fixture.SourceA.MachineId,
                 new OperationalMetricProjectionProcessorId("processor-a-other")),
@@ -41,11 +41,11 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var day = new DateOnly(2026, 8, 29);
         var expected = new[]
         {
-            fixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m),
-            fixture.Projection(fixture.SourceA, day, "Availability", "2.0", 0.71m),
-            fixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m),
-            fixture.Projection(fixture.SourceB, day, "Availability", "1.0", 0.8m),
-            fixture.Projection(fixture.SourceA, day.AddDays(1), "Availability", "1.0", 0.72m),
+            QueryFixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m),
+            QueryFixture.Projection(fixture.SourceA, day, "Availability", "2.0", 0.71m),
+            QueryFixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m),
+            QueryFixture.Projection(fixture.SourceB, day, "Availability", "1.0", 0.8m),
+            QueryFixture.Projection(fixture.SourceA, day.AddDays(1), "Availability", "1.0", 0.72m),
         };
         await fixture.SeedAsync(expected);
         var actual = new List<OperationalMetricProjectionSummary>();
@@ -71,9 +71,9 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var fixture = CreateFixture();
         var day = new DateOnly(2026, 8, 29);
         await fixture.SeedAsync(
-            fixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m),
-            fixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m),
-            fixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.65m));
+            QueryFixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m),
+            QueryFixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m),
+            QueryFixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.65m));
         var first = await fixture.Reader.ReadAsync(
             fixture.Query(day, day.AddDays(1), 1),
             CancellationToken.None);
@@ -97,8 +97,8 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var fixture = CreateFixture();
         var day = new DateOnly(2026, 8, 29);
         await fixture.SeedAsync(
-            fixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m),
-            fixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.65m));
+            QueryFixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m),
+            QueryFixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.65m));
         var first = await fixture.Reader.ReadAsync(
             fixture.Query(day, day.AddDays(1), 1),
             CancellationToken.None);
@@ -184,9 +184,9 @@ public sealed class OperationalMetricReportingQueryReaderTests
             OperatorId = new OperatorId("operator-2"),
         };
         await fixture.SeedAsync(
-            fixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m, context),
-            fixture.Projection(fixture.SourceA, day, "OEE", "2.0", 0.61m, context),
-            fixture.Projection(
+            QueryFixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m, context),
+            QueryFixture.Projection(fixture.SourceA, day, "OEE", "2.0", 0.61m, context),
+            QueryFixture.Projection(
                 fixture.SourceA,
                 day,
                 "OEE",
@@ -194,7 +194,7 @@ public sealed class OperationalMetricReportingQueryReaderTests
                 null,
                 insufficientContext,
                 OperationalMetricEvaluationStatus.InsufficientEvidence),
-            fixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.7m));
+            QueryFixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.7m));
         var query = fixture.Query(
             day,
             day.AddDays(1),
@@ -220,8 +220,8 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var machineB = new MachineId(Guid.Parse("00000000-0000-0000-0000-000000000100"));
         var fixture = CreateFixture(machineA, machineB);
         var day = new DateOnly(2026, 8, 29);
-        var second = fixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.7m);
-        var first = fixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m);
+        var second = QueryFixture.Projection(fixture.SourceB, day, "OEE", "1.0", 0.7m);
+        var first = QueryFixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m);
         await fixture.SeedAsync(second, first);
 
         var page = await fixture.Reader.ReadAsync(
@@ -236,10 +236,10 @@ public sealed class OperationalMetricReportingQueryReaderTests
     {
         var fixture = CreateFixture();
         var rangeStart = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
-        var before = fixture.ShiftProjection(fixture.SourceA, rangeStart.AddHours(-8), "before");
-        var first = fixture.ShiftProjection(fixture.SourceA, rangeStart, "schedule-a");
-        var tied = fixture.ShiftProjection(fixture.SourceA, rangeStart, "schedule-b");
-        var excludedEnd = fixture.ShiftProjection(fixture.SourceA, rangeStart.AddHours(8), "at-end");
+        var before = QueryFixture.ShiftProjection(fixture.SourceA, rangeStart.AddHours(-8), "before");
+        var first = QueryFixture.ShiftProjection(fixture.SourceA, rangeStart, "schedule-a");
+        var tied = QueryFixture.ShiftProjection(fixture.SourceA, rangeStart, "schedule-b");
+        var excludedEnd = QueryFixture.ShiftProjection(fixture.SourceA, rangeStart.AddHours(8), "at-end");
         await fixture.SeedAsync(before, first, tied, excludedEnd);
         var firstPage = await fixture.Reader.ReadAsync(
             fixture.ShiftQuery(rangeStart, rangeStart.AddHours(8), 1),
@@ -267,9 +267,9 @@ public sealed class OperationalMetricReportingQueryReaderTests
         var fixture = CreateFixture();
         var day = new DateOnly(2026, 8, 29);
         var first = new OperationalMetricProjectionSummary(
-            fixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m));
+            QueryFixture.Projection(fixture.SourceA, day, "Availability", "1.0", 0.7m));
         var second = new OperationalMetricProjectionSummary(
-            fixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m));
+            QueryFixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m));
         var reader = new OperationalMetricReportingQueryReader(
             new CountingProvider([second, first]));
 
