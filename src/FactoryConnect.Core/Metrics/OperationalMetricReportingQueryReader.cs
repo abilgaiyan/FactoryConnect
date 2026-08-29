@@ -131,24 +131,19 @@ internal static class OperationalMetricReportingCursor
                     payload.QueryFingerprint,
                     CreateQueryFingerprint(query)))
             {
-                throw new ArgumentException(
-                    "Continuation token does not belong to the requested reporting query.",
-                    nameof(token));
+                throw new IncompatibleReportingContinuationTokenException();
             }
 
             return payload.Key.ToEvaluationKey();
         }
-        catch (ArgumentException exception) when (exception.ParamName == nameof(token))
+        catch (IncompatibleReportingContinuationTokenException)
         {
             throw;
         }
         catch (Exception exception) when (
             exception is FormatException or JsonException or ArgumentException or OverflowException)
         {
-            throw new ArgumentException(
-                "Continuation token is malformed.",
-                nameof(token),
-                exception);
+            throw new MalformedReportingContinuationTokenException(exception);
         }
     }
 
