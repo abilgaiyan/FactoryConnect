@@ -11,6 +11,8 @@ public static class OperationalMetricReportingServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddProblemDetails();
+        services.AddExceptionHandler<OperationalMetricReportingExceptionHandler>();
         services.TryAddSingleton<IOperationalMetricReportingQueryReader>(
             static provider => new OperationalMetricReportingQueryReader(
                 provider.GetRequiredService<IOperationalMetricReportingQueryProvider>()));
