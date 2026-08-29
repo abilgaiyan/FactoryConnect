@@ -19,8 +19,7 @@ public sealed class OperationalMetricReportQueryContractTests
         };
 
         var query = new ShiftOperationalMetricReportQuery(
-            ProcessorId,
-            new ReportingMachineSelection([machineId]),
+            Sources(machineId),
             start,
             end,
             new OperationalMetricDefinitionSelection([definitionId]),
@@ -31,7 +30,9 @@ public sealed class OperationalMetricReportQueryContractTests
 
         Assert.Equal(start, query.StartsAtOrAfterUtc);
         Assert.Equal(end, query.StartsBeforeUtc);
-        Assert.Equal(machineId, Assert.Single(query.Machines.MachineIds));
+        var source = Assert.Single(query.Sources.Sources);
+        Assert.Equal(machineId, source.MachineId);
+        Assert.Equal(ProcessorId, source.ProcessorId);
         Assert.Equal(definitionId, Assert.Single(query.Metrics!.DefinitionIds));
         Assert.Equal(context, query.Context);
         Assert.Equal(
@@ -49,8 +50,7 @@ public sealed class OperationalMetricReportQueryContractTests
         var to = new DateOnly(2026, 9, 1);
 
         OperationalMetricReportQuery query = new ProductionDayOperationalMetricReportQuery(
-            ProcessorId,
-            new ReportingMachineSelection([MachineId.New()]),
+            Sources(MachineId.New()),
             from,
             to,
             null,
@@ -65,24 +65,39 @@ public sealed class OperationalMetricReportQueryContractTests
     }
 
     [Fact]
-    public void MachineSelectionRequiresUniqueNonEmptyMachines()
+    public void SourceSelectionRequiresUniqueNonEmptyMachinesAndExactProcessors()
     {
         var machineId = MachineId.New();
 
-        Assert.Throws<ArgumentException>(() => new ReportingMachineSelection([]));
-        Assert.Throws<ArgumentException>(() => new ReportingMachineSelection([default]));
-        Assert.Throws<ArgumentException>(() => new ReportingMachineSelection([machineId, machineId]));
+        Assert.Throws<ArgumentException>(() => new OperationalMetricReportingSourceSelection([]));
+        Assert.Throws<ArgumentException>(() => new OperationalMetricReportingSource(default, ProcessorId));
+        Assert.Throws<ArgumentNullException>(() => new OperationalMetricReportingSource(machineId, null!));
+        Assert.Throws<ArgumentException>(() => new OperationalMetricReportingSourceSelection(
+        [
+            new OperationalMetricReportingSource(machineId, ProcessorId),
+            new OperationalMetricReportingSource(
+                machineId,
+                new OperationalMetricProjectionProcessorId("other")),
+        ]));
+        Assert.Throws<ArgumentException>(() => new OperationalMetricReportingSourceSelection(
+        [
+            new OperationalMetricReportingSource(machineId, ProcessorId),
+            new OperationalMetricReportingSource(MachineId.New(), ProcessorId),
+        ]));
     }
 
     [Fact]
-    public void MachineSelectionSnapshotsCallerCollection()
+    public void SourceSelectionSnapshotsCallerCollection()
     {
-        var machines = new List<MachineId> { MachineId.New() };
-        var selection = new ReportingMachineSelection(machines);
+        var sources = new List<OperationalMetricReportingSource>
+        {
+            new(MachineId.New(), ProcessorId),
+        };
+        var selection = new OperationalMetricReportingSourceSelection(sources);
 
-        machines.Add(MachineId.New());
+        sources.Add(new OperationalMetricReportingSource(MachineId.New(), ProcessorId));
 
-        Assert.Single(selection.MachineIds);
+        Assert.Single(selection.Sources);
     }
 
     [Fact]
@@ -321,8 +336,7 @@ public sealed class OperationalMetricReportQueryContractTests
         var start = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => new ShiftOperationalMetricReportQuery(
-            ProcessorId,
-            new ReportingMachineSelection([MachineId.New()]),
+            Sources(MachineId.New()),
             start,
             start.AddDays(1),
             null,
@@ -336,8 +350,7 @@ public sealed class OperationalMetricReportQueryContractTests
         DateTimeOffset start,
         DateTimeOffset end) =>
         new(
-            ProcessorId,
-            new ReportingMachineSelection([MachineId.New()]),
+            Sources(MachineId.New()),
             start,
             end,
             null,
@@ -350,8 +363,7 @@ public sealed class OperationalMetricReportQueryContractTests
         DateOnly from,
         DateOnly to) =>
         new(
-            ProcessorId,
-            new ReportingMachineSelection([MachineId.New()]),
+            Sources(MachineId.New()),
             from,
             to,
             null,
@@ -389,4 +401,9 @@ public sealed class OperationalMetricReportQueryContractTests
                     startsAtUtc.AddHours(8))),
             definitionId,
             OperationalMetricEvaluationContextKey.Unpartitioned);
+
+    private static OperationalMetricReportingSourceSelection Sources(
+        params MachineId[] machineIds) => new(
+            machineIds.Select(static machineId =>
+                new OperationalMetricReportingSource(machineId, ProcessorId)));
 }

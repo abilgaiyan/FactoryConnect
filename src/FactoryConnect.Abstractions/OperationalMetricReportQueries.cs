@@ -157,32 +157,73 @@ public static class OperationalMetricReportOrdering
     }
 }
 
-public sealed record ReportingMachineSelection
+public sealed record OperationalMetricReportingSource
 {
-    public ReportingMachineSelection(IEnumerable<MachineId> machineIds)
+    public OperationalMetricReportingSource(
+        MachineId machineId,
+        OperationalMetricProjectionProcessorId processorId)
     {
-        ArgumentNullException.ThrowIfNull(machineIds);
-
-        var snapshot = machineIds.ToArray();
-        if (snapshot.Length == 0)
+        if (machineId.IsEmpty)
         {
-            throw new ArgumentException("At least one machine ID is required.", nameof(machineIds));
+            throw new ArgumentException("Machine ID is required.", nameof(machineId));
         }
 
-        if (snapshot.Any(static machineId => machineId.IsEmpty))
-        {
-            throw new ArgumentException("Machine IDs cannot be empty.", nameof(machineIds));
-        }
-
-        if (snapshot.Distinct().Count() != snapshot.Length)
-        {
-            throw new ArgumentException("Machine IDs cannot contain duplicates.", nameof(machineIds));
-        }
-
-        MachineIds = new ReadOnlyCollection<MachineId>(snapshot);
+        ArgumentNullException.ThrowIfNull(processorId);
+        MachineId = machineId;
+        ProcessorId = processorId;
     }
 
-    public IReadOnlyList<MachineId> MachineIds { get; }
+    public MachineId MachineId { get; }
+
+    public OperationalMetricProjectionProcessorId ProcessorId { get; }
+}
+
+public sealed record OperationalMetricReportingSourceSelection
+{
+    public OperationalMetricReportingSourceSelection(
+        IEnumerable<OperationalMetricReportingSource> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+
+        var snapshot = sources.ToArray();
+        if (snapshot.Length == 0)
+        {
+            throw new ArgumentException(
+                "At least one machine reporting source is required.",
+                nameof(sources));
+        }
+
+        if (snapshot.Any(static source => source is null))
+        {
+            throw new ArgumentException(
+                "Machine reporting sources cannot contain null values.",
+                nameof(sources));
+        }
+
+        var duplicateMachine = snapshot
+            .GroupBy(static source => source.MachineId)
+            .FirstOrDefault(static group => group.Count() > 1);
+        if (duplicateMachine is not null)
+        {
+            throw new ArgumentException(
+                $"Machine reporting source selection cannot contain duplicate machine '{duplicateMachine.Key}'.",
+                nameof(sources));
+        }
+
+        var duplicateProcessor = snapshot
+            .GroupBy(static source => source.ProcessorId)
+            .FirstOrDefault(static group => group.Count() > 1);
+        if (duplicateProcessor is not null)
+        {
+            throw new ArgumentException(
+                $"Machine reporting source selection cannot bind processor '{duplicateProcessor.Key}' to multiple machines.",
+                nameof(sources));
+        }
+
+        Sources = new ReadOnlyCollection<OperationalMetricReportingSource>(snapshot);
+    }
+
+    public IReadOnlyList<OperationalMetricReportingSource> Sources { get; }
 }
 
 public sealed record OperationalMetricDefinitionSelection
@@ -371,16 +412,14 @@ public sealed record ReportingPage<T>
 public abstract record OperationalMetricReportQuery
 {
     private protected OperationalMetricReportQuery(
-        OperationalMetricProjectionProcessorId processorId,
-        ReportingMachineSelection machines,
+        OperationalMetricReportingSourceSelection sources,
         OperationalMetricDefinitionSelection? metrics,
         OperationalMetricContextFilter? context,
         OperationalMetricStatusSelection? statuses,
         OperationalMetricReportOrder order,
         ReportingPageRequest page)
     {
-        ArgumentNullException.ThrowIfNull(processorId);
-        ArgumentNullException.ThrowIfNull(machines);
+        ArgumentNullException.ThrowIfNull(sources);
         ArgumentNullException.ThrowIfNull(page);
 
         if (!Enum.IsDefined(order))
@@ -390,8 +429,7 @@ public abstract record OperationalMetricReportQuery
 
         context?.Validate();
 
-        ProcessorId = processorId;
-        Machines = machines;
+        Sources = sources;
         Metrics = metrics;
         Context = context;
         Statuses = statuses;
@@ -399,9 +437,7 @@ public abstract record OperationalMetricReportQuery
         Page = page;
     }
 
-    public OperationalMetricProjectionProcessorId ProcessorId { get; }
-
-    public ReportingMachineSelection Machines { get; }
+    public OperationalMetricReportingSourceSelection Sources { get; }
 
     public OperationalMetricDefinitionSelection? Metrics { get; }
 
@@ -417,8 +453,7 @@ public abstract record OperationalMetricReportQuery
 public sealed record ShiftOperationalMetricReportQuery : OperationalMetricReportQuery
 {
     public ShiftOperationalMetricReportQuery(
-        OperationalMetricProjectionProcessorId processorId,
-        ReportingMachineSelection machines,
+        OperationalMetricReportingSourceSelection sources,
         DateTimeOffset startsAtOrAfterUtc,
         DateTimeOffset startsBeforeUtc,
         OperationalMetricDefinitionSelection? metrics,
@@ -426,7 +461,7 @@ public sealed record ShiftOperationalMetricReportQuery : OperationalMetricReport
         OperationalMetricStatusSelection? statuses,
         OperationalMetricReportOrder order,
         ReportingPageRequest page)
-        : base(processorId, machines, metrics, context, statuses, order, page)
+        : base(sources, metrics, context, statuses, order, page)
     {
         if (startsAtOrAfterUtc.Offset != TimeSpan.Zero)
         {
@@ -461,8 +496,7 @@ public sealed record ShiftOperationalMetricReportQuery : OperationalMetricReport
 public sealed record ProductionDayOperationalMetricReportQuery : OperationalMetricReportQuery
 {
     public ProductionDayOperationalMetricReportQuery(
-        OperationalMetricProjectionProcessorId processorId,
-        ReportingMachineSelection machines,
+        OperationalMetricReportingSourceSelection sources,
         DateOnly fromInclusive,
         DateOnly toExclusive,
         OperationalMetricDefinitionSelection? metrics,
@@ -470,7 +504,7 @@ public sealed record ProductionDayOperationalMetricReportQuery : OperationalMetr
         OperationalMetricStatusSelection? statuses,
         OperationalMetricReportOrder order,
         ReportingPageRequest page)
-        : base(processorId, machines, metrics, context, statuses, order, page)
+        : base(sources, metrics, context, statuses, order, page)
     {
         if (fromInclusive == default)
         {
@@ -500,4 +534,54 @@ public sealed record ProductionDayOperationalMetricReportQuery : OperationalMetr
     public DateOnly FromInclusive { get; }
 
     public DateOnly ToExclusive { get; }
+}
+
+public static class OperationalMetricReportQuerySemantics
+{
+    public static bool Matches(
+        OperationalMetricReportQuery query,
+        OperationalMetricProjectionSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(summary);
+
+        return query.Sources.Sources.Any(source =>
+                source.MachineId == summary.Key.MachineId &&
+                source.ProcessorId == summary.ProcessorId) &&
+            MatchesPeriod(query, summary.Key.PeriodId) &&
+            (query.Metrics is null ||
+                query.Metrics.DefinitionIds.Contains(summary.Key.DefinitionId)) &&
+            (query.Context is null || query.Context.Matches(summary.Key.ContextKey)) &&
+            (query.Statuses is null || query.Statuses.Statuses.Contains(summary.Status));
+    }
+
+    private static bool MatchesPeriod(
+        OperationalMetricReportQuery query,
+        OperationalMetricPeriodId periodId) => (query, periodId) switch
+    {
+        (ShiftOperationalMetricReportQuery shiftQuery, OperationalMetricPeriodId.Shift shift) =>
+            shift.ShiftOccurrenceId.StartsAtUtc >= shiftQuery.StartsAtOrAfterUtc &&
+            shift.ShiftOccurrenceId.StartsAtUtc < shiftQuery.StartsBeforeUtc,
+        (ProductionDayOperationalMetricReportQuery productionDayQuery,
+            OperationalMetricPeriodId.ProductionDay productionDay) =>
+            productionDay.ProductionDayId.BusinessDate >= productionDayQuery.FromInclusive &&
+            productionDay.ProductionDayId.BusinessDate < productionDayQuery.ToExclusive,
+        _ => false,
+    };
+}
+
+public interface IOperationalMetricReportingQueryProvider
+{
+    ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadWindowAsync(
+        OperationalMetricReportQuery query,
+        OperationalMetricEvaluationKey? startAfter,
+        int maximumCount,
+        CancellationToken cancellationToken);
+}
+
+public interface IOperationalMetricReportingQueryReader
+{
+    ValueTask<ReportingPage<OperationalMetricProjectionSummary>> ReadAsync(
+        OperationalMetricReportQuery query,
+        CancellationToken cancellationToken);
 }
