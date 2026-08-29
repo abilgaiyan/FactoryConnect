@@ -35,9 +35,13 @@ public static class OperationalMetricReportingEndpoints
         ArgumentNullException.ThrowIfNull(reader);
 
         return OperationalMetricReportingProblemDetails.ExecuteAsync(
-            token => reader.ReadAsync(
-                OperationalMetricHttpMapper.ToQuery(request),
-                token),
+            token =>
+            {
+                OperationalMetricHttpRequestValidator.Validate(request);
+                return reader.ReadAsync(
+                    OperationalMetricHttpMapper.ToQuery(request),
+                    token);
+            },
             cancellationToken);
     }
 
@@ -50,9 +54,13 @@ public static class OperationalMetricReportingEndpoints
         ArgumentNullException.ThrowIfNull(reader);
 
         return OperationalMetricReportingProblemDetails.ExecuteAsync(
-            token => reader.ReadAsync(
-                OperationalMetricHttpMapper.ToQuery(request),
-                token),
+            token =>
+            {
+                OperationalMetricHttpRequestValidator.Validate(request);
+                return reader.ReadAsync(
+                    OperationalMetricHttpMapper.ToQuery(request),
+                    token);
+            },
             cancellationToken);
     }
 }
