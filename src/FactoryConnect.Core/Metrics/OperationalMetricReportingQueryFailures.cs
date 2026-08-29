@@ -14,25 +14,15 @@ public static class OperationalMetricReportingQueryFailureClassifier
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        switch (exception)
+        if (!StringComparer.Ordinal.Equals(exception.ParamName, "token"))
         {
-            case MalformedReportingContinuationTokenException:
-                failure = OperationalMetricReportingQueryFailure.MalformedContinuationToken;
-                return true;
-            case IncompatibleReportingContinuationTokenException:
-                failure = OperationalMetricReportingQueryFailure.IncompatibleContinuationToken;
-                return true;
-            default:
-                failure = default;
-                return false;
+            failure = default;
+            return false;
         }
+
+        failure = exception.InnerException is null
+            ? OperationalMetricReportingQueryFailure.IncompatibleContinuationToken
+            : OperationalMetricReportingQueryFailure.MalformedContinuationToken;
+        return true;
     }
 }
-
-internal sealed class MalformedReportingContinuationTokenException(
-    string message,
-    Exception innerException)
-    : ArgumentException(message, "token", innerException);
-
-internal sealed class IncompatibleReportingContinuationTokenException(string message)
-    : ArgumentException(message, "token");
