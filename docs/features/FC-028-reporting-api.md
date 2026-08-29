@@ -30,19 +30,21 @@ Invalid request shapes and typed cursor failures are returned as stable RFC Prob
 
 `AddFactoryConnectOperationalMetricReporting()` registers the provider-neutral reporting reader chain. The selected persistence provider must expose the `OperationalMetricReportingQuery` capability; persistence activation owns the provider binding.
 
-The API host selects the in-memory provider by default and maps the reporting endpoints only after the provider and reader chain have been registered. This is the currently executable FC-028 composition. The in-memory provider is process-local, so it is intended for conformance, development, and single-process composition.
+The API and Edge hosts use the same known-provider registration helper before selecting the configured provider. The API defaults to `InMemory`, then maps the reporting endpoints only after persistence selection and reader-chain registration. The in-memory provider is process-local, so it is intended for conformance, development, and single-process composition.
 
-The SQL Server provider remains core-only and does not yet expose FC-027 projection durability or the FC-028 reporting-query capability. A SQL-backed reporting deployment must fail capability validation rather than silently substitute an in-memory reporting store.
+The SQL Server provider is registered and selectable, but remains core-only: it does not yet expose FC-027 projection durability or the FC-028 reporting-query capability. Selecting SQL Server for the reporting API therefore reaches explicit capability validation and fails for the missing `OperationalMetricReportingQuery` capability. It never falls back to an in-memory reporting store.
 
 ## End-to-end conformance
 
-The FC-028.6 composition fixture commits an `OperationalMetricProjection` through the durable projection-store contract, resolves the reporting provider through persistence selection, traverses the real reader chain, calls the real ASP.NET endpoint, and verifies the JSON response retains:
+The FC-028.6 composition fixture hosts the actual API `Program`, commits `OperationalMetricProjection` instances through the selected provider's durable projection-store contract, traverses the real reader chain, calls both real ASP.NET endpoints, and verifies the JSON response retains:
 
 - machine and projection-processor identity;
 - typed period identity;
 - exact metric definition version;
 - status, value, and unit; and
 - the FC-026 source revision.
+
+The fixture also proves two-machine source isolation and opaque seek-pagination traversal without duplicates or omissions. A separate composition case proves that selecting the registered SQL Server provider fails specifically because its reporting capability is absent.
 
 Provider-specific query implementations must continue to pass the shared FC-028.2 reporting-query conformance suite.
 
