@@ -136,7 +136,7 @@ public static class PersistenceServiceCollectionExtensions
                     ?? throw MissingProviderService(nameof(IOperationalMetricProjectionQueryReader)));
         }
 
-        if ((requiredCapabilities & PersistenceProviderCapabilities.Reporting) != 0)
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetricReportingQuery) != 0)
         {
             services.AddSingleton<IOperationalMetricReportingQueryProvider>(
                 static serviceProvider => serviceProvider
