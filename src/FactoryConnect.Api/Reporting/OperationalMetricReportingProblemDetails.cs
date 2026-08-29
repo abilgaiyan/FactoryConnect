@@ -51,7 +51,8 @@ internal static class OperationalMetricReportingProblemDetails
                     "Incompatible continuation token",
                     "The continuation token does not belong to this reporting query.",
                     "incompatible-continuation-token"),
-                _ => throw new ArgumentOutOfRangeException(nameof(failure)),
+                _ => throw new InvalidOperationException(
+                    "The reporting query failure classifier returned an unsupported failure value."),
             };
         }
     }
