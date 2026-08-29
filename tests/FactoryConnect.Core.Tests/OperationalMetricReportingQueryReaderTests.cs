@@ -279,6 +279,21 @@ public sealed class OperationalMetricReportingQueryReaderTests
     }
 
     [Fact]
+    public async Task ReaderRejectsDuplicateEvaluationIdentityReturnedByProvider()
+    {
+        var fixture = CreateFixture();
+        var day = new DateOnly(2026, 8, 29);
+        var duplicate = new OperationalMetricProjectionSummary(
+            QueryFixture.Projection(fixture.SourceA, day, "OEE", "1.0", 0.6m));
+        var reader = new OperationalMetricReportingQueryReader(
+            new CountingProvider([duplicate, duplicate]));
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await reader.ReadAsync(
+            fixture.Query(day, day.AddDays(1), 10),
+            CancellationToken.None));
+    }
+
+    [Fact]
     public async Task PreCancelledReadDoesNotInvokeProvider()
     {
         var provider = new CountingProvider([]);

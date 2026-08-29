@@ -156,7 +156,12 @@ internal static class OperationalMetricReportingCursor
     {
         var value = new StringBuilder();
         Append(value, CurrentVersion.ToString(CultureInfo.InvariantCulture));
-        Append(value, query.GetType().Name);
+        Append(value, query switch
+        {
+            ShiftOperationalMetricReportQuery => "shift",
+            ProductionDayOperationalMetricReportQuery => "production-day",
+            _ => throw new ArgumentOutOfRangeException(nameof(query)),
+        });
         Append(value, ((int)query.Order).ToString(CultureInfo.InvariantCulture));
 
         foreach (var source in query.Sources.Sources
