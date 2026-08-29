@@ -5,7 +5,7 @@ using FactoryConnect.Persistence;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
-builder.Services.AddInMemoryPersistenceProvider();
+builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
 builder.Services.AddFactoryConnectPersistence(
     builder.Configuration,
     PersistenceProviderCapabilities.Reporting);
