@@ -174,9 +174,9 @@ public sealed class OperationalMetricReportingQueryReaderTests
     public void GenericTokenArgumentExceptionIsNotClassifiedAsCursorFailure(
         bool hasInnerException)
     {
-        var exception = hasInnerException
-            ? new ArgumentException("Provider failure.", "token", new InvalidOperationException())
-            : new ArgumentException("Provider failure.", "token");
+        var exception = CreateProviderTokenArgumentException(
+            token: null,
+            hasInnerException ? new InvalidOperationException() : null);
 
         var classified = OperationalMetricReportingQueryFailureClassifier.TryClassify(
             exception,
@@ -348,6 +348,17 @@ public sealed class OperationalMetricReportingQueryReaderTests
                 new OperationalMetricProjectionProcessorId($"processor:{machineB.Value:D}")),
             store,
             reader ?? new OperationalMetricReportingQueryReader(store));
+    }
+
+    private static ArgumentException CreateProviderTokenArgumentException(
+        object? token,
+        Exception? innerException)
+    {
+        _ = token;
+        return new ArgumentException(
+            "Provider failure.",
+            nameof(token),
+            innerException);
     }
 
     private sealed class CountingProvider(
