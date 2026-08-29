@@ -26,7 +26,7 @@ public static class OperationalMetricReportingEndpoints
         return endpoints;
     }
 
-    internal static async Task<IResult> QueryShiftsAsync(
+    internal static Task<IResult> QueryShiftsAsync(
         ShiftOperationalMetricQueryRequest request,
         IOperationalMetricQueryReader reader,
         CancellationToken cancellationToken)
@@ -34,13 +34,14 @@ public static class OperationalMetricReportingEndpoints
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reader);
 
-        var page = await reader.ReadAsync(
-            OperationalMetricHttpMapper.ToQuery(request),
+        return OperationalMetricReportingProblemDetails.ExecuteAsync(
+            token => reader.ReadAsync(
+                OperationalMetricHttpMapper.ToQuery(request),
+                token),
             cancellationToken);
-        return Results.Ok(OperationalMetricHttpMapper.ToResponse(page));
     }
 
-    internal static async Task<IResult> QueryProductionDaysAsync(
+    internal static Task<IResult> QueryProductionDaysAsync(
         ProductionDayOperationalMetricQueryRequest request,
         IOperationalMetricQueryReader reader,
         CancellationToken cancellationToken)
@@ -48,9 +49,10 @@ public static class OperationalMetricReportingEndpoints
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(reader);
 
-        var page = await reader.ReadAsync(
-            OperationalMetricHttpMapper.ToQuery(request),
+        return OperationalMetricReportingProblemDetails.ExecuteAsync(
+            token => reader.ReadAsync(
+                OperationalMetricHttpMapper.ToQuery(request),
+                token),
             cancellationToken);
-        return Results.Ok(OperationalMetricHttpMapper.ToResponse(page));
     }
 }
