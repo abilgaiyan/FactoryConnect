@@ -19,6 +19,7 @@ const incompatibleContinuationTokenProblemType =
 
 const jsonNumberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 const unsignedIntegerPattern = /^\d+$/;
+const maximumUInt64 = 18_446_744_073_709_551_615n;
 
 export interface ReportingResponseDecoder {
   decode(response: Response): Promise<OperationalMetricPage>;
@@ -204,7 +205,9 @@ function isPosition(value: unknown): boolean {
     return Number.isSafeInteger(value) && value >= 0;
   }
 
-  return typeof value === "string" && unsignedIntegerPattern.test(value);
+  return typeof value === "string"
+    && unsignedIntegerPattern.test(value)
+    && BigInt(value) <= maximumUInt64;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
