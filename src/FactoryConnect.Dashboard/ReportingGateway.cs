@@ -30,12 +30,17 @@ public sealed class ReportingGateway(
                 .ConfigureAwait(false);
 
             context.Response.StatusCode = (int)response.StatusCode;
-            if (response.Content.Headers.ContentType is not null)
+            if (response.Content is not { } responseContent)
             {
-                context.Response.ContentType = response.Content.Headers.ContentType.ToString();
+                return;
             }
 
-            await response.Content
+            if (responseContent.Headers.ContentType is not null)
+            {
+                context.Response.ContentType = responseContent.Headers.ContentType.ToString();
+            }
+
+            await responseContent
                 .CopyToAsync(context.Response.Body, linkedCancellation.Token)
                 .ConfigureAwait(false);
         }
@@ -70,7 +75,7 @@ public sealed class ReportingGateway(
     {
         var request = new HttpRequestMessage(HttpMethod.Post, ComposeUpstreamUri(relativePath))
         {
-            Content = new StreamContent(context.Request.Body)
+            Content = new StreamContent(context.Request.BodyReader.AsStream(leaveOpen: true))
         };
 
         if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
