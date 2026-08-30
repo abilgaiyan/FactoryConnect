@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '24.x'
+          node-version-file: '.node-version'
           cache: npm
           cache-dependency-path: src/FactoryConnect.Dashboard/ClientApp/package-lock.json
 
