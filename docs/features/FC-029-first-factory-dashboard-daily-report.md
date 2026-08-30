@@ -9,10 +9,12 @@
   - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** complete
   - **FC-029.1C.3 — authoritative TypeScript reporting contract:** complete
   - **FC-029.1C.4 — typecheck, drift, and determinism conformance:** complete
-- **FC-029.1D — typed reporting client boundary:** active
+- **FC-029.1D — typed reporting client boundary:** complete
   - **FC-029.1D.1 — generated type aliases and client contracts:** complete
   - **FC-029.1D.2 — URI composition and request execution:** complete
-  - **FC-029.1D.3 — cancellation, timeout, and failure taxonomy:** active
+  - **FC-029.1D.3 — cancellation, timeout, and failure taxonomy:** complete
+  - **FC-029.1D.4 — runtime response and Problem Details decoding:** complete
+  - **FC-029.1D.5 — full client composition and conformance:** complete
 
 ## Architectural invariant
 
@@ -219,12 +221,50 @@ D.3 composes above the raw transport through a per-request executor. Each execut
 
 The D.3 failure vocabulary is intentionally limited to caller cancellation, client timeout, and network rejection. Fulfilled HTTP responses, including 400 and 500, remain uninterpreted for D.4.
 
+### FC-029.1D.4 — runtime response and Problem Details decoding
+
+The response decoder consumes a raw `Response` exactly once and either returns a generated `OperationalMetricPage` or throws a typed response failure. Contract-defined 200 and 400 responses require compatible JSON media types, including normal media-type parameters such as `charset=utf-8`.
+
+Successful pages are runtime-validated without redefining reporting semantics. Validation preserves calculated zero, nullable reason fields, opaque continuation tokens, the exact status and scope vocabularies, context shape, source revision, and the shift/production-day period relationship. Metric numeric values must be finite. Numeric source positions must be non-negative safe integers, while string positions preserve the full UInt64 range without JavaScript precision loss.
+
+Known reporting Problem Details are classified by the authoritative FC-028 problem-type URNs into invalid-query, malformed-continuation-token, and incompatible-continuation-token failures. Unknown but structurally valid 400 Problem Details remain HTTP failures retaining the decoded details. Malformed contract responses are protocol failures; other 4xx/5xx responses remain HTTP failures.
+
+### FC-029.1D.5 — full client composition and conformance
+
+The public `ReportingClient` composes the independently proven transport, request executor, and response decoder behind one construction boundary:
+
+```text
+createReportingClient(options)
+        ↓
+raw HTTP transport
+        ↓
+request executor
+        ↓
+response decoder
+        ↓
+generated OperationalMetricPage
+```
+
+The same validated `ReportingClientOptions` instance supplies both transport construction and enforced timeout configuration, preventing timeout drift between layers. Public shift and production-day methods select only the authoritative route, execute the generated request unchanged, and decode the returned response.
+
+The canonical public entry point exports only the reporting client factory, generated-derived request/page aliases, request/client options, and typed client failures needed by callers. Route constants, raw transport construction, request-executor internals, timer scheduling, decoder construction, and runtime guard helpers remain internal implementation details.
+
+Full client conformance proves both reporting operations, exact request serialization, calculated zero, empty pages, opaque continuation tokens, caller cancellation, network failure, known and unknown Problem Details, malformed protocol responses, 5xx responses, concurrent request isolation, and that failures never become empty pages.
+
+FC-029.1D closure evidence:
+
+```text
+frontend tests:       65/65 passed
+strict TypeScript:    passed
+contract check:       deterministic, type-safe, synchronized
+contract drift:       none
+git diff --check:     clean
+working tree:         clean
+```
+
 ## Next slices
 
 ```text
-FC-029.1D.3  cancellation, timeout, and failure taxonomy (active)
-FC-029.1D.4  runtime response and Problem Details decoding
-FC-029.1D.5  full client conformance and documentation
 FC-029.1E    React application shell and query state
 FC-029.1F    representative HTTP → presentation vertical proof
 FC-029.1G    architecture and deployment conformance
