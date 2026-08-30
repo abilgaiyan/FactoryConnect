@@ -8,7 +8,8 @@
   "scripts": {
     "contracts:generate": "node scripts/generate-reporting-contract.mjs",
     "contracts:check": "node scripts/check-reporting-contract.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "openapi-typescript": "7.13.0",
