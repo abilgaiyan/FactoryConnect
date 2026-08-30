@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import openapiTS, { astToString } from "openapi-typescript";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +39,7 @@ if (build.status !== 0) {
   process.exit(build.status ?? 1);
 }
 
-const ast = await openapiTS(new URL(`file://${openApiDocument.replaceAll("\\", "/")}`), {
+const ast = await openapiTS(pathToFileURL(openApiDocument), {
   inject:
     "// Generated from the FactoryConnect.Api OpenAPI contract.\n// Do not edit manually.\n",
 });
