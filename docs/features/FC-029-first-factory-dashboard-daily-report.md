@@ -9,12 +9,12 @@
   - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** complete
   - **FC-029.1C.3 — authoritative TypeScript reporting contract:** complete
   - **FC-029.1C.4 — typecheck, drift, and determinism conformance:** complete
-- **FC-029.1D — typed reporting client boundary:** complete
+- **FC-029.1D — typed reporting client boundary:** active pending whole-solution regression closure
   - **FC-029.1D.1 — generated type aliases and client contracts:** complete
   - **FC-029.1D.2 — URI composition and request execution:** complete
   - **FC-029.1D.3 — cancellation, timeout, and failure taxonomy:** complete
   - **FC-029.1D.4 — runtime response and Problem Details decoding:** complete
-  - **FC-029.1D.5 — full client composition and conformance:** complete
+  - **FC-029.1D.5 — full client composition and conformance:** active pending public timeout-wiring proof
 
 ## Architectural invariant
 
@@ -249,12 +249,12 @@ The same validated `ReportingClientOptions` instance supplies both transport con
 
 The canonical public entry point exports only the reporting client factory, generated-derived request/page aliases, request/client options, and typed client failures needed by callers. Route constants, raw transport construction, request-executor internals, timer scheduling, decoder construction, and runtime guard helpers remain internal implementation details.
 
-Full client conformance proves both reporting operations, exact request serialization, calculated zero, empty pages, opaque continuation tokens, caller cancellation, network failure, known and unknown Problem Details, malformed protocol responses, 5xx responses, concurrent request isolation, and that failures never become empty pages.
+Full client conformance proves both reporting operations, exact request serialization, calculated zero, empty pages, opaque continuation tokens, caller cancellation, network failure, known and unknown Problem Details, malformed protocol responses, 5xx responses, concurrent request isolation, and that failures never become empty pages. A public timeout-composition regression additionally proves that the configured timeout is the timeout enforced by the composed client, that expiration aborts the composed fetch, and that `ReportingTimeoutFailure.timeoutMilliseconds` retains the configured value.
 
-FC-029.1D closure evidence:
+Current D.5 evidence before final local proof:
 
 ```text
-frontend tests:       65/65 passed
+frontend tests:       65/65 passed before public timeout-wiring regression
 strict TypeScript:    passed
 contract check:       deterministic, type-safe, synchronized
 contract drift:       none
@@ -262,9 +262,15 @@ git diff --check:     clean
 working tree:         clean
 ```
 
+The public timeout-wiring regression is now present on the feature branch and requires a fresh local frontend proof before D.5 is closed.
+
+Whole FC-029.1D closure additionally requires fresh non-SQL and SQL Server regression suites after D.5 is green.
+
 ## Next slices
 
 ```text
+FC-029.1D.5  public timeout-wiring proof, then close D.5
+FC-029.1D    fresh whole-solution non-SQL + SQL regression closure
 FC-029.1E    React application shell and query state
 FC-029.1F    representative HTTP → presentation vertical proof
 FC-029.1G    architecture and deployment conformance
