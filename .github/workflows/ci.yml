@@ -19,6 +19,21 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: src/FactoryConnect.Dashboard/ClientApp/package-lock.json
+
+      - name: Install dashboard contract toolchain
+        working-directory: src/FactoryConnect.Dashboard/ClientApp
+        run: npm ci
+
+      - name: Check dashboard reporting contract
+        working-directory: src/FactoryConnect.Dashboard/ClientApp
+        run: npm run contracts:check
+
       - name: Restore
         run: dotnet restore FactoryConnect.sln
 
