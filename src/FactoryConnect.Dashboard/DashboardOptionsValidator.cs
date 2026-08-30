@@ -18,9 +18,27 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
         {
             failures.Add("Dashboard:ReportingApiBaseAddress must be an absolute HTTP or HTTPS URI.");
         }
-        else if (environment.IsProduction() && reportingApiUri.IsLoopback)
+        else
         {
-            failures.Add("Dashboard:ReportingApiBaseAddress must not use localhost or another loopback address in Production.");
+            if (!string.IsNullOrEmpty(reportingApiUri.UserInfo))
+            {
+                failures.Add("Dashboard:ReportingApiBaseAddress must not contain embedded credentials.");
+            }
+
+            if (!string.IsNullOrEmpty(reportingApiUri.Query))
+            {
+                failures.Add("Dashboard:ReportingApiBaseAddress must not contain a query string.");
+            }
+
+            if (!string.IsNullOrEmpty(reportingApiUri.Fragment))
+            {
+                failures.Add("Dashboard:ReportingApiBaseAddress must not contain a fragment.");
+            }
+
+            if (environment.IsProduction() && reportingApiUri.IsLoopback)
+            {
+                failures.Add("Dashboard:ReportingApiBaseAddress must not use localhost or another loopback address in Production.");
+            }
         }
 
         if (options.RequestTimeout <= TimeSpan.Zero || options.RequestTimeout > MaximumRequestTimeout)
