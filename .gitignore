@@ -15,4 +15,5 @@ appsettings.Local.json
 .env.*
 /deploy/
 node_modules/
+dist/
 *.tsbuildinfo
