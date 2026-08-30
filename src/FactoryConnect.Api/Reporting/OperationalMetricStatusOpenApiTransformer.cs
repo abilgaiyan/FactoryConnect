@@ -1,16 +1,16 @@
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.OpenApi;
-using Microsoft.OpenApi.Any;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 
 namespace FactoryConnect.Api.Reporting;
 
 internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchemaTransformer
 {
-    private static readonly IReadOnlyList<IOpenApiAny> StatusValues =
+    private static readonly IList<JsonNode> StatusValues =
     [
-        new OpenApiString("calculated"),
-        new OpenApiString("unavailable"),
-        new OpenApiString("insufficient-evidence"),
+        JsonValue.Create("calculated")!,
+        JsonValue.Create("unavailable")!,
+        JsonValue.Create("insufficient-evidence")!,
     ];
 
     public Task TransformAsync(
@@ -23,24 +23,28 @@ internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchema
 
         if (context.JsonTypeInfo.Type == typeof(OperationalMetricItemResponse))
         {
-            ApplyEnum(schema.Properties["status"]);
+            if (schema.Properties?.TryGetValue("status", out var statusSchema) == true)
+            {
+                ApplyEnum(statusSchema);
+            }
         }
         else if (context.JsonTypeInfo.Type == typeof(ShiftOperationalMetricQueryRequest)
             || context.JsonTypeInfo.Type == typeof(ProductionDayOperationalMetricQueryRequest))
         {
-            ApplyEnum(schema.Properties["statuses"].Items);
+            if (schema.Properties?.TryGetValue("statuses", out var statusesSchema) == true)
+            {
+                ApplyEnum(statusesSchema.Items);
+            }
         }
 
         return Task.CompletedTask;
     }
 
-    private static void ApplyEnum(OpenApiSchema? schema)
+    private static void ApplyEnum(IOpenApiSchema? schema)
     {
-        if (schema is null)
+        if (schema is OpenApiSchema concreteSchema)
         {
-            return;
+            concreteSchema.Enum = StatusValues;
         }
-
-        schema.Enum = StatusValues;
     }
 }
