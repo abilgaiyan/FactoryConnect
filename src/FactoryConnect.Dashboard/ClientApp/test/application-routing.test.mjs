@@ -132,7 +132,7 @@ test("only unmodified primary same-origin links are intercepted", () => {
     false,
   );
   assert.equal(
-    shouldHandleApplicationNavigation(primary, anchor("https://factory.example/file.csv", { download: "file.csv" }), "https://factory.example"),
+    shouldHandleApplicationNavigation(primary, anchor("https://factory.example/file.csv", { hasDownload: true }), "https://factory.example"),
     false,
   );
   assert.equal(
@@ -157,7 +157,7 @@ function anchor(href, overrides = {}) {
   return {
     href,
     target: "",
-    download: "",
+    hasDownload: false,
     ...overrides,
   };
 }
