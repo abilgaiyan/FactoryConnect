@@ -1,3 +1,6 @@
+// Generated from the FactoryConnect.Api OpenAPI contract.
+// Do not edit manually.
+
 export interface paths {
     "/health": {
         parameters: {
