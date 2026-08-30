@@ -6,9 +6,9 @@ namespace FactoryConnect.Api.Reporting;
 
 internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchemaTransformer
 {
-    private static readonly IList<JsonNode> StatusValues = ToEnumValues(OperationalMetricHttpVocabulary.Statuses);
-    private static readonly IList<JsonNode> OrderValues = ToEnumValues(OperationalMetricHttpVocabulary.Orders);
-    private static readonly IList<JsonNode> ScopeValues = ToEnumValues(OperationalMetricHttpVocabulary.Scopes);
+    private static readonly JsonNode[] StatusValues = ToEnumValues(OperationalMetricHttpVocabulary.Statuses);
+    private static readonly JsonNode[] OrderValues = ToEnumValues(OperationalMetricHttpVocabulary.Orders);
+    private static readonly JsonNode[] ScopeValues = ToEnumValues(OperationalMetricHttpVocabulary.Scopes);
 
     public Task TransformAsync(
         OpenApiSchema schema,
@@ -47,13 +47,13 @@ internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchema
         return Task.CompletedTask;
     }
 
-    private static IList<JsonNode> ToEnumValues(IEnumerable<string> values) =>
+    private static JsonNode[] ToEnumValues(IEnumerable<string> values) =>
         values
             .Select(static value => JsonValue.Create(value)!)
             .Cast<JsonNode>()
             .ToArray();
 
-    private static void ApplyEnum(IOpenApiSchema? schema, IList<JsonNode> values)
+    private static void ApplyEnum(IOpenApiSchema? schema, JsonNode[] values)
     {
         if (schema is OpenApiSchema concreteSchema)
         {
