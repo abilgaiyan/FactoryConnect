@@ -15,6 +15,8 @@ type Schemas = components["schemas"];
 type ReportingSource = Schemas["ReportingSourceRequest"];
 type MetricDefinition = Schemas["OperationalMetricDefinitionRequest"];
 type Context = Schemas["OperationalMetricContextRequest"];
+type ShiftQuery = Schemas["ShiftOperationalMetricQueryRequest"];
+type ProductionDayQuery = Schemas["ProductionDayOperationalMetricQueryRequest"];
 type MetricItem = Schemas["OperationalMetricItemResponse"];
 type MetricPage = Schemas["OperationalMetricPageResponse"];
 type SourceRevision = Schemas["MetricSourceRevisionResponse"];
@@ -40,6 +42,13 @@ type ContextHasProductionOrderId = Assert<HasKey<Context, "productionOrderId">>;
 type ContextHasOperationId = Assert<HasKey<Context, "operationId">>;
 type ContextHasPartId = Assert<HasKey<Context, "partId">>;
 type ContextHasOperatorId = Assert<HasKey<Context, "operatorId">>;
+
+type ShiftStatuses = NonNullable<ShiftQuery["statuses"]>[number];
+type ProductionDayStatuses = NonNullable<ProductionDayQuery["statuses"]>[number];
+type ShiftStatusVocabularyIsExact = Assert<Equal<ShiftStatuses, ExpectedStatuses>>;
+type ProductionDayStatusVocabularyIsExact = Assert<
+  Equal<ProductionDayStatuses, ExpectedStatuses>
+>;
 
 type MetricItemHasMetricKey = Assert<HasKey<MetricItem, "metricKey">>;
 type MetricItemHasDefinitionVersion = Assert<HasKey<MetricItem, "definitionVersion">>;
@@ -70,6 +79,8 @@ export type ReportingContractConformance = {
   operationId: ContextHasOperationId;
   partId: ContextHasPartId;
   operatorId: ContextHasOperatorId;
+  shiftStatuses: ShiftStatusVocabularyIsExact;
+  productionDayStatuses: ProductionDayStatusVocabularyIsExact;
   nullableValue: MetricValueRemainsNullable;
   exactStatuses: MetricStatusVocabularyIsExact;
   reasonCode: MetricItemHasReasonCode;
