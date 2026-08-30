@@ -1,5 +1,15 @@
 import type { paths } from "../generated/reporting-contract";
 
+type Assert<T extends true> = T;
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends
+  (<T>() => T extends B ? 1 : 2)
+    ? (<T>() => T extends B ? 1 : 2) extends
+        (<T>() => T extends A ? 1 : 2)
+      ? true
+      : false
+    : false;
+
 type ShiftQueryOperation = NonNullable<
   paths["/api/reporting/v1/operational-metrics/shifts/query"]["post"]
 >;
@@ -19,6 +29,20 @@ export type OperationalMetricPage =
 
 export type ReportingProblemDetails =
   ShiftQueryOperation["responses"][400]["content"]["application/problem+json"];
+
+type ProductionDayOperationalMetricPage =
+  ProductionDayQueryOperation["responses"][200]["content"]["application/json"];
+
+type ProductionDayReportingProblemDetails =
+  ProductionDayQueryOperation["responses"][400]["content"]["application/problem+json"];
+
+type SuccessfulResponseContractsMatch = Assert<
+  Equal<OperationalMetricPage, ProductionDayOperationalMetricPage>
+>;
+
+type ProblemDetailsContractsMatch = Assert<
+  Equal<ReportingProblemDetails, ProductionDayReportingProblemDetails>
+>;
 
 export interface ReportingRequestOptions {
   signal?: AbortSignal;
@@ -42,8 +66,5 @@ export interface ReportingClient {
   ): Promise<OperationalMetricPage>;
 }
 
-export type ProductionDayOperationalMetricPage =
-  ProductionDayQueryOperation["responses"][200]["content"]["application/json"];
-
-export type ProductionDayReportingProblemDetails =
-  ProductionDayQueryOperation["responses"][400]["content"]["application/problem+json"];
+export type ReportingClientContractConformance =
+  SuccessfulResponseContractsMatch & ProblemDetailsContractsMatch;
