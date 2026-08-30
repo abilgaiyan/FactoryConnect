@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace FactoryConnect.Dashboard.Tests;
 
+[Collection(DashboardHostCollection.Name)]
 public sealed class DashboardHostTests
 {
     [Fact]
