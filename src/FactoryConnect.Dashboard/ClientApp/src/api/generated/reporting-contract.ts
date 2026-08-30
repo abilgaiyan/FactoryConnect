@@ -96,7 +96,8 @@ export interface components {
             version: string;
         };
         OperationalMetricItemResponse: {
-            scope: string;
+            /** @enum {string} */
+            scope: "shift" | "production-day";
             processorId: string;
             /** Format: uuid */
             machineId: string;
@@ -135,7 +136,8 @@ export interface components {
             metrics: null | components["schemas"]["OperationalMetricDefinitionRequest"][];
             context: null | components["schemas"]["OperationalMetricContextRequest"];
             statuses: null | ("calculated" | "unavailable" | "insufficient-evidence")[];
-            order: string;
+            /** @enum {string} */
+            order: "period-ascending" | "period-descending";
             /** Format: int32 */
             pageSize: number | string;
             continuationToken: null | string;
@@ -159,7 +161,8 @@ export interface components {
             metrics: null | components["schemas"]["OperationalMetricDefinitionRequest"][];
             context: null | components["schemas"]["OperationalMetricContextRequest"];
             statuses: null | ("calculated" | "unavailable" | "insufficient-evidence")[];
-            order: string;
+            /** @enum {string} */
+            order: "period-ascending" | "period-descending";
             /** Format: int32 */
             pageSize: number | string;
             continuationToken: null | string;
