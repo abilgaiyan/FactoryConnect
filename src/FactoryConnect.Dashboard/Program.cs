@@ -55,20 +55,24 @@ app.MapPost('/' + shiftReportingPath, (HttpContext context, ReportingGateway gat
 app.MapPost('/' + productionDayReportingPath, (HttpContext context, ReportingGateway gateway) =>
     gateway.ForwardAsync(context, productionDayReportingPath));
 
-app.MapMethods("{*path:nonfile}", [HttpMethods.Get, HttpMethods.Head],
-    (HttpContext context, IWebHostEnvironment environment) =>
+app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment) =>
+{
+    var path = context.Request.Path;
+    if (IsReservedPath(path))
     {
-        var path = context.Request.Path;
-        if (IsReservedPath(path))
-        {
-            return Results.NotFound();
-        }
+        return Results.NotFound();
+    }
 
-        var index = environment.WebRootFileProvider.GetFileInfo("index.html");
-        return index.Exists
-            ? Results.File(index.PhysicalPath!, "text/html")
-            : Results.NotFound();
-    });
+    if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+    {
+        return Results.NotFound();
+    }
+
+    var index = environment.WebRootFileProvider.GetFileInfo("index.html");
+    return index.Exists
+        ? Results.File(index.PhysicalPath!, "text/html")
+        : Results.NotFound();
+});
 
 app.Run();
 
