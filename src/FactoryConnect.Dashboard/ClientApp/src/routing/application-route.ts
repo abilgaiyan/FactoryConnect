@@ -22,29 +22,36 @@ export function parseApplicationRoute(pathname: string): ApplicationRoute {
     return { kind: "notFound", path: pathname };
   }
 
+  const first = segments[0];
+  const second = segments[1];
+  const third = segments[2];
+
   if (
     segments.length === 2 &&
-    segments[0] === "production-days" &&
-    segments[1] !== ""
+    first === "production-days" &&
+    second !== undefined &&
+    second !== ""
   ) {
-    return { kind: "productionDayDetail", productionDay: segments[1] };
+    return { kind: "productionDayDetail", productionDay: second };
   }
 
   if (
     segments.length === 2 &&
-    segments[0] === "machines" &&
-    segments[1] !== ""
+    first === "machines" &&
+    second !== undefined &&
+    second !== ""
   ) {
-    return { kind: "machineDetail", machineId: segments[1] };
+    return { kind: "machineDetail", machineId: second };
   }
 
   if (
     segments.length === 3 &&
-    segments[0] === "production-days" &&
-    segments[1] !== "" &&
-    segments[2] === "report"
+    first === "production-days" &&
+    second !== undefined &&
+    second !== "" &&
+    third === "report"
   ) {
-    return { kind: "dailyReport", productionDay: segments[1] };
+    return { kind: "dailyReport", productionDay: second };
   }
 
   return { kind: "notFound", path: pathname };
