@@ -4,7 +4,8 @@ using FactoryConnect.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+    options.AddSchemaTransformer<OperationalMetricStatusOpenApiTransformer>());
 builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
 builder.Services.AddFactoryConnectPersistence(
     builder.Configuration,
