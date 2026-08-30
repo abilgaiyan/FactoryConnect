@@ -96,9 +96,9 @@ public sealed class ReportingGateway(
     private Uri ComposeUpstreamUri(string relativePath)
     {
         var baseAddress = new Uri(dashboardOptions.ReportingApiBaseAddress, UriKind.Absolute);
-        var normalizedBase = baseAddress.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+        var normalizedBase = baseAddress.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
             ? baseAddress
-            : new Uri(baseAddress.AbsoluteUri + '/', UriKind.Absolute);
+            : new Uri(baseAddress.AbsoluteUri + "/", UriKind.Absolute);
 
         return new Uri(normalizedBase, relativePath.TrimStart('/'));
     }
