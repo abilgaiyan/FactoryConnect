@@ -50,8 +50,8 @@ public sealed class DashboardGatewayHostTests
 
     [Theory]
     [InlineData("/dashboard/unknown")]
-    [InlineData("/api/reporting/v1/operational-metrics/shifts/query")]
-    public async Task InfrastructurePathsNeverFallThroughToSpa(string path)
+    [InlineData("/api/reporting/v1/operational-metrics/unknown/query")]
+    public async Task UnknownInfrastructurePathsNeverFallThroughToSpa(string path)
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -60,6 +60,21 @@ public sealed class DashboardGatewayHostTests
         var content = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("data-fc-dashboard-placeholder", content, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("/api/reporting/v1/operational-metrics/shifts/query")]
+    [InlineData("/api/reporting/v1/operational-metrics/production-days/query")]
+    public async Task ReportingPostRoutesRejectGetWithoutSpaFallback(string path)
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(path);
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
         Assert.DoesNotContain("data-fc-dashboard-placeholder", content, StringComparison.Ordinal);
     }
 
