@@ -10,7 +10,7 @@ export interface NavigationClick {
 export interface NavigationAnchor {
   readonly href: string;
   readonly target: string;
-  readonly download: string;
+  readonly hasDownload: boolean;
 }
 
 export function shouldHandleApplicationNavigation(
@@ -29,7 +29,7 @@ export function shouldHandleApplicationNavigation(
     return false;
   }
 
-  if (anchor.download !== "") {
+  if (anchor.hasDownload) {
     return false;
   }
 
