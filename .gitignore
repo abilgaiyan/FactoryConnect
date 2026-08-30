@@ -13,3 +13,4 @@ appsettings.Local.json
 *.local.json
 .env
 .env.*
+/deploy/
