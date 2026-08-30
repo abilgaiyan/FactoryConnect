@@ -11,7 +11,8 @@
   - **FC-029.1C.4 — typecheck, drift, and determinism conformance:** complete
 - **FC-029.1D — typed reporting client boundary:** active
   - **FC-029.1D.1 — generated type aliases and client contracts:** complete
-  - **FC-029.1D.2 — URI composition and request execution:** next
+  - **FC-029.1D.2 — URI composition and request execution:** complete
+  - **FC-029.1D.3 — cancellation, timeout, and failure taxonomy:** active
 
 ## Architectural invariant
 
@@ -206,11 +207,22 @@ ReportingClient
 
 The client construction contract exposes explicit base-address, timeout, and injectable-fetch dependencies, while request options expose caller cancellation through `AbortSignal`. D.1 introduces no HTTP execution, retries, caching, response decoding, presentation state, or React dependencies.
 
+### FC-029.1D.2 — URI composition and request execution
+
+The internal raw HTTP transport validates construction settings, preserves configured base paths, composes only the two relative FC-028 routes, serializes request bodies exactly with `JSON.stringify`, forwards caller signals unchanged, and returns raw `Response` objects or fetch rejections without interpretation.
+
+Dashboard client transport tests run in CI through the pinned Node 24 built-in test runner. The client package is explicitly ESM and the `ClientApp` subtree is pinned to LF so generated-contract byte comparisons remain stable across Windows and Linux.
+
+### FC-029.1D.3 — cancellation, timeout, and failure taxonomy
+
+D.3 composes above the raw transport through a per-request executor. Each execution owns its own `AbortController`, caller listener, and timeout handle. The first terminal cause is recorded explicitly so a later abort source cannot replace it and classification never depends on a generic fetch `AbortError`.
+
+The D.3 failure vocabulary is intentionally limited to caller cancellation, client timeout, and network rejection. Fulfilled HTTP responses, including 400 and 500, remain uninterpreted for D.4.
+
 ## Next slices
 
 ```text
-FC-029.1D.2  URI composition and request execution
-FC-029.1D.3  cancellation, timeout, and failure taxonomy
+FC-029.1D.3  cancellation, timeout, and failure taxonomy (active)
 FC-029.1D.4  runtime response and Problem Details decoding
 FC-029.1D.5  full client conformance and documentation
 FC-029.1E    React application shell and query state
