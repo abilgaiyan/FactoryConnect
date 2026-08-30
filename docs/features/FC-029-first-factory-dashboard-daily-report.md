@@ -4,11 +4,14 @@
 
 - **FC-029.1A — merged FC-028 contract inventory:** complete
 - **FC-029.1B — dashboard host foundation:** complete
-- **FC-029.1C — OpenAPI → TypeScript generation:** complete pending final whole-solution regression evidence
+- **FC-029.1C — OpenAPI → TypeScript generation:** complete
   - **FC-029.1C.1 — deterministic build-time OpenAPI extraction:** complete
   - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** complete
   - **FC-029.1C.3 — authoritative TypeScript reporting contract:** complete
   - **FC-029.1C.4 — typecheck, drift, and determinism conformance:** complete
+- **FC-029.1D — typed reporting client boundary:** active
+  - **FC-029.1D.1 — generated type aliases and client contracts:** complete
+  - **FC-029.1D.2 — URI composition and request execution:** next
 
 ## Architectural invariant
 
@@ -150,9 +153,9 @@ src/api/generated/reporting-contract.ts
 
 The generation script resolves only repository-relative paths, uses Node path/URL APIs for Windows and Linux compatibility, fails if API extraction or generation fails, and cannot satisfy generation from a stale pre-existing OpenAPI document.
 
-Generated transport/path types remain under `src/api/generated/`. Handwritten compile-time conformance assertions live outside that directory and verify the reporting paths, source identity, metric definition identity, context vocabulary, nullable metric value, exact reporting status vocabulary, reason information, source revision, and continuation token without introducing request execution behavior.
+Generated transport/path types remain under `src/api/generated/`. Handwritten compile-time conformance assertions live outside that directory and verify the reporting paths, source identity, metric definition identity, context vocabulary, nullable metric value, exact reporting status/order/scope vocabularies, reason information, source revision, and continuation token without introducing request execution behavior.
 
-The HTTP status vocabulary is defined once by the API transport layer and reused by runtime request parsing, response formatting, and OpenAPI schema metadata so those surfaces cannot independently drift.
+The HTTP transport vocabulary is defined once by the API transport layer and reused by runtime request parsing, response formatting, and OpenAPI schema metadata so those surfaces cannot independently drift.
 
 If an authoritative API semantic is not represented strongly enough by the generated OpenAPI contract, the API OpenAPI metadata must be corrected at the source. Generated TypeScript must not be semantically patched or rewritten afterward.
 
@@ -183,11 +186,33 @@ npm run contracts:check
 
 No React runtime, HTTP request behavior, query-state behavior, or presentation framework is introduced by FC-029.1C.
 
+## FC-029.1D — Reporting Client Boundary
+
+The handwritten browser-side reporting boundary executes only the two authoritative FC-028 reporting operations. It owns HTTP transport behavior but no metric, reporting-period, production-context, or presentation semantics.
+
+### FC-029.1D.1 — generated type aliases and client contracts
+
+The public TypeScript vocabulary is mechanically derived from the generated OpenAPI path operations. Request DTOs, successful page responses, and Problem Details are not reconstructed by hand.
+
+```text
+generated reporting paths
+        ↓
+operation-derived request/response aliases
+        ↓
+ReportingClient
+        ├── queryShiftMetrics(...)
+        └── queryProductionDayMetrics(...)
+```
+
+The client construction contract exposes explicit base-address, timeout, and injectable-fetch dependencies, while request options expose caller cancellation through `AbortSignal`. D.1 introduces no HTTP execution, retries, caching, response decoding, presentation state, or React dependencies.
+
 ## Next slices
 
 ```text
-FC-029.1C    OpenAPI → TypeScript generation (implementation complete; final regression evidence pending)
-FC-029.1D    typed reporting client boundary
+FC-029.1D.2  URI composition and request execution
+FC-029.1D.3  cancellation, timeout, and failure taxonomy
+FC-029.1D.4  runtime response and Problem Details decoding
+FC-029.1D.5  full client conformance and documentation
 FC-029.1E    React application shell and query state
 FC-029.1F    representative HTTP → presentation vertical proof
 FC-029.1G    architecture and deployment conformance
