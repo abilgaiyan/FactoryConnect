@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace FactoryConnect.Dashboard.Tests;
 
@@ -33,6 +34,37 @@ public sealed class DashboardHostTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("data-fc-dashboard-placeholder", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Head_client_side_route_uses_spa_fallback_without_response_body()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/production-days/2026-08-30");
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(await response.Content.ReadAsByteArrayAsync());
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    [InlineData("DELETE")]
+    public async Task Non_navigation_methods_never_receive_spa_shell(string method)
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/production-days/2026-08-30");
+
+        using var response = await client.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain("data-fc-dashboard-placeholder", content, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -84,6 +116,8 @@ public sealed class DashboardHostTests
         yield return Case("Dashboard:RequestTimeout", "00:05:00.001");
         yield return Case("Dashboard:Sources:0:MachineId", Guid.Empty.ToString());
         yield return Case("Dashboard:Sources:0:ProcessorId", " ");
+        yield return Case("Dashboard:Sources:0:ProcessorId", " operational-metrics");
+        yield return Case("Dashboard:Sources:0:ProcessorId", "operational-metrics ");
         yield return Case("Dashboard:Sources:0:DisplayName", " ");
     }
 

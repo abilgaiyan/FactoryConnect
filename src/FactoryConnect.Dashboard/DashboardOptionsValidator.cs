@@ -46,6 +46,10 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
             {
                 failures.Add($"Dashboard:Sources:{index}:ProcessorId must be non-empty.");
             }
+            else if (!string.Equals(source.ProcessorId, source.ProcessorId.Trim(), StringComparison.Ordinal))
+            {
+                failures.Add($"Dashboard:Sources:{index}:ProcessorId must not contain leading or trailing whitespace.");
+            }
 
             if (string.IsNullOrWhiteSpace(source.DisplayName))
             {

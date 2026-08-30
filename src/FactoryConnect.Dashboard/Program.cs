@@ -27,19 +27,20 @@ app.MapGet("/health/ready", (IWebHostEnvironment environment) =>
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
 });
 
-app.MapFallback((HttpContext context, IWebHostEnvironment environment) =>
-{
-    var path = context.Request.Path;
-    if (IsReservedPath(path) || Path.HasExtension(path.Value ?? string.Empty))
+app.MapMethods("{*path:nonfile}", [HttpMethods.Get, HttpMethods.Head],
+    (HttpContext context, IWebHostEnvironment environment) =>
     {
-        return Results.NotFound();
-    }
+        var path = context.Request.Path;
+        if (IsReservedPath(path))
+        {
+            return Results.NotFound();
+        }
 
-    var index = environment.WebRootFileProvider.GetFileInfo("index.html");
-    return index.Exists
-        ? Results.File(index.PhysicalPath!, "text/html")
-        : Results.NotFound();
-});
+        var index = environment.WebRootFileProvider.GetFileInfo("index.html");
+        return index.Exists
+            ? Results.File(index.PhysicalPath!, "text/html")
+            : Results.NotFound();
+    });
 
 app.Run();
 
