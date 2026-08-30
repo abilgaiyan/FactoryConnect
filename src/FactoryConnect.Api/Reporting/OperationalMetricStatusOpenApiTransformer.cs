@@ -7,11 +7,10 @@ namespace FactoryConnect.Api.Reporting;
 internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchemaTransformer
 {
     private static readonly IList<JsonNode> StatusValues =
-    [
-        JsonValue.Create("calculated")!,
-        JsonValue.Create("unavailable")!,
-        JsonValue.Create("insufficient-evidence")!,
-    ];
+        OperationalMetricHttpVocabulary.Statuses
+            .Select(static value => JsonValue.Create(value)!)
+            .Cast<JsonNode>()
+            .ToArray();
 
     public Task TransformAsync(
         OpenApiSchema schema,
