@@ -6,6 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "contracts:generate": "node scripts/generate-reporting-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
