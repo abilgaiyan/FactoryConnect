@@ -6,7 +6,8 @@
 - **FC-029.1B — dashboard host foundation:** complete
 - **FC-029.1C — OpenAPI → TypeScript generation:** active
   - **FC-029.1C.1 — deterministic build-time OpenAPI extraction:** complete
-  - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** active
+  - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** complete
+  - **FC-029.1C.3 — authoritative TypeScript reporting contract:** active
 
 ## Architectural invariant
 
@@ -127,10 +128,30 @@ Only `openapi-typescript` and `typescript` are permitted as development dependen
 
 React, Vite, Axios, query libraries, formatters, chart packages, and behavioral HTTP-client code remain out of scope for FC-029.1C.2.
 
+### FC-029.1C.3 — authoritative TypeScript reporting contract
+
+`npm run contracts:generate` performs the full source-of-truth chain from the dashboard client directory:
+
+```text
+dotnet build FactoryConnect.Api
+        ↓
+obj/openapi/factoryconnect-api-v1.json
+        ↓
+openapi-typescript
+        ↓
+src/api/generated/reporting-contract.ts
+```
+
+The generation script resolves only repository-relative paths, uses Node path/URL APIs for Windows and Linux compatibility, fails if API extraction or generation fails, and does not consume a pre-existing OpenAPI document without rebuilding the API first.
+
+Generated transport/path types remain under `src/api/generated/`. Handwritten compile-time conformance assertions live outside that directory and verify the reporting paths, source identity, metric definition identity, context vocabulary, nullable metric value, exact reporting status vocabulary, reason information, source revision, and continuation token without introducing request execution behavior.
+
+If an authoritative API semantic is not represented strongly enough by the generated OpenAPI contract, the API OpenAPI metadata must be corrected at the source. Generated TypeScript must not be semantically patched or rewritten afterward.
+
 ## Next slices
 
 ```text
-FC-029.1C.3  generate authoritative TypeScript reporting contract
+FC-029.1C.3  generate authoritative TypeScript reporting contract (active)
 FC-029.1C.4  typecheck, drift, and determinism conformance
 FC-029.1D    typed reporting client boundary
 FC-029.1E    React application shell and query state
