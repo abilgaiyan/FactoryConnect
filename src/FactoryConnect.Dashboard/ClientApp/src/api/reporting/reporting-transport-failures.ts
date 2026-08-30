@@ -14,10 +14,12 @@ export class ReportingCancellationFailure extends Error {
 
 export class ReportingTimeoutFailure extends Error {
   readonly kind = "timeout" as const;
+  readonly timeoutMilliseconds: number;
 
-  constructor(readonly timeoutMilliseconds: number) {
+  constructor(timeoutMilliseconds: number) {
     super(`Reporting request timed out after ${timeoutMilliseconds} milliseconds.`);
     this.name = "ReportingTimeoutFailure";
+    this.timeoutMilliseconds = timeoutMilliseconds;
   }
 }
 
