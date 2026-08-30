@@ -224,6 +224,24 @@ test("a response resolved after caller cancellation still reports cancellation",
   await assert.rejects(pending, ReportingCancellationFailure);
 });
 
+test("a response resolved after timeout still reports timeout", async () => {
+  const scheduler = createTimerScheduler();
+  let resolveTransport;
+  const transport = {
+    post: (_route, _request, _signal) => new Promise((resolve) => { resolveTransport = resolve; }),
+  };
+  const executor = createExecutor(transport, scheduler, 2750);
+  const pending = executor.execute(reportingRoutes.shiftQuery, {});
+
+  scheduler.fire();
+  resolveTransport(new Response(null, { status: 200 }));
+
+  await assert.rejects(
+    pending,
+    (failure) => failure instanceof ReportingTimeoutFailure && failure.timeoutMilliseconds === 2750,
+  );
+});
+
 test("caller listener is removed after transport failure", async () => {
   const scheduler = createTimerScheduler();
   const callerSignal = createCallerSignal();
