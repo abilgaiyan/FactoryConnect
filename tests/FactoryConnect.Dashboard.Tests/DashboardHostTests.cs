@@ -137,12 +137,13 @@ public sealed class DashboardHostTests
     [Fact]
     public void EmptySourcesFailDuringStartup()
     {
-        var overrides = ValidOverrides();
-        overrides.Remove("Dashboard:Sources:0:MachineId");
-        overrides.Remove("Dashboard:Sources:0:ProcessorId");
-        overrides.Remove("Dashboard:Sources:0:DisplayName");
+        var overrides = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Dashboard:ReportingApiBaseAddress"] = "http://factory-server:5080",
+            ["Dashboard:RequestTimeout"] = "00:00:30"
+        };
 
-        using var factory = CreateFactory(overrides);
+        using var factory = CreateFactory(overrides, Environments.Production);
 
         var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
         Assert.Contains("Dashboard:Sources", exception.ToString(), StringComparison.Ordinal);
