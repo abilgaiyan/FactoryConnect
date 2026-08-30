@@ -10,7 +10,7 @@
     "build": "vite build",
     "contracts:generate": "node scripts/generate-reporting-contract.mjs",
     "contracts:check": "node scripts/check-reporting-contract.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
