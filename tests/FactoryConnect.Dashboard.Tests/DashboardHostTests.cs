@@ -176,13 +176,14 @@ public sealed class DashboardHostTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         IDictionary<string, string?>? overrides = null,
-        string environment = Environments.Development)
+        string? environment = null)
     {
         var values = overrides ?? ValidOverrides();
+        var effectiveEnvironment = environment ?? Environments.Development;
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseEnvironment(environment);
+                builder.UseEnvironment(effectiveEnvironment);
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(values));
             });
