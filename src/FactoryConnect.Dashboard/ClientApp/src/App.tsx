@@ -38,12 +38,23 @@ interface ApplicationLinkProps extends PropsWithChildren {
 
 function ApplicationLink({ href, current = false, navigate, children }: ApplicationLinkProps) {
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!shouldHandleApplicationNavigation(event, event.currentTarget, window.location.origin)) {
+    const anchor = event.currentTarget;
+    if (
+      !shouldHandleApplicationNavigation(
+        event,
+        {
+          href: anchor.href,
+          target: anchor.target,
+          hasDownload: anchor.hasAttribute("download"),
+        },
+        window.location.origin,
+      )
+    ) {
       return;
     }
 
     event.preventDefault();
-    navigate(event.currentTarget.href);
+    navigate(anchor.href);
   };
 
   return (
