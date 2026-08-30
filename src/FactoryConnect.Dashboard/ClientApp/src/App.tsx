@@ -24,7 +24,7 @@ export function App() {
       </header>
 
       <main id="main-content">
-        <RouteView route={route} />
+        <RouteView route={route} navigate={navigate} />
       </main>
     </div>
   );
@@ -53,7 +53,12 @@ function ApplicationLink({ href, current = false, navigate, children }: Applicat
   );
 }
 
-function RouteView({ route }: { readonly route: ApplicationRoute }) {
+interface RouteViewProps {
+  readonly route: ApplicationRoute;
+  readonly navigate: (href: string) => void;
+}
+
+function RouteView({ route, navigate }: RouteViewProps) {
   switch (route.kind) {
     case "productionDayOverview":
       return (
@@ -65,7 +70,7 @@ function RouteView({ route }: { readonly route: ApplicationRoute }) {
     case "productionDayDetail":
       return (
         <section aria-labelledby="route-title">
-          <RouteContext current="Production day" />
+          <RouteContext current="Production day" navigate={navigate} />
           <h1 id="route-title">Production day</h1>
           <p>{route.productionDay}</p>
           <p>Production-day detail placeholder.</p>
@@ -74,7 +79,7 @@ function RouteView({ route }: { readonly route: ApplicationRoute }) {
     case "machineDetail":
       return (
         <section aria-labelledby="route-title">
-          <RouteContext current="Machine" />
+          <RouteContext current="Machine" navigate={navigate} />
           <h1 id="route-title">Machine</h1>
           <p>{route.machineId}</p>
           <p>Machine detail placeholder.</p>
@@ -83,7 +88,7 @@ function RouteView({ route }: { readonly route: ApplicationRoute }) {
     case "dailyReport":
       return (
         <section aria-labelledby="route-title">
-          <RouteContext current="Daily report" />
+          <RouteContext current="Daily report" navigate={navigate} />
           <h1 id="route-title">Daily report</h1>
           <p>{route.productionDay}</p>
           <p>Daily-report placeholder.</p>
@@ -92,7 +97,7 @@ function RouteView({ route }: { readonly route: ApplicationRoute }) {
     case "notFound":
       return (
         <section aria-labelledby="route-title">
-          <RouteContext current="Not found" />
+          <RouteContext current="Not found" navigate={navigate} />
           <h1 id="route-title">Page not found</h1>
           <p>The dashboard has no route for this path.</p>
           <code>{route.path}</code>
@@ -101,10 +106,15 @@ function RouteView({ route }: { readonly route: ApplicationRoute }) {
   }
 }
 
-function RouteContext({ current }: { readonly current: string }) {
+interface RouteContextProps {
+  readonly current: string;
+  readonly navigate: (href: string) => void;
+}
+
+function RouteContext({ current, navigate }: RouteContextProps) {
   return (
     <nav aria-label="Breadcrumb">
-      <ApplicationLink href="/" navigate={(href) => window.history.pushState(null, "", href)}>
+      <ApplicationLink href="/" navigate={navigate}>
         Production days
       </ApplicationLink>
       <span aria-current="page">{current}</span>
