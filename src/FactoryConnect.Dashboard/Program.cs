@@ -30,7 +30,7 @@ app.MapGet("/health/ready", (IWebHostEnvironment environment) =>
 app.MapFallback((HttpContext context, IWebHostEnvironment environment) =>
 {
     var path = context.Request.Path;
-    if (IsReservedPath(path) || Path.HasExtension(path.Value))
+    if (IsReservedPath(path) || Path.HasExtension(path.Value ?? string.Empty))
     {
         return Results.NotFound();
     }

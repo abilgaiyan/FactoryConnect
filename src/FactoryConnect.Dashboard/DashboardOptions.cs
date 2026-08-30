@@ -8,7 +8,7 @@ public sealed class DashboardOptions
 
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
-    public IReadOnlyList<DashboardSourceOptions> Sources { get; init; } = [];
+    public List<DashboardSourceOptions> Sources { get; init; } = [];
 }
 
 public sealed class DashboardSourceOptions
