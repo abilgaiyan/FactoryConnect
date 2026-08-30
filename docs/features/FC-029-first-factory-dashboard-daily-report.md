@@ -9,12 +9,19 @@
   - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** complete
   - **FC-029.1C.3 — authoritative TypeScript reporting contract:** complete
   - **FC-029.1C.4 — typecheck, drift, and determinism conformance:** complete
-- **FC-029.1D — typed reporting client boundary:** active pending whole-solution regression closure
+- **FC-029.1D — typed reporting client boundary:** complete
   - **FC-029.1D.1 — generated type aliases and client contracts:** complete
   - **FC-029.1D.2 — URI composition and request execution:** complete
   - **FC-029.1D.3 — cancellation, timeout, and failure taxonomy:** complete
   - **FC-029.1D.4 — runtime response and Problem Details decoding:** complete
-  - **FC-029.1D.5 — full client composition and conformance:** active pending public timeout-wiring proof
+  - **FC-029.1D.5 — full client composition and conformance:** complete
+- **FC-029.1E — React application shell and query state:** active
+  - **FC-029.1E.1 — React/Vite build foundation:** active
+  - **FC-029.1E.2 — runtime configuration and origin strategy:** pending
+  - **FC-029.1E.3 — deterministic application router and shell:** pending
+  - **FC-029.1E.4 — QueryState and lifecycle controller:** pending
+  - **FC-029.1E.5 — cancellation and stale-response conformance:** pending
+  - **FC-029.1E.6 — production asset/host integration:** pending
 
 ## Architectural invariant
 
@@ -249,29 +256,96 @@ The same validated `ReportingClientOptions` instance supplies both transport con
 
 The canonical public entry point exports only the reporting client factory, generated-derived request/page aliases, request/client options, and typed client failures needed by callers. Route constants, raw transport construction, request-executor internals, timer scheduling, decoder construction, and runtime guard helpers remain internal implementation details.
 
-Full client conformance proves both reporting operations, exact request serialization, calculated zero, empty pages, opaque continuation tokens, caller cancellation, network failure, known and unknown Problem Details, malformed protocol responses, 5xx responses, concurrent request isolation, and that failures never become empty pages. A public timeout-composition regression additionally proves that the configured timeout is the timeout enforced by the composed client, that expiration aborts the composed fetch, and that `ReportingTimeoutFailure.timeoutMilliseconds` retains the configured value.
+Full client conformance proves both reporting operations, exact request serialization, calculated zero, empty pages, opaque continuation tokens, caller cancellation, network failure, known and unknown Problem Details, malformed protocol responses, 5xx responses, concurrent request isolation, and that failures never become empty pages. A public timeout-composition regression proves that the configured timeout is the timeout enforced by the composed client, that expiration aborts the composed fetch, and that `ReportingTimeoutFailure.timeoutMilliseconds` retains the configured value.
 
-Current D.5 evidence before final local proof:
+FC-029.1D closure evidence:
 
 ```text
-frontend tests:       65/65 passed before public timeout-wiring regression
+frontend tests:       66/66 passed
 strict TypeScript:    passed
 contract check:       deterministic, type-safe, synchronized
 contract drift:       none
+non-SQL suite:        764/764 passed
+SQL Server suite:      75/75 passed
 git diff --check:     clean
 working tree:         clean
 ```
 
-The public timeout-wiring regression is now present on the feature branch and requires a fresh local frontend proof before D.5 is closed.
+## FC-029.1E — React Application Shell and Query State
 
-Whole FC-029.1D closure additionally requires fresh non-SQL and SQL Server regression suites after D.5 is green.
+The React application owns routing, view lifecycle, and presentation state only. The closed `ReportingClient` remains the sole browser-side reporting HTTP boundary.
+
+```text
+ReportingClient
+      ↓
+application query controller
+      ↓
+QueryState<T>
+      ↓
+React application shell
+```
+
+### Slice decomposition
+
+```text
+FC-029.1E.1  React/Vite build foundation
+FC-029.1E.2  runtime configuration + origin strategy
+FC-029.1E.3  deterministic application router and shell
+FC-029.1E.4  QueryState<T> and lifecycle controller
+FC-029.1E.5  cancellation and stale-response conformance
+FC-029.1E.6  production asset/host integration
+```
+
+### E.2 browser-origin decision
+
+For the factory pilot, use a same-origin reverse-proxy/deployment model. The browser must not call FC-028 directly across a different origin merely because the hostname is shared. The dashboard-facing origin remains authoritative for browser networking, while forwarding to FC-028 is an explicit host/deployment responsibility.
+
+```text
+browser
+  ↓ same origin
+FactoryConnect.Dashboard
+  ↓ controlled forwarding/reverse proxy
+FC-028 Reporting API
+```
+
+This keeps CORS out of FC-028 for the pilot and avoids coupling browser networking policy directly to the reporting API address. E.2 must implement this deliberately rather than allowing an application proxy to emerge accidentally.
+
+### Query-lifecycle invariants
+
+The generation identifier is authoritative for stale-response suppression. Abort behavior is cooperative cleanup, not the correctness mechanism.
+
+```text
+request A starts
+request B supersedes A
+B completes
+A completes late
+        ↓
+A must never overwrite B
+```
+
+`ReportingCancellationFailure` is suppressed only when the application itself disposed or superseded the owning view/request. Unexpected cancellation must remain observable as a failure and must never become `empty`.
+
+The application must also preserve the reporting-boundary distinctions already proven in D:
+
+```text
+successful zero-item page → empty
+invalid query            → invalidRequest
+calculated zero          → success with zero
+transport/HTTP/protocol  → failed
+failure                  ↛ empty
+```
+
+No React code may recalculate metrics, derive reporting periods, parse continuation-token semantics, retry implicitly, or access persistence/domain services directly.
 
 ## Next slices
 
 ```text
-FC-029.1D.5  public timeout-wiring proof, then close D.5
-FC-029.1D    fresh whole-solution non-SQL + SQL regression closure
-FC-029.1E    React application shell and query state
+FC-029.1E.1  React/Vite build foundation (active)
+FC-029.1E.2  runtime configuration + same-origin strategy
+FC-029.1E.3  deterministic application router and shell
+FC-029.1E.4  QueryState<T> and lifecycle controller
+FC-029.1E.5  cancellation and stale-response conformance
+FC-029.1E.6  production asset/host integration
 FC-029.1F    representative HTTP → presentation vertical proof
 FC-029.1G    architecture and deployment conformance
 ```
