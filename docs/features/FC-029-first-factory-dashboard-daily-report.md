@@ -3,7 +3,10 @@
 ## Status
 
 - **FC-029.1A — merged FC-028 contract inventory:** complete
-- **FC-029.1B — dashboard host foundation:** active
+- **FC-029.1B — dashboard host foundation:** complete
+- **FC-029.1C — OpenAPI → TypeScript generation:** active
+  - **FC-029.1C.1 — deterministic build-time OpenAPI extraction:** complete
+  - **FC-029.1C.2 — pinned minimal Node/TypeScript toolchain:** active
 
 ## Architectural invariant
 
@@ -50,7 +53,7 @@ FactoryConnect.Dashboard
 └── placeholder wwwroot/index.html
 ```
 
-React, Node, OpenAPI generation, chart packages, reporting HTTP traffic, and presentation view models are deliberately deferred.
+React, chart packages, reporting HTTP traffic, and presentation view models remain deferred beyond the host foundation.
 
 ### Configuration
 
@@ -87,12 +90,50 @@ Extensionless presentation routes may fall back to `wwwroot/index.html`. Health,
 
 The host does not enable unconditional HTTPS redirection; factory LAN HTTPS termination can be configured explicitly by deployment when available.
 
+## FC-029.1C — OpenAPI → TypeScript generation
+
+The dashboard transport contract is generated from the authoritative FC-028 OpenAPI document. The API contract is not duplicated manually in TypeScript.
+
+### FC-029.1C.1 — deterministic build-time OpenAPI extraction
+
+`FactoryConnect.Api` uses ASP.NET Core build-time OpenAPI generation. A normal API build emits:
+
+```text
+src/FactoryConnect.Api/obj/openapi/factoryconnect-api-v1.json
+```
+
+The document is intermediate build output and is not committed. Generation exercises the authentic API entry point and endpoint composition; no manually running API host, SQL Server, or contract-generation startup bypass is required.
+
+The emitted `v1` document contains both authoritative reporting operations:
+
+```text
+/api/reporting/v1/operational-metrics/shifts/query
+/api/reporting/v1/operational-metrics/production-days/query
+```
+
+### FC-029.1C.2 — pinned minimal Node/TypeScript toolchain
+
+The frontend contract-generation boundary lives under:
+
+```text
+src/FactoryConnect.Dashboard/ClientApp/
+├── package.json
+├── package-lock.json
+├── tsconfig.json
+└── src/api/generated/
+```
+
+Only `openapi-typescript` and `typescript` are permitted as development dependencies in this slice. Dependency versions are exact and the npm lockfile is committed. TypeScript is configured strictly and emits no JavaScript.
+
+React, Vite, Axios, query libraries, formatters, chart packages, and behavioral HTTP-client code remain out of scope for FC-029.1C.2.
+
 ## Next slices
 
 ```text
-FC-029.1C  OpenAPI → TypeScript generation
-FC-029.1D  typed reporting client boundary
-FC-029.1E  React application shell and query state
-FC-029.1F  representative HTTP → presentation vertical proof
-FC-029.1G  architecture and deployment conformance
+FC-029.1C.3  generate authoritative TypeScript reporting contract
+FC-029.1C.4  typecheck, drift, and determinism conformance
+FC-029.1D    typed reporting client boundary
+FC-029.1E    React application shell and query state
+FC-029.1F    representative HTTP → presentation vertical proof
+FC-029.1G    architecture and deployment conformance
 ```
