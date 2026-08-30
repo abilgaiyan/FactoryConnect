@@ -193,9 +193,16 @@ test("validates finite metric numeric representations", async () => {
     await decoder.decode(jsonResponse(validPage(validShiftItem({ value }))));
   }
 
-  for (const value of [Number.NaN, Number.POSITIVE_INFINITY, "NaN", "Infinity", "1x", ""]) {
+  for (const value of ["NaN", "Infinity", "1e309", "1x", ""]) {
     await assertProtocolFailure(jsonResponse(validPage(validShiftItem({ value }))));
   }
+
+  const overflowingNumericJson = JSON.stringify(validPage())
+    .replace('"value":0.75', '"value":1e309');
+  await assertProtocolFailure(new Response(overflowingNumericJson, {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  }));
 });
 
 test("rejects malformed and empty JSON success bodies", async () => {
