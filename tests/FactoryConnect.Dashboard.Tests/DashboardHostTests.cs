@@ -9,7 +9,7 @@ namespace FactoryConnect.Dashboard.Tests;
 public sealed class DashboardHostTests
 {
     [Fact]
-    public async Task Valid_configuration_starts_and_serves_liveness_readiness_and_placeholder()
+    public async Task ValidConfigurationStartsAndServesLivenessReadinessAndPlaceholder()
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -25,7 +25,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public async Task Client_side_route_falls_back_to_index()
+    public async Task ClientSideRouteFallsBackToIndex()
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -37,7 +37,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public async Task Head_client_side_route_uses_spa_fallback_without_response_body()
+    public async Task HeadClientSideRouteUsesSpaFallbackWithoutResponseBody()
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -54,7 +54,7 @@ public sealed class DashboardHostTests
     [InlineData("PUT")]
     [InlineData("PATCH")]
     [InlineData("DELETE")]
-    public async Task Non_navigation_methods_never_receive_spa_shell(string method)
+    public async Task NonNavigationMethodsNeverReceiveSpaShell(string method)
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -73,7 +73,7 @@ public sealed class DashboardHostTests
     [InlineData("/config/runtime")]
     [InlineData("/configuration/runtime")]
     [InlineData("/missing.js")]
-    public async Task Reserved_and_missing_static_paths_do_not_fall_through_to_spa(string path)
+    public async Task ReservedAndMissingStaticPathsDoNotFallThroughToSpa(string path)
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -84,7 +84,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public void Dashboard_assembly_has_no_prohibited_factoryconnect_references()
+    public void DashboardAssemblyHasNoProhibitedFactoryConnectReferences()
     {
         var prohibited = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -123,7 +123,7 @@ public sealed class DashboardHostTests
 
     [Theory]
     [MemberData(nameof(InvalidConfigurations))]
-    public void Invalid_configuration_fails_during_startup(string key, string? value)
+    public void InvalidConfigurationFailsDuringStartup(string key, string? value)
     {
         var overrides = ValidOverrides();
         overrides[key] = value;
@@ -135,7 +135,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public void Empty_sources_fail_during_startup()
+    public void EmptySourcesFailDuringStartup()
     {
         var overrides = ValidOverrides();
         overrides.Remove("Dashboard:Sources:0:MachineId");
@@ -149,7 +149,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public void Duplicate_source_identity_fails_during_startup()
+    public void DuplicateSourceIdentityFailsDuringStartup()
     {
         var overrides = ValidOverrides();
         overrides["Dashboard:Sources:1:MachineId"] = overrides["Dashboard:Sources:0:MachineId"];
@@ -163,7 +163,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public void Production_loopback_reporting_api_fails_during_startup()
+    public void ProductionLoopbackReportingApiFailsDuringStartup()
     {
         var overrides = ValidOverrides();
         overrides["Dashboard:ReportingApiBaseAddress"] = "http://localhost:5080";
@@ -198,5 +198,5 @@ public sealed class DashboardHostTests
         ["Dashboard:Sources:0:DisplayName"] = "Machine 1"
     };
 
-    private static object[] Case(string key, string? value) => [key, value];
+    private static object[] Case(string key, string? value) => [key, value ?? string.Empty];
 }
