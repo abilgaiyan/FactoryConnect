@@ -1,12 +1,12 @@
-import type { ReportingRequestOptions } from "./reporting-client-types";
-import type { ReportingHttpTransport } from "./reporting-http-transport";
-import type { ReportingRoute } from "./reporting-routes";
+import type { ReportingRequestOptions } from "./reporting-client-types.ts";
+import type { ReportingHttpTransport } from "./reporting-http-transport.ts";
+import type { ReportingRoute } from "./reporting-routes.ts";
 import {
   ReportingCancellationFailure,
   ReportingNetworkFailure,
   ReportingTimeoutFailure,
   type ReportingTransportFailure,
-} from "./reporting-transport-failures";
+} from "./reporting-transport-failures.ts";
 
 export interface ReportingRequestExecutor {
   execute(
