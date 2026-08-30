@@ -25,16 +25,20 @@ export function createReportingHttpTransport(
   return {
     post(route, request, signal) {
       const url = new URL(route, baseAddress);
-
-      return fetchImplementation(url, {
+      const requestInit: RequestInit = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json, application/problem+json",
         },
         body: JSON.stringify(request),
-        signal,
-      });
+      };
+
+      if (signal !== undefined) {
+        requestInit.signal = signal;
+      }
+
+      return fetchImplementation(url, requestInit);
     },
   };
 }
