@@ -20,12 +20,20 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
             <th scope="col">Source</th>
             <th scope="col">Machine</th>
             <th scope="col">Processor</th>
+            <th scope="col">Site</th>
+            <th scope="col">Business date</th>
             <th scope="col">Metric</th>
             <th scope="col">Version</th>
             <th scope="col">Status</th>
             <th scope="col">Value</th>
             <th scope="col">Unit</th>
             <th scope="col">Reason</th>
+            <th scope="col">Production order</th>
+            <th scope="col">Operation</th>
+            <th scope="col">Part</th>
+            <th scope="col">Operator</th>
+            <th scope="col">Stream</th>
+            <th scope="col">Position</th>
           </tr>
         </thead>
         <tbody>
@@ -43,12 +51,20 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
                 <td>{sourceName}</td>
                 <td>{item.machineId}</td>
                 <td>{item.processorId}</td>
+                <td>{item.productionDay?.siteId ?? "—"}</td>
+                <td>{item.productionDay?.businessDate ?? "—"}</td>
                 <td>{item.metricKey}</td>
                 <td>{item.definitionVersion}</td>
                 <td>{item.status}</td>
                 <td>{item.value === null ? "—" : String(item.value)}</td>
                 <td>{item.unit}</td>
                 <td>{reason}</td>
+                <td>{item.context.productionOrderId ?? "—"}</td>
+                <td>{item.context.operationId ?? "—"}</td>
+                <td>{item.context.partId ?? "—"}</td>
+                <td>{item.context.operatorId ?? "—"}</td>
+                <td>{item.sourceRevision.streamKey}</td>
+                <td>{String(item.sourceRevision.position)}</td>
               </tr>
             );
           })}
