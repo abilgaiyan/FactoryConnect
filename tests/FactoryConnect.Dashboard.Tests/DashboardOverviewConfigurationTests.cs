@@ -10,6 +10,9 @@ namespace FactoryConnect.Dashboard.Tests;
 [Collection(DashboardHostTestGroup.Name)]
 public sealed class DashboardOverviewConfigurationTests
 {
+    private static readonly string[] ExpectedDisplayNames = ["Machine D", "Machine A", "Machine B", "Machine C"];
+    private static readonly int[] ExpectedDisplayOrders = [5, 10, 10, 20];
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -48,8 +51,8 @@ public sealed class DashboardOverviewConfigurationTests
         var displayNames = sources
             .Select(static source => source.GetProperty("displayName").GetString() ?? string.Empty)
             .ToArray();
-        Assert.Equal(new[] { "Machine D", "Machine A", "Machine B", "Machine C" }, displayNames);
-        Assert.Equal(new[] { 5, 10, 10, 20 }, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
+        Assert.Equal(ExpectedDisplayNames, displayNames);
+        Assert.Equal(ExpectedDisplayOrders, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
         Assert.Null(sources[0].GetProperty("groupName").GetString());
         Assert.Equal("Line 1", sources[1].GetProperty("groupName").GetString());
     }
