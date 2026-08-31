@@ -4,7 +4,7 @@ import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { ProductionDayMetricResults } from "../src/application/ProductionDayMetricResults.tsx";
+import { ProductionDayMetricResults } from "../src/application/ProductionDayMetricResults.ts";
 
 const configuredMachineId = "11111111-1111-1111-1111-111111111111";
 const unknownMachineId = "22222222-2222-2222-2222-222222222222";
