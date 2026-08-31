@@ -36,8 +36,7 @@ function isRuntimeConfiguration(value: unknown): value is DashboardRuntimeConfig
   }
 
   return (
-    typeof value.reportingBasePath === "string" &&
-    value.reportingBasePath.length > 0 &&
+    value.reportingBasePath === "/" &&
     typeof value.requestTimeoutMilliseconds === "number" &&
     Number.isInteger(value.requestTimeoutMilliseconds) &&
     value.requestTimeoutMilliseconds > 0 &&
