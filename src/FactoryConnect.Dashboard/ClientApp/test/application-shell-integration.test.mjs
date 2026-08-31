@@ -18,6 +18,19 @@ const runtimeConfiguration = {
   ],
 };
 
+const productionDayRequest = {
+  sources: [
+    {
+      machineId: "11111111-1111-1111-1111-111111111111",
+      processorId: "operational-metrics",
+    },
+  ],
+  fromInclusive: "2026-08-30",
+  toExclusive: "2026-08-31",
+  order: "period-ascending",
+  pageSize: 25,
+};
+
 test("runtime configuration loads only from the dashboard same-origin endpoint", async () => {
   const calls = [];
   const configuration = await loadDashboardRuntimeConfiguration(async (input, init) => {
@@ -34,11 +47,38 @@ test("runtime configuration loads only from the dashboard same-origin endpoint",
   assert.equal(calls[0].init.method, "GET");
 });
 
-test("application runtime constructs one reporting client from current origin and runtime config", async () => {
-  let fetchCount = 0;
-  const fetchImplementation = async () => {
-    fetchCount += 1;
-    return new Response(JSON.stringify(runtimeConfiguration), {
+test("runtime configuration rejects cross-origin and scheme-relative reporting paths", async () => {
+  for (const reportingBasePath of [
+    "https://other-host.example/",
+    "//other-host.example/",
+    "/factoryconnect/",
+  ]) {
+    await assert.rejects(
+      loadDashboardRuntimeConfiguration(async () => new Response(JSON.stringify({
+        ...runtimeConfiguration,
+        reportingBasePath,
+      }), { status: 200 })),
+      /malformed/,
+    );
+  }
+});
+
+test("application runtime composes reporting requests against the dashboard origin", async () => {
+  const calls = [];
+  const fetchImplementation = async (input, init) => {
+    calls.push({ input: input.toString(), init });
+
+    if (input.toString() === "/dashboard/config") {
+      return new Response(JSON.stringify(runtimeConfiguration), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({
+      items: [],
+      continuationToken: null,
+    }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -49,10 +89,16 @@ test("application runtime constructs one reporting client from current origin an
     fetchImplementation,
   );
 
-  assert.equal(fetchCount, 1);
+  const page = await runtime.reportingClient.queryProductionDayMetrics(productionDayRequest);
+
   assert.deepEqual(runtime.configuration, runtimeConfiguration);
-  assert.equal(typeof runtime.reportingClient.queryShiftMetrics, "function");
-  assert.equal(typeof runtime.reportingClient.queryProductionDayMetrics, "function");
+  assert.deepEqual(page, { items: [], continuationToken: null });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].input, "/dashboard/config");
+  assert.equal(
+    calls[1].input,
+    "http://factory-dashboard:5090/api/reporting/v1/operational-metrics/production-days/query",
+  );
 });
 
 test("malformed runtime configuration is rejected before application composition", async () => {
