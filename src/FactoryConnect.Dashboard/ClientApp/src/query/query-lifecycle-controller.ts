@@ -146,6 +146,7 @@ function isReportingClientFailure(error: unknown): error is ReportingClientFailu
     error instanceof ReportingCancellationFailure ||
     error instanceof ReportingTimeoutFailure ||
     error instanceof ReportingNetworkFailure ||
+    error instanceof ReportingInvalidQueryFailure ||
     error instanceof ReportingMalformedContinuationTokenFailure ||
     error instanceof ReportingIncompatibleContinuationTokenFailure ||
     error instanceof ReportingHttpFailure ||
