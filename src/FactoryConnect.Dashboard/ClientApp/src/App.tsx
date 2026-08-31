@@ -1,6 +1,22 @@
-import type { MouseEvent, PropsWithChildren } from "react";
+import {
+  type FormEvent,
+  type MouseEvent,
+  type PropsWithChildren,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
+import { ProductionDayMetricResults } from "./application/ProductionDayMetricResults.tsx";
+import {
+  buildProductionDayQueryRequest,
+  isProductionDaySelection,
+} from "./application/production-day-reporting.ts";
+import { createQueryLifecycleController } from "./query/query-lifecycle-controller.ts";
+import { QueryStateView } from "./query/QueryStateView.tsx";
+import { useQueryLifecycleController } from "./query/use-query-lifecycle-controller.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -29,7 +45,7 @@ export function App({ runtime }: AppProps) {
       </header>
 
       <main id="main-content">
-        <RouteView route={route} navigate={navigate} sourceCount={runtime.configuration.sources.length} />
+        <RouteView route={route} navigate={navigate} runtime={runtime} />
       </main>
     </div>
   );
@@ -72,27 +88,20 @@ function ApplicationLink({ href, current = false, navigate, children }: Applicat
 interface RouteViewProps {
   readonly route: ApplicationRoute;
   readonly navigate: (href: string) => void;
-  readonly sourceCount: number;
+  readonly runtime: DashboardApplicationRuntime;
 }
 
-function RouteView({ route, navigate, sourceCount }: RouteViewProps) {
+function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
     case "productionDayOverview":
-      return (
-        <section aria-labelledby="route-title">
-          <h1 id="route-title">Production days</h1>
-          <p>Production-day overview placeholder.</p>
-          <p>{sourceCount} configured reporting source{sourceCount === 1 ? "" : "s"}.</p>
-        </section>
-      );
+      return <ProductionDayOverview navigate={navigate} sourceCount={runtime.configuration.sources.length} />;
     case "productionDayDetail":
       return (
-        <section aria-labelledby="route-title">
-          <RouteContext current="Production day" navigate={navigate} />
-          <h1 id="route-title">Production day</h1>
-          <p>{route.productionDay}</p>
-          <p>Production-day detail placeholder.</p>
-        </section>
+        <ProductionDayDetail
+          productionDay={route.productionDay}
+          navigate={navigate}
+          runtime={runtime}
+        />
       );
     case "machineDetail":
       return (
@@ -122,6 +131,99 @@ function RouteView({ route, navigate, sourceCount }: RouteViewProps) {
         </section>
       );
   }
+}
+
+interface ProductionDayOverviewProps {
+  readonly navigate: (href: string) => void;
+  readonly sourceCount: number;
+}
+
+function ProductionDayOverview({ navigate, sourceCount }: ProductionDayOverviewProps) {
+  const [productionDay, setProductionDay] = useState("");
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!isProductionDaySelection(productionDay)) {
+      return;
+    }
+
+    navigate(`/production-days/${encodeURIComponent(productionDay)}`);
+  };
+
+  return (
+    <section aria-labelledby="route-title">
+      <h1 id="route-title">Production days</h1>
+      <p>{sourceCount} configured reporting source{sourceCount === 1 ? "" : "s"}.</p>
+      <form onSubmit={handleSubmit}>
+        <label htmlFor="production-day">Production day</label>
+        <input
+          id="production-day"
+          name="production-day"
+          type="date"
+          required
+          value={productionDay}
+          onChange={(event) => setProductionDay(event.currentTarget.value)}
+        />
+        <button type="submit">Load reporting data</button>
+      </form>
+    </section>
+  );
+}
+
+interface ProductionDayDetailProps {
+  readonly productionDay: string;
+  readonly navigate: (href: string) => void;
+  readonly runtime: DashboardApplicationRuntime;
+}
+
+function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDayDetailProps) {
+  return (
+    <section aria-labelledby="route-title">
+      <RouteContext current="Production day" navigate={navigate} />
+      <h1 id="route-title">Production day</h1>
+      <p>{productionDay}</p>
+      {isProductionDaySelection(productionDay) ? (
+        <ProductionDayReportingProof productionDay={productionDay} runtime={runtime} />
+      ) : (
+        <p role="alert">The selected production day is not a valid calendar date.</p>
+      )}
+    </section>
+  );
+}
+
+interface ProductionDayReportingProofProps {
+  readonly productionDay: string;
+  readonly runtime: DashboardApplicationRuntime;
+}
+
+function ProductionDayReportingProof({ productionDay, runtime }: ProductionDayReportingProofProps) {
+  const request = useMemo(
+    () => buildProductionDayQueryRequest(productionDay, runtime.configuration.sources),
+    [productionDay, runtime.configuration.sources],
+  );
+  const createController = useCallback(
+    () => createQueryLifecycleController({
+      query: (signal) => runtime.reportingClient.queryProductionDayMetrics(request, { signal }),
+      isEmpty: (page) => page.items.length === 0,
+    }),
+    [request, runtime.reportingClient],
+  );
+  const query = useQueryLifecycleController(createController);
+
+  useEffect(() => {
+    void query.execute();
+  }, [query.execute]);
+
+  return (
+    <QueryStateView state={query.state}>
+      {(page) => (
+        <ProductionDayMetricResults
+          page={page}
+          sources={runtime.configuration.sources}
+        />
+      )}
+    </QueryStateView>
+  );
 }
 
 interface RouteContextProps {
