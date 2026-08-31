@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
+
 import type { QueryState } from "./query-state.ts";
 import { presentQueryState } from "./query-state-presentation.ts";
 
 export interface QueryStateViewProps<T> {
   readonly state: QueryState<T>;
-  readonly children: (data: T) => React.ReactNode;
+  readonly children: (data: T) => ReactNode;
 }
 
 export function QueryStateView<T>({ state, children }: QueryStateViewProps<T>) {
