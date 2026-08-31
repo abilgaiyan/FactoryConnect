@@ -45,15 +45,16 @@ public sealed class DashboardOverviewConfigurationTests
         var sources = document.RootElement.GetProperty("sources").EnumerateArray().ToArray();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(
-            ["Machine D", "Machine A", "Machine B", "Machine C"],
-            sources.Select(static source => source.GetProperty("displayName").GetString()).ToArray());
-        Assert.Equal([5, 10, 10, 20], sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
+        var displayNames = sources
+            .Select(static source => source.GetProperty("displayName").GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(new[] { "Machine D", "Machine A", "Machine B", "Machine C" }, displayNames);
+        Assert.Equal(new[] { 5, 10, 10, 20 }, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
         Assert.Null(sources[0].GetProperty("groupName").GetString());
         Assert.Equal("Line 1", sources[1].GetProperty("groupName").GetString());
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(IDictionary<string, string?> values) =>
+    private static WebApplicationFactory<Program> CreateFactory(Dictionary<string, string?> values) =>
         new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
@@ -87,7 +88,7 @@ public sealed class DashboardOverviewConfigurationTests
     };
 
     private static void AddSource(
-        IDictionary<string, string?> values,
+        Dictionary<string, string?> values,
         int index,
         string machineId,
         string processorId,
