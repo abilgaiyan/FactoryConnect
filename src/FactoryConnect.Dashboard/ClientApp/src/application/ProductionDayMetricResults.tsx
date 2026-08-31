@@ -32,6 +32,8 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
             <th scope="col">Operation</th>
             <th scope="col">Part</th>
             <th scope="col">Operator</th>
+            <th scope="col">Revision machine</th>
+            <th scope="col">Revision processor</th>
             <th scope="col">Stream</th>
             <th scope="col">Position</th>
           </tr>
@@ -63,6 +65,8 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
                 <td>{item.context.operationId ?? "—"}</td>
                 <td>{item.context.partId ?? "—"}</td>
                 <td>{item.context.operatorId ?? "—"}</td>
+                <td>{item.sourceRevision.machineId}</td>
+                <td>{item.sourceRevision.processorId}</td>
                 <td>{item.sourceRevision.streamKey}</td>
                 <td>{String(item.sourceRevision.position)}</td>
               </tr>
@@ -90,6 +94,8 @@ function metricRowKey(item: OperationalMetricPage["items"][number]): string {
     context.operatorId ?? "",
     item.metricKey,
     item.definitionVersion,
+    item.sourceRevision.machineId,
+    item.sourceRevision.processorId,
     item.sourceRevision.streamKey,
     String(item.sourceRevision.position),
   ].join("\u0000");
