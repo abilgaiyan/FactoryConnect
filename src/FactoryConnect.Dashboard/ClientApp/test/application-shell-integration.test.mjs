@@ -63,6 +63,16 @@ test("runtime configuration rejects cross-origin and scheme-relative reporting p
   }
 });
 
+test("runtime configuration rejects an empty source set", async () => {
+  await assert.rejects(
+    loadDashboardRuntimeConfiguration(async () => new Response(JSON.stringify({
+      ...runtimeConfiguration,
+      sources: [],
+    }), { status: 200 })),
+    /malformed/,
+  );
+});
+
 test("application runtime composes reporting requests against the dashboard origin", async () => {
   const calls = [];
   const fetchImplementation = async (input, init) => {
