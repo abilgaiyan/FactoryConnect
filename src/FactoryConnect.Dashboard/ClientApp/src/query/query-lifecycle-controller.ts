@@ -44,7 +44,9 @@ export function createQueryLifecycleController<T>(
 
     subscribe(listener) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
 
     async execute() {
@@ -62,6 +64,7 @@ export function createQueryLifecycleController<T>(
           return publish({ kind: "failed", failure: error });
         }
 
+        publish({ kind: "idle" });
         throw error;
       }
     },
