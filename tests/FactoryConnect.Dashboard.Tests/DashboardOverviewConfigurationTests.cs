@@ -63,7 +63,10 @@ public sealed class DashboardOverviewConfigurationTests
             {
                 builder.UseEnvironment(Environments.Development);
                 builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(values));
+                {
+                    configuration.Sources.Clear();
+                    configuration.AddInMemoryCollection(values);
+                });
             });
 
     private static Dictionary<string, string?> CreateSources(int count)
