@@ -2,11 +2,21 @@
   <PropertyGroup>
     <RootNamespace>FactoryConnect.Dashboard</RootNamespace>
     <AssemblyName>FactoryConnect.Dashboard</AssemblyName>
-    <DashboardClientDirectory>$(MSBuildProjectDirectory)\ClientApp</DashboardClientDirectory>
+    <DashboardClientDirectory>$(MSBuildProjectDirectory)/ClientApp</DashboardClientDirectory>
   </PropertyGroup>
 
   <Target Name="BuildDashboardClient" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm ci" />
     <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm run build" />
+  </Target>
+
+  <Target Name="CopyDashboardClientToPublish" AfterTargets="Publish" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <DashboardPublishedAsset Include="$(MSBuildProjectDirectory)/wwwroot/**/*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(DashboardPublishedAsset)"
+      DestinationFiles="@(DashboardPublishedAsset->'$(PublishDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
   </Target>
 </Project>
