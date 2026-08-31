@@ -1,10 +1,15 @@
 import type { MouseEvent, PropsWithChildren } from "react";
 
+import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
 
-export function App() {
+export interface AppProps {
+  readonly runtime: DashboardApplicationRuntime;
+}
+
+export function App({ runtime }: AppProps) {
   const { route, navigate } = useApplicationRouter();
 
   return (
@@ -24,7 +29,7 @@ export function App() {
       </header>
 
       <main id="main-content">
-        <RouteView route={route} navigate={navigate} />
+        <RouteView route={route} navigate={navigate} sourceCount={runtime.configuration.sources.length} />
       </main>
     </div>
   );
@@ -67,15 +72,17 @@ function ApplicationLink({ href, current = false, navigate, children }: Applicat
 interface RouteViewProps {
   readonly route: ApplicationRoute;
   readonly navigate: (href: string) => void;
+  readonly sourceCount: number;
 }
 
-function RouteView({ route, navigate }: RouteViewProps) {
+function RouteView({ route, navigate, sourceCount }: RouteViewProps) {
   switch (route.kind) {
     case "productionDayOverview":
       return (
         <section aria-labelledby="route-title">
           <h1 id="route-title">Production days</h1>
           <p>Production-day overview placeholder.</p>
+          <p>{sourceCount} configured reporting source{sourceCount === 1 ? "" : "s"}.</p>
         </section>
       );
     case "productionDayDetail":
