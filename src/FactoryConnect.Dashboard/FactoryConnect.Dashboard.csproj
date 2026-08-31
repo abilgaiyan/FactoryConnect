@@ -2,5 +2,11 @@
   <PropertyGroup>
     <RootNamespace>FactoryConnect.Dashboard</RootNamespace>
     <AssemblyName>FactoryConnect.Dashboard</AssemblyName>
+    <DashboardClientDirectory>$(MSBuildProjectDirectory)\ClientApp</DashboardClientDirectory>
   </PropertyGroup>
+
+  <Target Name="BuildDashboardClient" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm ci" />
+    <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm run build" />
+  </Target>
 </Project>
