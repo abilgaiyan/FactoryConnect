@@ -14,6 +14,8 @@ const runtimeConfiguration = {
       machineId: "11111111-1111-1111-1111-111111111111",
       processorId: "operational-metrics",
       displayName: "Machine 1",
+      groupName: "Line 1",
+      displayOrder: 10,
     },
   ],
 };
@@ -63,14 +65,33 @@ test("runtime configuration rejects cross-origin and scheme-relative reporting p
   }
 });
 
-test("runtime configuration rejects an empty source set", async () => {
-  await assert.rejects(
-    loadDashboardRuntimeConfiguration(async () => new Response(JSON.stringify({
-      ...runtimeConfiguration,
-      sources: [],
-    }), { status: 200 })),
-    /malformed/,
-  );
+test("runtime configuration accepts an empty configured factory", async () => {
+  const emptyConfiguration = {
+    ...runtimeConfiguration,
+    sources: [],
+  };
+
+  const configuration = await loadDashboardRuntimeConfiguration(async () => new Response(JSON.stringify(
+    emptyConfiguration,
+  ), { status: 200 }));
+
+  assert.deepEqual(configuration, emptyConfiguration);
+});
+
+test("runtime configuration rejects malformed overview presentation metadata", async () => {
+  for (const source of [
+    { ...runtimeConfiguration.sources[0], groupName: "" },
+    { ...runtimeConfiguration.sources[0], displayOrder: -1 },
+    { ...runtimeConfiguration.sources[0], displayOrder: 1.5 },
+  ]) {
+    await assert.rejects(
+      loadDashboardRuntimeConfiguration(async () => new Response(JSON.stringify({
+        ...runtimeConfiguration,
+        sources: [source],
+      }), { status: 200 })),
+      /malformed/,
+    );
+  }
 });
 
 test("application runtime composes reporting requests against the dashboard origin", async () => {
