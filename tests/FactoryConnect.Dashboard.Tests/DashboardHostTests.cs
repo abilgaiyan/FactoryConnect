@@ -10,7 +10,7 @@ namespace FactoryConnect.Dashboard.Tests;
 public sealed class DashboardHostTests
 {
     [Fact]
-    public async Task ValidConfigurationStartsAndServesLivenessReadinessAndPlaceholder()
+    public async Task ValidConfigurationStartsAndServesLivenessReadinessAndProductionShell()
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -18,23 +18,27 @@ public sealed class DashboardHostTests
         using var live = await client.GetAsync("/health/live");
         using var ready = await client.GetAsync("/health/ready");
         using var root = await client.GetAsync("/");
+        var content = await root.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, live.StatusCode);
         Assert.Equal(HttpStatusCode.OK, ready.StatusCode);
         Assert.Equal(HttpStatusCode.OK, root.StatusCode);
-        Assert.Contains("data-fc-dashboard-placeholder", await root.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Contains("<div id=\"root\"></div>", content, StringComparison.Ordinal);
+        Assert.Contains("/assets/index-", content, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task ClientSideRouteFallsBackToIndex()
+    public async Task ClientSideRouteFallsBackToProductionShell()
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/production-days/2026-08-30");
+        var content = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("data-fc-dashboard-placeholder", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Contains("<div id=\"root\"></div>", content, StringComparison.Ordinal);
+        Assert.Contains("/assets/index-", content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -65,7 +69,7 @@ public sealed class DashboardHostTests
         var content = await response.Content.ReadAsStringAsync();
 
         Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
-        Assert.DoesNotContain("data-fc-dashboard-placeholder", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("<div id=\"root\"></div>", content, StringComparison.Ordinal);
     }
 
     [Theory]
