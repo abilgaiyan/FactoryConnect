@@ -97,6 +97,41 @@ public sealed class DashboardWholeFeatureConformanceTests
         Assert.Empty(factoryConnectReferences);
     }
 
+    [Fact]
+    public async Task DashboardProjectHasNoFactoryConnectProjectReferences()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var projectPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "FactoryConnect.Dashboard",
+            "FactoryConnect.Dashboard.csproj");
+        var project = await File.ReadAllTextAsync(projectPath);
+
+        Assert.DoesNotContain("<ProjectReference", project, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("FactoryConnect.Core", project, StringComparison.Ordinal);
+        Assert.DoesNotContain("FactoryConnect.Edge", project, StringComparison.Ordinal);
+        Assert.DoesNotContain("FactoryConnect.Persistence", project, StringComparison.Ordinal);
+        Assert.DoesNotContain("FactoryConnect.Api", project, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RepositoryDashboardDefaultsRemainFailClosed()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var settingsPath = Path.Combine(
+            repositoryRoot,
+            "src",
+            "FactoryConnect.Dashboard",
+            "appsettings.json");
+        var settings = await File.ReadAllTextAsync(settingsPath);
+        using var document = JsonDocument.Parse(settings);
+        var dashboard = document.RootElement.GetProperty("Dashboard");
+
+        Assert.Equal(string.Empty, dashboard.GetProperty("ReportingApiBaseAddress").GetString());
+        Assert.Empty(dashboard.GetProperty("Sources").EnumerateArray());
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         IDictionary<string, string?> values,
         string environment) =>
@@ -126,5 +161,21 @@ public sealed class DashboardWholeFeatureConformanceTests
         }
 
         return values;
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "FactoryConnect.sln")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("FactoryConnect repository root could not be located.");
     }
 }
