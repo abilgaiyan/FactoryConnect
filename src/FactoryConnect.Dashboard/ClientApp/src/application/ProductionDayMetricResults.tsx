@@ -18,6 +18,8 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
         <thead>
           <tr>
             <th scope="col">Source</th>
+            <th scope="col">Machine</th>
+            <th scope="col">Processor</th>
             <th scope="col">Metric</th>
             <th scope="col">Version</th>
             <th scope="col">Status</th>
@@ -29,7 +31,7 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
         <tbody>
           {page.items.map((item) => {
             const sourceKey = `${item.machineId}\u0000${item.processorId}`;
-            const sourceName = sourceNames.get(sourceKey) ?? item.machineId;
+            const sourceName = sourceNames.get(sourceKey) ?? "Unconfigured source";
             const reason = item.reasonCode === null
               ? "—"
               : item.reasonOperandName === null
@@ -37,8 +39,10 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
                 : `${item.reasonCode} (${item.reasonOperandName})`;
 
             return (
-              <tr key={`${item.processorId}:${item.machineId}:${item.metricKey}:${item.definitionVersion}:${item.sourceRevision.position}`}>
+              <tr key={metricRowKey(item)}>
                 <td>{sourceName}</td>
+                <td>{item.machineId}</td>
+                <td>{item.processorId}</td>
                 <td>{item.metricKey}</td>
                 <td>{item.definitionVersion}</td>
                 <td>{item.status}</td>
@@ -55,4 +59,22 @@ export function ProductionDayMetricResults({ page, sources }: ProductionDayMetri
       )}
     </div>
   );
+}
+
+function metricRowKey(item: OperationalMetricPage["items"][number]): string {
+  const context = item.context;
+  const period = item.productionDay?.businessDate ?? item.shift?.shiftScheduleAssignmentId ?? "no-period";
+  return [
+    item.processorId,
+    item.machineId,
+    period,
+    context.productionOrderId ?? "",
+    context.operationId ?? "",
+    context.partId ?? "",
+    context.operatorId ?? "",
+    item.metricKey,
+    item.definitionVersion,
+    item.sourceRevision.streamKey,
+    String(item.sourceRevision.position),
+  ].join("\u0000");
 }
