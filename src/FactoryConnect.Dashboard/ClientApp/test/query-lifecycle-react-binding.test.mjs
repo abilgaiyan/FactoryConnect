@@ -56,10 +56,12 @@ test("React mount subscribes once, rerender reuses controller, and unmount unsub
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
   const originalHtmlIFrameElement = globalThis.HTMLIFrameElement;
+  const originalActEnvironment = globalThis.IS_REACT_ACT_ENVIRONMENT;
   const host = createReactHost();
   globalThis.document = host.document;
   globalThis.window = globalThis;
   globalThis.HTMLIFrameElement = class HTMLIFrameElement {};
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
   const pending = deferred();
   const lifecycle = [];
@@ -140,6 +142,7 @@ test("React mount subscribes once, rerender reuses controller, and unmount unsub
     pending.resolve({ items: [1] });
     await execution;
   } finally {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = originalActEnvironment;
     globalThis.document = originalDocument;
     globalThis.window = originalWindow;
     globalThis.HTMLIFrameElement = originalHtmlIFrameElement;
