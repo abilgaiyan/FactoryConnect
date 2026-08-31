@@ -2,21 +2,14 @@ import {
   type FormEvent,
   type MouseEvent,
   type PropsWithChildren,
-  useCallback,
-  useEffect,
-  useMemo,
   useState,
 } from "react";
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
 import { ProductionDayMetricResults } from "./application/ProductionDayMetricResults.tsx";
-import {
-  buildProductionDayQueryRequest,
-  isProductionDaySelection,
-} from "./application/production-day-reporting.ts";
-import { createQueryLifecycleController } from "./query/query-lifecycle-controller.ts";
+import { isProductionDaySelection } from "./application/production-day-reporting.ts";
+import { useProductionDayReporting } from "./application/use-production-day-reporting.ts";
 import { QueryStateView } from "./query/QueryStateView.tsx";
-import { useQueryLifecycleController } from "./query/use-query-lifecycle-controller.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -197,22 +190,7 @@ interface ProductionDayReportingProofProps {
 }
 
 function ProductionDayReportingProof({ productionDay, runtime }: ProductionDayReportingProofProps) {
-  const request = useMemo(
-    () => buildProductionDayQueryRequest(productionDay, runtime.configuration.sources),
-    [productionDay, runtime.configuration.sources],
-  );
-  const createController = useCallback(
-    () => createQueryLifecycleController({
-      query: (signal) => runtime.reportingClient.queryProductionDayMetrics(request, { signal }),
-      isEmpty: (page) => page.items.length === 0,
-    }),
-    [request, runtime.reportingClient],
-  );
-  const query = useQueryLifecycleController(createController);
-
-  useEffect(() => {
-    void query.execute();
-  }, [query.execute]);
+  const query = useProductionDayReporting(productionDay, runtime);
 
   return (
     <QueryStateView state={query.state}>
