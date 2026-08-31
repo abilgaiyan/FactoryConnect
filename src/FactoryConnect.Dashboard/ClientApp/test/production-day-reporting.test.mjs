@@ -45,19 +45,26 @@ test("production-day request uses the selected day and configured source identit
 test("production-day request advances calendar boundaries without local-time interpretation", () => {
   assert.equal(buildProductionDayQueryRequest("2026-12-31", sources).toExclusive, "2027-01-01");
   assert.equal(buildProductionDayQueryRequest("2028-02-29", sources).toExclusive, "2028-03-01");
+  assert.equal(buildProductionDayQueryRequest("9999-12-30", sources).toExclusive, "9999-12-31");
 });
 
-test("production-day selection accepts only valid YYYY-MM-DD calendar dates", () => {
+test("production-day selection accepts only valid queryable DateOnly calendar dates", () => {
+  assert.equal(isProductionDaySelection("0000-01-01"), false);
+  assert.equal(isProductionDaySelection("0001-01-01"), true);
   assert.equal(isProductionDaySelection("2026-08-31"), true);
   assert.equal(isProductionDaySelection("2028-02-29"), true);
+  assert.equal(isProductionDaySelection("9999-12-30"), true);
+  assert.equal(isProductionDaySelection("9999-12-31"), false);
   assert.equal(isProductionDaySelection("2026-02-29"), false);
   assert.equal(isProductionDaySelection("2026-8-31"), false);
   assert.equal(isProductionDaySelection("not-a-date"), false);
 });
 
-test("invalid production day cannot construct a reporting request", () => {
-  assert.throws(
-    () => buildProductionDayQueryRequest("2026-02-29", sources),
-    /valid YYYY-MM-DD calendar date/,
-  );
+test("invalid production-day boundaries cannot construct a reporting request", () => {
+  for (const productionDay of ["0000-01-01", "9999-12-31", "2026-02-29"]) {
+    assert.throws(
+      () => buildProductionDayQueryRequest(productionDay, sources),
+      /valid queryable YYYY-MM-DD calendar date/,
+    );
+  }
 });
