@@ -37,10 +37,17 @@ app.MapGet("/dashboard/config", (IOptions<DashboardOptions> options) =>
 {
     var dashboard = options.Value;
     var sources = dashboard.Sources
+        .OrderBy(static source => source.DisplayOrder)
+        .ThenBy(static source => source.GroupName, StringComparer.Ordinal)
+        .ThenBy(static source => source.DisplayName, StringComparer.Ordinal)
+        .ThenBy(static source => source.MachineId)
+        .ThenBy(static source => source.ProcessorId, StringComparer.Ordinal)
         .Select(static source => new DashboardRuntimeSource(
             source.MachineId,
             source.ProcessorId,
-            source.DisplayName))
+            source.DisplayName,
+            source.GroupName,
+            source.DisplayOrder))
         .ToArray();
 
     return Results.Ok(new DashboardRuntimeConfiguration(
