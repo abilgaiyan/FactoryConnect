@@ -50,10 +50,10 @@ app.MapGet("/dashboard/config", (IOptions<DashboardOptions> options) =>
 });
 
 app.MapPost('/' + shiftReportingPath, (HttpContext context, ReportingGateway gateway) =>
-    gateway.ForwardAsync(context, shiftReportingPath));
+    ForwardExactReportingRouteAsync(context, gateway, shiftReportingPath));
 
 app.MapPost('/' + productionDayReportingPath, (HttpContext context, ReportingGateway gateway) =>
-    gateway.ForwardAsync(context, productionDayReportingPath));
+    ForwardExactReportingRouteAsync(context, gateway, productionDayReportingPath));
 
 app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment) =>
 {
@@ -75,6 +75,21 @@ app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment
 });
 
 app.Run();
+
+static async Task ForwardExactReportingRouteAsync(
+    HttpContext context,
+    ReportingGateway gateway,
+    string relativePath)
+{
+    var expectedPath = '/' + relativePath;
+    if (!string.Equals(context.Request.Path.Value, expectedPath, StringComparison.Ordinal))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await gateway.ForwardAsync(context, relativePath).ConfigureAwait(false);
+}
 
 static bool IsReservedPath(PathString path) =>
     path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase) ||
