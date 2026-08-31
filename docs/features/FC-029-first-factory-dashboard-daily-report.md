@@ -2,19 +2,36 @@
 
 ## Status
 
-- **FC-029.1A — merged FC-028 contract inventory:** complete
-- **FC-029.1B — dashboard host foundation:** complete
-- **FC-029.1C — OpenAPI → TypeScript generation:** complete
-- **FC-029.1D — typed reporting client boundary:** complete
-- **FC-029.1E — React application shell and query state:** complete
-  - **FC-029.1E.1 — React/Vite build foundation:** complete
-  - **FC-029.1E.2 — runtime configuration and same-origin gateway:** complete
-  - **FC-029.1E.3 — deterministic application router and shell:** complete
-  - **FC-029.1E.4 — QueryState and lifecycle controller:** complete
-  - **FC-029.1E.5 — cancellation and stale-response conformance:** complete
-  - **FC-029.1E.6 — shell integration and production asset build:** complete
-- **FC-029.1F — first vertical reporting proof:** complete
-- **FC-029.1G — architecture, deployment, and whole-feature conformance:** active
+- **FC-029.1 — Dashboard Application Foundation:** complete
+  - **FC-029.1A — merged FC-028 contract inventory:** complete
+  - **FC-029.1B — dashboard host foundation:** complete
+  - **FC-029.1C — OpenAPI → TypeScript generation:** complete
+  - **FC-029.1D — typed reporting client boundary:** complete
+  - **FC-029.1E — React application shell and query state:** complete
+    - **FC-029.1E.1 — React/Vite build foundation:** complete
+    - **FC-029.1E.2 — runtime configuration and same-origin gateway:** complete
+    - **FC-029.1E.3 — deterministic application router and shell:** complete
+    - **FC-029.1E.4 — QueryState and lifecycle controller:** complete
+    - **FC-029.1E.5 — cancellation and stale-response conformance:** complete
+    - **FC-029.1E.6 — shell integration and production asset build:** complete
+  - **FC-029.1F — first vertical reporting proof:** complete
+  - **FC-029.1G — architecture, deployment, and whole-feature conformance:** complete
+
+## FC-029.1 closure evidence
+
+Final regression evidence for the completed Dashboard Application Foundation:
+
+```text
+frontend       108/108 passed
+non-SQL        783/783 passed
+SQL Server      75/75 passed
+Release build  passed
+git diff --check clean
+working tree   clean
+branch         synchronized with origin
+```
+
+The final closure head must also pass `npm run contracts:check` so the committed generated FC-028 client contract remains deterministic, type-safe, and synchronized. No additional code or documentation changes should follow that final contract check before closure confirmation.
 
 ## Architectural invariant
 
@@ -30,7 +47,7 @@ FactoryConnect.Dashboard
 presentation only
 ```
 
-`FactoryConnect.Dashboard` must not reference FactoryConnect Core, Edge, reporting abstractions, persistence providers, SQL Server, protocol runtimes, aggregate readers, observation stores, or `FactoryConnect.Api` merely to reuse types. Browser transport contracts come from generated FC-028 OpenAPI types.
+`FactoryConnect.Dashboard` has no FactoryConnect project or runtime assembly dependency. Browser transport contracts come from generated FC-028 OpenAPI types.
 
 The dashboard may format, group, filter, navigate, and render authoritative reporting results. It must not calculate Availability, Performance, Quality, OEE, utilization, production-day boundaries, current machine state, or factory-wide percentages. It must not combine metric-definition versions or reinterpret reporting absence/failure states.
 
@@ -53,7 +70,7 @@ insufficient-evidence
 
 Calculated zero remains distinct from unavailable or insufficient evidence.
 
-SQL Server still does not provide the FC-027 operational-metric projection/query capability. The dashboard does not bypass this limitation by reading persistence directly or weakening provider validation.
+SQL Server does not yet provide the FC-027 operational-metric projection/query capability. The dashboard does not bypass that limitation by reading persistence directly or weakening provider validation.
 
 ## FC-029.1B — dashboard host foundation
 
@@ -118,7 +135,7 @@ Known FC-028 invalid-query Problem Details remain distinct from malformed/incomp
 
 ### E.1 — React/Vite build foundation
 
-The dashboard uses the pinned React/Vite stack and produces hashed production assets into the dashboard web root. The frontend TypeScript and Node/Vite configurations are separated and strict.
+The dashboard uses the pinned React/Vite stack and produces hashed production assets into the dashboard web root. Frontend TypeScript and Node/Vite configurations remain strict and separated.
 
 ### E.2 — runtime configuration and same-origin gateway
 
@@ -136,7 +153,7 @@ requestTimeoutMilliseconds
 sources[] = MachineId + ProcessorId + DisplayName
 ```
 
-The upstream `ReportingApiBaseAddress` is not exposed to the browser.
+The upstream `ReportingApiBaseAddress` is never exposed to the browser.
 
 The factory pilot uses a same-origin gateway:
 
@@ -161,13 +178,13 @@ The root-hosted application route set is:
 /production-days/{productionDay}/report
 ```
 
-Routing is exact, query/fragment independent, safely URI-decoded, history-aware, and explicitly root-hosted. Unknown paths produce the application not-found route. Reserved host paths do not fall through to the SPA shell.
+Routing is exact, query/fragment independent, safely URI-decoded, history-aware, and explicitly root-hosted. Reserved host paths do not fall through to the SPA shell.
 
 ### E.4 — QueryState and lifecycle controller
 
 The closed presentation lifecycle vocabulary is:
 
-```ts
+```text
 idle
 loading
 success<T>
@@ -204,7 +221,7 @@ Unexpected cancellation of the current request remains a failure. Obsolete progr
 
 Runtime configuration is loaded once at bootstrap and the same-origin `ReportingClient` is composed once. React mounts/unmounts controller subscriptions correctly. Every QueryState variant has deterministic presentation without metric interpretation.
 
-Vite production assets are generated into `wwwroot`, included in clean `dotnet publish`, and served by the dashboard host. The committed placeholder frontend was removed; generated web assets are not repository source-of-truth files.
+Vite production assets are generated into `wwwroot`, included in clean `dotnet publish`, and served by the dashboard host. Generated web assets are not repository source-of-truth files.
 
 ## FC-029.1F — first vertical reporting proof
 
@@ -240,7 +257,7 @@ QueryState<OperationalMetricPage>
 authoritative result presentation
 ```
 
-The accepted one-day query range is deliberately narrower than JavaScript Date so every accepted selection is representable by ASP.NET `DateOnly` *and* has a representable exclusive next day:
+The accepted one-day query range is deliberately narrower than JavaScript `Date` so every accepted selection is representable by ASP.NET `DateOnly` and has a representable exclusive next day:
 
 ```text
 0000-01-01 → invalid
@@ -251,91 +268,36 @@ The accepted one-day query range is deliberately narrower than JavaScript Date s
 
 Calendar advancement is UTC/calendar based and does not infer factory timezone boundaries.
 
-The result presentation preserves:
+The result presentation preserves configured display name mapped by exact source identity; top-level source identity; site/business date; metric key/version; status; nullable value; unit; reason; production context; complete source revision; and continuation-token presence.
 
-```text
-configured display name mapped by exact source identity
-top-level MachineId + ProcessorId
-SiteId + BusinessDate
-MetricKey + DefinitionVersion
-Status
-nullable Value
-Unit
-ReasonCode + ReasonOperandName
-ProductionOrderId + OperationId + PartId + OperatorId
-SourceRevision.MachineId
-SourceRevision.ProcessorId
-SourceRevision.StreamKey
-SourceRevision.Position
-continuation-token presence
-```
-
-Unknown response sources remain visible by authoritative identifiers. Calculated zero renders as zero. `unavailable` and `insufficient-evidence` remain distinct with supplied reasons. Pagination is intentionally inactive in the first proof, but continuation-token presence is surfaced rather than silently discarded.
+Unknown response sources remain visible by authoritative identifiers. Calculated zero renders as zero. `unavailable` and `insufficient-evidence` remain distinct with supplied reasons. Pagination is intentionally inactive in the first proof, but continuation-token presence is surfaced rather than discarded.
 
 Route changes and unmount use E.5 ownership/cancellation semantics; a late obsolete production-day response cannot publish.
 
 ## FC-029.1G — architecture, deployment, and whole-feature conformance
 
-G is a closure slice. It introduces no new dashboard capability.
+G is a closure slice and introduces no new dashboard capability.
 
-### Required conformance
+The completed conformance proves:
 
-1. **Documentation status**
-   - E.1 through E.6 recorded complete.
-   - F recorded complete.
-   - G recorded as the final active FC-029.1 slice until regression evidence is green.
-   - factory-LAN deployment instructions documented separately.
+1. **Documentation closure** — E.1 through E.6, F, G, and parent FC-029.1 are recorded complete; LAN deployment is documented separately.
+2. **Forbidden reference boundary** — `FactoryConnect.Dashboard` has no FactoryConnect project or runtime assembly dependency.
+3. **Clean publish and fail-closed deployment** — clean Release publish produces the React entry and hashed asset; repository defaults contain no usable upstream/source settings; production accepts valid non-loopback LAN composition.
+4. **Exact gateway restriction** — only the two exact FC-028 POST routes forward; non-POST methods, unknown paths, extra segments, shortened paths, and trailing-slash variants do not become gateway routes.
+5. **Seven-source composition** — seven unique `(MachineId, ProcessorId)` identities project exactly to browser runtime configuration while the private upstream address remains absent.
+6. **UI state distinctions** — `empty`, `invalidRequest`, `failed`, calculated zero, `unavailable`, and `insufficient-evidence` remain semantically distinct; unknown sources and continuation-token presence remain visible.
+7. **Whole-feature regressions** — frontend, Release build, non-SQL, SQL Server integration, Git cleanliness, and generated-contract synchronization are required closure gates.
 
-2. **Forbidden reference boundary**
-   - `FactoryConnect.Dashboard` has no FactoryConnect project/assembly dependency.
-   - no Core, Edge, persistence, SQL Server, protocol, aggregate, observation, or API implementation dependency is added to the dashboard presentation host.
-
-3. **Clean publish and LAN deployment**
-   - clean publish emits `wwwroot/index.html` and its referenced hashed JavaScript asset.
-   - repository production defaults fail closed.
-   - production accepts a non-loopback reporting API and valid source composition.
-   - `/dashboard/config` never exposes the upstream reporting address.
-
-4. **Exact gateway restriction**
-   - only the two exact FC-028 reporting POST paths are forwarded.
-   - non-POST methods are rejected.
-   - unknown paths, extra segments, near-miss paths, and trailing-slash variants are rejected.
-   - request/response pass-through, 502/504 behavior, cancellation, and upstream base-path preservation remain covered.
-
-5. **Seven-source composition fixture**
-   - production configuration with seven unique `(MachineId, ProcessorId)` pairs starts successfully.
-   - browser runtime configuration projects all seven identities and display names exactly.
-   - the private upstream reporting address remains absent from browser configuration.
-
-6. **UI absence/failure distinctions**
-   - empty page remains `empty`.
-   - invalid query remains `invalidRequest` with original Problem Details.
-   - timeout/network/HTTP/protocol failures remain `failed` and never `empty`.
-   - calculated zero remains successful zero.
-   - unavailable and insufficient-evidence remain distinct authoritative statuses.
-   - unknown source identity remains visible.
-   - continuation-token presence is preserved.
-   - no metric arithmetic or factory-wide aggregation is introduced.
-
-7. **Fresh regressions before closure**
-   - frontend `npm test`.
-   - frontend `npm run typecheck`.
-   - frontend `npm run build`.
-   - frontend `npm run contracts:check`.
-   - Dashboard host/conformance tests.
-   - full non-SQL FactoryConnect regression suite.
-   - SQL Server integration regression suite.
-   - `git diff --check` clean.
-   - clean working tree, branch synchronized with remote.
-
-Deployment details and the seven-source shape fixture are documented in:
+Deployment and hosting details are documented in:
 
 ```text
 docs/deployment/factoryconnect-dashboard-lan.md
 ```
 
-## FC-029.1 closure condition
+That deployment boundary includes explicit production environment selection, Kestrel LAN binding through `ASPNETCORE_URLS`, Dashboard environment-variable mapping, factory-LAN-restricted firewall exposure, and deployment-infrastructure ownership of TLS termination, certificate lifecycle, service supervision, restart policy, and host hardening.
 
-FC-029.1 — Dashboard Application Foundation is complete only after FC-029.1G receives fresh green frontend, non-SQL, and SQL Server regression evidence and no architecture/deployment blocker remains.
+## FC-029.1 outcome
+
+FC-029.1 establishes the production-capable dashboard application foundation and one authoritative production-day reporting vertical without inventing dashboard-side factory semantics.
 
 No metric cards, charts, factory-wide OEE aggregation, current-machine-state dashboard, or printable daily report is introduced by FC-029.1. Those remain later FC-029 slices built on this closed foundation.
