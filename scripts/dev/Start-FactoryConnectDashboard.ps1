@@ -29,23 +29,15 @@ Write-Host "  React     http://localhost:5173"
 Write-Host ""
 Write-Host "This launcher is reporting/UI focused. It does not start SQL Server, FactoryConnect.Edge, or an MTConnect Agent."
 
-$processes = @(
-    Start-Process powershell -PassThru -ArgumentList @(
-        "-NoExit",
-        "-Command",
-        "`$env:ASPNETCORE_URLS='http://localhost:5080'; dotnet run --project '$apiProject'"
-    ),
-    Start-Process powershell -PassThru -ArgumentList @(
-        "-NoExit",
-        "-Command",
-        "`$env:ASPNETCORE_URLS='http://localhost:5090'; dotnet run --project '$dashboardProject'"
-    ),
-    Start-Process powershell -PassThru -WorkingDirectory $clientDirectory -ArgumentList @(
-        "-NoExit",
-        "-Command",
-        "npm run dev"
-    )
-)
+$apiCommand = "`$env:ASPNETCORE_URLS='http://localhost:5080'; dotnet run --project `"$apiProject`""
+$dashboardCommand = "`$env:ASPNETCORE_URLS='http://localhost:5090'; dotnet run --project `"$dashboardProject`""
+$clientCommand = "Set-Location -LiteralPath `"$clientDirectory`"; npm run dev"
+
+$apiProcess = Start-Process powershell -PassThru -ArgumentList "-NoExit -Command `"$apiCommand`""
+$dashboardProcess = Start-Process powershell -PassThru -ArgumentList "-NoExit -Command `"$dashboardCommand`""
+$clientProcess = Start-Process powershell -PassThru -ArgumentList "-NoExit -Command `"$clientCommand`""
+
+$processes = @($apiProcess, $dashboardProcess, $clientProcess)
 
 Write-Host "Started $($processes.Count) development processes."
 Write-Host "Open http://localhost:5173 after the services are ready."
