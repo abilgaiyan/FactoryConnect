@@ -114,6 +114,38 @@ test("unexpected cancellation is observable as failed in E.4", async () => {
   assert.deepEqual(result, { kind: "failed", failure });
 });
 
+test("sequential re-execution replaces prior terminal state through loading", async () => {
+  const responses = [
+    { items: [1] },
+    { items: [] },
+    { items: [2] },
+  ];
+  let index = 0;
+  const controller = createQueryLifecycleController({
+    query: async () => responses[index++],
+    isEmpty: (data) => data.items.length === 0,
+  });
+  const states = [];
+  controller.subscribe((state) => states.push(state.kind));
+
+  assert.equal((await controller.execute()).kind, "success");
+  assert.equal((await controller.execute()).kind, "empty");
+  assert.equal((await controller.execute()).kind, "success");
+
+  assert.deepEqual(states, [
+    "loading",
+    "success",
+    "loading",
+    "empty",
+    "loading",
+    "success",
+  ]);
+  assert.deepEqual(controller.current(), {
+    kind: "success",
+    data: { items: [2] },
+  });
+});
+
 test("subscription cleanup stops later notifications", async () => {
   let value = 1;
   const controller = createQueryLifecycleController({
