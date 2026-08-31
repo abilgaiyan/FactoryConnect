@@ -18,4 +18,8 @@ public sealed class DashboardSourceOptions
     public string ProcessorId { get; init; } = string.Empty;
 
     public string DisplayName { get; init; } = string.Empty;
+
+    public string? GroupName { get; init; }
+
+    public int DisplayOrder { get; init; }
 }
