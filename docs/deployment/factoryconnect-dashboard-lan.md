@@ -34,6 +34,28 @@ wwwroot/assets/index-<hash>.js
 
 The frontend is generated during publish. `src/FactoryConnect.Dashboard/wwwroot/` is generated output and is not a source-of-truth artifact.
 
+## Production host binding
+
+Publishing files does not by itself make the dashboard reachable from another factory-LAN machine. The deployed ASP.NET Core process must bind to a LAN-reachable interface and production environment explicitly.
+
+A minimal environment-variable shape is:
+
+```text
+ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://0.0.0.0:<dashboard-port>
+Dashboard__ReportingApiBaseAddress=http://<reporting-host>:<reporting-port>/<optional-base-path>/
+Dashboard__RequestTimeout=00:00:30
+Dashboard__Sources__0__MachineId=<machine-guid>
+Dashboard__Sources__0__ProcessorId=<processor-id>
+Dashboard__Sources__0__DisplayName=<display-name>
+```
+
+Additional configured machines continue with `Dashboard__Sources__1__...`, `Dashboard__Sources__2__...`, and so on.
+
+`0.0.0.0` means the Kestrel process listens on all IPv4 interfaces available to that host. Network reachability still depends on the server's IP configuration, routing, and firewall policy. The dashboard port must be exposed only to the intended factory LAN or an equivalently restricted management/network segment; it must not be opened indiscriminately to untrusted networks.
+
+TLS termination, certificate lifecycle, operating-system service supervision, automatic restart, startup ordering, log collection, and machine-level hardening belong to deployment infrastructure. They may be provided by a reverse proxy, Windows Service/systemd/container supervisor, or equivalent site-standard mechanism. FactoryConnect does not silently configure those concerns inside the dashboard application.
+
 ## Production configuration
 
 Repository defaults intentionally fail closed:
