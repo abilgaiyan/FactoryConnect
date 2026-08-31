@@ -99,8 +99,13 @@ export function createQueryLifecycleController<T>(
           return state;
         }
 
+        const empty = options.isEmpty(data);
+        if (!ownsPublication(execution)) {
+          return state;
+        }
+
         activeExecution = undefined;
-        return publish(options.isEmpty(data) ? { kind: "empty" } : { kind: "success", data });
+        return publish(empty ? { kind: "empty" } : { kind: "success", data });
       } catch (error) {
         if (!ownsPublication(execution)) {
           if (!isReportingClientFailure(error)) {
