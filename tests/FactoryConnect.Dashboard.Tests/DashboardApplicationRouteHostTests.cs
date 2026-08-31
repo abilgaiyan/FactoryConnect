@@ -9,10 +9,11 @@ namespace FactoryConnect.Dashboard.Tests;
 public sealed class DashboardApplicationRouteHostTests
 {
     [Theory]
+    [InlineData("/")]
     [InlineData("/production-days/2026-08-30")]
     [InlineData("/machines/11111111-1111-1111-1111-111111111111")]
     [InlineData("/production-days/2026-08-30/report")]
-    public async Task DeepApplicationRoutesUseSpaFallback(string path)
+    public async Task ApplicationRoutesServeProductionFrontendEntry(string path)
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -23,12 +24,12 @@ public sealed class DashboardApplicationRouteHostTests
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync(path);
+        var html = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains(
-            "data-fc-dashboard-placeholder",
-            await response.Content.ReadAsStringAsync(),
-            StringComparison.Ordinal);
+        Assert.Contains("<div id=\"root\"></div>", html, StringComparison.Ordinal);
+        Assert.Contains("/assets/", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-fc-dashboard-placeholder", html, StringComparison.Ordinal);
     }
 
     private static Dictionary<string, string?> ValidOverrides() => new(StringComparer.Ordinal)
