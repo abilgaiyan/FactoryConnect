@@ -87,7 +87,7 @@ internal static class OperationalMetricHttpMapper
             ToMetrics(request.Metrics),
             ToContext(request.Context),
             ToStatuses(request.Statuses),
-            ToOrder(request.Order),
+            OperationalMetricHttpVocabulary.ParseOrder(request.Order),
             ToPage(request.PageSize, request.ContinuationToken));
 
     public static ProductionDayOperationalMetricReportQuery ToQuery(
@@ -99,7 +99,7 @@ internal static class OperationalMetricHttpMapper
             ToMetrics(request.Metrics),
             ToContext(request.Context),
             ToStatuses(request.Statuses),
-            ToOrder(request.Order),
+            OperationalMetricHttpVocabulary.ParseOrder(request.Order),
             ToPage(request.PageSize, request.ContinuationToken));
 
     public static OperationalMetricPageResponse ToResponse(
@@ -127,7 +127,9 @@ internal static class OperationalMetricHttpMapper
         var revision = item.SourceRevision;
 
         return new OperationalMetricItemResponse(
-            item is ShiftOperationalMetricQueryItem ? "shift" : "production-day",
+            item is ShiftOperationalMetricQueryItem
+                ? OperationalMetricHttpVocabulary.ShiftScope
+                : OperationalMetricHttpVocabulary.ProductionDayScope,
             item.ProcessorId.Value,
             item.MachineId.Value,
             shift,
@@ -139,7 +141,7 @@ internal static class OperationalMetricHttpMapper
                 context.OperatorId?.Value),
             item.DefinitionId.MetricKey,
             item.DefinitionId.Version,
-            ToStatus(item.Status),
+            OperationalMetricHttpVocabulary.FormatStatus(item.Status),
             item.Value,
             item.Unit,
             item.ReasonCode?.ToString(),
@@ -178,30 +180,7 @@ internal static class OperationalMetricHttpMapper
     private static OperationalMetricStatusSelection? ToStatuses(IReadOnlyList<string>? statuses) =>
         statuses is null
             ? null
-            : new OperationalMetricStatusSelection(statuses.Select(ToStatus));
-
-    private static OperationalMetricEvaluationStatus ToStatus(string value) => value switch
-    {
-        "calculated" => OperationalMetricEvaluationStatus.Calculated,
-        "unavailable" => OperationalMetricEvaluationStatus.Unavailable,
-        "insufficient-evidence" => OperationalMetricEvaluationStatus.InsufficientEvidence,
-        _ => throw new ArgumentException($"Unsupported operational metric status '{value}'.", nameof(value)),
-    };
-
-    private static string ToStatus(OperationalMetricEvaluationStatus status) => status switch
-    {
-        OperationalMetricEvaluationStatus.Calculated => "calculated",
-        OperationalMetricEvaluationStatus.Unavailable => "unavailable",
-        OperationalMetricEvaluationStatus.InsufficientEvidence => "insufficient-evidence",
-        _ => throw new ArgumentOutOfRangeException(nameof(status)),
-    };
-
-    private static OperationalMetricReportOrder ToOrder(string value) => value switch
-    {
-        "period-ascending" => OperationalMetricReportOrder.PeriodAscending,
-        "period-descending" => OperationalMetricReportOrder.PeriodDescending,
-        _ => throw new ArgumentException($"Unsupported operational metric report order '{value}'.", nameof(value)),
-    };
+            : new OperationalMetricStatusSelection(statuses.Select(OperationalMetricHttpVocabulary.ParseStatus));
 
     private static ReportingPageRequest ToPage(int pageSize, string? continuationToken) =>
         new(

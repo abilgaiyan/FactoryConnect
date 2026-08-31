@@ -13,3 +13,8 @@ appsettings.Local.json
 *.local.json
 .env
 .env.*
+/deploy/
+node_modules/
+dist/
+*.tsbuildinfo
+/src/FactoryConnect.Dashboard/wwwroot/
