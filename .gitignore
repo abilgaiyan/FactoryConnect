@@ -17,3 +17,4 @@ appsettings.Local.json
 node_modules/
 dist/
 *.tsbuildinfo
+/src/FactoryConnect.Dashboard/wwwroot/
