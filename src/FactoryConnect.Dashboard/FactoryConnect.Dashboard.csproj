@@ -16,7 +16,7 @@
     </ItemGroup>
     <Copy
       SourceFiles="@(DashboardPublishedAsset)"
-      DestinationFiles="@(DashboardPublishedAsset->'$(PublishDir)wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
+      DestinationFiles="@(DashboardPublishedAsset->'$(PublishDir)/wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
       SkipUnchangedFiles="true" />
   </Target>
 </Project>
