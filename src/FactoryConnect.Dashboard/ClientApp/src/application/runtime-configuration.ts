@@ -41,6 +41,7 @@ function isRuntimeConfiguration(value: unknown): value is DashboardRuntimeConfig
     Number.isInteger(value.requestTimeoutMilliseconds) &&
     value.requestTimeoutMilliseconds > 0 &&
     Array.isArray(value.sources) &&
+    value.sources.length > 0 &&
     value.sources.every(isRuntimeSource)
   );
 }
