@@ -8,6 +8,7 @@ import { ProductionDayMetricResults } from "../src/application/ProductionDayMetr
 
 const configuredMachineId = "11111111-1111-1111-1111-111111111111";
 const unknownMachineId = "22222222-2222-2222-2222-222222222222";
+const revisionMachineId = "33333333-3333-3333-3333-333333333333";
 
 function metric(overrides) {
   return {
@@ -30,8 +31,8 @@ function metric(overrides) {
     reasonCode: null,
     reasonOperandName: null,
     sourceRevision: {
-      processorId: "operational-metrics",
-      machineId: configuredMachineId,
+      processorId: "revision-processor",
+      machineId: revisionMachineId,
       streamKey: "stream-a",
       position: "18446744073709551615",
     },
@@ -93,6 +94,8 @@ test("production-day results preserve authoritative states, context, revision, a
   assert.match(html, /operation-3/);
   assert.match(html, /part-9/);
   assert.match(html, /operator-4/);
+  assert.match(html, new RegExp(revisionMachineId));
+  assert.match(html, /revision-processor/);
   assert.match(html, /stream-a/);
   assert.match(html, /18446744073709551615/);
   assert.match(html, /Machine 1/);
