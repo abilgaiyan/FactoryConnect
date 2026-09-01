@@ -143,7 +143,7 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
         RecordingStore Inner,
         RosterValidatedProductionContextProcessingStore Guard)
     {
-        public Task<MachineShiftOccurrenceRoster?> ReadRosterAsync() =>
+        public ValueTask<MachineShiftOccurrenceRoster?> ReadRosterAsync() =>
             RosterStore.ReadAsync(MachineId, Day, CancellationToken.None);
 
         public async Task PublishRosterAsync(IReadOnlyList<ShiftOccurrenceId> occurrences)
