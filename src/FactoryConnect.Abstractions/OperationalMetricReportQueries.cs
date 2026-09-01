@@ -301,6 +301,8 @@ public sealed record OperationalMetricStatusSelection
 
 public sealed record OperationalMetricContextFilter
 {
+    public bool UnpartitionedOnly { get; init; }
+
     public ProductionOrderId? ProductionOrderId { get; init; }
 
     public OperationId? OperationId { get; init; }
@@ -311,6 +313,17 @@ public sealed record OperationalMetricContextFilter
 
     public void Validate()
     {
+        if (UnpartitionedOnly &&
+            (ProductionOrderId is not null ||
+             OperationId is not null ||
+             PartId is not null ||
+             OperatorId is not null))
+        {
+            throw new ArgumentException(
+                "Unpartitioned-only context selection cannot be combined with contextual identity filters.",
+                nameof(UnpartitionedOnly));
+        }
+
         if (ProductionOrderId is { IsEmpty: true })
         {
             throw new ArgumentException(
@@ -345,6 +358,11 @@ public sealed record OperationalMetricContextFilter
         ArgumentNullException.ThrowIfNull(contextKey);
         Validate();
         contextKey.Validate();
+
+        if (UnpartitionedOnly)
+        {
+            return contextKey == OperationalMetricEvaluationContextKey.Unpartitioned;
+        }
 
         return (ProductionOrderId is null || ProductionOrderId == contextKey.ProductionOrderId) &&
             (OperationId is null || OperationId == contextKey.OperationId) &&
