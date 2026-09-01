@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildProductionDayQueryRequest,
   isProductionDaySelection,
+  queryAuthoritativeProductionDay,
 } from "../src/application/production-day-reporting.ts";
 
 const sources = [
@@ -11,15 +12,27 @@ const sources = [
     machineId: "11111111-1111-1111-1111-111111111111",
     processorId: "operational-metrics-a",
     displayName: "Machine A",
+    groupName: "Line 1",
+    displayOrder: 10,
   },
   {
     machineId: "22222222-2222-2222-2222-222222222222",
     processorId: "operational-metrics-b",
     displayName: "Machine B",
+    groupName: "Line 1",
+    displayOrder: 20,
   },
 ];
 
-test("production-day request uses the selected day and configured source identities only", () => {
+const expectedMetrics = [
+  { metricKey: "Availability", version: "1.0" },
+  { metricKey: "Utilization", version: "1.0" },
+  { metricKey: "Performance", version: "1.0" },
+  { metricKey: "Quality", version: "1.0" },
+  { metricKey: "OEE", version: "1.0" },
+];
+
+test("production-day request selects one day, exact configured identities, exact metric versions, and unpartitioned context", () => {
   assert.deepEqual(buildProductionDayQueryRequest("2026-08-31", sources), {
     sources: [
       {
@@ -33,13 +46,99 @@ test("production-day request uses the selected day and configured source identit
     ],
     fromInclusive: "2026-08-31",
     toExclusive: "2026-09-01",
-    metrics: null,
-    context: null,
+    metrics: expectedMetrics,
+    context: {
+      productionOrderId: null,
+      operationId: null,
+      partId: null,
+      operatorId: null,
+      unpartitionedOnly: true,
+    },
     statuses: null,
     order: "period-ascending",
-    pageSize: 100,
+    pageSize: 200,
     continuationToken: null,
   });
+});
+
+test("production-day request preserves an opaque continuation token exactly", () => {
+  const opaqueToken = " opaque+/=::not-json ";
+
+  assert.equal(
+    buildProductionDayQueryRequest("2026-08-31", sources, opaqueToken).continuationToken,
+    opaqueToken,
+  );
+});
+
+test("authoritative query consumes every continuation page without interpreting or deduplicating items", async () => {
+  const opaqueToken = "opaque+/=::not-json";
+  const calls = [];
+  const repeatedItem = { marker: "same-authoritative-item" };
+  const pages = [
+    { items: [repeatedItem], continuationToken: opaqueToken },
+    { items: [repeatedItem, { marker: "second-page" }], continuationToken: null },
+  ];
+  const reportingClient = {
+    async queryProductionDayMetrics(request, options) {
+      calls.push({ request, options });
+      return pages[calls.length - 1];
+    },
+  };
+  const signal = new AbortController().signal;
+
+  const result = await queryAuthoritativeProductionDay(
+    "2026-08-31",
+    sources,
+    reportingClient,
+    { signal },
+  );
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].request.continuationToken, null);
+  assert.equal(calls[1].request.continuationToken, opaqueToken);
+  assert.equal(calls[0].options.signal, signal);
+  assert.equal(calls[1].options.signal, signal);
+  assert.deepEqual(result.items, [repeatedItem, repeatedItem, { marker: "second-page" }]);
+});
+
+test("empty configured factory returns an empty authoritative result without issuing an invalid reporting request", async () => {
+  let callCount = 0;
+  const reportingClient = {
+    async queryProductionDayMetrics() {
+      callCount += 1;
+      throw new Error("must not be called");
+    },
+  };
+
+  const result = await queryAuthoritativeProductionDay(
+    "2026-08-31",
+    [],
+    reportingClient,
+  );
+
+  assert.deepEqual(result, { items: [] });
+  assert.equal(callCount, 0);
+});
+
+test("failure on a later continuation page rejects the whole authoritative query", async () => {
+  const expectedFailure = new Error("second page failed");
+  let callCount = 0;
+  const reportingClient = {
+    async queryProductionDayMetrics() {
+      callCount += 1;
+      if (callCount === 1) {
+        return { items: [{ marker: "first-page" }], continuationToken: "next" };
+      }
+
+      throw expectedFailure;
+    },
+  };
+
+  await assert.rejects(
+    queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
+    (error) => error === expectedFailure,
+  );
+  assert.equal(callCount, 2);
 });
 
 test("production-day request advances calendar boundaries without local-time interpretation", () => {
