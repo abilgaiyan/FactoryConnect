@@ -84,6 +84,7 @@ export interface components {
             operationId: null | string;
             partId: null | string;
             operatorId: null | string;
+            unpartitionedOnly: boolean;
         };
         OperationalMetricContextResponse: {
             productionOrderId: null | string;
