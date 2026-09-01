@@ -5,7 +5,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import { ReportingNetworkFailure } from "../src/api/reporting/index.ts";
-import { productionDayPath } from "../src/App.tsx";
+import { productionDayPath } from "../src/application/production-day-navigation.ts";
 import { useProductionDayOverview } from "../src/application/use-production-day-overview.ts";
 
 const machineId = "11111111-1111-1111-1111-111111111111";
