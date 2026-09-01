@@ -16,7 +16,7 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
     { style: { overflowX: "auto" } },
     ...model.groups.map((group) => createElement(
       "section",
-      { key: group.groupName ?? "__ungrouped" },
+      { key: JSON.stringify([group.groupName]) },
       createElement("h2", null, group.groupName ?? "Ungrouped"),
       createElement(
         "table",
@@ -38,7 +38,7 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
           null,
           ...group.machines.map((machine) => createElement(
             "tr",
-            { key: `${machine.processorId}:${machine.machineId}` },
+            { key: JSON.stringify([machine.processorId, machine.machineId]) },
             createElement("th", { scope: "row" }, machine.displayName),
             metricCell(machine.metrics.availability),
             metricCell(machine.metrics.utilization),
