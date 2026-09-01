@@ -695,7 +695,17 @@ stale CAS / conflicting existing line / invalid resolver output
 
 Edge composition derives `MachineShiftScheduleScope` values from the same validated per-machine production-processing configuration already used by FC-025. It exposes a machine-keyed materialization runtime set. `ProcessorId` remains absent.
 
-3A.1B deliberately introduces no background materialization horizon and no reporting-triggered writes. The policy that decides which days are materialized must be explicit in a later composition step; FC-028 remains read-only.
+Production composition owns one explicit finite startup request:
+
+```text
+ProductionProcessing:RosterMaterialization
+  FromProductionDayInclusive
+  ToProductionDayExclusive
+```
+
+When the selected persistence provider exposes the roster capability, the startup worker materializes every configured machine for every business date in that half-open range before the production metric-input background worker starts. It never reads the clock, guesses today, or expands the range. A failure for any requested machine/day escapes startup and remains visible; incomplete coverage is not silently accepted. Existing CAS conflicts are not weakened or hidden. FC-025/026-only compositions whose provider does not expose roster persistence retain their existing processing lifecycle and do not advertise roster coverage.
+
+The bounded startup command may be rerun safely because equivalent complete snapshots are idempotent. 3A.1B introduces no perpetual scheduler and no reporting-triggered writes; FC-028 remains read-only.
 
 ## Deferred boundaries
 

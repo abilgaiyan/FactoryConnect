@@ -169,6 +169,23 @@ public sealed class MachineShiftOccurrenceRosterMaterializerTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public void BoundedRequestRejectsMissingOrNonAdvancingProductionDayRange()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new MachineShiftRosterMaterializationRequest(
+                default,
+                new DateOnly(2026, 9, 2)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new MachineShiftRosterMaterializationRequest(
+                new DateOnly(2026, 9, 1),
+                default));
+        Assert.Throws<ArgumentException>(() =>
+            new MachineShiftRosterMaterializationRequest(
+                new DateOnly(2026, 9, 2),
+                new DateOnly(2026, 9, 2)));
+    }
+
     private static readonly SiteId SiteId = new("SITE-A");
     private static readonly ProductionLineId LineId = new("LINE-1");
     private static readonly DateOnly BusinessDate = new(2026, 9, 1);

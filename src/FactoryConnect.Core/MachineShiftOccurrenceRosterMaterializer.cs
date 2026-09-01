@@ -197,4 +197,29 @@ public sealed class MachineShiftOccurrenceRosterMaterializationRuntimeSet
 
         return _materializer.MaterializeAsync(scope, productionDayId, cancellationToken);
     }
+
+    public async Task<IReadOnlyList<MachineShiftOccurrenceRoster>> MaterializeAsync(
+        MachineShiftRosterMaterializationRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        List<MachineShiftOccurrenceRoster> materialized = [];
+        foreach (var scope in _scopes)
+        {
+            for (var businessDate = request.FromProductionDayInclusive;
+                 businessDate < request.ToProductionDayExclusive;
+                 businessDate = businessDate.AddDays(1))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                materialized.Add(await _materializer.MaterializeAsync(
+                    scope,
+                    new ProductionDayId(scope.SiteId, businessDate),
+                    cancellationToken).ConfigureAwait(false));
+            }
+        }
+
+        return new ReadOnlyCollection<MachineShiftOccurrenceRoster>(materialized);
+    }
 }

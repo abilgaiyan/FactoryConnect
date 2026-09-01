@@ -33,6 +33,8 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         await using var provider = services.BuildServiceProvider();
         var projectionStore = provider.GetRequiredService<
             InMemoryMachineStateActivityProjectionStore>();
+        Assert.Null(provider.GetService<
+            MachineShiftOccurrenceRosterMaterializationRuntimeSet>());
         await SeedActivityAsync(projectionStore, activityA, 1);
         await SeedActivityAsync(projectionStore, activityB, 1);
 

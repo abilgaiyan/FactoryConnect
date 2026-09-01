@@ -3,6 +3,7 @@ using FactoryConnect.Core;
 using FactoryConnect.Edge;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace FactoryConnect.Edge.Tests;
@@ -34,6 +35,9 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             OperationalMetricProjectionProcessingRuntimeSet>();
         var rosterRuntimes = provider.GetRequiredService<
             MachineShiftOccurrenceRosterMaterializationRuntimeSet>();
+        var rosterRequest = provider.GetRequiredService<
+            MachineShiftRosterMaterializationRequest>();
+        var hostedServices = provider.GetServices<IHostedService>().ToArray();
 
         Assert.Equal(2, inventory.Machines.Count);
         Assert.Equal(2, inventory.ActivityStreams.Count);
@@ -44,6 +48,17 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         Assert.Equal(2, aggregationRuntimes.Runtimes.Count);
         Assert.Equal(2, metricRuntimes.Runtimes.Count);
         Assert.Equal(2, rosterRuntimes.Scopes.Count);
+        Assert.Equal(new DateOnly(2026, 8, 27), rosterRequest.FromProductionDayInclusive);
+        Assert.Equal(new DateOnly(2026, 8, 29), rosterRequest.ToProductionDayExclusive);
+        Assert.Contains(hostedServices, static service =>
+            service is MachineShiftRosterMaterializationWorker);
+        Assert.Contains(hostedServices, static service =>
+            service is ProductionMetricInputProcessingWorker);
+        Assert.True(
+            Array.FindIndex(hostedServices, static service =>
+                service is MachineShiftRosterMaterializationWorker) <
+            Array.FindIndex(hostedServices, static service =>
+                service is ProductionMetricInputProcessingWorker));
         Assert.NotNull(provider.GetRequiredService<IOperationalMetricReportReader>());
 
         Assert.Equal(
@@ -92,6 +107,8 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             ["ObservationProcessing:PollingInterval"] = "00:00:01",
             ["ProductionProcessing:BatchSize"] = "100",
             ["ProductionProcessing:PollingInterval"] = "00:00:01",
+            ["ProductionProcessing:RosterMaterialization:FromProductionDayInclusive"] = "2026-08-27",
+            ["ProductionProcessing:RosterMaterialization:ToProductionDayExclusive"] = "2026-08-29",
             ["MetricAggregation:BatchSize"] = "100",
             ["MetricAggregation:PollingInterval"] = "00:00:01",
             ["OperationalMetrics:PollingInterval"] = "00:00:01",

@@ -35,3 +35,39 @@ public sealed record MachineShiftScheduleScope
 
     public ProductionLineId ProductionLineId { get; }
 }
+
+public sealed record MachineShiftRosterMaterializationRequest
+{
+    public MachineShiftRosterMaterializationRequest(
+        DateOnly fromProductionDayInclusive,
+        DateOnly toProductionDayExclusive)
+    {
+        if (fromProductionDayInclusive == default)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(fromProductionDayInclusive),
+                "Roster materialization start production day is required.");
+        }
+
+        if (toProductionDayExclusive == default)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(toProductionDayExclusive),
+                "Roster materialization exclusive end production day is required.");
+        }
+
+        if (toProductionDayExclusive <= fromProductionDayInclusive)
+        {
+            throw new ArgumentException(
+                "Roster materialization exclusive end must be after its start.",
+                nameof(toProductionDayExclusive));
+        }
+
+        FromProductionDayInclusive = fromProductionDayInclusive;
+        ToProductionDayExclusive = toProductionDayExclusive;
+    }
+
+    public DateOnly FromProductionDayInclusive { get; }
+
+    public DateOnly ToProductionDayExclusive { get; }
+}

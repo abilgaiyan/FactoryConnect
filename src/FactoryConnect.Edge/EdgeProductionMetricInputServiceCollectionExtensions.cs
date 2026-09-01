@@ -63,6 +63,8 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
             pollingInterval,
             TimeSpan.Zero);
+        var rosterMaterializationEnabled = services.Any(descriptor =>
+            descriptor.ServiceType == typeof(IMachineShiftOccurrenceRosterStore));
 
         var configurations = ReadMachineConfigurations(
             section,
@@ -94,11 +96,22 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             static provider => provider.GetRequiredService<
                 InMemoryPlannedProductionScheduleReader>());
         services.AddSingleton<ShiftOccurrenceResolver>();
-        services.AddSingleton<MachineShiftOccurrenceRosterMaterializer>();
-        services.AddSingleton(
-            provider => new MachineShiftOccurrenceRosterMaterializationRuntimeSet(
-                schedulingScopes,
-                provider.GetRequiredService<MachineShiftOccurrenceRosterMaterializer>()));
+        if (rosterMaterializationEnabled)
+        {
+            var rosterSection = section.GetRequiredSection("RosterMaterialization");
+            services.AddSingleton(new MachineShiftRosterMaterializationRequest(
+                DateOnly.Parse(
+                    Required(rosterSection, "FromProductionDayInclusive"),
+                    CultureInfo.InvariantCulture),
+                DateOnly.Parse(
+                    Required(rosterSection, "ToProductionDayExclusive"),
+                    CultureInfo.InvariantCulture)));
+            services.AddSingleton<MachineShiftOccurrenceRosterMaterializer>();
+            services.AddSingleton(
+                provider => new MachineShiftOccurrenceRosterMaterializationRuntimeSet(
+                    schedulingScopes,
+                    provider.GetRequiredService<MachineShiftOccurrenceRosterMaterializer>()));
+        }
         services.AddSingleton<PlannedProductionIntervalResolver>();
 
         services.AddSingleton<ProjectionProductionContextActivityReader>();
@@ -163,6 +176,11 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                     quantityRuntimes,
                     pollingInterval);
             });
+
+        if (rosterMaterializationEnabled)
+        {
+            services.AddHostedService<MachineShiftRosterMaterializationWorker>();
+        }
 
         services.AddHostedService<ProductionMetricInputProcessingWorker>();
         return services;
