@@ -24,20 +24,25 @@ type UnpartitionedContextRequest = NonNullable<ProductionDayQueryRequest["contex
   unpartitionedOnly: boolean;
 };
 
+type ProductionDayReportingTraversalFailureReason =
+  | "continuation-cycle"
+  | "page-limit-exceeded";
+
 export interface AuthoritativeProductionDayResult {
   readonly items: OperationalMetricPage["items"];
 }
 
 export class ProductionDayReportingTraversalFailure extends Error {
-  constructor(
-    readonly reason: "continuation-cycle" | "page-limit-exceeded",
-  ) {
+  readonly reason: ProductionDayReportingTraversalFailureReason;
+
+  constructor(reason: ProductionDayReportingTraversalFailureReason) {
     super(
       reason === "continuation-cycle"
         ? "Production-day reporting returned a repeated continuation token."
         : `Production-day reporting exceeded the ${maximumPageCount}-page traversal limit.`,
     );
     this.name = "ProductionDayReportingTraversalFailure";
+    this.reason = reason;
   }
 }
 
