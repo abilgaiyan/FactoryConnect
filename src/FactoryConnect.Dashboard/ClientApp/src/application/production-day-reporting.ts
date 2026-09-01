@@ -4,6 +4,7 @@ import type {
   ReportingClient,
   ReportingRequestOptions,
 } from "../api/reporting/index.ts";
+import { ReportingProtocolFailure } from "../api/reporting/index.ts";
 import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
 
 const productionDayPattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -11,6 +12,7 @@ const firstQueryableProductionDay = "0001-01-01";
 const lastQueryableProductionDay = "9999-12-30";
 const pageSize = 200;
 const maximumPageCount = 100;
+const successfulResponseStatus = 200;
 
 const overviewMetrics = [
   { metricKey: "Availability", version: "1.0" },
@@ -24,7 +26,7 @@ type UnpartitionedContextRequest = NonNullable<ProductionDayQueryRequest["contex
   unpartitionedOnly: boolean;
 };
 
-type ProductionDayReportingTraversalFailureReason =
+export type ProductionDayReportingTraversalFailureReason =
   | "continuation-cycle"
   | "page-limit-exceeded";
 
@@ -95,7 +97,7 @@ export async function queryAuthoritativeProductionDay(
 
   do {
     if (pagesRead >= maximumPageCount) {
-      throw new ProductionDayReportingTraversalFailure("page-limit-exceeded");
+      throw traversalProtocolFailure("page-limit-exceeded");
     }
 
     const request = buildProductionDayQueryRequest(
@@ -110,7 +112,7 @@ export async function queryAuthoritativeProductionDay(
     const nextToken = page.continuationToken;
     if (nextToken !== null) {
       if (seenContinuationTokens.has(nextToken)) {
-        throw new ProductionDayReportingTraversalFailure("continuation-cycle");
+        throw traversalProtocolFailure("continuation-cycle");
       }
 
       seenContinuationTokens.add(nextToken);
@@ -133,6 +135,17 @@ export function isProductionDaySelection(value: string): boolean {
 
   const date = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function traversalProtocolFailure(
+  reason: ProductionDayReportingTraversalFailureReason,
+): ReportingProtocolFailure {
+  const cause = new ProductionDayReportingTraversalFailure(reason);
+  return new ReportingProtocolFailure(
+    successfulResponseStatus,
+    cause.message,
+    cause,
+  );
 }
 
 function nextProductionDay(productionDay: string): string {
