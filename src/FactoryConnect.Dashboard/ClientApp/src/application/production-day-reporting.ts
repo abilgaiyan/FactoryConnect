@@ -10,6 +10,7 @@ const productionDayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const firstQueryableProductionDay = "0001-01-01";
 const lastQueryableProductionDay = "9999-12-30";
 const pageSize = 200;
+const maximumPageCount = 100;
 
 const overviewMetrics = [
   { metricKey: "Availability", version: "1.0" },
@@ -25,6 +26,19 @@ type UnpartitionedContextRequest = NonNullable<ProductionDayQueryRequest["contex
 
 export interface AuthoritativeProductionDayResult {
   readonly items: OperationalMetricPage["items"];
+}
+
+export class ProductionDayReportingTraversalFailure extends Error {
+  constructor(
+    readonly reason: "continuation-cycle" | "page-limit-exceeded",
+  ) {
+    super(
+      reason === "continuation-cycle"
+        ? "Production-day reporting returned a repeated continuation token."
+        : `Production-day reporting exceeded the ${maximumPageCount}-page traversal limit.`,
+    );
+    this.name = "ProductionDayReportingTraversalFailure";
+  }
 }
 
 export function buildProductionDayQueryRequest(
@@ -59,22 +73,45 @@ export async function queryAuthoritativeProductionDay(
   reportingClient: Pick<ReportingClient, "queryProductionDayMetrics">,
   options?: ReportingRequestOptions,
 ): Promise<AuthoritativeProductionDayResult> {
+  if (!isProductionDaySelection(productionDay)) {
+    throw new RangeError(
+      "Production day must be a valid queryable YYYY-MM-DD calendar date from 0001-01-01 through 9999-12-30.",
+    );
+  }
+
   if (sources.length === 0) {
     return { items: [] };
   }
 
   const items: OperationalMetricPage["items"] = [];
+  const seenContinuationTokens = new Set<string>();
   let continuationToken: string | null = null;
+  let pagesRead = 0;
 
   do {
+    if (pagesRead >= maximumPageCount) {
+      throw new ProductionDayReportingTraversalFailure("page-limit-exceeded");
+    }
+
     const request = buildProductionDayQueryRequest(
       productionDay,
       sources,
       continuationToken,
     );
     const page = await reportingClient.queryProductionDayMetrics(request, options);
+    pagesRead += 1;
     items.push(...page.items);
-    continuationToken = page.continuationToken;
+
+    const nextToken = page.continuationToken;
+    if (nextToken !== null) {
+      if (seenContinuationTokens.has(nextToken)) {
+        throw new ProductionDayReportingTraversalFailure("continuation-cycle");
+      }
+
+      seenContinuationTokens.add(nextToken);
+    }
+
+    continuationToken = nextToken;
   } while (continuationToken !== null);
 
   return { items };
