@@ -1,26 +1,83 @@
-import type { ProductionDayQueryRequest } from "../api/reporting/index.ts";
+import type {
+  OperationalMetricPage,
+  ProductionDayQueryRequest,
+  ReportingClient,
+  ReportingRequestOptions,
+} from "../api/reporting/index.ts";
 import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
 
 const productionDayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const firstQueryableProductionDay = "0001-01-01";
 const lastQueryableProductionDay = "9999-12-30";
-const firstPageSize = 100;
+const pageSize = 200;
+
+const overviewMetrics = [
+  { metricKey: "Availability", version: "1.0" },
+  { metricKey: "Utilization", version: "1.0" },
+  { metricKey: "Performance", version: "1.0" },
+  { metricKey: "Quality", version: "1.0" },
+  { metricKey: "OEE", version: "1.0" },
+] as const;
+
+type UnpartitionedContextRequest = NonNullable<ProductionDayQueryRequest["context"]> & {
+  unpartitionedOnly: boolean;
+};
+
+export interface AuthoritativeProductionDayResult {
+  readonly items: OperationalMetricPage["items"];
+}
 
 export function buildProductionDayQueryRequest(
   productionDay: string,
   sources: readonly DashboardRuntimeSource[],
+  continuationToken: string | null = null,
 ): ProductionDayQueryRequest {
+  const context: UnpartitionedContextRequest = {
+    productionOrderId: null,
+    operationId: null,
+    partId: null,
+    operatorId: null,
+    unpartitionedOnly: true,
+  };
+
   return {
     sources: sources.map(({ machineId, processorId }) => ({ machineId, processorId })),
     fromInclusive: productionDay,
     toExclusive: nextProductionDay(productionDay),
-    metrics: null,
-    context: null,
+    metrics: overviewMetrics.map(({ metricKey, version }) => ({ metricKey, version })),
+    context,
     statuses: null,
     order: "period-ascending",
-    pageSize: firstPageSize,
-    continuationToken: null,
+    pageSize,
+    continuationToken,
   };
+}
+
+export async function queryAuthoritativeProductionDay(
+  productionDay: string,
+  sources: readonly DashboardRuntimeSource[],
+  reportingClient: Pick<ReportingClient, "queryProductionDayMetrics">,
+  options?: ReportingRequestOptions,
+): Promise<AuthoritativeProductionDayResult> {
+  if (sources.length === 0) {
+    return { items: [] };
+  }
+
+  const items: OperationalMetricPage["items"] = [];
+  let continuationToken: string | null = null;
+
+  do {
+    const request = buildProductionDayQueryRequest(
+      productionDay,
+      sources,
+      continuationToken,
+    );
+    const page = await reportingClient.queryProductionDayMetrics(request, options);
+    items.push(...page.items);
+    continuationToken = page.continuationToken;
+  } while (continuationToken !== null);
+
+  return { items };
 }
 
 export function isProductionDaySelection(value: string): boolean {
