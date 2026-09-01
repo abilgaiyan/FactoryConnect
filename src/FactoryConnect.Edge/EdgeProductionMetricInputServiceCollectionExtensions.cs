@@ -143,6 +143,15 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                     IProductionQuantityEvidenceReader>();
                 var store = provider.GetRequiredService<
                     IProductionContextProcessingStore>();
+                IProductionContextProcessingStore publicationStore = store;
+                if (rosterMaterializationEnabled)
+                {
+                    publicationStore = new RosterValidatedProductionContextProcessingStore(
+                        store,
+                        provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>(),
+                        schedulingScopes);
+                }
+
                 List<ProductionContextProcessingRuntime> activityRuntimes = [];
                 List<ProductionQuantityFactProcessingRuntime> quantityRuntimes = [];
 
@@ -157,7 +166,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                             contextReader,
                             shiftResolver,
                             plannedResolver,
-                            store,
+                            publicationStore,
                             item.Scope,
                             batchSize));
                     quantityRuntimes.Add(
@@ -166,7 +175,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                                 $"production-quantity:{processorSuffix}"),
                             quantityReader,
                             shiftResolver,
-                            store,
+                            publicationStore,
                             item.QuantityStreamId,
                             batchSize));
                 }
