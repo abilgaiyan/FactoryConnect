@@ -6,8 +6,8 @@ import {
 } from "react";
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
-import { ProductionDayOverviewMatrix } from "./application/ProductionDayOverviewMatrix.ts";
 import { productionDayPath } from "./application/production-day-navigation.ts";
+import { ProductionDayOverviewSurface } from "./application/ProductionDayOverviewSurface.ts";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
 import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
@@ -118,26 +118,19 @@ interface ProductionDayDetailProps {
 }
 
 function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDayDetailProps) {
-  const handleDayChange = (value: string) => {
-    if (isProductionDaySelection(value) && value !== productionDay) {
-      navigate(productionDayPath(value));
-    }
-  };
-
   return (
     <section aria-labelledby="route-title">
       <RouteContext current="Production day" navigate={navigate} />
       <h1 id="route-title">Production day</h1>
-      <label htmlFor="production-day-overview-selector">Production day</label>
-      <input
-        id="production-day-overview-selector"
-        name="production-day-overview-selector"
-        type="date"
-        value={productionDay}
-        onChange={(event) => handleDayChange(event.currentTarget.value)}
-      />
       {isProductionDaySelection(productionDay)
-        ? <ProductionDayOverviewVertical key={productionDay} productionDay={productionDay} runtime={runtime} />
+        ? (
+          <ProductionDayOverviewVertical
+            key={productionDay}
+            productionDay={productionDay}
+            runtime={runtime}
+            onProductionDayChange={(nextProductionDay) => navigate(productionDayPath(nextProductionDay))}
+          />
+        )
         : <p role="alert">The selected production day is not a valid calendar date.</p>}
     </section>
   );
@@ -146,38 +139,23 @@ function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDay
 interface ProductionDayOverviewVerticalProps {
   readonly productionDay: string;
   readonly runtime: DashboardApplicationRuntime;
+  readonly onProductionDayChange: (day: string) => void;
 }
 
-function ProductionDayOverviewVertical({ productionDay, runtime }: ProductionDayOverviewVerticalProps) {
+function ProductionDayOverviewVertical({
+  productionDay,
+  runtime,
+  onProductionDayChange,
+}: ProductionDayOverviewVerticalProps) {
   const overview = useProductionDayOverview(productionDay, runtime);
 
   return (
-    <div aria-busy={overview.state.kind === "loading" ? "true" : "false"}>
-      <button type="button" onClick={() => void overview.refresh()} disabled={overview.state.kind === "loading"}>Refresh</button>
-      {overview.lastSuccessfulRetrieval === null ? null : (
-        <p>
-          Last loaded for {overview.lastSuccessfulRetrieval.productionDay}: {overview.lastSuccessfulRetrieval.retrievedAt.toLocaleString()}
-        </p>
-      )}
-      <ProductionDayOverviewStateView state={overview.state} />
-    </div>
+    <ProductionDayOverviewSurface
+      productionDay={productionDay}
+      overview={overview}
+      onProductionDayChange={onProductionDayChange}
+    />
   );
-}
-
-function ProductionDayOverviewStateView({ state }: { readonly state: ReturnType<typeof useProductionDayOverview>["state"] }) {
-  switch (state.kind) {
-    case "idle":
-    case "loading":
-      return <p role="status">Loading production-day reporting…</p>;
-    case "empty-factory":
-      return <p>No machines are configured for this dashboard.</p>;
-    case "success":
-      return <ProductionDayOverviewMatrix model={state.model} />;
-    case "request-invalid":
-    case "reporting-failed":
-    case "presentation-failed":
-      return <p role="alert">{state.message}</p>;
-  }
 }
 
 interface RouteContextProps {
