@@ -10,6 +10,7 @@ import {
 export interface DashboardApplicationRuntime {
   readonly configuration: DashboardRuntimeConfiguration;
   readonly reportingClient: ReportingClient;
+  readonly now?: () => Date;
 }
 
 export async function createDashboardApplicationRuntime(
@@ -27,5 +28,6 @@ export async function createDashboardApplicationRuntime(
   return {
     configuration,
     reportingClient,
+    now: () => new Date(),
   };
 }
