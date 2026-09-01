@@ -131,8 +131,7 @@ public sealed class RosterValidatedProductionContextProcessingStore :
                 coverage.Add(key, roster);
             }
 
-            var factLineMatches = append.Fact.ProductionLineId is null ||
-                append.Fact.ProductionLineId == productionLineId;
+            var factLineMatches = append.Fact.ProductionLineId == productionLineId;
             var exactOwnershipExists = roster.MachineId == machineId &&
                 roster.ProductionLineId == productionLineId &&
                 roster.ProductionDayId == append.ProductionDayId &&
