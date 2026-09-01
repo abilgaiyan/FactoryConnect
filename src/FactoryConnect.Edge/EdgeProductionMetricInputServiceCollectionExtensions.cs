@@ -68,6 +68,12 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             section,
             activityStreamIds);
         var scopes = configurations.Select(static item => item.Scope).ToArray();
+        var schedulingScopes = scopes
+            .Select(static scope => new MachineShiftScheduleScope(
+                scope.MachineId,
+                scope.SiteId,
+                scope.ProductionLineId))
+            .ToArray();
         var contexts = configurations.Select(static item => item.Context).ToArray();
         var shifts = configurations.Select(static item => item.Shift).ToArray();
         var planned = configurations.Select(static item => item.Planned).ToArray();
@@ -88,6 +94,11 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             static provider => provider.GetRequiredService<
                 InMemoryPlannedProductionScheduleReader>());
         services.AddSingleton<ShiftOccurrenceResolver>();
+        services.AddSingleton<MachineShiftOccurrenceRosterMaterializer>();
+        services.AddSingleton(
+            provider => new MachineShiftOccurrenceRosterMaterializationRuntimeSet(
+                schedulingScopes,
+                provider.GetRequiredService<MachineShiftOccurrenceRosterMaterializer>()));
         services.AddSingleton<PlannedProductionIntervalResolver>();
 
         services.AddSingleton<ProjectionProductionContextActivityReader>();

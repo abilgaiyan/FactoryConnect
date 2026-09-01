@@ -32,6 +32,8 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             MetricAggregationProcessingRuntimeSet>();
         var metricRuntimes = provider.GetRequiredService<
             OperationalMetricProjectionProcessingRuntimeSet>();
+        var rosterRuntimes = provider.GetRequiredService<
+            MachineShiftOccurrenceRosterMaterializationRuntimeSet>();
 
         Assert.Equal(2, inventory.Machines.Count);
         Assert.Equal(2, inventory.ActivityStreams.Count);
@@ -41,6 +43,7 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         Assert.Equal(2, producerRuntimes.QuantityRuntimes.Count);
         Assert.Equal(2, aggregationRuntimes.Runtimes.Count);
         Assert.Equal(2, metricRuntimes.Runtimes.Count);
+        Assert.Equal(2, rosterRuntimes.Scopes.Count);
         Assert.NotNull(provider.GetRequiredService<IOperationalMetricReportReader>());
 
         Assert.Equal(
@@ -51,6 +54,16 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             aggregationRuntimes.Runtimes
                 .Select(static runtime => ParseMachineId(runtime.ProcessorId))
                 .OrderBy(static item => item.Value));
+        Assert.Equal(
+            new[] { machineA, machineB }.OrderBy(static item => item.Value),
+            rosterRuntimes.Scopes
+                .Select(static scope => scope.MachineId)
+                .OrderBy(static item => item.Value));
+        Assert.Equal(
+            ["LINE-A", "LINE-B"],
+            rosterRuntimes.Scopes
+                .OrderBy(static scope => scope.ProductionLineId.Value, StringComparer.Ordinal)
+                .Select(static scope => scope.ProductionLineId.Value));
     }
 
     private static MachineId ParseMachineId(

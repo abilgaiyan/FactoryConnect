@@ -623,7 +623,7 @@ FC-029.3A.1 is not closed by this inventory. It is closed only when the chosen a
 
 ### FC-029.3A.1A — provider-neutral roster contracts and persistence
 
-3A.1A establishes durable resolved roster coverage without resolving schedules, validating FC-025 facts, or changing FC-028.
+3A.1A is complete. It establishes durable resolved roster coverage without resolving schedules, validating FC-025 facts, or changing FC-028.
 
 The durable coverage unit is one complete machine/production-day snapshot:
 
@@ -653,6 +653,49 @@ Roster commits publish a complete replacement snapshot atomically under an expec
 `ProcessorId` is deliberately absent. It remains FC-027/028 projection source identity rather than factory scheduling identity.
 
 3A.1A does not decide when or how schedules are resolved. That belongs to 3A.1B. It also does not make metric-input evidence a prerequisite for roster coverage.
+
+### FC-029.3A.1B — authoritative roster materialization and composition
+
+3A.1B resolves one explicitly requested production-day identity for one configured machine scheduling scope:
+
+```text
+MachineShiftScheduleScope
+  MachineId
+  SiteId
+  ProductionLineId
+            +
+ProductionDayId
+            ↓
+ShiftOccurrenceResolver
+            ↓
+complete MachineShiftOccurrenceRoster
+            ↓
+IMachineShiftOccurrenceRosterStore
+```
+
+The materializer calls the existing authoritative resolver with exact site, production line, and half-open business-date selection. It does not derive UTC day boundaries. Line assignments retain precedence over site assignments according to the existing resolver, while overnight and DST boundary behavior remain resolver-owned.
+
+Every resolved occurrence must belong to the requested site, production day, and either the requested line or its authoritative site-level fallback. Resolver output is converted to complete `ShiftOccurrenceId` values and persisted with the requested machine applicability and exact `ProductionDayId` ownership.
+
+Materialization semantics are:
+
+```text
+no existing coverage + resolved 0..N occurrences
+  → publish complete revision 1
+
+equivalent existing coverage
+  → return existing snapshot without revision advancement
+
+changed authoritative resolution
+  → CAS-publish one complete successor revision
+
+stale CAS / conflicting existing line / invalid resolver output
+  → fail without repair or partial publication
+```
+
+Edge composition derives `MachineShiftScheduleScope` values from the same validated per-machine production-processing configuration already used by FC-025. It exposes a machine-keyed materialization runtime set. `ProcessorId` remains absent.
+
+3A.1B deliberately introduces no background materialization horizon and no reporting-triggered writes. The policy that decides which days are materialized must be explicit in a later composition step; FC-028 remains read-only.
 
 ## Deferred boundaries
 
