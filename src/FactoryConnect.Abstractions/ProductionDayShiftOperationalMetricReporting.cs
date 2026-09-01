@@ -2,6 +2,22 @@ using System.Collections.ObjectModel;
 
 namespace FactoryConnect.Abstractions;
 
+public sealed class ProductionDayShiftRosterCoverageRequiredException : InvalidOperationException
+{
+    public ProductionDayShiftRosterCoverageRequiredException(
+        MachineId machineId,
+        ProductionDayId productionDayId)
+        : base($"Authoritative machine-shift roster coverage is required for reporting machine '{machineId}' and production day '{productionDayId}'.")
+    {
+        MachineId = machineId;
+        ProductionDayId = productionDayId;
+    }
+
+    public MachineId MachineId { get; }
+
+    public ProductionDayId ProductionDayId { get; }
+}
+
 public sealed record ProductionDayShiftReportingSource
 {
     public ProductionDayShiftReportingSource(
