@@ -39,6 +39,7 @@ public sealed class EdgePersistenceCompositionTests
         Assert.Null(provider.GetService<IOperationalMetricProjectionStore>());
         Assert.Null(provider.GetService<IOperationalMetricProjectionQueryReader>());
         Assert.Null(provider.GetService<IOperationalMetricReportingQueryProvider>());
+        Assert.Null(provider.GetService<IMachineShiftOccurrenceRosterStore>());
     }
 
     [Fact]
@@ -62,11 +63,15 @@ public sealed class EdgePersistenceCompositionTests
         var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
         var projectionReader = provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
         var reportingProvider = provider.GetRequiredService<IOperationalMetricReportingQueryProvider>();
+        var rosterStore = provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>();
 
         Assert.Same(aggregation, revisionReader);
         Assert.Same(aggregation, snapshotReader);
         Assert.Same(projectionStore, projectionReader);
         Assert.Same(projectionStore, reportingProvider);
+        Assert.Equal(
+            "FactoryConnect.Core.InMemoryMachineShiftOccurrenceRosterStore",
+            rosterStore.GetType().FullName);
         Assert.Equal(
             "FactoryConnect.Core.InMemoryOperationalMetricProjectionStore",
             projectionStore.GetType().FullName);

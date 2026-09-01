@@ -147,6 +147,65 @@ public sealed class PersistenceProviderSelectionTests
     }
 
     [Fact]
+    public void ExistingMachineShiftOccurrenceRosterStoreBeforeFinalizationFailsFast()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<IMachineShiftOccurrenceRosterStore,
+            InMemoryMachineShiftOccurrenceRosterStore>();
+        var configuration = BuildConfiguration("InMemory");
+        services.AddInMemoryPersistenceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(configuration));
+
+        Assert.Contains(
+            nameof(IMachineShiftOccurrenceRosterStore),
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InMemoryProviderActivatesMachineShiftOccurrenceRosterCapability()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("InMemory");
+        services.AddInMemoryPersistenceProvider();
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<InMemoryMachineShiftOccurrenceRosterStore>(
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
+    }
+
+    [Fact]
+    public void DeclaredRosterCapabilityWithoutProviderServiceFailsOnResolution()
+    {
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration("custom");
+        services.AddPersistenceProvider(
+            new CustomPersistenceProviderRegistration(
+                "custom",
+                PersistenceProviderCapabilities.Core |
+                    PersistenceProviderCapabilities.MachineShiftOccurrenceRoster,
+                _ => CreateProviderServices(new InMemoryObservationIngestionStore())));
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
+        Assert.Contains(
+            nameof(IMachineShiftOccurrenceRosterStore),
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SelectedProviderOwnsActivatedCapabilities()
     {
         ServiceCollection services = new();

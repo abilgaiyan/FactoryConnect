@@ -23,6 +23,7 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         new InMemoryProductionContextProcessingStore();
                     var aggregationStore = new InMemoryMetricAggregationStore();
                     var projectionStore = new InMemoryOperationalMetricProjectionStore();
+                    var rosterStore = new InMemoryMachineShiftOccurrenceRosterStore();
 
                     return new PersistenceProviderServices(
                         new InMemoryObservationIngestionStore(),
@@ -33,7 +34,8 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         aggregationStore,
                         projectionStore,
                         projectionStore,
-                        projectionStore);
+                        projectionStore,
+                        rosterStore);
                 }));
     }
 }

@@ -621,6 +621,39 @@ The existing UTC-interval shift query remains a valid FC-028 operation for calle
 
 FC-029.3A.1 is not closed by this inventory. It is closed only when the chosen authoritative roster representation and the production-day shift reporting selector are implemented and prove machine applicability, zero-evidence occurrence selection, overnight/DST ownership, cross-site selection, conflicting-ownership rejection, metric-independent selection, and continuation incompatibility. React remains blocked until then.
 
+### FC-029.3A.1A — provider-neutral roster contracts and persistence
+
+3A.1A establishes durable resolved roster coverage without resolving schedules, validating FC-025 facts, or changing FC-028.
+
+The durable coverage unit is one complete machine/production-day snapshot:
+
+```text
+MachineShiftOccurrenceRoster
+  MachineId
+  ProductionLineId
+  ProductionDayId
+  Revision
+  Occurrences[0..N]
+```
+
+Each occurrence is authoritative applicability and ownership data:
+
+```text
+MachineShiftOccurrenceOwnership
+  MachineId
+  ProductionLineId
+  ShiftOccurrenceId
+  ProductionDayId
+```
+
+An existing roster with zero occurrences means the machine/day was authoritatively resolved with no applicable shifts. An absent roster means coverage has not been resolved. Those states are never interchangeable.
+
+Roster commits publish a complete replacement snapshot atomically under an expected revision. The initial revision is one and every replacement advances exactly once. Commits reject stale revisions, duplicate occurrence identities, mismatched machine/line/day entries, cross-site shift/day ownership, and one `ShiftOccurrenceId` assigned to conflicting production days. Occurrence order is canonical and does not depend on caller enumeration order.
+
+`ProcessorId` is deliberately absent. It remains FC-027/028 projection source identity rather than factory scheduling identity.
+
+3A.1A does not decide when or how schedules are resolved. That belongs to 3A.1B. It also does not make metric-input evidence a prerequisite for roster coverage.
+
 ## Deferred boundaries
 
 The following remain outside the completed FC-029.2 feature and are not to be inferred from operational metric reporting:

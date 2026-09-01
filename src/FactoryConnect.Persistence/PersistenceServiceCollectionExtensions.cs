@@ -17,6 +17,7 @@ public static class PersistenceServiceCollectionExtensions
         typeof(IOperationalMetricProjectionStore),
         typeof(IOperationalMetricProjectionQueryReader),
         typeof(IOperationalMetricReportingQueryProvider),
+        typeof(IMachineShiftOccurrenceRosterStore),
     ];
 
     private static readonly PersistenceProviderCapabilities[] IndividualCapabilities =
@@ -30,6 +31,7 @@ public static class PersistenceServiceCollectionExtensions
         PersistenceProviderCapabilities.OperationalMetricProjectionStorage,
         PersistenceProviderCapabilities.OperationalMetricProjectionQuery,
         PersistenceProviderCapabilities.OperationalMetricReportingQuery,
+        PersistenceProviderCapabilities.MachineShiftOccurrenceRoster,
     ];
 
     public static IServiceCollection AddFactoryConnectPersistence(
@@ -143,6 +145,15 @@ public static class PersistenceServiceCollectionExtensions
                     .GetRequiredService<PersistenceProviderServices>()
                     .OperationalMetricReportingQueryProvider
                     ?? throw MissingProviderService(nameof(IOperationalMetricReportingQueryProvider)));
+        }
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.MachineShiftOccurrenceRoster) != 0)
+        {
+            services.AddSingleton<IMachineShiftOccurrenceRosterStore>(
+                static serviceProvider => serviceProvider
+                    .GetRequiredService<PersistenceProviderServices>()
+                    .MachineShiftOccurrenceRosterStore
+                    ?? throw MissingProviderService(nameof(IMachineShiftOccurrenceRosterStore)));
         }
 
         return services;

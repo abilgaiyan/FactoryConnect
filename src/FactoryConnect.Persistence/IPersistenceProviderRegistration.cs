@@ -13,6 +13,7 @@ public enum PersistenceProviderCapabilities
     OperationalMetricProjectionStorage = 1 << 6,
     OperationalMetricProjectionQuery = 1 << 7,
     OperationalMetricReportingQuery = 1 << 8,
+    MachineShiftOccurrenceRoster = 1 << 9,
 
     Core = ObservationIngestion |
         ProductionContextProcessing |
@@ -24,7 +25,10 @@ public enum PersistenceProviderCapabilities
         OperationalMetricProjectionStorage |
         OperationalMetricProjectionQuery,
 
-    All = Core | OperationalMetrics | OperationalMetricReportingQuery,
+    All = Core |
+        OperationalMetrics |
+        OperationalMetricReportingQuery |
+        MachineShiftOccurrenceRoster,
 }
 
 public interface IPersistenceProviderRegistration
