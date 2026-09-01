@@ -16,6 +16,7 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
         Assert.Equal(fixture.MachineId, exception.MachineId);
         Assert.Equal(fixture.Day, exception.ProductionDayId);
         Assert.Equal(0, fixture.Inner.CommitCount);
+        Assert.Null(await fixture.ReadRosterAsync());
     }
 
     [Fact]
@@ -23,11 +24,13 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
     {
         var fixture = CreateFixture();
         await fixture.PublishRosterAsync([]);
+        var before = await fixture.ReadRosterAsync();
 
         await Assert.ThrowsAsync<MachineShiftOccurrenceOwnershipMismatchException>(
             () => fixture.Guard.CommitAsync(fixture.Commit(), CancellationToken.None));
 
         Assert.Equal(0, fixture.Inner.CommitCount);
+        Assert.Same(before, await fixture.ReadRosterAsync());
     }
 
     [Fact]
@@ -41,11 +44,13 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
             fixture.Occurrence.StartsAtUtc,
             fixture.Occurrence.EndsAtUtc);
         await fixture.PublishRosterAsync([other]);
+        var before = await fixture.ReadRosterAsync();
 
         await Assert.ThrowsAsync<MachineShiftOccurrenceOwnershipMismatchException>(
             () => fixture.Guard.CommitAsync(fixture.Commit(), CancellationToken.None));
 
         Assert.Equal(0, fixture.Inner.CommitCount);
+        Assert.Same(before, await fixture.ReadRosterAsync());
     }
 
     [Fact]
@@ -69,6 +74,7 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
         await Assert.ThrowsAsync<MachineShiftRosterCoverageRequiredException>(
             () => fixture.Guard.CommitAsync(commit, CancellationToken.None));
         Assert.Equal(0, fixture.Inner.CommitCount);
+        Assert.Null(await fixture.ReadRosterAsync());
 
         await fixture.PublishRosterAsync([fixture.Occurrence]);
         await fixture.Guard.CommitAsync(commit, CancellationToken.None);
@@ -81,12 +87,29 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
     {
         var fixture = CreateFixture();
         await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var before = await fixture.ReadRosterAsync();
         var commit = fixture.Commit(new ProductionLineId("LINE-2"));
 
         await Assert.ThrowsAsync<MachineShiftOccurrenceOwnershipMismatchException>(
             () => fixture.Guard.CommitAsync(commit, CancellationToken.None));
 
         Assert.Equal(0, fixture.Inner.CommitCount);
+        Assert.Same(before, await fixture.ReadRosterAsync());
+    }
+
+    [Fact]
+    public async Task FactWithoutProductionLineIsRejectedEvenWhenOccurrenceExists()
+    {
+        var fixture = CreateFixture();
+        await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var before = await fixture.ReadRosterAsync();
+        var commit = fixture.CommitWithoutLine();
+
+        await Assert.ThrowsAsync<MachineShiftOccurrenceOwnershipMismatchException>(
+            () => fixture.Guard.CommitAsync(commit, CancellationToken.None));
+
+        Assert.Equal(0, fixture.Inner.CommitCount);
+        Assert.Same(before, await fixture.ReadRosterAsync());
     }
 
     private static Fixture CreateFixture()
@@ -120,6 +143,9 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
         RecordingStore Inner,
         RosterValidatedProductionContextProcessingStore Guard)
     {
+        public Task<MachineShiftOccurrenceRoster?> ReadRosterAsync() =>
+            RosterStore.ReadAsync(MachineId, Day, CancellationToken.None);
+
         public async Task PublishRosterAsync(IReadOnlyList<ShiftOccurrenceId> occurrences)
         {
             var roster = new MachineShiftOccurrenceRoster(
@@ -137,7 +163,13 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
                 CancellationToken.None);
         }
 
-        public ProductionContextProcessingCommit Commit(ProductionLineId? factLine = null)
+        public ProductionContextProcessingCommit Commit(ProductionLineId? factLine = null) =>
+            CreateCommit(factLine ?? LineId);
+
+        public ProductionContextProcessingCommit CommitWithoutLine() =>
+            CreateCommit(null);
+
+        private ProductionContextProcessingCommit CreateCommit(ProductionLineId? factLine)
         {
             var fact = new DurableMetricInputFact
             {
@@ -149,7 +181,7 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
                 EndsAtUtc = Occurrence.EndsAtUtc,
                 CompanyId = new CompanyId("COMPANY-A"),
                 SiteId = SiteId,
-                ProductionLineId = factLine ?? LineId,
+                ProductionLineId = factLine,
                 MachineId = MachineId,
                 ShiftId = Occurrence.ShiftId,
                 ShiftScheduleAssignmentId = Occurrence.ShiftScheduleAssignmentId,
