@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ReportingProtocolFailure } from "../src/api/reporting/index.ts";
 import {
   buildProductionDayQueryRequest,
   isProductionDaySelection,
   ProductionDayReportingTraversalFailure,
   queryAuthoritativeProductionDay,
 } from "../src/application/production-day-reporting.ts";
+import { createQueryLifecycleController } from "../src/query/query-lifecycle-controller.ts";
 
 const sources = [
   {
@@ -102,7 +104,7 @@ test("authoritative query consumes every continuation page without interpreting 
   assert.deepEqual(result.items, [repeatedItem, repeatedItem, { marker: "second-page" }]);
 });
 
-test("repeated continuation token terminates with typed traversal failure", async () => {
+test("repeated continuation token terminates as protocol failure with typed traversal cause", async () => {
   let callCount = 0;
   const reportingClient = {
     async queryProductionDayMetrics() {
@@ -114,8 +116,9 @@ test("repeated continuation token terminates with typed traversal failure", asyn
   await assert.rejects(
     queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
     (error) =>
-      error instanceof ProductionDayReportingTraversalFailure &&
-      error.reason === "continuation-cycle",
+      error instanceof ReportingProtocolFailure &&
+      error.cause instanceof ProductionDayReportingTraversalFailure &&
+      error.cause.reason === "continuation-cycle",
   );
   assert.equal(callCount, 2);
 });
@@ -136,8 +139,9 @@ test("multi-token continuation cycle terminates without decoding tokens", async 
   await assert.rejects(
     queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
     (error) =>
-      error instanceof ProductionDayReportingTraversalFailure &&
-      error.reason === "continuation-cycle",
+      error instanceof ReportingProtocolFailure &&
+      error.cause instanceof ProductionDayReportingTraversalFailure &&
+      error.cause.reason === "continuation-cycle",
   );
   assert.deepEqual(receivedTokens, [null, "opaque-A", "opaque-B"]);
 });
@@ -155,9 +159,61 @@ test("maximum page count bounds an otherwise unique continuation sequence", asyn
   await assert.rejects(
     queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
     (error) =>
-      error instanceof ProductionDayReportingTraversalFailure &&
-      error.reason === "page-limit-exceeded",
+      error instanceof ReportingProtocolFailure &&
+      error.cause instanceof ProductionDayReportingTraversalFailure &&
+      error.cause.reason === "page-limit-exceeded",
   );
+  assert.equal(callCount, 100);
+});
+
+test("continuation cycle publishes failed through the query lifecycle", async () => {
+  const reportingClient = {
+    async queryProductionDayMetrics() {
+      return { items: [], continuationToken: "same-opaque-token" };
+    },
+  };
+  const controller = createQueryLifecycleController({
+    query: (signal) => queryAuthoritativeProductionDay(
+      "2026-08-31",
+      sources,
+      reportingClient,
+      { signal },
+    ),
+    isEmpty: (result) => result.items.length === 0,
+  });
+
+  const state = await controller.execute();
+
+  assert.equal(state.kind, "failed");
+  assert.ok(state.failure instanceof ReportingProtocolFailure);
+  assert.ok(state.failure.cause instanceof ProductionDayReportingTraversalFailure);
+  assert.equal(state.failure.cause.reason, "continuation-cycle");
+});
+
+test("page-limit violation publishes failed through the query lifecycle", async () => {
+  let callCount = 0;
+  const reportingClient = {
+    async queryProductionDayMetrics() {
+      callCount += 1;
+      return { items: [], continuationToken: `opaque-${callCount}` };
+    },
+  };
+  const controller = createQueryLifecycleController({
+    query: (signal) => queryAuthoritativeProductionDay(
+      "2026-08-31",
+      sources,
+      reportingClient,
+      { signal },
+    ),
+    isEmpty: (result) => result.items.length === 0,
+  });
+
+  const state = await controller.execute();
+
+  assert.equal(state.kind, "failed");
+  assert.ok(state.failure instanceof ReportingProtocolFailure);
+  assert.ok(state.failure.cause instanceof ProductionDayReportingTraversalFailure);
+  assert.equal(state.failure.cause.reason, "page-limit-exceeded");
   assert.equal(callCount, 100);
 });
 
