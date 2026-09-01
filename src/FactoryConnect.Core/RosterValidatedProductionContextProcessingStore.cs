@@ -52,7 +52,7 @@ public sealed class RosterValidatedProductionContextProcessingStore :
 {
     private readonly IProductionContextProcessingStore _inner;
     private readonly IMachineShiftOccurrenceRosterStore _rosterStore;
-    private readonly IReadOnlyDictionary<MachineId, ProductionLineId> _machineLines;
+    private readonly Dictionary<MachineId, ProductionLineId> _machineLines;
 
     public RosterValidatedProductionContextProcessingStore(
         IProductionContextProcessingStore inner,
