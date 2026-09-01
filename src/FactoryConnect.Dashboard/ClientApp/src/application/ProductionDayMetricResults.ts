@@ -1,10 +1,11 @@
 import { createElement, type ReactElement } from "react";
 
 import type { OperationalMetricPage } from "../api/reporting/index.ts";
+import type { AuthoritativeProductionDayResult } from "./production-day-reporting.ts";
 import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
 
 export interface ProductionDayMetricResultsProps {
-  readonly page: OperationalMetricPage;
+  readonly page: AuthoritativeProductionDayResult;
   readonly sources: readonly DashboardRuntimeSource[];
 }
 
@@ -95,9 +96,6 @@ export function ProductionDayMetricResults({
         }),
       ),
     ),
-    page.continuationToken === null
-      ? null
-      : createElement("p", null, "Additional reporting results are available."),
   );
 }
 
