@@ -2,17 +2,14 @@ import {
   type FormEvent,
   type MouseEvent,
   type PropsWithChildren,
-  useEffect,
-  useMemo,
-  useRef,
   useState,
 } from "react";
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
 import { ProductionDayOverviewMatrix } from "./application/ProductionDayOverviewMatrix.ts";
-import { deriveProductionDayOverviewViewState } from "./application/production-day-overview-state.ts";
+import type { ProductionDayOverviewViewState } from "./application/production-day-overview-state.ts";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
-import { useProductionDayReporting } from "./application/use-production-day-reporting.ts";
+import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -152,40 +149,25 @@ interface ProductionDayOverviewVerticalProps {
 }
 
 function ProductionDayOverviewVertical({ productionDay, runtime }: ProductionDayOverviewVerticalProps) {
-  const query = useProductionDayReporting(productionDay, runtime);
-  const state = useMemo(
-    () => deriveProductionDayOverviewViewState(query.state, productionDay, runtime.configuration.sources),
-    [query.state, productionDay, runtime.configuration.sources],
-  );
-  const [lastSuccessfulRetrieval, setLastSuccessfulRetrieval] = useState<{ productionDay: string; retrievedAt: Date } | null>(null);
-  const recordedQueryState = useRef<object | null>(null);
-
-  useEffect(() => {
-    if (state.kind === "success" && recordedQueryState.current !== query.state) {
-      recordedQueryState.current = query.state;
-      const now = runtime.now ?? (() => new Date());
-      setLastSuccessfulRetrieval({ productionDay, retrievedAt: now() });
-    }
-  }, [productionDay, query.state, runtime.now, state]);
-
+  const overview = useProductionDayOverview(productionDay, runtime);
   const refresh = () => {
-    void query.execute();
+    void overview.refresh();
   };
 
   return (
-    <div aria-busy={state.kind === "loading" ? "true" : "false"}>
-      <button type="button" onClick={refresh} disabled={state.kind === "loading"}>Refresh</button>
-      {lastSuccessfulRetrieval === null ? null : (
+    <div aria-busy={overview.state.kind === "loading" ? "true" : "false"}>
+      <button type="button" onClick={refresh} disabled={overview.state.kind === "loading"}>Refresh</button>
+      {overview.lastSuccessfulRetrieval === null ? null : (
         <p>
-          Last loaded for {lastSuccessfulRetrieval.productionDay}: {lastSuccessfulRetrieval.retrievedAt.toLocaleString()}
+          Last loaded for {overview.lastSuccessfulRetrieval.productionDay}: {overview.lastSuccessfulRetrieval.retrievedAt.toLocaleString()}
         </p>
       )}
-      <ProductionDayOverviewStateView state={state} />
+      <ProductionDayOverviewStateView state={overview.state} />
     </div>
   );
 }
 
-function ProductionDayOverviewStateView({ state }: { readonly state: ReturnType<typeof deriveProductionDayOverviewViewState> }) {
+function ProductionDayOverviewStateView({ state }: { readonly state: ProductionDayOverviewViewState }) {
   switch (state.kind) {
     case "idle":
     case "loading":
@@ -201,7 +183,7 @@ function ProductionDayOverviewStateView({ state }: { readonly state: ReturnType<
   }
 }
 
-function productionDayPath(productionDay: string): string {
+export function productionDayPath(productionDay: string): string {
   return `/production-days/${encodeURIComponent(productionDay)}`;
 }
 
