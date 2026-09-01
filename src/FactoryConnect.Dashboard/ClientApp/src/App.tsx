@@ -2,14 +2,16 @@ import {
   type FormEvent,
   type MouseEvent,
   type PropsWithChildren,
+  useEffect,
+  useRef,
   useState,
 } from "react";
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
-import { ProductionDayMetricResults } from "./application/ProductionDayMetricResults.tsx";
+import { ProductionDayOverviewMatrix } from "./application/ProductionDayOverviewMatrix.ts";
+import { deriveProductionDayOverviewViewState } from "./application/production-day-overview-state.ts";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
 import { useProductionDayReporting } from "./application/use-production-day-reporting.ts";
-import { QueryStateView } from "./query/QueryStateView.tsx";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -27,16 +29,11 @@ export function App({ runtime }: AppProps) {
         <a href="#main-content">Skip to content</a>
         <p>FactoryConnect</p>
         <nav aria-label="Dashboard">
-          <ApplicationLink
-            href="/"
-            navigate={navigate}
-            current={route.kind === "productionDayOverview"}
-          >
+          <ApplicationLink href="/" navigate={navigate} current={route.kind === "productionDayOverview"}>
             Production days
           </ApplicationLink>
         </nav>
       </header>
-
       <main id="main-content">
         <RouteView route={route} navigate={navigate} runtime={runtime} />
       </main>
@@ -53,17 +50,11 @@ interface ApplicationLinkProps extends PropsWithChildren {
 function ApplicationLink({ href, current = false, navigate, children }: ApplicationLinkProps) {
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     const anchor = event.currentTarget;
-    if (
-      !shouldHandleApplicationNavigation(
-        event,
-        {
-          href: anchor.href,
-          target: anchor.target,
-          hasDownload: anchor.hasAttribute("download"),
-        },
-        window.location.origin,
-      )
-    ) {
+    if (!shouldHandleApplicationNavigation(event, {
+      href: anchor.href,
+      target: anchor.target,
+      hasDownload: anchor.hasAttribute("download"),
+    }, window.location.origin)) {
       return;
     }
 
@@ -71,11 +62,7 @@ function ApplicationLink({ href, current = false, navigate, children }: Applicat
     navigate(anchor.href);
   };
 
-  return (
-    <a href={href} aria-current={current ? "page" : undefined} onClick={handleClick}>
-      {children}
-    </a>
-  );
+  return <a href={href} aria-current={current ? "page" : undefined} onClick={handleClick}>{children}</a>;
 }
 
 interface RouteViewProps {
@@ -87,60 +74,30 @@ interface RouteViewProps {
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
     case "productionDayOverview":
-      return <ProductionDayOverview navigate={navigate} sourceCount={runtime.configuration.sources.length} />;
+      return <ProductionDaySelection navigate={navigate} sourceCount={runtime.configuration.sources.length} />;
     case "productionDayDetail":
-      return (
-        <ProductionDayDetail
-          productionDay={route.productionDay}
-          navigate={navigate}
-          runtime={runtime}
-        />
-      );
+      return <ProductionDayDetail productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "machineDetail":
-      return (
-        <section aria-labelledby="route-title">
-          <RouteContext current="Machine" navigate={navigate} />
-          <h1 id="route-title">Machine</h1>
-          <p>{route.machineId}</p>
-          <p>Machine detail placeholder.</p>
-        </section>
-      );
+      return <section aria-labelledby="route-title"><RouteContext current="Machine" navigate={navigate} /><h1 id="route-title">Machine</h1><p>{route.machineId}</p><p>Machine detail placeholder.</p></section>;
     case "dailyReport":
-      return (
-        <section aria-labelledby="route-title">
-          <RouteContext current="Daily report" navigate={navigate} />
-          <h1 id="route-title">Daily report</h1>
-          <p>{route.productionDay}</p>
-          <p>Daily-report placeholder.</p>
-        </section>
-      );
+      return <section aria-labelledby="route-title"><RouteContext current="Daily report" navigate={navigate} /><h1 id="route-title">Daily report</h1><p>{route.productionDay}</p><p>Daily-report placeholder.</p></section>;
     case "notFound":
-      return (
-        <section aria-labelledby="route-title">
-          <RouteContext current="Not found" navigate={navigate} />
-          <h1 id="route-title">Page not found</h1>
-          <p>The dashboard has no route for this path.</p>
-          <code>{route.path}</code>
-        </section>
-      );
+      return <section aria-labelledby="route-title"><RouteContext current="Not found" navigate={navigate} /><h1 id="route-title">Page not found</h1><p>The dashboard has no route for this path.</p><code>{route.path}</code></section>;
   }
 }
 
-interface ProductionDayOverviewProps {
+interface ProductionDaySelectionProps {
   readonly navigate: (href: string) => void;
   readonly sourceCount: number;
 }
 
-function ProductionDayOverview({ navigate, sourceCount }: ProductionDayOverviewProps) {
+function ProductionDaySelection({ navigate, sourceCount }: ProductionDaySelectionProps) {
   const [productionDay, setProductionDay] = useState("");
-
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isProductionDaySelection(productionDay)) {
-      return;
+    if (isProductionDaySelection(productionDay)) {
+      navigate(`/production-days/${encodeURIComponent(productionDay)}`);
     }
-
-    navigate(`/production-days/${encodeURIComponent(productionDay)}`);
   };
 
   return (
@@ -149,14 +106,7 @@ function ProductionDayOverview({ navigate, sourceCount }: ProductionDayOverviewP
       <p>{sourceCount} configured reporting source{sourceCount === 1 ? "" : "s"}.</p>
       <form onSubmit={handleSubmit}>
         <label htmlFor="production-day">Production day</label>
-        <input
-          id="production-day"
-          name="production-day"
-          type="date"
-          required
-          value={productionDay}
-          onChange={(event) => setProductionDay(event.currentTarget.value)}
-        />
+        <input id="production-day" name="production-day" type="date" required value={productionDay} onChange={(event) => setProductionDay(event.currentTarget.value)} />
         <button type="submit">Load reporting data</button>
       </form>
     </section>
@@ -175,33 +125,62 @@ function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDay
       <RouteContext current="Production day" navigate={navigate} />
       <h1 id="route-title">Production day</h1>
       <p>{productionDay}</p>
-      {isProductionDaySelection(productionDay) ? (
-        <ProductionDayReportingProof productionDay={productionDay} runtime={runtime} />
-      ) : (
-        <p role="alert">The selected production day is not a valid calendar date.</p>
-      )}
+      {isProductionDaySelection(productionDay)
+        ? <ProductionDayOverviewVertical productionDay={productionDay} runtime={runtime} />
+        : <p role="alert">The selected production day is not a valid calendar date.</p>}
     </section>
   );
 }
 
-interface ProductionDayReportingProofProps {
+interface ProductionDayOverviewVerticalProps {
   readonly productionDay: string;
   readonly runtime: DashboardApplicationRuntime;
 }
 
-function ProductionDayReportingProof({ productionDay, runtime }: ProductionDayReportingProofProps) {
+function ProductionDayOverviewVertical({ productionDay, runtime }: ProductionDayOverviewVerticalProps) {
   const query = useProductionDayReporting(productionDay, runtime);
+  const state = deriveProductionDayOverviewViewState(query.state, productionDay, runtime.configuration.sources);
+  const [lastSuccessfulRetrieval, setLastSuccessfulRetrieval] = useState<{ productionDay: string; retrievedAt: Date } | null>(null);
+  const recordedModel = useRef<object | null>(null);
+
+  useEffect(() => {
+    if (state.kind === "success" && recordedModel.current !== state.model) {
+      recordedModel.current = state.model;
+      setLastSuccessfulRetrieval({ productionDay, retrievedAt: new Date() });
+    }
+  }, [productionDay, state]);
+
+  const refresh = () => {
+    void query.execute();
+  };
 
   return (
-    <QueryStateView state={query.state}>
-      {(page) => (
-        <ProductionDayMetricResults
-          page={page}
-          sources={runtime.configuration.sources}
-        />
+    <div aria-busy={state.kind === "loading" ? "true" : "false"}>
+      <button type="button" onClick={refresh} disabled={state.kind === "loading"}>Refresh</button>
+      {lastSuccessfulRetrieval === null ? null : (
+        <p>
+          Last loaded for {lastSuccessfulRetrieval.productionDay}: {lastSuccessfulRetrieval.retrievedAt.toLocaleString()}
+        </p>
       )}
-    </QueryStateView>
+      <ProductionDayOverviewStateView state={state} />
+    </div>
   );
+}
+
+function ProductionDayOverviewStateView({ state }: { readonly state: ReturnType<typeof deriveProductionDayOverviewViewState> }) {
+  switch (state.kind) {
+    case "idle":
+    case "loading":
+      return <p role="status">Loading production-day reporting…</p>;
+    case "empty-factory":
+      return <p>No machines are configured for this dashboard.</p>;
+    case "success":
+      return <ProductionDayOverviewMatrix model={state.model} />;
+    case "request-invalid":
+    case "reporting-failed":
+    case "presentation-failed":
+      return <p role="alert">{state.message}</p>;
+  }
 }
 
 interface RouteContextProps {
@@ -210,12 +189,5 @@ interface RouteContextProps {
 }
 
 function RouteContext({ current, navigate }: RouteContextProps) {
-  return (
-    <nav aria-label="Breadcrumb">
-      <ApplicationLink href="/" navigate={navigate}>
-        Production days
-      </ApplicationLink>
-      <span aria-current="page">{current}</span>
-    </nav>
-  );
+  return <nav aria-label="Breadcrumb"><ApplicationLink href="/" navigate={navigate}>Production days</ApplicationLink><span aria-current="page">{current}</span></nav>;
 }
