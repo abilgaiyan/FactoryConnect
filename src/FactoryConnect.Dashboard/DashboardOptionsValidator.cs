@@ -46,11 +46,6 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
             failures.Add("Dashboard:RequestTimeout must be greater than zero and no more than five minutes.");
         }
 
-        if (options.Sources.Count == 0)
-        {
-            failures.Add("Dashboard:Sources must contain at least one reporting source.");
-        }
-
         var identities = new HashSet<(Guid MachineId, string ProcessorId)>();
         for (var index = 0; index < options.Sources.Count; index++)
         {
@@ -72,6 +67,27 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
             if (string.IsNullOrWhiteSpace(source.DisplayName))
             {
                 failures.Add($"Dashboard:Sources:{index}:DisplayName must be non-empty.");
+            }
+            else if (!string.Equals(source.DisplayName, source.DisplayName.Trim(), StringComparison.Ordinal))
+            {
+                failures.Add($"Dashboard:Sources:{index}:DisplayName must not contain leading or trailing whitespace.");
+            }
+
+            if (source.GroupName is not null)
+            {
+                if (string.IsNullOrWhiteSpace(source.GroupName))
+                {
+                    failures.Add($"Dashboard:Sources:{index}:GroupName must be null or non-empty.");
+                }
+                else if (!string.Equals(source.GroupName, source.GroupName.Trim(), StringComparison.Ordinal))
+                {
+                    failures.Add($"Dashboard:Sources:{index}:GroupName must not contain leading or trailing whitespace.");
+                }
+            }
+
+            if (source.DisplayOrder < 0)
+            {
+                failures.Add($"Dashboard:Sources:{index}:DisplayOrder must be zero or greater.");
             }
 
             if (source.MachineId != Guid.Empty && !string.IsNullOrWhiteSpace(source.ProcessorId) &&

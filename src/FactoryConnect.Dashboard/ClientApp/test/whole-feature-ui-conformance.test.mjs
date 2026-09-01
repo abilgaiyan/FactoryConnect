@@ -86,7 +86,7 @@ test("whole-feature UI preserves zero and authoritative metric-status evidence",
         },
       }),
     ],
-    continuationToken: "opaque-next-token",
+    continuationToken: null,
   };
 
   const html = renderToStaticMarkup(React.createElement(ProductionDayMetricResults, {
@@ -106,5 +106,5 @@ test("whole-feature UI preserves zero and authoritative metric-status evidence",
   assert.match(html, /missing-good-count/);
   assert.match(html, /Unconfigured source/);
   assert.match(html, new RegExp(unknownMachineId));
-  assert.match(html, /Additional reporting results are available\./);
+  assert.doesNotMatch(html, /Additional reporting results are available\./);
 });

@@ -2,6 +2,8 @@ export interface DashboardRuntimeSource {
   readonly machineId: string;
   readonly processorId: string;
   readonly displayName: string;
+  readonly groupName: string | null;
+  readonly displayOrder: number;
 }
 
 export interface DashboardRuntimeConfiguration {
@@ -41,7 +43,6 @@ function isRuntimeConfiguration(value: unknown): value is DashboardRuntimeConfig
     Number.isInteger(value.requestTimeoutMilliseconds) &&
     value.requestTimeoutMilliseconds > 0 &&
     Array.isArray(value.sources) &&
-    value.sources.length > 0 &&
     value.sources.every(isRuntimeSource)
   );
 }
@@ -54,7 +55,12 @@ function isRuntimeSource(value: unknown): value is DashboardRuntimeSource {
     typeof value.processorId === "string" &&
     value.processorId.length > 0 &&
     typeof value.displayName === "string" &&
-    value.displayName.length > 0
+    value.displayName.length > 0 &&
+    (value.groupName === null ||
+      (typeof value.groupName === "string" && value.groupName.length > 0)) &&
+    typeof value.displayOrder === "number" &&
+    Number.isInteger(value.displayOrder) &&
+    value.displayOrder >= 0
   );
 }
 

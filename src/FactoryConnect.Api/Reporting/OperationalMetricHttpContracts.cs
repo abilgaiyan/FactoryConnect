@@ -10,7 +10,8 @@ public sealed record OperationalMetricContextRequest(
     string? ProductionOrderId,
     string? OperationId,
     string? PartId,
-    string? OperatorId);
+    string? OperatorId,
+    bool UnpartitionedOnly = false);
 
 public sealed record ShiftOperationalMetricQueryRequest(
     IReadOnlyList<ReportingSourceRequest> Sources,
@@ -171,6 +172,7 @@ internal static class OperationalMetricHttpMapper
             ? null
             : new OperationalMetricContextFilter
             {
+                UnpartitionedOnly = context.UnpartitionedOnly,
                 ProductionOrderId = context.ProductionOrderId is null ? null : new ProductionOrderId(context.ProductionOrderId),
                 OperationId = context.OperationId is null ? null : new OperationId(context.OperationId),
                 PartId = context.PartId is null ? null : new PartId(context.PartId),

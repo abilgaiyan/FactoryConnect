@@ -16,22 +16,24 @@
     - **FC-029.1E.6 — shell integration and production asset build:** complete
   - **FC-029.1F — first vertical reporting proof:** complete
   - **FC-029.1G — architecture, deployment, and whole-feature conformance:** complete
+- **FC-029.2 — Production-Day Overview:** complete
+  - **FC-029.2A — Factory Overview Configuration:** complete
+  - **FC-029.2B — Production-Day Query Orchestration:** complete
+  - **FC-029.2C — Production-Day Presentation Model:** complete
+  - **FC-029.2D — Production-Day Overview UI:** complete
+  - **FC-029.2E — Production-Day Overview Contract & Behavior Conformance:** complete
+- **FC-029.3 — Shift Performance Overview:** next
+  - **FC-029.3A — Shift Reporting Query Boundary:** not started
+    - **FC-029.3A.1 — authoritative production-day-to-shift selection:** unresolved architectural gate
+    - **FC-029.3A.2 — shift query orchestration:** blocked by 3A.1
+    - **FC-029.3A.3 — pagination/lifecycle conformance:** blocked by 3A.1
+  - **FC-029.3B — Shift Presentation Model:** blocked by 3A.1
+  - **FC-029.3C — Shift Performance UI:** blocked by 3A.1
+  - **FC-029.3D — Shift Detail Interaction:** optional, deferred until the matrix is usable
+  - **FC-029.3E — Whole-Feature Conformance:** blocked by 3A.1
+- **FC-029.4 — Daily Report / Print Surface:** follows FC-029.3
 
-## FC-029.1 closure evidence
-
-Final regression evidence for the completed Dashboard Application Foundation:
-
-```text
-frontend       108/108 passed
-non-SQL        783/783 passed
-SQL Server      75/75 passed
-Release build  passed
-git diff --check clean
-working tree   clean
-branch         synchronized with origin
-```
-
-The final closure head must also pass `npm run contracts:check` so the committed generated FC-028 client contract remains deterministic, type-safe, and synchronized. No additional code or documentation changes should follow that final contract check before closure confirmation.
+Machine Status remains deferred until an authoritative server-side current-state reader/API exists.
 
 ## Architectural invariant
 
@@ -49,11 +51,27 @@ presentation only
 
 `FactoryConnect.Dashboard` has no FactoryConnect project or runtime assembly dependency. Browser transport contracts come from generated FC-028 OpenAPI types.
 
-The dashboard may format, group, filter, navigate, and render authoritative reporting results. It must not calculate Availability, Performance, Quality, OEE, utilization, production-day boundaries, current machine state, or factory-wide percentages. It must not combine metric-definition versions or reinterpret reporting absence/failure states.
+The dashboard may format, group, filter, navigate, and render authoritative reporting results. It must not calculate Availability, Performance, Quality, OEE, Utilization, production-day boundaries, current machine state, or factory-wide percentages. It must not combine metric-definition versions or reinterpret reporting absence/failure states.
+
+## FC-029.1 closure evidence
+
+Final regression evidence for the completed Dashboard Application Foundation:
+
+```text
+frontend       108/108 passed
+non-SQL        783/783 passed
+SQL Server      75/75 passed
+Release build  passed
+git diff --check clean
+working tree   clean
+branch         synchronized with origin
+```
+
+The generated FC-028 browser contract remains synchronized through `npm run contracts:check`.
 
 ## FC-029.1A — authoritative FC-028 inventory
 
-FC-028 exposes two reporting operations:
+FC-028 exposes two reporting operations used by the dashboard foundation:
 
 ```text
 POST /api/reporting/v1/operational-metrics/shifts/query
@@ -70,8 +88,6 @@ insufficient-evidence
 
 Calculated zero remains distinct from unavailable or insufficient evidence.
 
-SQL Server does not yet provide the FC-027 operational-metric projection/query capability. The dashboard does not bypass that limitation by reading persistence directly or weakening provider validation.
-
 ## FC-029.1B — dashboard host foundation
 
 `FactoryConnect.Dashboard` is an ASP.NET Core factory-LAN host with:
@@ -84,7 +100,7 @@ static production asset hosting
 SPA fallback for presentation routes only
 ```
 
-Production configuration intentionally contains no usable reporting endpoint or source defaults. Startup requires an absolute HTTP/HTTPS reporting address, a positive timeout no greater than five minutes, at least one source, non-empty source identity/display values, and unique `(MachineId, ProcessorId)` pairs. Production rejects loopback reporting addresses.
+Production configuration intentionally contains no usable reporting endpoint or source defaults. Startup requires an absolute HTTP/HTTPS reporting address and a positive timeout no greater than five minutes. Configured reporting sources are `0..N`; when present, each source must have valid identity/presentation metadata and `(MachineId, ProcessorId)` pairs must be unique. Production rejects loopback reporting addresses.
 
 Health semantics remain narrow:
 
@@ -109,11 +125,11 @@ The generated artifact is committed, marked generated, and checked for determini
 npm run contracts:check
 ```
 
-Node is pinned to `24.14.1`. TypeScript is strict. Generated transport contracts are not manually patched with additional reporting semantics.
+Node is pinned. TypeScript is strict. Generated transport contracts are not manually patched with additional reporting semantics.
 
 ## FC-029.1D — reporting client boundary
 
-The browser-side `ReportingClient` executes only the two authoritative FC-028 operations.
+The browser-side `ReportingClient` executes the authoritative FC-028 reporting operations exposed through the dashboard gateway.
 
 ```text
 createReportingClient(options)
@@ -150,8 +166,15 @@ Browser-safe runtime configuration contains:
 ```text
 reportingBasePath = "/"
 requestTimeoutMilliseconds
-sources[] = MachineId + ProcessorId + DisplayName
+sources[] =
+  MachineId
+  ProcessorId
+  DisplayName
+  GroupName?
+  DisplayOrder
 ```
+
+`GroupName` is optional. `DisplayOrder` is non-negative and is currently factory-wide. Configuration determines source inclusion and presentation metadata only; it does not contain metric values, formulas, statuses, current machine state, or inferred production truth.
 
 The upstream `ReportingApiBaseAddress` is never exposed to the browser.
 
@@ -165,11 +188,11 @@ FactoryConnect.Dashboard
 FC-028 Reporting API
 ```
 
-The gateway forwards only the two authoritative FC-028 POST operations. It preserves request bytes and response status/body/content type. It does not retry, cache, reshape, calculate, or classify reporting results. Upstream timeout maps to 504; upstream connection/runtime failure maps to 502; browser cancellation aborts forwarding.
+The gateway preserves request bytes and response status/body/content type. It does not retry, cache, reshape, calculate, or classify reporting results. Upstream timeout maps to 504; upstream connection/runtime failure maps to 502; browser cancellation aborts forwarding.
 
 ### E.3 — deterministic application router and shell
 
-The root-hosted application route set is:
+The root-hosted application route set includes:
 
 ```text
 /
@@ -193,15 +216,17 @@ invalidRequest
 failed
 ```
 
-Required distinctions:
+Required distinctions include:
 
 ```text
-successful page with zero items → empty
-invalid reporting query         → invalidRequest
-calculated value = 0            → success containing zero
-timeout/network/http/protocol   → failed
-failure                         ↛ empty
+successful reporting result with zero items → empty query result
+invalid reporting query                     → invalidRequest
+calculated value = 0                        → success containing zero
+timeout/network/http/protocol               → failed
+failure                                     ↛ empty
 ```
+
+FC-029.2 maps an empty authoritative production-day result for configured sources into explicit presentation-level `missing` metric slots rather than hiding configured machines.
 
 ### E.5 — cancellation and stale-response conformance
 
@@ -225,79 +250,288 @@ Vite production assets are generated into `wwwroot`, included in clean `dotnet p
 
 ## FC-029.1F — first vertical reporting proof
 
-The first real reporting surface is explicit:
+FC-029.1F established the first real reporting surface at:
 
 ```text
 /production-days/{productionDay}
 ```
 
-No default production day is inferred.
-
-The vertical path is:
-
-```text
-route productionDay
-        ↓
-strict queryable DateOnly validation
-        ↓
-FromInclusive = productionDay
-ToExclusive   = next calendar date
-Sources       = configured (MachineId, ProcessorId) pairs
-Order         = period-ascending
-Metrics       = null
-Context       = null
-Statuses      = null
-        ↓
-ReportingClient.queryProductionDayMetrics()
-        ↓
-QueryLifecycleController
-        ↓
-QueryState<OperationalMetricPage>
-        ↓
-authoritative result presentation
-```
-
-The accepted one-day query range is deliberately narrower than JavaScript `Date` so every accepted selection is representable by ASP.NET `DateOnly` and has a representable exclusive next day:
-
-```text
-0000-01-01 → invalid
-0001-01-01 → valid
-9999-12-30 → valid
-9999-12-31 → invalid
-```
-
-Calendar advancement is UTC/calendar based and does not infer factory timezone boundaries.
-
-The result presentation preserves configured display name mapped by exact source identity; top-level source identity; site/business date; metric key/version; status; nullable value; unit; reason; production context; complete source revision; and continuation-token presence.
-
-Unknown response sources remain visible by authoritative identifiers. Calculated zero renders as zero. `unavailable` and `insufficient-evidence` remain distinct with supplied reasons. Pagination is intentionally inactive in the first proof, but continuation-token presence is surfaced rather than discarded.
-
-Route changes and unmount use E.5 ownership/cancellation semantics; a late obsolete production-day response cannot publish.
+That slice proved route selection, DateOnly validation, generated transport usage, reporting-client execution, lifecycle ownership, and authoritative result rendering. FC-029.2 supersedes its intentionally narrow query/presentation behavior with the complete Production-Day Overview contract documented below.
 
 ## FC-029.1G — architecture, deployment, and whole-feature conformance
 
-G is a closure slice and introduces no new dashboard capability.
-
-The completed conformance proves:
-
-1. **Documentation closure** — E.1 through E.6, F, G, and parent FC-029.1 are recorded complete; LAN deployment is documented separately.
-2. **Forbidden reference boundary** — `FactoryConnect.Dashboard` has no FactoryConnect project or runtime assembly dependency.
-3. **Clean publish and fail-closed deployment** — clean Release publish produces the React entry and hashed asset; repository defaults contain no usable upstream/source settings; production accepts valid non-loopback LAN composition.
-4. **Exact gateway restriction** — only the two exact FC-028 POST routes forward; non-POST methods, unknown paths, extra segments, shortened paths, and trailing-slash variants do not become gateway routes.
-5. **Seven-source composition** — seven unique `(MachineId, ProcessorId)` identities project exactly to browser runtime configuration while the private upstream address remains absent.
-6. **UI state distinctions** — `empty`, `invalidRequest`, `failed`, calculated zero, `unavailable`, and `insufficient-evidence` remain semantically distinct; unknown sources and continuation-token presence remain visible.
-7. **Whole-feature regressions** — frontend, Release build, non-SQL, SQL Server integration, Git cleanliness, and generated-contract synchronization are required closure gates.
-
-Deployment and hosting details are documented in:
+FC-029.1G closed the dashboard foundation and introduced no new metric authority. Deployment and hosting details remain documented in:
 
 ```text
 docs/deployment/factoryconnect-dashboard-lan.md
 ```
 
-That deployment boundary includes explicit production environment selection, Kestrel LAN binding through `ASPNETCORE_URLS`, Dashboard environment-variable mapping, factory-LAN-restricted firewall exposure, and deployment-infrastructure ownership of TLS termination, certificate lifecycle, service supervision, restart policy, and host hardening.
+## FC-029.2 — Production-Day Overview
 
-## FC-029.1 outcome
+### Goal
 
-FC-029.1 establishes the production-capable dashboard application foundation and one authoritative production-day reporting vertical without inventing dashboard-side factory semantics.
+Given the factory-configured machine population and a selected production day, query the authoritative FC-028 production-day reporting surface and present each configured machine's exact-version operational metric evaluations in deterministic configured grouping/order.
 
-No metric cards, charts, factory-wide OEE aggregation, current-machine-state dashboard, or printable daily report is introduced by FC-029.1. Those remain later FC-029 slices built on this closed foundation.
+The governing invariant is:
+
+> FC-029.2 visualizes authoritative production-day truth; it does not manufacture new production truth.
+
+### FC-029.2A — Factory Overview Configuration
+
+Configured sources are `0..N`, including an empty factory. No seven-machine assumption exists.
+
+Each source exposes only reporting identity and presentation metadata:
+
+```text
+MachineId
+ProcessorId
+DisplayName
+GroupName?
+DisplayOrder
+```
+
+Validation requires non-empty trimmed identity/display values, optional non-empty `GroupName`, non-negative `DisplayOrder`, and unique `(MachineId, ProcessorId)` identity.
+
+Configured source order is deterministic:
+
+```text
+DisplayOrder
+GroupName ordinal
+DisplayName ordinal
+MachineId
+ProcessorId ordinal
+```
+
+Configuration does not introduce metric values, formulas, statuses, inferred machine state, or production truth.
+
+### FC-029.2B — Production-Day Query Orchestration
+
+The production-day overview requests exactly these metric definitions:
+
+```text
+Availability / 1.0
+Utilization  / 1.0
+Performance  / 1.0
+Quality      / 1.0
+OEE          / 1.0
+```
+
+The request uses the exact configured `(MachineId, ProcessorId)` identities and canonical unpartitioned context:
+
+```text
+ProductionOrderId = null
+OperationId       = null
+PartId            = null
+OperatorId        = null
+UnpartitionedOnly = true
+```
+
+The browser does not calculate metric values or infer reporting context.
+
+Pagination is complete and opaque. The query service:
+
+- consumes every continuation page before returning success;
+- forwards continuation tokens unchanged and never decodes/interprets them;
+- uses a bounded maximum of 100 pages;
+- rejects repeated-token and multi-token cycles;
+- preserves cancellation across the entire traversal;
+- rejects the whole query when any later page fails;
+- never returns partial accumulated results after traversal failure.
+
+Traversal violations enter the existing reporting protocol-failure lifecycle rather than escaping as uncontrolled application exceptions.
+
+### FC-029.2C — Production-Day Presentation Model
+
+The presentation mapper is pure and deterministic. It receives the complete authoritative result set plus configured presentation metadata and produces grouped machine-level display models.
+
+Exact correlation identity is:
+
+```text
+ProcessorId
+MachineId
+ProductionDay
+Unpartitioned Context
+MetricKey
+DefinitionVersion
+```
+
+Every authoritative item is validated before any missing slot is manufactured. The mapper rejects:
+
+```text
+duplicate-result
+unexpected-source
+unexpected-scope
+unexpected-period
+unexpected-context
+unexpected-metric
+invalid-result-shape
+```
+
+Unexpected reporting sources are contract failures; they are not rendered as extra dashboard rows.
+
+Authoritative evaluation states are preserved exactly:
+
+```text
+calculated
+unavailable
+insufficient-evidence
+```
+
+`missing` is presentation-only and means no authoritative result exists for an expected configured source/day/context/metric/version identity. Missing does not fabricate value, unit, reason, revision, reporting status, or zero.
+
+Calculated values, including numeric strings and zero, are preserved without metric arithmetic, normalization, clamping, averaging, or OEE recomputation.
+
+Duplicate authoritative identities are rejected; the mapper never resolves duplicates by latest revision, sort order, first-wins, or last-wins behavior.
+
+### FC-029.2D — Production-Day Overview UI
+
+The UI composes:
+
+```text
+selected date-only route
+        ↓
+FC-029.2B controlled query lifecycle
+        ↓
+complete authoritative result set
+        ↓
+FC-029.2C controlled presentation mapping
+        ↓
+grouped production-day metric matrix
+```
+
+The matrix renders configured group/machine order and the five exact metric columns. It distinguishes calculated, unavailable, insufficient-evidence, and missing states. Supplied reason information remains visible.
+
+Formatting is display-only. Numeric-string values are formatted without converting authoritative strings through floating-point arithmetic. The UI does not calculate percentages from other metrics and does not recompute OEE.
+
+Expected request/reporting/presentation failures are contained in controlled view states and rendered through visible alerts. `ProductionDayPresentationFailure` does not escape React rendering uncaught. Unexpected programmer errors are not silently reclassified.
+
+Refresh preserves lifecycle ownership and records last successful retrieval time only after a successful authoritative retrieval. Date changes isolate prior request ownership; stale responses cannot publish into the newly selected day.
+
+### FC-029.2E — Production-Day Overview Contract & Behavior Conformance
+
+Whole-feature conformance proves:
+
+```text
+configured populations 0 / 1 / 7 / 50
+exact MachineId + ProcessorId source identities
+exact five metric key/version identities
+canonical unpartitioned context
+DateOnly production-day boundaries
+complete opaque multi-page traversal
+bounded traversal and cycle protection
+later-page failure containment without partial results
+mixed calculated / unavailable / insufficient-evidence / missing states
+authoritative reason and source-revision preservation
+deterministic configured group and machine order
+authoritative OEE displayed without recomputation
+expected lifecycle failures rendered through visible alerts
+no current-machine-state labels or inference
+no dependency on acquisition/current-state projection modules
+no frontend production-day reconstruction or metric aggregation
+```
+
+The dependency conformance proof transitively inspects the Production-Day Overview application path using a closed exact dependency allowlist, including query orchestration, lifecycle, presentation, formatting, navigation, surface, and matrix modules.
+
+### FC-029.2 closure evidence
+
+Final independently verified frontend closure gate:
+
+```text
+npm run typecheck   PASS
+npm test            173/173 PASS
+npm run build       PASS
+Vite                8.2.2, 40 modules transformed
+git diff --check    clean
+```
+
+FC-029.2A through FC-029.2E are complete.
+
+## FC-029.3 — Shift Performance Overview
+
+FC-029.3 is the next dashboard slice because FC-028 already exposes authoritative shift metric reporting. Its goal is to present authoritative shift-occurrence evaluations for the configured factory population without calculating production-day values, averages, rankings, OEE, current shift, shift boundaries, or current machine state in the browser.
+
+Planned slices:
+
+```text
+FC-029.3A  Shift Reporting Query Boundary
+  3A.1     Authoritative production-day-to-shift selection
+  3A.2     Shift query orchestration
+  3A.3     Pagination/lifecycle conformance
+FC-029.3B  Shift Presentation Model
+FC-029.3C  Shift Performance UI
+FC-029.3D  Shift Detail Interaction (optional)
+FC-029.3E  Whole-Feature Conformance
+```
+
+### FC-029.3A.1 — unresolved architectural gate
+
+No FC-029.3 React implementation may begin until authoritative production-day-to-shift selection is defined and approved.
+
+A bare business date must not automatically be treated as the complete production-day identity. The FC-026 domain identity includes site ownership, so the inventory must determine whether the authoritative identity is at least:
+
+```text
+ProductionDayId
+  SiteId
+  BusinessDate
+```
+
+The reporting-domain inventory must determine:
+
+1. whether durable shift evaluations already retain their owning production-day identity;
+2. whether that ownership can be queried directly without recomputing calendar semantics;
+3. whether one request may cover configured sources across multiple sites;
+4. how site identity required for shift selection is obtained when no production-day metric evaluation exists;
+5. whether site identity belongs in dashboard runtime configuration or an upstream reporting-selection contract.
+
+The preferred FC-028 direction, if durable/reporting ownership supports it, is a distinct production-day shift reporting selector/operation rather than browser-derived UTC boundaries. Conceptually:
+
+```text
+ProductionDayShiftMetricQuery
+  Sources
+  ProductionDayIds[] = SiteId + BusinessDate
+  Metrics
+  Context
+  Statuses
+  Order
+  Page
+```
+
+A separate operation is preferred over ambiguous optional interval and production-day fields. If the existing shift operation is extended instead, selection must be a closed mutually exclusive contract such as `UtcInterval | ProductionDays`, with mixed or empty selector shapes rejected.
+
+Before 3A.2 begins, 3A.1 must prove:
+
+```text
+selected production-day identity is complete and authoritative
+browser sends no derived UTC shift boundaries
+browser contains no shift schedule definitions
+configured sources across relevant sites are supported
+returned shifts belong only to requested production days
+overnight shift ownership is authoritative
+DST transitions require no browser logic
+missing metric evaluations do not prevent shift selection
+existing UTC interval query behavior remains compatible
+continuation identity binds to the production-day selector
+```
+
+Continuation tokens produced for one production-day/site/source/metric/context selection must not be reusable as compatible tokens for another selection.
+
+## Deferred boundaries
+
+The following remain outside the completed FC-029.2 feature and are not to be inferred from operational metric reporting:
+
+```text
+current machine status
+Running / Idle / Fault / Alarm / Online / Offline inference
+browser MTConnect acquisition
+live/current-state reconstruction
+frontend metric aggregation
+production-day reconstruction from shift values
+machine ranking
+charts/trends
+operator/downtime editing
+incentive reporting
+```
+
+Machine Status requires an explicit authoritative current-state read model/API before dashboard implementation.
+
+Daily Report / Print Surface follows Shift Performance so it can compose authoritative Production-Day Overview and Shift Performance result surfaces without introducing calculation authority.

@@ -124,6 +124,12 @@ public sealed class DashboardHostTests
         yield return Case("Dashboard:Sources:0:ProcessorId", " operational-metrics");
         yield return Case("Dashboard:Sources:0:ProcessorId", "operational-metrics ");
         yield return Case("Dashboard:Sources:0:DisplayName", " ");
+        yield return Case("Dashboard:Sources:0:DisplayName", " Machine 1");
+        yield return Case("Dashboard:Sources:0:DisplayName", "Machine 1 ");
+        yield return Case("Dashboard:Sources:0:GroupName", " ");
+        yield return Case("Dashboard:Sources:0:GroupName", " Line 1");
+        yield return Case("Dashboard:Sources:0:GroupName", "Line 1 ");
+        yield return Case("Dashboard:Sources:0:DisplayOrder", "-1");
     }
 
     [Theory]
@@ -140,7 +146,7 @@ public sealed class DashboardHostTests
     }
 
     [Fact]
-    public void EmptySourcesFailDuringStartup()
+    public async Task EmptySourcesAreValidConfiguredFactoryState()
     {
         var overrides = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -148,10 +154,13 @@ public sealed class DashboardHostTests
             ["Dashboard:RequestTimeout"] = "00:00:30"
         };
 
-        using var factory = CreateFactory(overrides, Environments.Production);
+        await using var factory = CreateFactory(overrides, Environments.Production);
+        using var client = factory.CreateClient();
 
-        var exception = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
-        Assert.Contains("Dashboard:Sources", exception.ToString(), StringComparison.Ordinal);
+        using var response = await client.GetAsync("/dashboard/config");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"sources\":[]", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -201,7 +210,9 @@ public sealed class DashboardHostTests
         ["Dashboard:RequestTimeout"] = "00:00:30",
         ["Dashboard:Sources:0:MachineId"] = "11111111-1111-1111-1111-111111111111",
         ["Dashboard:Sources:0:ProcessorId"] = "operational-metrics",
-        ["Dashboard:Sources:0:DisplayName"] = "Machine 1"
+        ["Dashboard:Sources:0:DisplayName"] = "Machine 1",
+        ["Dashboard:Sources:0:GroupName"] = "Line 1",
+        ["Dashboard:Sources:0:DisplayOrder"] = "10"
     };
 
     private static object[] Case(string key, string? value) => [key, value ?? string.Empty];

@@ -3,9 +3,10 @@
     <RootNamespace>FactoryConnect.Dashboard</RootNamespace>
     <AssemblyName>FactoryConnect.Dashboard</AssemblyName>
     <DashboardClientDirectory>$(MSBuildProjectDirectory)/ClientApp</DashboardClientDirectory>
+    <BuildDashboardClient Condition="'$(BuildDashboardClient)' == ''">true</BuildDashboardClient>
   </PropertyGroup>
 
-  <Target Name="BuildDashboardClient" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+  <Target Name="BuildDashboardClientAssets" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and '$(BuildDashboardClient)' == 'true'">
     <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm ci" />
     <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm run build" />
   </Target>

@@ -72,7 +72,7 @@ test("production-day results preserve authoritative states, context, revision, a
         },
       }),
     ],
-    continuationToken: "opaque-next-token",
+    continuationToken: null,
   };
 
   const html = renderToStaticMarkup(React.createElement(ProductionDayMetricResults, {
@@ -101,5 +101,5 @@ test("production-day results preserve authoritative states, context, revision, a
   assert.match(html, /Machine 1/);
   assert.match(html, /Unconfigured source/);
   assert.match(html, new RegExp(unknownMachineId));
-  assert.match(html, /Additional reporting results are available\./);
+  assert.doesNotMatch(html, /Additional reporting results are available\./);
 });
