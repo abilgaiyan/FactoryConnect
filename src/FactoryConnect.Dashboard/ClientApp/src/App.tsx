@@ -3,6 +3,7 @@ import {
   type MouseEvent,
   type PropsWithChildren,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -96,7 +97,7 @@ function ProductionDaySelection({ navigate, sourceCount }: ProductionDaySelectio
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isProductionDaySelection(productionDay)) {
-      navigate(`/production-days/${encodeURIComponent(productionDay)}`);
+      navigate(productionDayPath(productionDay));
     }
   };
 
@@ -120,13 +121,26 @@ interface ProductionDayDetailProps {
 }
 
 function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDayDetailProps) {
+  const handleDayChange = (value: string) => {
+    if (isProductionDaySelection(value) && value !== productionDay) {
+      navigate(productionDayPath(value));
+    }
+  };
+
   return (
     <section aria-labelledby="route-title">
       <RouteContext current="Production day" navigate={navigate} />
       <h1 id="route-title">Production day</h1>
-      <p>{productionDay}</p>
+      <label htmlFor="production-day-overview-selector">Production day</label>
+      <input
+        id="production-day-overview-selector"
+        name="production-day-overview-selector"
+        type="date"
+        value={productionDay}
+        onChange={(event) => handleDayChange(event.currentTarget.value)}
+      />
       {isProductionDaySelection(productionDay)
-        ? <ProductionDayOverviewVertical productionDay={productionDay} runtime={runtime} />
+        ? <ProductionDayOverviewVertical key={productionDay} productionDay={productionDay} runtime={runtime} />
         : <p role="alert">The selected production day is not a valid calendar date.</p>}
     </section>
   );
@@ -139,16 +153,20 @@ interface ProductionDayOverviewVerticalProps {
 
 function ProductionDayOverviewVertical({ productionDay, runtime }: ProductionDayOverviewVerticalProps) {
   const query = useProductionDayReporting(productionDay, runtime);
-  const state = deriveProductionDayOverviewViewState(query.state, productionDay, runtime.configuration.sources);
+  const state = useMemo(
+    () => deriveProductionDayOverviewViewState(query.state, productionDay, runtime.configuration.sources),
+    [query.state, productionDay, runtime.configuration.sources],
+  );
   const [lastSuccessfulRetrieval, setLastSuccessfulRetrieval] = useState<{ productionDay: string; retrievedAt: Date } | null>(null);
-  const recordedModel = useRef<object | null>(null);
+  const recordedQueryState = useRef<object | null>(null);
 
   useEffect(() => {
-    if (state.kind === "success" && recordedModel.current !== state.model) {
-      recordedModel.current = state.model;
-      setLastSuccessfulRetrieval({ productionDay, retrievedAt: new Date() });
+    if (state.kind === "success" && recordedQueryState.current !== query.state) {
+      recordedQueryState.current = query.state;
+      const now = runtime.now ?? (() => new Date());
+      setLastSuccessfulRetrieval({ productionDay, retrievedAt: now() });
     }
-  }, [productionDay, state]);
+  }, [productionDay, query.state, runtime.now, state]);
 
   const refresh = () => {
     void query.execute();
@@ -181,6 +199,10 @@ function ProductionDayOverviewStateView({ state }: { readonly state: ReturnType<
     case "presentation-failed":
       return <p role="alert">{state.message}</p>;
   }
+}
+
+function productionDayPath(productionDay: string): string {
+  return `/production-days/${encodeURIComponent(productionDay)}`;
 }
 
 interface RouteContextProps {
