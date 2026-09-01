@@ -124,7 +124,7 @@ public sealed class MachineShiftOccurrenceRosterMaterializer
     private static bool IsEquivalent(
         MachineShiftOccurrenceRoster current,
         MachineShiftScheduleScope scope,
-        IReadOnlyList<MachineShiftOccurrenceOwnership> ownership)
+        MachineShiftOccurrenceOwnership[] ownership)
     {
         if (current.ProductionLineId != scope.ProductionLineId ||
             current.Occurrences.Count != ownership.Count)
