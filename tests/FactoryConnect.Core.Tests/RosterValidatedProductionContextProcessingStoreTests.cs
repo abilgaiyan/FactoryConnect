@@ -34,10 +34,12 @@ public sealed class RosterValidatedProductionContextProcessingStoreTests
     public async Task DifferentOccurrenceRejectsPublicationWithoutAdvancingInnerStore()
     {
         var fixture = CreateFixture();
-        var other = fixture.Occurrence with
-        {
-            ShiftId = new ShiftId("SHIFT-B"),
-        };
+        var other = new ShiftOccurrenceId(
+            fixture.SiteId,
+            fixture.Occurrence.ShiftScheduleAssignmentId,
+            new ShiftId("SHIFT-B"),
+            fixture.Occurrence.StartsAtUtc,
+            fixture.Occurrence.EndsAtUtc);
         await fixture.PublishRosterAsync([other]);
 
         await Assert.ThrowsAsync<MachineShiftOccurrenceOwnershipMismatchException>(
