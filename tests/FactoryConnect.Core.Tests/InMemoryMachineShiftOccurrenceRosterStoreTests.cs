@@ -67,8 +67,8 @@ public sealed class InMemoryMachineShiftOccurrenceRosterStoreTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await fixture.Store.CommitAsync(
                 new MachineShiftOccurrenceRosterCommit(
-                    null,
-                    Roster(fixture, fixture.DayOne, 2, [
+                    new MachineShiftOccurrenceRosterRevision(2),
+                    Roster(fixture, fixture.DayOne, 3, [
                         Ownership(fixture, fixture.DayOne, "SHIFT-A", 6),
                     ])),
                 CancellationToken.None));
