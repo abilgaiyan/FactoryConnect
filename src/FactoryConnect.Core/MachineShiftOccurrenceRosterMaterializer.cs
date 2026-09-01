@@ -127,7 +127,7 @@ public sealed class MachineShiftOccurrenceRosterMaterializer
         MachineShiftOccurrenceOwnership[] ownership)
     {
         if (current.ProductionLineId != scope.ProductionLineId ||
-            current.Occurrences.Count != ownership.Count)
+            current.Occurrences.Count != ownership.Length)
         {
             return false;
         }
