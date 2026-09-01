@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildProductionDayQueryRequest,
   isProductionDaySelection,
+  ProductionDayReportingTraversalFailure,
   queryAuthoritativeProductionDay,
 } from "../src/application/production-day-reporting.ts";
 
@@ -101,7 +102,66 @@ test("authoritative query consumes every continuation page without interpreting 
   assert.deepEqual(result.items, [repeatedItem, repeatedItem, { marker: "second-page" }]);
 });
 
-test("empty configured factory returns an empty authoritative result without issuing an invalid reporting request", async () => {
+test("repeated continuation token terminates with typed traversal failure", async () => {
+  let callCount = 0;
+  const reportingClient = {
+    async queryProductionDayMetrics() {
+      callCount += 1;
+      return { items: [], continuationToken: "same-opaque-token" };
+    },
+  };
+
+  await assert.rejects(
+    queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
+    (error) =>
+      error instanceof ProductionDayReportingTraversalFailure &&
+      error.reason === "continuation-cycle",
+  );
+  assert.equal(callCount, 2);
+});
+
+test("multi-token continuation cycle terminates without decoding tokens", async () => {
+  const returnedTokens = ["opaque-A", "opaque-B", "opaque-A"];
+  const receivedTokens = [];
+  const reportingClient = {
+    async queryProductionDayMetrics(request) {
+      receivedTokens.push(request.continuationToken);
+      return {
+        items: [],
+        continuationToken: returnedTokens[receivedTokens.length - 1],
+      };
+    },
+  };
+
+  await assert.rejects(
+    queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
+    (error) =>
+      error instanceof ProductionDayReportingTraversalFailure &&
+      error.reason === "continuation-cycle",
+  );
+  assert.deepEqual(receivedTokens, [null, "opaque-A", "opaque-B"]);
+});
+
+test("maximum page count bounds an otherwise unique continuation sequence", async () => {
+  let callCount = 0;
+  const reportingClient = {
+    async queryProductionDayMetrics(request) {
+      assert.equal(request.continuationToken, callCount === 0 ? null : `opaque-${callCount}`);
+      callCount += 1;
+      return { items: [], continuationToken: `opaque-${callCount}` };
+    },
+  };
+
+  await assert.rejects(
+    queryAuthoritativeProductionDay("2026-08-31", sources, reportingClient),
+    (error) =>
+      error instanceof ProductionDayReportingTraversalFailure &&
+      error.reason === "page-limit-exceeded",
+  );
+  assert.equal(callCount, 100);
+});
+
+test("empty configured factory validates production day before returning an empty authoritative result", async () => {
   let callCount = 0;
   const reportingClient = {
     async queryProductionDayMetrics() {
@@ -117,6 +177,12 @@ test("empty configured factory returns an empty authoritative result without iss
   );
 
   assert.deepEqual(result, { items: [] });
+  assert.equal(callCount, 0);
+
+  await assert.rejects(
+    queryAuthoritativeProductionDay("2026-02-29", [], reportingClient),
+    RangeError,
+  );
   assert.equal(callCount, 0);
 });
 
