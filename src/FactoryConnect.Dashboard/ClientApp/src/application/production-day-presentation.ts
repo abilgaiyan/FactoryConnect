@@ -107,17 +107,13 @@ export class ProductionDayPresentationFailure extends Error {
   }
 }
 
-const overviewMetrics = [
-  { slot: "availability", metricKey: "Availability" },
-  { slot: "utilization", metricKey: "Utilization" },
-  { slot: "performance", metricKey: "Performance" },
-  { slot: "quality", metricKey: "Quality" },
-  { slot: "oee", metricKey: "OEE" },
-] as const;
-
-const overviewMetricKeys = new Set<OverviewMetricKey>(
-  overviewMetrics.map(({ metricKey }) => metricKey),
-);
+const overviewMetricKeys = new Set<OverviewMetricKey>([
+  "Availability",
+  "Utilization",
+  "Performance",
+  "Quality",
+  "OEE",
+]);
 
 const jsonNumberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
@@ -232,10 +228,7 @@ function validateAuthoritativeItem(
   }
 
   if (!hasValidStatusValueShape(item)) {
-    throw new ProductionDayPresentationFailure(
-      "invalid-result-shape",
-      "Production-day overview received an internally inconsistent metric result.",
-    );
+    throw invalidResultShape();
   }
 }
 
@@ -244,22 +237,28 @@ function buildMetricSet(
   productionDay: string,
   resultIndex: ReadonlyMap<string, OperationalMetricItem>,
 ): ProductionDayMetricSet {
-  const displays = overviewMetrics.map(({ metricKey }) => {
-    const item = resultIndex.get(
-      expectedIdentity(source.machineId, source.processorId, productionDay, metricKey),
-    );
-    return item === undefined
-      ? missingMetric(metricKey)
-      : mapAuthoritativeMetric(item, metricKey);
-  });
-
   return {
-    availability: displays[0],
-    utilization: displays[1],
-    performance: displays[2],
-    quality: displays[3],
-    oee: displays[4],
+    availability: metricDisplay(source, productionDay, "Availability", resultIndex),
+    utilization: metricDisplay(source, productionDay, "Utilization", resultIndex),
+    performance: metricDisplay(source, productionDay, "Performance", resultIndex),
+    quality: metricDisplay(source, productionDay, "Quality", resultIndex),
+    oee: metricDisplay(source, productionDay, "OEE", resultIndex),
   };
+}
+
+function metricDisplay(
+  source: DashboardRuntimeSource,
+  productionDay: string,
+  metricKey: OverviewMetricKey,
+  resultIndex: ReadonlyMap<string, OperationalMetricItem>,
+): ProductionDayMetricDisplay {
+  const item = resultIndex.get(
+    expectedIdentity(source.machineId, source.processorId, productionDay, metricKey),
+  );
+
+  return item === undefined
+    ? missingMetric(metricKey)
+    : mapAuthoritativeMetric(item, metricKey);
 }
 
 function mapAuthoritativeMetric(
@@ -325,7 +324,7 @@ function missingMetric(metricKey: OverviewMetricKey): MissingMetricDisplay {
 function hasValidStatusValueShape(item: OperationalMetricItem): boolean {
   switch (item.status) {
     case "calculated":
-      return item.value !== null && isMetricValue(item.value);
+      return item.value !== null && isDecodedMetricValueShape(item.value);
     case "unavailable":
     case "insufficient-evidence":
       return item.value === null;
@@ -334,14 +333,12 @@ function hasValidStatusValueShape(item: OperationalMetricItem): boolean {
   }
 }
 
-function isMetricValue(value: unknown): value is MetricValue {
+function isDecodedMetricValueShape(value: unknown): value is MetricValue {
   if (typeof value === "number") {
     return Number.isFinite(value);
   }
 
-  return typeof value === "string"
-    && jsonNumberPattern.test(value)
-    && Number.isFinite(Number(value));
+  return typeof value === "string" && jsonNumberPattern.test(value);
 }
 
 function isUnpartitionedContext(item: OperationalMetricItem["context"]): boolean {
