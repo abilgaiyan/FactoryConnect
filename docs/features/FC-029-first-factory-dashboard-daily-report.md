@@ -515,6 +515,83 @@ continuation identity binds to the production-day selector
 
 Continuation tokens produced for one production-day/site/source/metric/context selection must not be reusable as compatible tokens for another selection.
 
+### FC-029.3A.1 reporting-domain inventory
+
+The existing durable pipeline establishes the requested production-day identity but does not yet preserve enough ownership metadata at the reporting projection to execute the preferred query.
+
+| Boundary | Authoritative identity or selection | Production-day ownership retained for a shift? |
+| --- | --- | --- |
+| FC-025 metric input | `ShiftOccurrenceId` and `ProductionDayId` are persisted together on every positioned metric-input fact | Yes |
+| FC-026 aggregation | Separate `(MachineId, ShiftOccurrenceId, MetricInputKey)` and `(MachineId, ProductionDayId, MetricInputKey)` aggregates | No association in either aggregate identity |
+| FC-026 revision change | Independent sets of affected `ShiftOccurrenceId` and `ProductionDayId` values | No pairing |
+| FC-027 evaluation identity | `OperationalMetricPeriodId.Shift(ShiftOccurrenceId)` or `OperationalMetricPeriodId.ProductionDay(ProductionDayId)` | No production-day owner on a shift evaluation |
+| FC-027 reporting projection | Projection summary contains processor, evaluation key, result, and source revision | No production-day owner on a shift projection |
+| FC-028 shift query | Selects shift projections by `ShiftOccurrenceId.StartsAtUtc` in an absolute UTC start interval | No production-day selector |
+| FC-028 production-day query | Selects production-day projections by `ProductionDayId.BusinessDate` | Does not return shift projections |
+
+`ProductionDayId` is the complete existing production-day identity:
+
+```text
+ProductionDayId
+  SiteId
+  BusinessDate
+```
+
+`ShiftOccurrenceId` is independently complete for a resolved shift occurrence:
+
+```text
+ShiftOccurrenceId
+  SiteId
+  ShiftScheduleAssignmentId
+  ShiftId
+  StartsAtUtc
+  EndsAtUtc
+```
+
+The shift identity deliberately contains no business date. Its UTC interval therefore cannot be converted to a `ProductionDayId` without consulting the authoritative schedule/calendar rules. Comparing its start timestamp with browser-derived day boundaries would reconstruct the very ownership that FC-025 already resolved and persisted.
+
+The inventory decision is consequently:
+
+> `ProductionDayId = SiteId + BusinessDate` is sufficient to express the desired reporting selection, but the current FC-027/028 shift result surface cannot execute that selection directly because the owning `ProductionDayId` does not survive into a shift evaluation or reporting projection.
+
+FC-029.3A.1 must close this upstream gap before query orchestration begins. The reporting path needs an authoritative, durable association:
+
+```text
+ShiftOccurrenceId → ProductionDayId
+```
+
+That association must originate from the persisted FC-025 ownership pair. It must be exposed through an authoritative occurrence-ownership read model; copying ownership metadata onto evaluation/projection rows may support filtering but is not sufficient by itself. An occurrence with no requested metric evaluations must remain selectable so the presentation layer can distinguish a known shift with missing evaluations from the absence of that shift. Ownership must not be recovered from timestamps, schedule definitions, production-day metric availability, or browser configuration.
+
+Whichever representation is chosen must enforce:
+
+```text
+same ShiftOccurrenceId → exactly one ProductionDayId
+same SiteId on both identities
+conflicting ownership → reject, never choose or repair
+ownership available independently of any requested metric evaluation
+```
+
+The selected reporting result therefore needs an authoritative occurrence roster containing the complete `ShiftOccurrenceId` descriptor and its owning `ProductionDayId`, with zero or more correlated metric evaluations. Metric rows must not be used as the source of occurrence existence or ownership.
+
+Once that association reaches the FC-028 query boundary, FC-028 should expose a distinct production-day shift operation whose selector contains exact `ProductionDayId` values. `ProductionDayIds` must support more than one site so configured cross-site source populations do not require a browser-side site/calendar assumption. Source selection remains the exact `(MachineId, ProcessorId)` authority established by FC-028.
+
+The operation must preserve the existing FC-028 reporting rules:
+
+```text
+exact source selection
+exact metric key/version selection
+canonical context and status filtering
+deterministic authoritative ordering
+opaque complete pagination
+provider-window validation
+```
+
+Its continuation fingerprint must bind the canonical production-day identities, including `SiteId` and `BusinessDate`, in addition to sources, metrics, context, statuses, and ordering. Tokens from the existing UTC-interval shift operation and the new production-day shift operation are different query identities and must be mutually incompatible.
+
+The existing UTC-interval shift query remains a valid FC-028 operation for callers whose intent is an absolute interval. It must not be used by FC-029.3 to approximate production-day membership.
+
+FC-029.3A.1 is not closed by this inventory. It is closed only when the chosen durable ownership representation and the production-day shift reporting selector are implemented and prove overnight/DST ownership, cross-site selection, conflicting-ownership rejection, metric-independent selection, and continuation incompatibility. React remains blocked until then.
+
 ## Deferred boundaries
 
 The following remain outside the completed FC-029.2 feature and are not to be inferred from operational metric reporting:
