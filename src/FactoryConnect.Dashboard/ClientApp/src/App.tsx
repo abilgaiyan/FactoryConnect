@@ -7,7 +7,7 @@ import {
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
 import { ProductionDayOverviewMatrix } from "./application/ProductionDayOverviewMatrix.ts";
-import type { ProductionDayOverviewViewState } from "./application/production-day-overview-state.ts";
+import { productionDayPath } from "./application/production-day-navigation.ts";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
 import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
@@ -150,13 +150,10 @@ interface ProductionDayOverviewVerticalProps {
 
 function ProductionDayOverviewVertical({ productionDay, runtime }: ProductionDayOverviewVerticalProps) {
   const overview = useProductionDayOverview(productionDay, runtime);
-  const refresh = () => {
-    void overview.refresh();
-  };
 
   return (
     <div aria-busy={overview.state.kind === "loading" ? "true" : "false"}>
-      <button type="button" onClick={refresh} disabled={overview.state.kind === "loading"}>Refresh</button>
+      <button type="button" onClick={() => void overview.refresh()} disabled={overview.state.kind === "loading"}>Refresh</button>
       {overview.lastSuccessfulRetrieval === null ? null : (
         <p>
           Last loaded for {overview.lastSuccessfulRetrieval.productionDay}: {overview.lastSuccessfulRetrieval.retrievedAt.toLocaleString()}
@@ -167,7 +164,7 @@ function ProductionDayOverviewVertical({ productionDay, runtime }: ProductionDay
   );
 }
 
-function ProductionDayOverviewStateView({ state }: { readonly state: ProductionDayOverviewViewState }) {
+function ProductionDayOverviewStateView({ state }: { readonly state: ReturnType<typeof useProductionDayOverview>["state"] }) {
   switch (state.kind) {
     case "idle":
     case "loading":
@@ -181,10 +178,6 @@ function ProductionDayOverviewStateView({ state }: { readonly state: ProductionD
     case "presentation-failed":
       return <p role="alert">{state.message}</p>;
   }
-}
-
-export function productionDayPath(productionDay: string): string {
-  return `/production-days/${encodeURIComponent(productionDay)}`;
 }
 
 interface RouteContextProps {
