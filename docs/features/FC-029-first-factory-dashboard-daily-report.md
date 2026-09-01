@@ -521,7 +521,7 @@ The existing durable pipeline establishes the requested production-day identity 
 
 | Boundary | Authoritative identity or selection | Production-day ownership retained for a shift? |
 | --- | --- | --- |
-| FC-025 metric input | `ShiftOccurrenceId` and `ProductionDayId` are persisted together on every positioned metric-input fact | Yes |
+| FC-025 metric input | `ShiftOccurrenceId` and `ProductionDayId` are persisted together on every positioned metric-input fact | Yes, for occurrences that produced facts |
 | FC-026 aggregation | Separate `(MachineId, ShiftOccurrenceId, MetricInputKey)` and `(MachineId, ProductionDayId, MetricInputKey)` aggregates | No association in either aggregate identity |
 | FC-026 revision change | Independent sets of affected `ShiftOccurrenceId` and `ProductionDayId` values | No pairing |
 | FC-027 evaluation identity | `OperationalMetricPeriodId.Shift(ShiftOccurrenceId)` or `OperationalMetricPeriodId.ProductionDay(ProductionDayId)` | No production-day owner on a shift evaluation |
@@ -554,26 +554,55 @@ The inventory decision is consequently:
 
 > `ProductionDayId = SiteId + BusinessDate` is sufficient to express the desired reporting selection, but the current FC-027/028 shift result surface cannot execute that selection directly because the owning `ProductionDayId` does not survive into a shift evaluation or reporting projection.
 
-FC-029.3A.1 must close this upstream gap before query orchestration begins. The reporting path needs an authoritative, durable association:
+FC-029.3A.1 must close this upstream gap before query orchestration begins. It must determine two independent authoritative facts:
 
 ```text
-ShiftOccurrenceId → ProductionDayId
+occurrence existence/applicability
+  MachineId → ShiftOccurrenceId
+
+production-day ownership
+  ShiftOccurrenceId → ProductionDayId
 ```
 
-That association must originate from the persisted FC-025 ownership pair. It must be exposed through an authoritative occurrence-ownership read model; copying ownership metadata onto evaluation/projection rows may support filtering but is not sufficient by itself. An occurrence with no requested metric evaluations must remain selectable so the presentation layer can distinguish a known shift with missing evaluations from the absence of that shift. Ownership must not be recovered from timestamps, schedule definitions, production-day metric availability, or browser configuration.
+These facts are related but not interchangeable. A site-level occurrence and production-day association does not establish which requested machines use that shift schedule. Line-specific schedule assignments also prohibit forming the Cartesian product of every requested machine and every site occurrence.
+
+The persisted FC-025 ownership pair is authoritative evidence for a machine occurrence that produced a metric-input fact and must validate any roster representation for that occurrence. It is not necessarily the authority for occurrence existence: FC-025 facts are derived evidence, so an applicable machine/shift occurrence with no activity or quantity evidence may have no persisted pair at all. Metric-input existence must therefore not be required to establish the roster.
+
+The authoritative roster source remains a 3A.1 design decision. Candidate sources include upstream shift-resolution/schedule semantics, a new durable resolved machine-occurrence projection, or another persisted allocation/read model. The reporting boundary must consume the resolved result; it must not independently reconstruct schedule applicability or calendar ownership. Copying ownership onto evaluation/projection rows may support filtering but is not sufficient because an occurrence with no requested metric evaluations must remain selectable.
 
 Whichever representation is chosen must enforce:
 
 ```text
+same machine/production-day selection → deterministic applicable occurrences
 same ShiftOccurrenceId → exactly one ProductionDayId
 same SiteId on both identities
+line/site schedule applicability is resolved upstream
 conflicting ownership → reject, never choose or repair
-ownership available independently of any requested metric evaluation
+occurrence existence and ownership available independently of metric-input/evaluation existence
 ```
 
-The selected reporting result therefore needs an authoritative occurrence roster containing the complete `ShiftOccurrenceId` descriptor and its owning `ProductionDayId`, with zero or more correlated metric evaluations. Metric rows must not be used as the source of occurrence existence or ownership.
+The selected reporting result therefore needs an authoritative machine-occurrence roster conceptually containing:
 
-Once that association reaches the FC-028 query boundary, FC-028 should expose a distinct production-day shift operation whose selector contains exact `ProductionDayId` values. `ProductionDayIds` must support more than one site so configured cross-site source populations do not require a browser-side site/calendar assumption. Source selection remains the exact `(MachineId, ProcessorId)` authority established by FC-028.
+```text
+MachineShiftOccurrenceOwnership
+  MachineId
+  ShiftOccurrenceId
+  ProductionDayId
+```
+
+`ProcessorId` remains reporting/projection source identity; it is not promoted into factory scheduling identity. FC-028 correlates zero or more metric evaluations to each applicable roster item by `(MachineId, ProcessorId, ShiftOccurrenceId, Context, MetricKey, DefinitionVersion)`. Metric-input and metric-evaluation rows must not be used as the source of occurrence existence.
+
+The desired selection flow is:
+
+```text
+requested Sources + requested ProductionDayIds
+                    ↓
+authoritative machine/occurrence roster
+                    ↓
+zero-or-more FC-027 metric evaluations
+```
+
+Once that roster reaches the FC-028 query boundary, FC-028 should expose a distinct production-day shift operation whose selector contains exact `ProductionDayId` values. `ProductionDayIds` must support more than one site so configured cross-site source populations do not require a browser-side site/calendar assumption. Source selection remains the exact `(MachineId, ProcessorId)` authority established by FC-028.
 
 The operation must preserve the existing FC-028 reporting rules:
 
@@ -590,7 +619,7 @@ Its continuation fingerprint must bind the canonical production-day identities, 
 
 The existing UTC-interval shift query remains a valid FC-028 operation for callers whose intent is an absolute interval. It must not be used by FC-029.3 to approximate production-day membership.
 
-FC-029.3A.1 is not closed by this inventory. It is closed only when the chosen durable ownership representation and the production-day shift reporting selector are implemented and prove overnight/DST ownership, cross-site selection, conflicting-ownership rejection, metric-independent selection, and continuation incompatibility. React remains blocked until then.
+FC-029.3A.1 is not closed by this inventory. It is closed only when the chosen authoritative roster representation and the production-day shift reporting selector are implemented and prove machine applicability, zero-evidence occurrence selection, overnight/DST ownership, cross-site selection, conflicting-ownership rejection, metric-independent selection, and continuation incompatibility. React remains blocked until then.
 
 ## Deferred boundaries
 
