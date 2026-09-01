@@ -155,23 +155,6 @@ public sealed record MachineShiftOccurrenceRosterCommit
     {
         ArgumentNullException.ThrowIfNull(proposedRoster);
 
-        if (expectedRevision is null)
-        {
-            if (proposedRoster.Revision.Value != 1)
-            {
-                throw new ArgumentException(
-                    "An initial roster commit must propose revision one.",
-                    nameof(proposedRoster));
-            }
-        }
-        else if (expectedRevision.Value == ulong.MaxValue ||
-                 proposedRoster.Revision.Value != expectedRevision.Value + 1)
-        {
-            throw new ArgumentException(
-                "A replacement roster commit must propose the next revision.",
-                nameof(proposedRoster));
-        }
-
         ExpectedRevision = expectedRevision;
         ProposedRoster = proposedRoster;
     }

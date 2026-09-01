@@ -48,6 +48,21 @@ public sealed class InMemoryMachineShiftOccurrenceRosterStore :
                     "Machine-shift occurrence roster revision conflict.");
             }
 
+            if (current is null)
+            {
+                if (proposed.Revision.Value != 1)
+                {
+                    throw new InvalidOperationException(
+                        "An initial machine-shift occurrence roster must use revision one.");
+                }
+            }
+            else if (current.Revision.Value == ulong.MaxValue ||
+                     proposed.Revision.Value != current.Revision.Value + 1)
+            {
+                throw new InvalidOperationException(
+                    "A replacement machine-shift occurrence roster must use the next revision.");
+            }
+
             var staged = new Dictionary<(MachineId, ProductionDayId), MachineShiftOccurrenceRoster>(
                 _rosters)
             {

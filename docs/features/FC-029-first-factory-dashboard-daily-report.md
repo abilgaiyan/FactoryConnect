@@ -648,7 +648,7 @@ MachineShiftOccurrenceOwnership
 
 An existing roster with zero occurrences means the machine/day was authoritatively resolved with no applicable shifts. An absent roster means coverage has not been resolved. Those states are never interchangeable.
 
-Roster commits publish a complete replacement snapshot atomically under an expected revision. The initial revision is one and every replacement advances exactly once. Commits reject stale revisions, duplicate occurrence identities, mismatched machine/line/day entries, cross-site shift/day ownership, and one `ShiftOccurrenceId` assigned to conflicting production days. Occurrence order is canonical and does not depend on caller enumeration order.
+Roster commits publish a complete replacement snapshot atomically under an expected revision. The store first compares the expected revision with its authoritative current snapshot. Only after that CAS comparison succeeds does the store require initial revision one or exactly one revision of advancement. Commits reject stale revisions before invalid successor transitions, and reject duplicate occurrence identities, mismatched machine/line/day entries, cross-site shift/day ownership, and one `ShiftOccurrenceId` assigned to conflicting production days. Occurrence order is canonical and does not depend on caller enumeration order.
 
 `ProcessorId` is deliberately absent. It remains FC-027/028 projection source identity rather than factory scheduling identity.
 

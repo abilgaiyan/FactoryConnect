@@ -84,21 +84,6 @@ public sealed class MachineShiftOccurrenceRosterContractTests
             [ownership, ownership]));
     }
 
-    [Fact]
-    public void CommitRequiresInitialRevisionOneAndContiguousReplacementRevision()
-    {
-        var fixture = CreateFixture();
-
-        Assert.Throws<ArgumentException>(() =>
-            new MachineShiftOccurrenceRosterCommit(
-                null,
-                Roster(fixture, 2, [])));
-        Assert.Throws<ArgumentException>(() =>
-            new MachineShiftOccurrenceRosterCommit(
-                new MachineShiftOccurrenceRosterRevision(1),
-                Roster(fixture, 3, [])));
-    }
-
     private static MachineShiftOccurrenceOwnership Ownership(
         Fixture fixture,
         string shiftId,

@@ -64,16 +64,61 @@ public sealed class InMemoryMachineShiftOccurrenceRosterStoreTests
             new MachineShiftOccurrenceRosterCommit(null, first),
             CancellationToken.None);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await fixture.Store.CommitAsync(
                 new MachineShiftOccurrenceRosterCommit(
                     new MachineShiftOccurrenceRosterRevision(2),
+                    Roster(fixture, fixture.DayOne, 2, [
+                        Ownership(fixture, fixture.DayOne, "SHIFT-A", 6),
+                    ])),
+                CancellationToken.None));
+
+        Assert.Contains("revision conflict", exception.Message, StringComparison.Ordinal);
+        Assert.Same(first, await fixture.Store.ReadAsync(
+            fixture.MachineId,
+            fixture.DayOne,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task InvalidSuccessorRevisionAfterSuccessfulCasIsRejectedWithoutMutation()
+    {
+        var fixture = CreateFixture();
+        var first = Roster(fixture, fixture.DayOne, 1, []);
+        await fixture.Store.CommitAsync(
+            new MachineShiftOccurrenceRosterCommit(null, first),
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await fixture.Store.CommitAsync(
+                new MachineShiftOccurrenceRosterCommit(
+                    first.Revision,
                     Roster(fixture, fixture.DayOne, 3, [
                         Ownership(fixture, fixture.DayOne, "SHIFT-A", 6),
                     ])),
                 CancellationToken.None));
 
+        Assert.Contains("next revision", exception.Message, StringComparison.Ordinal);
         Assert.Same(first, await fixture.Store.ReadAsync(
+            fixture.MachineId,
+            fixture.DayOne,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task InitialRevisionOtherThanOneIsRejectedWithoutPublishingCoverage()
+    {
+        var fixture = CreateFixture();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await fixture.Store.CommitAsync(
+                new MachineShiftOccurrenceRosterCommit(
+                    null,
+                    Roster(fixture, fixture.DayOne, 2, [])),
+                CancellationToken.None));
+
+        Assert.Contains("revision one", exception.Message, StringComparison.Ordinal);
+        Assert.Null(await fixture.Store.ReadAsync(
             fixture.MachineId,
             fixture.DayOne,
             CancellationToken.None));
