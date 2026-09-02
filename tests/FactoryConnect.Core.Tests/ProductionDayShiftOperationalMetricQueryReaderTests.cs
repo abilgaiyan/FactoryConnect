@@ -129,12 +129,12 @@ public sealed class ProductionDayShiftOperationalMetricQueryReaderTests
     }
 
     [Fact]
-    public async Task ContinuationTokenIsBoundToProductionDaySelection()
+    public async Task ContinuationTokenIsBoundToProductionDaySelectionBeforeAuthoritativeRead()
     {
         var fixture = CreateFixture();
-        var reader = new ProductionDayShiftOperationalMetricQueryReader(
-            new StubReader(fixture.Reports));
-        var first = await reader.ReadAsync(
+        var initialStub = new StubReader(fixture.Reports);
+        var initialReader = new ProductionDayShiftOperationalMetricQueryReader(initialStub);
+        var first = await initialReader.ReadAsync(
             fixture.PageQuery(1),
             CancellationToken.None);
         var otherDay = new ProductionDayId(
@@ -143,21 +143,25 @@ public sealed class ProductionDayShiftOperationalMetricQueryReaderTests
         var incompatibleSelection = new ProductionDayShiftOperationalMetricQuery(
             [new ProductionDayShiftReportingSource(fixture.Source, otherDay)],
             fixture.Context);
+        var rejectingStub = new StubReader(fixture.Reports);
+        var rejectingReader = new ProductionDayShiftOperationalMetricQueryReader(rejectingStub);
 
         await Assert.ThrowsAsync<IncompatibleReportingContinuationTokenException>(async () =>
-            await reader.ReadAsync(
+            await rejectingReader.ReadAsync(
                 new ProductionDayShiftOperationalMetricPageQuery(
                     incompatibleSelection,
                     new ReportingPageRequest(1, first.ContinuationToken)),
                 CancellationToken.None));
+
+        Assert.Equal(0, rejectingStub.ReadCount);
     }
 
     [Fact]
-    public async Task MalformedContinuationTokenIsRejected()
+    public async Task MalformedContinuationTokenIsRejectedBeforeAuthoritativeRead()
     {
         var fixture = CreateFixture();
-        var reader = new ProductionDayShiftOperationalMetricQueryReader(
-            new StubReader(fixture.Reports));
+        var stub = new StubReader(fixture.Reports);
+        var reader = new ProductionDayShiftOperationalMetricQueryReader(stub);
 
         await Assert.ThrowsAsync<MalformedReportingContinuationTokenException>(async () =>
             await reader.ReadAsync(
@@ -165,6 +169,8 @@ public sealed class ProductionDayShiftOperationalMetricQueryReaderTests
                     1,
                     new ReportingContinuationToken("not-a-valid-token")),
                 CancellationToken.None));
+
+        Assert.Equal(0, stub.ReadCount);
     }
 
     private static Fixture CreateFixture()
@@ -228,11 +234,14 @@ public sealed class ProductionDayShiftOperationalMetricQueryReaderTests
         public StubReader(IReadOnlyList<ProductionDayShiftOperationalMetricReport> reports) =>
             _reports = reports;
 
+        public int ReadCount { get; private set; }
+
         public ValueTask<IReadOnlyList<ProductionDayShiftOperationalMetricReport>> ReadAsync(
             ProductionDayShiftOperationalMetricQuery query,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
             return ValueTask.FromResult(_reports);
         }
     }
