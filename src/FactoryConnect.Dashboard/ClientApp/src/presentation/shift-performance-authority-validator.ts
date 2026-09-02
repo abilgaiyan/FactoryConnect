@@ -173,8 +173,20 @@ function parseUtcInstant(value: string): ParsedUtcInstant | null {
     return null;
   }
 
-  const [, year, month, day, hour, minute, second, fraction = ""] = match;
-  if (!isValidUtcDateTime(year, month, day, hour, minute, second)) {
+  const year = match[1];
+  const month = match[2];
+  const day = match[3];
+  const hour = match[4];
+  const minute = match[5];
+  const second = match[6];
+  const fraction = match[7] ?? "";
+  if (year === undefined
+    || month === undefined
+    || day === undefined
+    || hour === undefined
+    || minute === undefined
+    || second === undefined
+    || !isValidUtcDateTime(year, month, day, hour, minute, second)) {
     return null;
   }
 
