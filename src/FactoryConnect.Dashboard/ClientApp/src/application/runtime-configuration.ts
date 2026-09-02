@@ -1,6 +1,7 @@
 export interface DashboardRuntimeSource {
   readonly machineId: string;
   readonly processorId: string;
+  readonly siteId: string;
   readonly displayName: string;
   readonly groupName: string | null;
   readonly displayOrder: number;
@@ -54,6 +55,9 @@ function isRuntimeSource(value: unknown): value is DashboardRuntimeSource {
     value.machineId.length > 0 &&
     typeof value.processorId === "string" &&
     value.processorId.length > 0 &&
+    typeof value.siteId === "string" &&
+    value.siteId.trim() === value.siteId &&
+    value.siteId.length > 0 &&
     typeof value.displayName === "string" &&
     value.displayName.length > 0 &&
     (value.groupName === null ||
