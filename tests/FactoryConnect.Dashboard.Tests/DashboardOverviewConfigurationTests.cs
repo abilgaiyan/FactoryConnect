@@ -25,20 +25,26 @@ public sealed class DashboardOverviewConfigurationTests
 
         using var response = await client.GetAsync("/dashboard/config");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync());
-        var sources = document.RootElement.GetProperty("sources");
+        var sources = document.RootElement.GetProperty("sources").EnumerateArray().ToArray();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(sourceCount, sources.GetArrayLength());
+        Assert.Equal(sourceCount, sources.Length);
+
+        for (var index = 0; index < sources.Length; index++)
+        {
+            var sourceNumber = index + 1;
+            Assert.Equal($"site-{sourceNumber:D2}", sources[index].GetProperty("siteId").GetString());
+        }
     }
 
     [Fact]
     public async Task RuntimeConfigurationOrdersSourcesByConfiguredPresentationOrderWithStableTies()
     {
         var values = BaseOverrides();
-        AddSource(values, 0, "00000000-0000-0000-0000-000000000003", "processor-c", "Machine C", "Line 2", 20);
-        AddSource(values, 1, "00000000-0000-0000-0000-000000000002", "processor-b", "Machine B", "Line 1", 10);
-        AddSource(values, 2, "00000000-0000-0000-0000-000000000001", "processor-a", "Machine A", "Line 1", 10);
-        AddSource(values, 3, "00000000-0000-0000-0000-000000000004", "processor-d", "Machine D", null, 5);
+        AddSource(values, 0, "00000000-0000-0000-0000-000000000003", "processor-c", "site-c", "Machine C", "Line 2", 20);
+        AddSource(values, 1, "00000000-0000-0000-0000-000000000002", "processor-b", "site-b", "Machine B", "Line 1", 10);
+        AddSource(values, 2, "00000000-0000-0000-0000-000000000001", "processor-a", "site-a", "Machine A", "Line 1", 10);
+        AddSource(values, 3, "00000000-0000-0000-0000-000000000004", "processor-d", "site-d", "Machine D", null, 5);
 
         await using var factory = CreateFactory(values);
         using var client = factory.CreateClient();
@@ -53,6 +59,8 @@ public sealed class DashboardOverviewConfigurationTests
             .ToArray();
         Assert.Equal(ExpectedDisplayNames, displayNames);
         Assert.Equal(ExpectedDisplayOrders, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
+        Assert.Equal("site-d", sources[0].GetProperty("siteId").GetString());
+        Assert.Equal("site-a", sources[1].GetProperty("siteId").GetString());
         Assert.Null(sources[0].GetProperty("groupName").GetString());
         Assert.Equal("Line 1", sources[1].GetProperty("groupName").GetString());
     }
@@ -79,6 +87,7 @@ public sealed class DashboardOverviewConfigurationTests
                 index,
                 GuidFromIndex(index + 1).ToString(),
                 $"processor-{index + 1:D2}",
+                $"site-{index + 1:D2}",
                 $"Machine {index + 1:D2}",
                 $"Line {(index % 4) + 1}",
                 index);
@@ -98,6 +107,7 @@ public sealed class DashboardOverviewConfigurationTests
         int index,
         string machineId,
         string processorId,
+        string siteId,
         string displayName,
         string? groupName,
         int displayOrder)
@@ -105,6 +115,7 @@ public sealed class DashboardOverviewConfigurationTests
         var prefix = $"Dashboard:Sources:{index}";
         values[$"{prefix}:MachineId"] = machineId;
         values[$"{prefix}:ProcessorId"] = processorId;
+        values[$"{prefix}:SiteId"] = siteId;
         values[$"{prefix}:DisplayName"] = displayName;
         values[$"{prefix}:GroupName"] = groupName;
         values[$"{prefix}:DisplayOrder"] = displayOrder.ToString(System.Globalization.CultureInfo.InvariantCulture);
