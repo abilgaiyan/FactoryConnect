@@ -39,6 +39,11 @@ export function deriveProductionDayOverviewViewState(
         kind: "request-invalid",
         message: queryState.details.detail ?? queryState.details.title ?? "The reporting request is invalid.",
       };
+    case "coverageRequired":
+      return {
+        kind: "reporting-failed",
+        message: "Production-day reporting is unavailable because the requested shift roster has not been materialized.",
+      };
     case "failed":
       return {
         kind: "reporting-failed",
