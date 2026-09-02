@@ -1,5 +1,6 @@
 import type {
   OperationalMetricPage,
+  ProductionDayShiftPage,
   ReportingProblemDetails,
 } from "./reporting-client-types.ts";
 import {
@@ -25,6 +26,10 @@ export interface ReportingResponseDecoder {
   decode(response: Response): Promise<OperationalMetricPage>;
 }
 
+export interface ProductionDayShiftResponseDecoder {
+  decode(response: Response): Promise<ProductionDayShiftPage>;
+}
+
 export function createReportingResponseDecoder(): ReportingResponseDecoder {
   return {
     async decode(response) {
@@ -35,6 +40,47 @@ export function createReportingResponseDecoder(): ReportingResponseDecoder {
           throw new ReportingProtocolFailure(
             response.status,
             "Reporting API returned an invalid operational metric page.",
+          );
+        }
+
+        return body;
+      }
+
+      if (response.status === 400) {
+        requireMediaType(response, "application/problem+json");
+        const body = await parseJson(response);
+        if (!isProblemDetails(body)) {
+          throw new ReportingProtocolFailure(
+            response.status,
+            "Reporting API returned invalid Problem Details.",
+          );
+        }
+
+        return classifyProblemDetails(body);
+      }
+
+      if (response.status >= 200 && response.status < 300) {
+        throw new ReportingProtocolFailure(
+          response.status,
+          `Reporting API returned unexpected successful HTTP status ${response.status}.`,
+        );
+      }
+
+      throw new ReportingHttpFailure(response.status);
+    },
+  };
+}
+
+export function createProductionDayShiftResponseDecoder(): ProductionDayShiftResponseDecoder {
+  return {
+    async decode(response) {
+      if (response.status === 200) {
+        requireMediaType(response, "application/json");
+        const body = await parseJson(response);
+        if (!isProductionDayShiftPage(body)) {
+          throw new ReportingProtocolFailure(
+            response.status,
+            "Reporting API returned an invalid production-day shift page.",
           );
         }
 
@@ -119,6 +165,37 @@ function isOperationalMetricPage(value: unknown): value is OperationalMetricPage
     && isNullableString(value.continuationToken);
 }
 
+function isProductionDayShiftPage(value: unknown): value is ProductionDayShiftPage {
+  return isRecord(value)
+    && Array.isArray(value.items)
+    && value.items.every(isProductionDayShiftItem)
+    && isNullableString(value.continuationToken);
+}
+
+function isProductionDayShiftItem(value: unknown): boolean {
+  return isRecord(value)
+    && isString(value.processorId)
+    && isString(value.machineId)
+    && isProductionDayPeriod(value.productionDay)
+    && isString(value.productionLineId)
+    && isShiftPeriod(value.shift)
+    && isOperationalMetricContext(value.context)
+    && (value.sourceRevision === null || isSourceRevision(value.sourceRevision))
+    && Array.isArray(value.metrics)
+    && value.metrics.every(isProductionDayShiftMetric);
+}
+
+function isProductionDayShiftMetric(value: unknown): boolean {
+  return isRecord(value)
+    && isString(value.metricKey)
+    && isString(value.definitionVersion)
+    && isMetricStatus(value.status)
+    && isMetricValue(value.value)
+    && isString(value.unit)
+    && isNullableString(value.reasonCode)
+    && isNullableString(value.reasonOperandName);
+}
+
 function isOperationalMetricItem(value: unknown): boolean {
   if (!isRecord(value)
     || !isString(value.scope)
@@ -136,9 +213,7 @@ function isOperationalMetricItem(value: unknown): boolean {
     return false;
   }
 
-  if (value.status !== "calculated"
-    && value.status !== "unavailable"
-    && value.status !== "insufficient-evidence") {
+  if (!isMetricStatus(value.status)) {
     return false;
   }
 
@@ -151,6 +226,12 @@ function isOperationalMetricItem(value: unknown): boolean {
   }
 
   return false;
+}
+
+function isMetricStatus(value: unknown): boolean {
+  return value === "calculated"
+    || value === "unavailable"
+    || value === "insufficient-evidence";
 }
 
 function isOperationalMetricContext(value: unknown): boolean {
