@@ -14,6 +14,7 @@ import {
   createProductionDayShiftResponseDecoder,
   createReportingResponseDecoder,
 } from "./reporting-response-decoder.ts";
+import { throwProductionDayShiftConflict } from "./production-day-shift-coverage-response.ts";
 import { reportingRoutes, type ReportingRoute } from "./reporting-routes.ts";
 
 export function createReportingClient(
@@ -64,6 +65,7 @@ export function createReportingClient(
         request,
         requestOptions,
       );
+      await throwProductionDayShiftConflict(response);
       return productionDayShiftDecoder.decode(response);
     },
   };
