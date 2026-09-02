@@ -11,12 +11,15 @@ internal static class OperationalMetricReportingProblemDetails
         "urn:factoryconnect:problem:reporting:malformed-continuation-token";
     private const string IncompatibleContinuationTokenType =
         "urn:factoryconnect:problem:reporting:incompatible-continuation-token";
+    private const string ProductionDayShiftRosterCoverageRequiredType =
+        "urn:factoryconnect:problem:reporting:production-day-shift-roster-coverage-required";
 
     public static IResult InvalidRequest() =>
         Problem(
             InvalidRequestType,
             "Invalid reporting query",
             "The reporting query request contains invalid or contradictory filters.",
+            StatusCodes.Status400BadRequest,
             "invalid-reporting-query");
 
     public static async Task<IResult> ExecuteAsync(
@@ -32,40 +35,80 @@ internal static class OperationalMetricReportingProblemDetails
         }
         catch (ArgumentException exception)
         {
-            if (!OperationalMetricReportingQueryFailureClassifier.TryClassify(
-                    exception,
-                    out var failure))
-            {
-                throw;
-            }
-
-            return failure switch
-            {
-                OperationalMetricReportingQueryFailure.MalformedContinuationToken => Problem(
-                    MalformedContinuationTokenType,
-                    "Malformed continuation token",
-                    "The continuation token is malformed or uses an unsupported format.",
-                    "malformed-continuation-token"),
-                OperationalMetricReportingQueryFailure.IncompatibleContinuationToken => Problem(
-                    IncompatibleContinuationTokenType,
-                    "Incompatible continuation token",
-                    "The continuation token does not belong to this reporting query.",
-                    "incompatible-continuation-token"),
-                _ => throw new InvalidOperationException(
-                    "The reporting query failure classifier returned an unsupported failure value."),
-            };
+            return ContinuationTokenProblem(exception);
         }
+    }
+
+    public static async Task<IResult> ExecuteProductionDayShiftsAsync(
+        Func<CancellationToken, ValueTask<ReportingPage<ProductionDayShiftOperationalMetricReport>>> operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        try
+        {
+            var page = await operation(cancellationToken).ConfigureAwait(false);
+            return Results.Ok(OperationalMetricHttpMapper.ToResponse(page));
+        }
+        catch (ProductionDayShiftRosterCoverageRequiredException exception)
+        {
+            return Results.Problem(
+                type: ProductionDayShiftRosterCoverageRequiredType,
+                title: "Production-day shift roster coverage required",
+                statusCode: StatusCodes.Status409Conflict,
+                detail: "Authoritative machine-shift roster coverage has not been materialized for the requested machine and production day.",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "production-day-shift-roster-coverage-required",
+                    ["machineId"] = exception.MachineId.Value,
+                    ["siteId"] = exception.ProductionDayId.SiteId.Value,
+                    ["businessDate"] = exception.ProductionDayId.BusinessDate,
+                });
+        }
+        catch (ArgumentException exception)
+        {
+            return ContinuationTokenProblem(exception);
+        }
+    }
+
+    private static IResult ContinuationTokenProblem(ArgumentException exception)
+    {
+        if (!OperationalMetricReportingQueryFailureClassifier.TryClassify(
+                exception,
+                out var failure))
+        {
+            throw exception;
+        }
+
+        return failure switch
+        {
+            OperationalMetricReportingQueryFailure.MalformedContinuationToken => Problem(
+                MalformedContinuationTokenType,
+                "Malformed continuation token",
+                "The continuation token is malformed or uses an unsupported format.",
+                StatusCodes.Status400BadRequest,
+                "malformed-continuation-token"),
+            OperationalMetricReportingQueryFailure.IncompatibleContinuationToken => Problem(
+                IncompatibleContinuationTokenType,
+                "Incompatible continuation token",
+                "The continuation token does not belong to this reporting query.",
+                StatusCodes.Status400BadRequest,
+                "incompatible-continuation-token"),
+            _ => throw new InvalidOperationException(
+                "The reporting query failure classifier returned an unsupported failure value."),
+        };
     }
 
     private static IResult Problem(
         string type,
         string title,
         string detail,
+        int statusCode,
         string code) =>
         Results.Problem(
             type: type,
             title: title,
-            statusCode: StatusCodes.Status400BadRequest,
+            statusCode: statusCode,
             detail: detail,
             extensions: new Dictionary<string, object?>
             {
