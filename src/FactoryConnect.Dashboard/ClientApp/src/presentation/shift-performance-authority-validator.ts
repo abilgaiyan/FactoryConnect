@@ -17,15 +17,27 @@ const allowedMetrics = new Set([
   "Quality\u00001.0",
   "OEE\u00001.0",
 ]);
+const utcInstantPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z$/;
+
+interface ParsedUtcInstant {
+  readonly dateTime: string;
+  readonly fraction: string;
+}
 
 export function validateProductionDayShiftAuthority(
   productionDay: string,
   sources: readonly DashboardRuntimeSource[],
   result: AuthoritativeProductionDayShiftResult,
 ): ValidatedProductionDayShiftResult {
-  const configuredSources = new Map(
-    sources.map((source) => [sourceKey(source.machineId, source.processorId), source] as const),
-  );
+  const configuredSources = new Map<string, DashboardRuntimeSource>();
+  for (const source of sources) {
+    const key = sourceKey(source.machineId, source.processorId);
+    if (configuredSources.has(key)) {
+      fail("unexpected-source", "Configured factory population contains a duplicate reporting source identity.");
+    }
+    configuredSources.set(key, source);
+  }
+
   const seenReports = new Set<string>();
   const occurrenceDescriptors = new Map<string, string>();
   const previousBySource = new Map<string, ShiftReport>();
@@ -60,8 +72,10 @@ export function validateProductionDayShiftAuthority(
       fail("unexpected-source-revision", "Shift report source revision belongs to a different reporting source.");
     }
 
-    if (!(report.shift.startsAtUtc < report.shift.endsAtUtc)) {
-      fail("inconsistent-occurrence-descriptor", "Shift occurrence must start before it ends.");
+    const startsAt = parseUtcInstant(report.shift.startsAtUtc);
+    const endsAt = parseUtcInstant(report.shift.endsAtUtc);
+    if (startsAt === null || endsAt === null || compareUtcInstants(startsAt, endsAt) >= 0) {
+      fail("inconsistent-occurrence-descriptor", "Shift occurrence timestamps must be valid UTC instants with start before end.");
     }
 
     const occurrenceKey = shiftOccurrenceKey(report);
@@ -103,12 +117,19 @@ function validateMetrics(metrics: readonly ShiftMetric[]): void {
     }
     seen.add(identity);
 
+    if (metric.unit.length === 0) {
+      fail("malformed-metric-state", "Every authoritative shift metric requires a non-empty unit.");
+    }
+
     if (metric.status === "calculated") {
-      if (metric.value === null || metric.unit.length === 0) {
-        fail("malformed-metric-state", "Calculated shift metrics require a value and non-empty unit.");
+      if (metric.value === null || metric.reasonCode !== null || metric.reasonOperandName !== null) {
+        fail("malformed-metric-state", "Calculated shift metrics require a value and must not carry reason evidence.");
       }
-    } else if (metric.value !== null) {
-      fail("malformed-metric-state", "Non-calculated shift metrics must not carry a value.");
+      continue;
+    }
+
+    if (metric.value !== null || metric.reasonCode === null || metric.reasonCode.length === 0) {
+      fail("malformed-metric-state", "Non-calculated shift metrics require null value and a non-empty reason code.");
     }
   }
 }
@@ -134,11 +155,86 @@ function shiftDescriptor(report: ShiftReport): string {
 }
 
 function compareOccurrence(left: ShiftReport, right: ShiftReport): number {
-  return compareText(left.shift.startsAtUtc, right.shift.startsAtUtc)
-    || compareText(left.shift.endsAtUtc, right.shift.endsAtUtc)
+  const leftStart = requireUtcInstant(left.shift.startsAtUtc);
+  const rightStart = requireUtcInstant(right.shift.startsAtUtc);
+  const leftEnd = requireUtcInstant(left.shift.endsAtUtc);
+  const rightEnd = requireUtcInstant(right.shift.endsAtUtc);
+
+  return compareUtcInstants(leftStart, rightStart)
+    || compareUtcInstants(leftEnd, rightEnd)
     || compareText(left.shift.siteId, right.shift.siteId)
     || compareText(left.shift.shiftScheduleAssignmentId, right.shift.shiftScheduleAssignmentId)
     || compareText(left.shift.shiftId, right.shift.shiftId);
+}
+
+function parseUtcInstant(value: string): ParsedUtcInstant | null {
+  const match = utcInstantPattern.exec(value);
+  if (match === null) {
+    return null;
+  }
+
+  const [, year, month, day, hour, minute, second, fraction = ""] = match;
+  if (!isValidUtcDateTime(year, month, day, hour, minute, second)) {
+    return null;
+  }
+
+  return {
+    dateTime: `${year}${month}${day}${hour}${minute}${second}`,
+    fraction,
+  };
+}
+
+function requireUtcInstant(value: string): ParsedUtcInstant {
+  const parsed = parseUtcInstant(value);
+  if (parsed === null) {
+    fail("inconsistent-occurrence-descriptor", "Shift occurrence contains an invalid UTC timestamp.");
+  }
+  return parsed;
+}
+
+function compareUtcInstants(left: ParsedUtcInstant, right: ParsedUtcInstant): number {
+  const dateTimeComparison = compareText(left.dateTime, right.dateTime);
+  if (dateTimeComparison !== 0) {
+    return dateTimeComparison;
+  }
+
+  const precision = Math.max(left.fraction.length, right.fraction.length);
+  return compareText(
+    left.fraction.padEnd(precision, "0"),
+    right.fraction.padEnd(precision, "0"),
+  );
+}
+
+function isValidUtcDateTime(
+  yearText: string,
+  monthText: string,
+  dayText: string,
+  hourText: string,
+  minuteText: string,
+  secondText: string,
+): boolean {
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const days = daysInMonth(year, month);
+  return days !== null
+    && day >= 1 && day <= days
+    && hour >= 0 && hour <= 23
+    && minute >= 0 && minute <= 59
+    && second >= 0 && second <= 59;
+}
+
+function daysInMonth(year: number, month: number): number | null {
+  if (month < 1 || month > 12) {
+    return null;
+  }
+  if (month === 2) {
+    return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  }
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
 }
 
 function compareText(left: string, right: string): number {
