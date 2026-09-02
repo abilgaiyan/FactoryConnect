@@ -94,6 +94,7 @@ public sealed record ProductionDayShiftOperationalMetricReport
         ProductionDayId productionDayId,
         ProductionLineId productionLineId,
         ShiftOccurrenceId shiftOccurrenceId,
+        OperationalMetricEvaluationContextKey contextKey,
         MetricAggregationCheckpoint? sourceRevision,
         IEnumerable<OperationalMetricReportItem> metrics)
     {
@@ -105,7 +106,9 @@ public sealed record ProductionDayShiftOperationalMetricReport
         }
 
         ArgumentNullException.ThrowIfNull(shiftOccurrenceId);
+        ArgumentNullException.ThrowIfNull(contextKey);
         ArgumentNullException.ThrowIfNull(metrics);
+        contextKey.Validate();
 
         if (shiftOccurrenceId.SiteId != productionDayId.SiteId)
         {
@@ -137,6 +140,7 @@ public sealed record ProductionDayShiftOperationalMetricReport
         ProductionDayId = productionDayId;
         ProductionLineId = productionLineId;
         ShiftOccurrenceId = shiftOccurrenceId;
+        ContextKey = contextKey;
         SourceRevision = sourceRevision;
         Metrics = new ReadOnlyCollection<OperationalMetricReportItem>(snapshot);
     }
@@ -148,6 +152,13 @@ public sealed record ProductionDayShiftOperationalMetricReport
     public ProductionLineId ProductionLineId { get; }
 
     public ShiftOccurrenceId ShiftOccurrenceId { get; }
+
+    /// <summary>
+    /// Exact reporting-context selection under which this authoritative shift occurrence
+    /// was queried. This remains present for zero-evidence occurrences; when an FC-027
+    /// report exists the reader must verify that its context matches this value exactly.
+    /// </summary>
+    public OperationalMetricEvaluationContextKey ContextKey { get; }
 
     public MetricAggregationCheckpoint? SourceRevision { get; }
 
