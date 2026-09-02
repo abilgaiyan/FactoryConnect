@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 
 const string shiftReportingPath = "api/reporting/v1/operational-metrics/shifts/query";
 const string productionDayReportingPath = "api/reporting/v1/operational-metrics/production-days/query";
+const string productionDayShiftReportingPath = "api/reporting/v1/operational-metrics/production-day-shifts/query";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -63,6 +64,9 @@ app.MapPost('/' + shiftReportingPath, (HttpContext context, ReportingGateway gat
 
 app.MapPost('/' + productionDayReportingPath, (HttpContext context, ReportingGateway gateway) =>
     ForwardExactReportingRouteAsync(context, gateway, productionDayReportingPath));
+
+app.MapPost('/' + productionDayShiftReportingPath, (HttpContext context, ReportingGateway gateway) =>
+    ForwardExactReportingRouteAsync(context, gateway, productionDayShiftReportingPath));
 
 app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment) =>
 {
