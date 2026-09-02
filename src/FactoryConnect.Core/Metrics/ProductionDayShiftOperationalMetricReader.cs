@@ -74,6 +74,7 @@ public sealed class ProductionDayShiftOperationalMetricReader :
                     roster.ProductionDayId,
                     roster.ProductionLineId,
                     ownership.ShiftOccurrenceId,
+                    metricReport?.SourceRevision,
                     metrics));
             }
         }
