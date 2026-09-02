@@ -67,6 +67,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reporting/v1/operational-metrics/production-day-shifts/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["QueryProductionDayShiftOperationalMetrics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -145,6 +161,48 @@ export interface components {
             continuationToken: null | string;
         };
         ProductionDayPeriodResponse: {
+            siteId: string;
+            /** Format: date */
+            businessDate: string;
+        };
+        ProductionDayShiftMetricResponse: {
+            metricKey: string;
+            definitionVersion: string;
+            status: string;
+            /** Format: double */
+            value: null | number | string;
+            unit: string;
+            reasonCode: null | string;
+            reasonOperandName: null | string;
+        };
+        ProductionDayShiftOperationalMetricPageResponse: {
+            items: components["schemas"]["ProductionDayShiftOperationalMetricResponse"][];
+            continuationToken: null | string;
+        };
+        ProductionDayShiftOperationalMetricQueryRequest: {
+            sources: components["schemas"]["ProductionDayShiftReportingSourceRequest"][];
+            context: null | components["schemas"]["OperationalMetricContextRequest"];
+            metrics: null | components["schemas"]["OperationalMetricDefinitionRequest"][];
+            statuses: null | string[];
+            /** Format: int32 */
+            pageSize: number | string;
+            continuationToken: null | string;
+        };
+        ProductionDayShiftOperationalMetricResponse: {
+            processorId: string;
+            /** Format: uuid */
+            machineId: string;
+            productionDay: components["schemas"]["ProductionDayPeriodResponse"];
+            productionLineId: string;
+            shift: components["schemas"]["ShiftPeriodResponse"];
+            context: components["schemas"]["OperationalMetricContextResponse"];
+            sourceRevision: null | components["schemas"]["MetricSourceRevisionResponse"];
+            metrics: components["schemas"]["ProductionDayShiftMetricResponse"][];
+        };
+        ProductionDayShiftReportingSourceRequest: {
+            /** Format: uuid */
+            machineId: string;
+            processorId: string;
             siteId: string;
             /** Format: date */
             businessDate: string;
@@ -244,6 +302,48 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    QueryProductionDayShiftOperationalMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductionDayShiftOperationalMetricQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductionDayShiftOperationalMetricPageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
