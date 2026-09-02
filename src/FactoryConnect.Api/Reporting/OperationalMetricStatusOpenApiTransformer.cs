@@ -20,28 +20,22 @@ internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchema
 
         if (context.JsonTypeInfo.Type == typeof(OperationalMetricItemResponse))
         {
-            if (schema.Properties?.TryGetValue("status", out var statusSchema) == true)
-            {
-                ApplyEnum(statusSchema, StatusValues);
-            }
-
-            if (schema.Properties?.TryGetValue("scope", out var scopeSchema) == true)
-            {
-                ApplyEnum(scopeSchema, ScopeValues);
-            }
+            ApplyPropertyEnum(schema, "status", StatusValues);
+            ApplyPropertyEnum(schema, "scope", ScopeValues);
+        }
+        else if (context.JsonTypeInfo.Type == typeof(ProductionDayShiftMetricResponse))
+        {
+            ApplyPropertyEnum(schema, "status", StatusValues);
         }
         else if (context.JsonTypeInfo.Type == typeof(ShiftOperationalMetricQueryRequest)
             || context.JsonTypeInfo.Type == typeof(ProductionDayOperationalMetricQueryRequest))
         {
-            if (schema.Properties?.TryGetValue("statuses", out var statusesSchema) == true)
-            {
-                ApplyEnum(statusesSchema.Items, StatusValues);
-            }
-
-            if (schema.Properties?.TryGetValue("order", out var orderSchema) == true)
-            {
-                ApplyEnum(orderSchema, OrderValues);
-            }
+            ApplyArrayItemEnum(schema, "statuses", StatusValues);
+            ApplyPropertyEnum(schema, "order", OrderValues);
+        }
+        else if (context.JsonTypeInfo.Type == typeof(ProductionDayShiftOperationalMetricQueryRequest))
+        {
+            ApplyArrayItemEnum(schema, "statuses", StatusValues);
         }
 
         return Task.CompletedTask;
@@ -52,6 +46,28 @@ internal sealed class OperationalMetricStatusOpenApiTransformer : IOpenApiSchema
             .Select(static value => JsonValue.Create(value)!)
             .Cast<JsonNode>()
             .ToArray();
+
+    private static void ApplyPropertyEnum(
+        OpenApiSchema schema,
+        string propertyName,
+        JsonNode[] values)
+    {
+        if (schema.Properties?.TryGetValue(propertyName, out var propertySchema) == true)
+        {
+            ApplyEnum(propertySchema, values);
+        }
+    }
+
+    private static void ApplyArrayItemEnum(
+        OpenApiSchema schema,
+        string propertyName,
+        JsonNode[] values)
+    {
+        if (schema.Properties?.TryGetValue(propertyName, out var propertySchema) == true)
+        {
+            ApplyEnum(propertySchema.Items, values);
+        }
+    }
 
     private static void ApplyEnum(IOpenApiSchema? schema, JsonNode[] values)
     {
