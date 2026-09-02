@@ -64,6 +64,15 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
                 failures.Add($"Dashboard:Sources:{index}:ProcessorId must not contain leading or trailing whitespace.");
             }
 
+            if (string.IsNullOrWhiteSpace(source.SiteId))
+            {
+                failures.Add($"Dashboard:Sources:{index}:SiteId must be non-empty.");
+            }
+            else if (!string.Equals(source.SiteId, source.SiteId.Trim(), StringComparison.Ordinal))
+            {
+                failures.Add($"Dashboard:Sources:{index}:SiteId must not contain leading or trailing whitespace.");
+            }
+
             if (string.IsNullOrWhiteSpace(source.DisplayName))
             {
                 failures.Add($"Dashboard:Sources:{index}:DisplayName must be non-empty.");
