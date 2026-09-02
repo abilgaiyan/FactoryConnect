@@ -7,7 +7,8 @@ import {
 
 const coverageProblemType = "urn:factoryconnect:problem:reporting:production-day-shift-roster-coverage-required";
 const coverageProblemCode = "production-day-shift-roster-coverage-required";
-const businessDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const businessDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export async function throwProductionDayShiftConflict(response: Response): Promise<void> {
   if (response.status !== 409) {
@@ -36,10 +37,10 @@ export async function throwProductionDayShiftConflict(response: Response): Promi
   }
 
   if (body.code !== coverageProblemCode
-    || !isNonEmptyString(body.machineId)
-    || !isNonEmptyString(body.siteId)
+    || !isGuidWireIdentity(body.machineId)
+    || !isTrimmedNonEmptyString(body.siteId)
     || !isBusinessDate(body.businessDate)) {
-    throw new ReportingProtocolFailure(409, "Roster-coverage Problem Details is missing required reporting identity fields.");
+    throw new ReportingProtocolFailure(409, "Roster-coverage Problem Details contains invalid required reporting identity fields.");
   }
 
   throw new ProductionDayShiftRosterCoverageRequiredFailure(body, {
@@ -78,10 +79,38 @@ function isOptionalProblemStatus(value: unknown): boolean {
     || (typeof value === "number" && Number.isFinite(value));
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
+function isGuidWireIdentity(value: unknown): value is string {
+  return typeof value === "string" && guidPattern.test(value);
+}
+
+function isTrimmedNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.trim() === value;
 }
 
 function isBusinessDate(value: unknown): value is string {
-  return typeof value === "string" && businessDatePattern.test(value);
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const match = businessDatePattern.exec(value);
+  if (match === null) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1) {
+    return false;
+  }
+
+  const daysInMonth = month === 2
+    ? (isLeapYear(year) ? 29 : 28)
+    : (month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31);
+
+  return day <= daysInMonth;
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
