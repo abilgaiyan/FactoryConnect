@@ -94,6 +94,7 @@ public sealed record ProductionDayShiftOperationalMetricReport
         ProductionDayId productionDayId,
         ProductionLineId productionLineId,
         ShiftOccurrenceId shiftOccurrenceId,
+        MetricAggregationCheckpoint? sourceRevision,
         IEnumerable<OperationalMetricReportItem> metrics)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -113,6 +114,14 @@ public sealed record ProductionDayShiftOperationalMetricReport
                 nameof(shiftOccurrenceId));
         }
 
+        if (sourceRevision is not null &&
+            sourceRevision.StreamId.MachineId != source.MachineId)
+        {
+            throw new ArgumentException(
+                "Source revision must belong to the reporting machine stream.",
+                nameof(sourceRevision));
+        }
+
         var snapshot = metrics.ToArray();
         if (snapshot.Any(static metric => metric is null))
         {
@@ -128,6 +137,7 @@ public sealed record ProductionDayShiftOperationalMetricReport
         ProductionDayId = productionDayId;
         ProductionLineId = productionLineId;
         ShiftOccurrenceId = shiftOccurrenceId;
+        SourceRevision = sourceRevision;
         Metrics = new ReadOnlyCollection<OperationalMetricReportItem>(snapshot);
     }
 
@@ -138,6 +148,8 @@ public sealed record ProductionDayShiftOperationalMetricReport
     public ProductionLineId ProductionLineId { get; }
 
     public ShiftOccurrenceId ShiftOccurrenceId { get; }
+
+    public MetricAggregationCheckpoint? SourceRevision { get; }
 
     public IReadOnlyList<OperationalMetricReportItem> Metrics { get; }
 }
