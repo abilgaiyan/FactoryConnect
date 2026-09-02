@@ -27,8 +27,11 @@ public sealed class ProductionDayShiftOperationalMetricQueryReader :
 
         var reports = await _reader.ReadAsync(query.Selection, cancellationToken)
             .ConfigureAwait(false);
+        ValidateResults(query.Selection, reports);
+
         var ordered = reports
             .OrderBy(static report => report.Source.MachineId.Value)
+            .ThenBy(static report => report.Source.ProcessorId.Value, StringComparer.Ordinal)
             .ThenBy(static report => report.ProductionDayId.BusinessDate)
             .ThenBy(static report => report.ProductionDayId.SiteId.Value, StringComparer.Ordinal)
             .ThenBy(static report => report.ShiftOccurrenceId.StartsAtUtc)
@@ -59,11 +62,87 @@ public sealed class ProductionDayShiftOperationalMetricQueryReader :
             continuation);
     }
 
+    private static void ValidateResults(
+        ProductionDayShiftOperationalMetricQuery query,
+        IReadOnlyList<ProductionDayShiftOperationalMetricReport> reports)
+    {
+        ArgumentNullException.ThrowIfNull(reports);
+
+        var identities = new HashSet<ReportIdentity>();
+        foreach (var report in reports)
+        {
+            if (report is null)
+            {
+                throw new InvalidDataException(
+                    "Production-day shift reporting reader returned a null report.");
+            }
+
+            if (report.ContextKey != query.ContextKey)
+            {
+                throw new InvalidDataException(
+                    "Production-day shift reporting reader returned a report outside the requested context.");
+            }
+
+            var matchingSelection = query.Sources.Any(selection =>
+                selection.Source.MachineId == report.Source.MachineId &&
+                selection.Source.ProcessorId == report.Source.ProcessorId &&
+                selection.ProductionDayId == report.ProductionDayId);
+            if (!matchingSelection)
+            {
+                throw new InvalidDataException(
+                    "Production-day shift reporting reader returned a report outside the requested source/production-day selection.");
+            }
+
+            if (report.ShiftOccurrenceId.SiteId != report.ProductionDayId.SiteId)
+            {
+                throw new InvalidDataException(
+                    "Production-day shift reporting reader returned a shift outside its authoritative production-day site.");
+            }
+
+            foreach (var metric in report.Metrics)
+            {
+                if (query.Metrics is not null &&
+                    !query.Metrics.DefinitionIds.Contains(metric.DefinitionId))
+                {
+                    throw new InvalidDataException(
+                        "Production-day shift reporting reader returned an unrequested metric definition.");
+                }
+
+                if (query.Statuses is not null &&
+                    !query.Statuses.Statuses.Contains(metric.Status))
+                {
+                    throw new InvalidDataException(
+                        "Production-day shift reporting reader returned an unrequested metric status.");
+                }
+            }
+
+            var identity = new ReportIdentity(
+                report.Source.MachineId,
+                report.Source.ProcessorId,
+                report.ProductionDayId,
+                report.ShiftOccurrenceId,
+                report.ContextKey);
+            if (!identities.Add(identity))
+            {
+                throw new InvalidDataException(
+                    "Production-day shift reporting reader returned duplicate authoritative shift report identities.");
+            }
+        }
+    }
+
     private static int Compare(
         ProductionDayShiftOperationalMetricReport report,
         ProductionDayShiftReportingCursor.CursorKey cursor)
     {
         var comparison = report.Source.MachineId.Value.CompareTo(cursor.MachineId);
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = StringComparer.Ordinal.Compare(
+            report.Source.ProcessorId.Value,
+            cursor.ProcessorId);
         if (comparison != 0)
         {
             return comparison;
@@ -102,11 +181,18 @@ public sealed class ProductionDayShiftOperationalMetricQueryReader :
                 report.ShiftOccurrenceId.ShiftId.Value,
                 cursor.ShiftId);
     }
+
+    private sealed record ReportIdentity(
+        MachineId MachineId,
+        OperationalMetricProjectionProcessorId ProcessorId,
+        ProductionDayId ProductionDayId,
+        ShiftOccurrenceId ShiftOccurrenceId,
+        OperationalMetricEvaluationContextKey ContextKey);
 }
 
 internal static class ProductionDayShiftReportingCursor
 {
-    private const int CurrentVersion = 1;
+    private const int CurrentVersion = 2;
 
     public static ReportingContinuationToken Encode(
         ProductionDayShiftOperationalMetricQuery query,
@@ -247,6 +333,7 @@ internal static class ProductionDayShiftReportingCursor
 
     internal sealed record CursorKey(
         Guid MachineId,
+        string ProcessorId,
         string SiteId,
         DateOnly BusinessDate,
         DateTimeOffset StartsAtUtc,
@@ -257,6 +344,7 @@ internal static class ProductionDayShiftReportingCursor
         public static CursorKey From(ProductionDayShiftOperationalMetricReport report) =>
             new(
                 report.Source.MachineId.Value,
+                report.Source.ProcessorId.Value,
                 report.ProductionDayId.SiteId.Value,
                 report.ProductionDayId.BusinessDate,
                 report.ShiftOccurrenceId.StartsAtUtc,
@@ -267,6 +355,7 @@ internal static class ProductionDayShiftReportingCursor
         public void Validate()
         {
             if (MachineId == Guid.Empty ||
+                string.IsNullOrWhiteSpace(ProcessorId) ||
                 string.IsNullOrWhiteSpace(SiteId) ||
                 BusinessDate == default ||
                 string.IsNullOrWhiteSpace(ShiftScheduleAssignmentId) ||
