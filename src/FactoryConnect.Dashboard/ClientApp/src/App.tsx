@@ -7,7 +7,7 @@ import {
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
 import { productionDayPath } from "./application/production-day-navigation.ts";
-import { ProductionDayOverviewSurface } from "./application/ProductionDayOverviewSurface.tsx";
+import { ProductionDayOverviewSurface } from "./application/ProductionDayOverviewSurface.ts";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
 import {
   isShiftPerformanceProductionDaySelection,
