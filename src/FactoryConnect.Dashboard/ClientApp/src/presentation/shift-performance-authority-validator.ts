@@ -17,7 +17,7 @@ const allowedMetrics = new Set([
   "Quality\u00001.0",
   "OEE\u00001.0",
 ]);
-const utcInstantPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?Z$/;
+const utcInstantPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:\d{2})$/;
 
 interface ParsedUtcInstant {
   readonly dateTime: string;
@@ -67,15 +67,14 @@ export function validateProductionDayShiftAuthority(
     }
 
     if (report.sourceRevision !== null
-      && (report.sourceRevision.machineId !== report.machineId
-        || report.sourceRevision.processorId !== report.processorId)) {
-      fail("unexpected-source-revision", "Shift report source revision belongs to a different reporting source.");
+      && report.sourceRevision.machineId !== report.machineId) {
+      fail("unexpected-source-revision", "Shift report source revision belongs to a different machine stream.");
     }
 
     const startsAt = parseUtcInstant(report.shift.startsAtUtc);
     const endsAt = parseUtcInstant(report.shift.endsAtUtc);
     if (startsAt === null || endsAt === null || compareUtcInstants(startsAt, endsAt) >= 0) {
-      fail("inconsistent-occurrence-descriptor", "Shift occurrence timestamps must be valid UTC instants with start before end.");
+      fail("inconsistent-occurrence-descriptor", "Shift occurrence timestamps must be valid zero-offset UTC instants with start before end.");
     }
 
     const occurrenceKey = shiftOccurrenceKey(report);
@@ -180,12 +179,15 @@ function parseUtcInstant(value: string): ParsedUtcInstant | null {
   const minute = match[5];
   const second = match[6];
   const fraction = match[7] ?? "";
+  const offset = match[8];
   if (year === undefined
     || month === undefined
     || day === undefined
     || hour === undefined
     || minute === undefined
     || second === undefined
+    || offset === undefined
+    || (offset !== "Z" && offset !== "+00:00" && offset !== "-00:00")
     || !isValidUtcDateTime(year, month, day, hour, minute, second)) {
     return null;
   }
@@ -199,7 +201,7 @@ function parseUtcInstant(value: string): ParsedUtcInstant | null {
 function requireUtcInstant(value: string): ParsedUtcInstant {
   const parsed = parseUtcInstant(value);
   if (parsed === null) {
-    fail("inconsistent-occurrence-descriptor", "Shift occurrence contains an invalid UTC timestamp.");
+    fail("inconsistent-occurrence-descriptor", "Shift occurrence contains an invalid zero-offset UTC timestamp.");
   }
   return parsed;
 }
@@ -232,7 +234,8 @@ function isValidUtcDateTime(
   const minute = Number(minuteText);
   const second = Number(secondText);
   const days = daysInMonth(year, month);
-  return days !== null
+  return year >= 1
+    && days !== null
     && day >= 1 && day <= days
     && hour >= 0 && hour <= 23
     && minute >= 0 && minute <= 59
