@@ -7,35 +7,42 @@ export type MetricSourceRevision = NonNullable<
 export type AuthoritativeShiftDescriptor =
   ProductionDayShiftPage["items"][number]["shift"];
 
-export type AuthoritativeMetricStatus =
-  ProductionDayShiftPage["items"][number]["metrics"][number]["status"];
+export type MetricValue = Exclude<
+  ProductionDayShiftPage["items"][number]["metrics"][number]["value"],
+  null
+>;
 
-export type AuthoritativeMetricValue =
-  ProductionDayShiftPage["items"][number]["metrics"][number]["value"];
+export type ShiftOverviewMetricKey =
+  | "Availability"
+  | "Utilization"
+  | "Performance"
+  | "Quality"
+  | "OEE";
+
+interface PresentedMetricIdentity {
+  readonly metricKey: ShiftOverviewMetricKey;
+  readonly version: "1.0";
+}
 
 export type PresentedMetric =
-  | {
+  | (PresentedMetricIdentity & {
       readonly state: "calculated";
-      readonly value: AuthoritativeMetricValue;
-      readonly unit: string | null;
-    }
-  | {
+      readonly value: MetricValue;
+      readonly unit: string;
+    })
+  | (PresentedMetricIdentity & {
       readonly state: "unavailable";
-      readonly value: AuthoritativeMetricValue;
-      readonly unit: string | null;
       readonly reasonCode: string | null;
       readonly reasonOperandName: string | null;
-    }
-  | {
+    })
+  | (PresentedMetricIdentity & {
       readonly state: "insufficient-evidence";
-      readonly value: AuthoritativeMetricValue;
-      readonly unit: string | null;
       readonly reasonCode: string | null;
       readonly reasonOperandName: string | null;
-    }
-  | {
+    })
+  | (PresentedMetricIdentity & {
       readonly state: "missing";
-    };
+    });
 
 export interface ShiftPerformanceOverview {
   readonly productionDay: string;
