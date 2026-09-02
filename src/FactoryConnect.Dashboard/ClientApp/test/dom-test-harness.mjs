@@ -1,5 +1,4 @@
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 
 const GLOBAL_NAMES = [
@@ -29,6 +28,7 @@ export async function mountInDom(element, initialUrl = "http://factory-dashboard
   install("PopStateEvent", window.PopStateEvent);
   install("IS_REACT_ACT_ENVIRONMENT", true);
 
+  const { createRoot } = await import("react-dom/client");
   const container = window.document.getElementById("root");
   const root = createRoot(container);
   await act(async () => root.render(element));
