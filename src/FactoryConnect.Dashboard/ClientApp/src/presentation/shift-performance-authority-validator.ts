@@ -187,7 +187,7 @@ function parseUtcInstant(value: string): ParsedUtcInstant | null {
     || minute === undefined
     || second === undefined
     || offset === undefined
-    || (offset !== "Z" && offset !== "+00:00" && offset !== "-00:00")
+    || (offset !== "Z" && offset !== "+00:00")
     || !isValidUtcDateTime(year, month, day, hour, minute, second)) {
     return null;
   }
