@@ -19,6 +19,8 @@ public sealed class DashboardSourceOptions
 
     public string SiteId { get; init; } = string.Empty;
 
+    public string ProductionLineId { get; init; } = string.Empty;
+
     public string DisplayName { get; init; } = string.Empty;
 
     public string? GroupName { get; init; }
