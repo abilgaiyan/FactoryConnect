@@ -17,6 +17,11 @@ type MetricDefinition = Schemas["OperationalMetricDefinitionRequest"];
 type Context = Schemas["OperationalMetricContextRequest"];
 type ShiftQuery = Schemas["ShiftOperationalMetricQueryRequest"];
 type ProductionDayQuery = Schemas["ProductionDayOperationalMetricQueryRequest"];
+type ProductionDayShiftQuery = Schemas["ProductionDayShiftOperationalMetricQueryRequest"];
+type ProductionDayShiftSource = Schemas["ProductionDayShiftReportingSourceRequest"];
+type ProductionDayShiftMetric = Schemas["ProductionDayShiftMetricResponse"];
+type ProductionDayShiftItem = Schemas["ProductionDayShiftOperationalMetricResponse"];
+type ProductionDayShiftPage = Schemas["ProductionDayShiftOperationalMetricPageResponse"];
 type MetricItem = Schemas["OperationalMetricItemResponse"];
 type MetricPage = Schemas["OperationalMetricPageResponse"];
 type SourceRevision = Schemas["MetricSourceRevisionResponse"];
@@ -34,6 +39,9 @@ type ShiftPathExists = Assert<
 type ProductionDayPathExists = Assert<
   HasKey<paths, "/api/reporting/v1/operational-metrics/production-days/query">
 >;
+type ProductionDayShiftPathExists = Assert<
+  HasKey<paths, "/api/reporting/v1/operational-metrics/production-day-shifts/query">
+>;
 
 type SourceHasMachineId = Assert<HasKey<ReportingSource, "machineId">>;
 type SourceHasProcessorId = Assert<HasKey<ReportingSource, "processorId">>;
@@ -50,6 +58,13 @@ type ProductionDayStatuses = NonNullable<ProductionDayQuery["statuses"]>[number]
 type ShiftStatusVocabularyIsExact = Assert<Equal<ShiftStatuses, ExpectedStatuses>>;
 type ProductionDayStatusVocabularyIsExact = Assert<
   Equal<ProductionDayStatuses, ExpectedStatuses>
+>;
+type ProductionDayShiftStatuses = NonNullable<ProductionDayShiftQuery["statuses"]>[number];
+type ProductionDayShiftStatusVocabularyIsExact = Assert<
+  Equal<ProductionDayShiftStatuses, ExpectedStatuses>
+>;
+type ProductionDayShiftMetricStatusVocabularyIsExact = Assert<
+  Equal<ProductionDayShiftMetric["status"], ExpectedStatuses>
 >;
 type ShiftOrderVocabularyIsExact = Assert<Equal<ShiftQuery["order"], ExpectedOrders>>;
 type ProductionDayOrderVocabularyIsExact = Assert<
@@ -78,6 +93,7 @@ type ContinuationTokenRemainsNullable = Assert<
 export type ReportingContractConformance = {
   shiftPath: ShiftPathExists;
   productionDayPath: ProductionDayPathExists;
+  productionDayShiftPath: ProductionDayShiftPathExists;
   sourceMachineId: SourceHasMachineId;
   sourceProcessorId: SourceHasProcessorId;
   metricKey: DefinitionHasMetricKey & MetricItemHasMetricKey;
@@ -88,6 +104,9 @@ export type ReportingContractConformance = {
   operatorId: ContextHasOperatorId;
   shiftStatuses: ShiftStatusVocabularyIsExact;
   productionDayStatuses: ProductionDayStatusVocabularyIsExact;
+  productionDayShiftStatuses:
+    & ProductionDayShiftStatusVocabularyIsExact
+    & ProductionDayShiftMetricStatusVocabularyIsExact;
   shiftOrder: ShiftOrderVocabularyIsExact;
   productionDayOrder: ProductionDayOrderVocabularyIsExact;
   nullableValue: MetricValueRemainsNullable;
@@ -102,4 +121,16 @@ export type ReportingContractConformance = {
     & SourceRevisionHasStreamKey
     & SourceRevisionHasPosition;
   continuationToken: PageHasContinuationToken & ContinuationTokenRemainsNullable;
+  productionDayShiftIdentity:
+    & Assert<HasKey<ProductionDayShiftSource, "machineId">>
+    & Assert<HasKey<ProductionDayShiftSource, "processorId">>
+    & Assert<HasKey<ProductionDayShiftSource, "siteId">>
+    & Assert<HasKey<ProductionDayShiftSource, "businessDate">>
+    & Assert<HasKey<ProductionDayShiftItem, "productionDay">>
+    & Assert<HasKey<ProductionDayShiftItem, "productionLineId">>
+    & Assert<HasKey<ProductionDayShiftItem, "shift">>
+    & Assert<HasKey<ProductionDayShiftItem, "context">>
+    & Assert<HasKey<ProductionDayShiftItem, "sourceRevision">>
+    & Assert<HasKey<ProductionDayShiftItem, "metrics">>
+    & Assert<HasKey<ProductionDayShiftPage, "continuationToken">>;
 };
