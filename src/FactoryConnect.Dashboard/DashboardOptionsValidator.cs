@@ -55,23 +55,9 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
                 failures.Add($"Dashboard:Sources:{index}:MachineId must be non-empty.");
             }
 
-            if (string.IsNullOrWhiteSpace(source.ProcessorId))
-            {
-                failures.Add($"Dashboard:Sources:{index}:ProcessorId must be non-empty.");
-            }
-            else if (!string.Equals(source.ProcessorId, source.ProcessorId.Trim(), StringComparison.Ordinal))
-            {
-                failures.Add($"Dashboard:Sources:{index}:ProcessorId must not contain leading or trailing whitespace.");
-            }
-
-            if (string.IsNullOrWhiteSpace(source.SiteId))
-            {
-                failures.Add($"Dashboard:Sources:{index}:SiteId must be non-empty.");
-            }
-            else if (!string.Equals(source.SiteId, source.SiteId.Trim(), StringComparison.Ordinal))
-            {
-                failures.Add($"Dashboard:Sources:{index}:SiteId must not contain leading or trailing whitespace.");
-            }
+            ValidateIdentifier(source.ProcessorId, "ProcessorId", index, failures);
+            ValidateIdentifier(source.SiteId, "SiteId", index, failures);
+            ValidateIdentifier(source.ProductionLineId, "ProductionLineId", index, failures);
 
             if (string.IsNullOrWhiteSpace(source.DisplayName))
             {
@@ -109,5 +95,21 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);
+    }
+
+    private static void ValidateIdentifier(
+        string value,
+        string propertyName,
+        int sourceIndex,
+        List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            failures.Add($"Dashboard:Sources:{sourceIndex}:{propertyName} must be non-empty.");
+        }
+        else if (!string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        {
+            failures.Add($"Dashboard:Sources:{sourceIndex}:{propertyName} must not contain leading or trailing whitespace.");
+        }
     }
 }
