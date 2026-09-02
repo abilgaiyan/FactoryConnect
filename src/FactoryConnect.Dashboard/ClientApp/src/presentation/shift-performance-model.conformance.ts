@@ -35,39 +35,39 @@ void unavailable;
 void insufficientEvidence;
 void missing;
 
-// @ts-expect-error calculated metrics require a non-null authoritative value.
 const calculatedWithNullValue: PresentedMetric = {
   state: "calculated",
   metricKey: "OEE",
   version: "1.0",
+  // @ts-expect-error calculated metrics require a non-null authoritative value.
   value: null,
   unit: "Ratio",
 };
 
-// @ts-expect-error calculated metrics require a non-null unit.
 const calculatedWithNullUnit: PresentedMetric = {
   state: "calculated",
   metricKey: "OEE",
   version: "1.0",
   value: 0.37,
+  // @ts-expect-error calculated metrics require a non-null unit.
   unit: null,
 };
 
-// @ts-expect-error unavailable metrics cannot carry a calculated value.
 const unavailableWithValue: PresentedMetric = {
   state: "unavailable",
   metricKey: "Availability",
   version: "1.0",
+  // @ts-expect-error unavailable metrics cannot carry a calculated value.
   value: 0.25,
   reasonCode: null,
   reasonOperandName: null,
 };
 
-// @ts-expect-error missing metrics cannot manufacture value, unit, or reason fields.
 const missingWithAuthoritativeFields: PresentedMetric = {
   state: "missing",
   metricKey: "Quality",
   version: "1.0",
+  // @ts-expect-error missing metrics cannot manufacture authoritative value fields.
   value: 0,
   unit: "Ratio",
   reasonCode: "invented",
