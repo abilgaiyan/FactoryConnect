@@ -35,6 +35,20 @@ public sealed record ProductionDayOperationalMetricQueryRequest(
     int PageSize,
     string? ContinuationToken);
 
+public sealed record ProductionDayShiftReportingSourceRequest(
+    Guid MachineId,
+    string ProcessorId,
+    string SiteId,
+    DateOnly BusinessDate);
+
+public sealed record ProductionDayShiftOperationalMetricQueryRequest(
+    IReadOnlyList<ProductionDayShiftReportingSourceRequest> Sources,
+    OperationalMetricContextRequest? Context,
+    IReadOnlyList<OperationalMetricDefinitionRequest>? Metrics,
+    IReadOnlyList<string>? Statuses,
+    int PageSize,
+    string? ContinuationToken);
+
 public sealed record OperationalMetricContextResponse(
     string? ProductionOrderId,
     string? OperationId,
@@ -78,6 +92,29 @@ public sealed record OperationalMetricPageResponse(
     IReadOnlyList<OperationalMetricItemResponse> Items,
     string? ContinuationToken);
 
+public sealed record ProductionDayShiftMetricResponse(
+    string MetricKey,
+    string DefinitionVersion,
+    string Status,
+    decimal? Value,
+    string Unit,
+    string? ReasonCode,
+    string? ReasonOperandName);
+
+public sealed record ProductionDayShiftOperationalMetricResponse(
+    string ProcessorId,
+    Guid MachineId,
+    ProductionDayPeriodResponse ProductionDay,
+    string ProductionLineId,
+    ShiftPeriodResponse Shift,
+    OperationalMetricContextResponse Context,
+    MetricSourceRevisionResponse? SourceRevision,
+    IReadOnlyList<ProductionDayShiftMetricResponse> Metrics);
+
+public sealed record ProductionDayShiftOperationalMetricPageResponse(
+    IReadOnlyList<ProductionDayShiftOperationalMetricResponse> Items,
+    string? ContinuationToken);
+
 internal static class OperationalMetricHttpMapper
 {
     public static ShiftOperationalMetricReportQuery ToQuery(ShiftOperationalMetricQueryRequest request) =>
@@ -103,8 +140,30 @@ internal static class OperationalMetricHttpMapper
             OperationalMetricHttpVocabulary.ParseOrder(request.Order),
             ToPage(request.PageSize, request.ContinuationToken));
 
+    public static ProductionDayShiftOperationalMetricPageQuery ToQuery(
+        ProductionDayShiftOperationalMetricQueryRequest request) =>
+        new(
+            new ProductionDayShiftOperationalMetricQuery(
+                request.Sources.Select(static source => new ProductionDayShiftReportingSource(
+                    new OperationalMetricReportingSource(
+                        new MachineId(source.MachineId),
+                        new OperationalMetricProjectionProcessorId(source.ProcessorId)),
+                    new ProductionDayId(
+                        new SiteId(source.SiteId),
+                        source.BusinessDate))),
+                ToExactContext(request.Context),
+                ToMetrics(request.Metrics),
+                ToStatuses(request.Statuses)),
+            ToPage(request.PageSize, request.ContinuationToken));
+
     public static OperationalMetricPageResponse ToResponse(
         ReportingPage<OperationalMetricQueryItem> page) =>
+        new(
+            page.Items.Select(ToResponse).ToArray(),
+            page.ContinuationToken?.Value);
+
+    public static ProductionDayShiftOperationalMetricPageResponse ToResponse(
+        ReportingPage<ProductionDayShiftOperationalMetricReport> page) =>
         new(
             page.Items.Select(ToResponse).ToArray(),
             page.ContinuationToken?.Value);
@@ -135,11 +194,7 @@ internal static class OperationalMetricHttpMapper
             item.MachineId.Value,
             shift,
             productionDay,
-            new OperationalMetricContextResponse(
-                context.ProductionOrderId?.Value,
-                context.OperationId?.Value,
-                context.PartId?.Value,
-                context.OperatorId?.Value),
+            ToResponse(context),
             item.DefinitionId.MetricKey,
             item.DefinitionId.Version,
             OperationalMetricHttpVocabulary.FormatStatus(item.Status),
@@ -147,12 +202,50 @@ internal static class OperationalMetricHttpMapper
             item.Unit,
             item.ReasonCode?.ToString(),
             item.ReasonOperandName,
-            new MetricSourceRevisionResponse(
-                revision.ProcessorId.Value,
-                revision.StreamId.MachineId.Value,
-                revision.StreamId.StreamKey,
-                revision.Position.Value));
+            ToResponse(revision));
     }
+
+    private static ProductionDayShiftOperationalMetricResponse ToResponse(
+        ProductionDayShiftOperationalMetricReport report) =>
+        new(
+            report.Source.ProcessorId.Value,
+            report.Source.MachineId.Value,
+            new ProductionDayPeriodResponse(
+                report.ProductionDayId.SiteId.Value,
+                report.ProductionDayId.BusinessDate),
+            report.ProductionLineId.Value,
+            new ShiftPeriodResponse(
+                report.ShiftOccurrenceId.SiteId.Value,
+                report.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value,
+                report.ShiftOccurrenceId.ShiftId.Value,
+                report.ShiftOccurrenceId.StartsAtUtc,
+                report.ShiftOccurrenceId.EndsAtUtc),
+            ToResponse(report.ContextKey),
+            report.SourceRevision is null ? null : ToResponse(report.SourceRevision),
+            report.Metrics.Select(static metric => new ProductionDayShiftMetricResponse(
+                metric.DefinitionId.MetricKey,
+                metric.DefinitionId.Version,
+                OperationalMetricHttpVocabulary.FormatStatus(metric.Status),
+                metric.Value,
+                metric.Unit,
+                metric.ReasonCode?.ToString(),
+                metric.ReasonOperandName)).ToArray());
+
+    private static OperationalMetricContextResponse ToResponse(
+        OperationalMetricEvaluationContextKey context) =>
+        new(
+            context.ProductionOrderId?.Value,
+            context.OperationId?.Value,
+            context.PartId?.Value,
+            context.OperatorId?.Value);
+
+    private static MetricSourceRevisionResponse ToResponse(
+        MetricAggregationCheckpoint revision) =>
+        new(
+            revision.ProcessorId.Value,
+            revision.StreamId.MachineId.Value,
+            revision.StreamId.StreamKey,
+            revision.Position.Value);
 
     private static OperationalMetricReportingSourceSelection ToSources(
         IReadOnlyList<ReportingSourceRequest> sources) =>
@@ -178,6 +271,23 @@ internal static class OperationalMetricHttpMapper
                 PartId = context.PartId is null ? null : new PartId(context.PartId),
                 OperatorId = context.OperatorId is null ? null : new OperatorId(context.OperatorId),
             };
+
+    private static OperationalMetricEvaluationContextKey ToExactContext(
+        OperationalMetricContextRequest? context)
+    {
+        if (context is null || context.UnpartitionedOnly)
+        {
+            return OperationalMetricEvaluationContextKey.Unpartitioned;
+        }
+
+        return new OperationalMetricEvaluationContextKey
+        {
+            ProductionOrderId = context.ProductionOrderId is null ? null : new ProductionOrderId(context.ProductionOrderId),
+            OperationId = context.OperationId is null ? null : new OperationId(context.OperationId),
+            PartId = context.PartId is null ? null : new PartId(context.PartId),
+            OperatorId = context.OperatorId is null ? null : new OperatorId(context.OperatorId),
+        };
+    }
 
     private static OperationalMetricStatusSelection? ToStatuses(IReadOnlyList<string>? statuses) =>
         statuses is null
