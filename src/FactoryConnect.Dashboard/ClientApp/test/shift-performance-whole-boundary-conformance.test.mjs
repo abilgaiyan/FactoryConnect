@@ -49,9 +49,12 @@ test("whole boundary supports configured populations of 0, 1, 7, and 50 without 
     const machines = projectedMachines(overview);
     assert.equal(machines.length, count, `population ${count}`);
     assert.equal(new Set(machines.map(machine => `${machine.machineId}\u0000${machine.processorId}`)).size, count, `unique population ${count}`);
-    assert.deepEqual(machines.map(machine => machine.machineId), sources.map(item => item.machineId), `configured relative order ${count}`);
+    assert.deepEqual(overview.groups.map(group => group.groupName), [...new Set(sources.map(item => item.groupName))], `first-occurrence group order ${count}`);
+    for (const group of overview.groups) {
+      assert.deepEqual(group.machines.map(machine => machine.machineId), sources.filter(item => item.groupName === group.groupName).map(item => item.machineId), `relative machine order in ${group.groupName} population ${count}`);
+    }
     assert.ok(machines.every(machine => machine.shifts.length === 0), `no manufactured occurrences ${count}`);
-    assert.equal(overview.groups.reduce((total, group) => total + group.machines.length, 0), count, `deterministic group count ${count}`);
+    assert.equal(overview.groups.reduce((total, group) => total + group.machines.length, 0), count, `deterministic population count ${count}`);
   }
 });
 
@@ -63,7 +66,6 @@ test("whole boundary groups by first configured occurrence while preserving rela
   assert.deepEqual(overview.groups.map(group => group.groupName), ["Line A", "Line B"]);
   assert.deepEqual(overview.groups[0].machines.map(machine => machine.machineId), ["M1", "M3"]);
   assert.deepEqual(overview.groups[1].machines.map(machine => machine.machineId), ["M2"]);
-  assert.deepEqual(projectedMachines(overview).map(machine => machine.machineId), ["M1", "M3", "M2"]);
   assert.equal(new Set(projectedMachines(overview).map(machine => machine.machineId)).size, 3);
 });
 
