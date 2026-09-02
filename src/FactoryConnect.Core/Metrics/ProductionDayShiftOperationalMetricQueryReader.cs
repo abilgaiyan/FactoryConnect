@@ -25,6 +25,12 @@ public sealed class ProductionDayShiftOperationalMetricQueryReader :
         ArgumentNullException.ThrowIfNull(query);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var cursor = query.Page.ContinuationToken is null
+            ? null
+            : ProductionDayShiftReportingCursor.Decode(
+                query.Page.ContinuationToken,
+                query.Selection);
+
         var reports = await _reader.ReadAsync(query.Selection, cancellationToken)
             .ConfigureAwait(false);
         ValidateResults(query.Selection, reports);
@@ -39,12 +45,6 @@ public sealed class ProductionDayShiftOperationalMetricQueryReader :
             .ThenBy(static report => report.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value, StringComparer.Ordinal)
             .ThenBy(static report => report.ShiftOccurrenceId.ShiftId.Value, StringComparer.Ordinal)
             .ToArray();
-
-        var cursor = query.Page.ContinuationToken is null
-            ? null
-            : ProductionDayShiftReportingCursor.Decode(
-                query.Page.ContinuationToken,
-                query.Selection);
 
         var candidates = cursor is null
             ? ordered
