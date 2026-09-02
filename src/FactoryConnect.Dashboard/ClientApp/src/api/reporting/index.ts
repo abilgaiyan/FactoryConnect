@@ -3,6 +3,8 @@ export { createReportingClient } from "./reporting-client.ts";
 export type {
   OperationalMetricPage,
   ProductionDayQueryRequest,
+  ProductionDayShiftPage,
+  ProductionDayShiftQueryRequest,
   ReportingClient,
   ReportingClientOptions,
   ReportingProblemDetails,
