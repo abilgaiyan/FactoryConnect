@@ -84,6 +84,7 @@ test("malformed known coverage identity is a protocol failure rather than a part
     problem({ code: "wrong" }),
     problem({ machineId: "" }),
     problem({ machineId: "not-a-guid" }),
+    problem({ machineId: "00000000-0000-0000-0000-000000000000" }),
     problem({ siteId: " " }),
     problem({ siteId: " site-a" }),
     problem({ siteId: "site-a " }),
