@@ -45,6 +45,7 @@ app.MapGet("/dashboard/config", (IOptions<DashboardOptions> options) =>
         .Select(static source => new DashboardRuntimeSource(
             source.MachineId,
             source.ProcessorId,
+            source.SiteId,
             source.DisplayName,
             source.GroupName,
             source.DisplayOrder))
