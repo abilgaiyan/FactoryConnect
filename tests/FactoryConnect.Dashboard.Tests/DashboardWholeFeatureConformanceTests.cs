@@ -43,6 +43,9 @@ public sealed class DashboardWholeFeatureConformanceTests
                 $"site-{sourceNumber}",
                 sources[index].GetProperty("siteId").GetString());
             Assert.Equal(
+                $"line-{sourceNumber}",
+                sources[index].GetProperty("productionLineId").GetString());
+            Assert.Equal(
                 $"Machine {sourceNumber}",
                 sources[index].GetProperty("displayName").GetString());
         }
@@ -161,6 +164,7 @@ public sealed class DashboardWholeFeatureConformanceTests
                 $"00000000-0000-0000-0000-{sourceNumber:000000000000}";
             values[$"Dashboard:Sources:{index}:ProcessorId"] = $"operational-metrics-{sourceNumber}";
             values[$"Dashboard:Sources:{index}:SiteId"] = $"site-{sourceNumber}";
+            values[$"Dashboard:Sources:{index}:ProductionLineId"] = $"line-{sourceNumber}";
             values[$"Dashboard:Sources:{index}:DisplayName"] = $"Machine {sourceNumber}";
         }
 
