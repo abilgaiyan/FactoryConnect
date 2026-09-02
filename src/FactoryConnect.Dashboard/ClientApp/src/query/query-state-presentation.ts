@@ -6,6 +6,7 @@ export type QueryStatePresentation =
   | { readonly kind: "success"; readonly message: string }
   | { readonly kind: "empty"; readonly message: string }
   | { readonly kind: "invalidRequest"; readonly message: string }
+  | { readonly kind: "coverageRequired"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string };
 
 export function presentQueryState<T>(state: QueryState<T>): QueryStatePresentation {
@@ -22,6 +23,11 @@ export function presentQueryState<T>(state: QueryState<T>): QueryStatePresentati
       return {
         kind: "invalidRequest",
         message: state.details.detail ?? state.details.title ?? "The reporting request is invalid.",
+      };
+    case "coverageRequired":
+      return {
+        kind: "coverageRequired",
+        message: `Shift roster coverage is required for machine ${state.machineId}, site ${state.siteId}, production day ${state.businessDate}.`,
       };
     case "failed":
       return { kind: "failed", message: state.failure.message };
