@@ -123,6 +123,9 @@ public sealed class DashboardHostTests
         yield return Case("Dashboard:Sources:0:ProcessorId", " ");
         yield return Case("Dashboard:Sources:0:ProcessorId", " operational-metrics");
         yield return Case("Dashboard:Sources:0:ProcessorId", "operational-metrics ");
+        yield return Case("Dashboard:Sources:0:SiteId", " ");
+        yield return Case("Dashboard:Sources:0:SiteId", " plant-1");
+        yield return Case("Dashboard:Sources:0:SiteId", "plant-1 ");
         yield return Case("Dashboard:Sources:0:DisplayName", " ");
         yield return Case("Dashboard:Sources:0:DisplayName", " Machine 1");
         yield return Case("Dashboard:Sources:0:DisplayName", "Machine 1 ");
@@ -169,6 +172,7 @@ public sealed class DashboardHostTests
         var overrides = ValidOverrides();
         overrides["Dashboard:Sources:1:MachineId"] = overrides["Dashboard:Sources:0:MachineId"];
         overrides["Dashboard:Sources:1:ProcessorId"] = overrides["Dashboard:Sources:0:ProcessorId"];
+        overrides["Dashboard:Sources:1:SiteId"] = "plant-2";
         overrides["Dashboard:Sources:1:DisplayName"] = "Duplicate";
 
         using var factory = CreateFactory(overrides);
@@ -210,6 +214,7 @@ public sealed class DashboardHostTests
         ["Dashboard:RequestTimeout"] = "00:00:30",
         ["Dashboard:Sources:0:MachineId"] = "11111111-1111-1111-1111-111111111111",
         ["Dashboard:Sources:0:ProcessorId"] = "operational-metrics",
+        ["Dashboard:Sources:0:SiteId"] = "plant-1",
         ["Dashboard:Sources:0:DisplayName"] = "Machine 1",
         ["Dashboard:Sources:0:GroupName"] = "Line 1",
         ["Dashboard:Sources:0:DisplayOrder"] = "10"
