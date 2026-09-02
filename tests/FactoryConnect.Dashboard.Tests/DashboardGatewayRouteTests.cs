@@ -18,6 +18,9 @@ public sealed class DashboardGatewayRouteTests
     [InlineData(
         "/api/reporting/v1/operational-metrics/production-days/query",
         "/factoryconnect/api/reporting/v1/operational-metrics/production-days/query")]
+    [InlineData(
+        "/api/reporting/v1/operational-metrics/production-day-shifts/query",
+        "/factoryconnect/api/reporting/v1/operational-metrics/production-day-shifts/query")]
     public async Task ExactReportingRouteForwardsToConfiguredUpstreamPath(
         string dashboardPath,
         string expectedUpstreamPath)
@@ -49,6 +52,33 @@ public sealed class DashboardGatewayRouteTests
         Assert.Equal(expectedUpstreamPath, observedPath);
         Assert.Equal(requestBytes, observedBytes);
         Assert.Equal(responseBytes, await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task ProductionDayShiftRoutePreservesProblemDetailsResponse()
+    {
+        const string dashboardPath = "/api/reporting/v1/operational-metrics/production-day-shifts/query";
+        var responseBytes = Encoding.UTF8.GetBytes("{\"type\":\"urn:factoryconnect:problem:reporting:production-day-shift-roster-coverage-required\",\"status\":409}");
+
+        using var upstream = new StubHttpClientFactory((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = new ByteArrayContent(responseBytes)
+            };
+            response.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/problem+json");
+            return Task.FromResult(response);
+        });
+        await using var factory = CreateFactory(upstream);
+        using var client = factory.CreateClient();
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+
+        using var response = await client.PostAsync(dashboardPath, content);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(responseBytes, await response.Content.ReadAsByteArrayAsync());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(IHttpClientFactory upstream) =>
@@ -63,6 +93,8 @@ public sealed class DashboardGatewayRouteTests
                         ["Dashboard:RequestTimeout"] = "00:00:30",
                         ["Dashboard:Sources:0:MachineId"] = "11111111-1111-1111-1111-111111111111",
                         ["Dashboard:Sources:0:ProcessorId"] = "operational-metrics",
+                        ["Dashboard:Sources:0:SiteId"] = "plant-1",
+                        ["Dashboard:Sources:0:ProductionLineId"] = "line-1",
                         ["Dashboard:Sources:0:DisplayName"] = "Machine 1"
                     }));
                 builder.ConfigureServices(services => services.AddSingleton(upstream));
