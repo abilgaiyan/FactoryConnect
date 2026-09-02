@@ -320,13 +320,16 @@ public sealed class OperationalMetricReportingEndpointTests
             .Where(endpoint => endpoint.RoutePattern.RawText?.Contains("operational-metrics", StringComparison.Ordinal) == true)
             .ToArray();
 
-        Assert.Equal(2, endpoints.Length);
+        Assert.Equal(3, endpoints.Length);
         Assert.Contains(endpoints, endpoint =>
             endpoint.RoutePattern.RawText == "/api/reporting/v1/operational-metrics/shifts/query" &&
             endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == "QueryShiftOperationalMetrics");
         Assert.Contains(endpoints, endpoint =>
             endpoint.RoutePattern.RawText == "/api/reporting/v1/operational-metrics/production-days/query" &&
             endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == "QueryProductionDayOperationalMetrics");
+        Assert.Contains(endpoints, endpoint =>
+            endpoint.RoutePattern.RawText == "/api/reporting/v1/operational-metrics/production-day-shifts/query" &&
+            endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == "QueryProductionDayShiftOperationalMetrics");
 
         foreach (var endpoint in endpoints)
         {
@@ -335,11 +338,21 @@ public sealed class OperationalMetricReportingEndpointTests
             Assert.Contains("Operational Metrics", tags.Tags);
 
             var responses = endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>();
+            var expectedResponseType = endpoint.RoutePattern.RawText ==
+                "/api/reporting/v1/operational-metrics/production-day-shifts/query"
+                ? typeof(ProductionDayShiftOperationalMetricPageResponse)
+                : typeof(OperationalMetricPageResponse);
             Assert.Contains(responses, metadata =>
                 metadata.StatusCode == StatusCodes.Status200OK &&
-                metadata.Type == typeof(OperationalMetricPageResponse));
+                metadata.Type == expectedResponseType);
             Assert.Contains(responses, metadata =>
                 metadata.StatusCode == StatusCodes.Status400BadRequest);
+
+            if (expectedResponseType == typeof(ProductionDayShiftOperationalMetricPageResponse))
+            {
+                Assert.Contains(responses, metadata =>
+                    metadata.StatusCode == StatusCodes.Status409Conflict);
+            }
         }
     }
 
@@ -361,12 +374,18 @@ public sealed class OperationalMetricReportingEndpointTests
             paths,
             "/api/reporting/v1/operational-metrics/production-days/query",
             "QueryProductionDayOperationalMetrics");
+        AssertOpenApiOperation(
+            paths,
+            "/api/reporting/v1/operational-metrics/production-day-shifts/query",
+            "QueryProductionDayShiftOperationalMetrics",
+            expectConflict: true);
     }
 
     private static void AssertOpenApiOperation(
         JsonElement paths,
         string path,
-        string operationId)
+        string operationId,
+        bool expectConflict = false)
     {
         Assert.True(paths.TryGetProperty(path, out var pathItem));
         var operation = pathItem.GetProperty("post");
@@ -376,6 +395,7 @@ public sealed class OperationalMetricReportingEndpointTests
         var responses = operation.GetProperty("responses");
         Assert.True(responses.TryGetProperty("200", out _));
         Assert.True(responses.TryGetProperty("400", out _));
+        Assert.Equal(expectConflict, responses.TryGetProperty("409", out _));
     }
 
     private static OperationalMetricProjectionSummary CreateSummary(
