@@ -8,6 +8,7 @@ import {
 const coverageProblemType = "urn:factoryconnect:problem:reporting:production-day-shift-roster-coverage-required";
 const coverageProblemCode = "production-day-shift-roster-coverage-required";
 const guidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const emptyGuid = "00000000-0000-0000-0000-000000000000";
 const businessDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export async function throwProductionDayShiftConflict(response: Response): Promise<void> {
@@ -80,7 +81,9 @@ function isOptionalProblemStatus(value: unknown): boolean {
 }
 
 function isGuidWireIdentity(value: unknown): value is string {
-  return typeof value === "string" && guidPattern.test(value);
+  return typeof value === "string"
+    && guidPattern.test(value)
+    && value.toLowerCase() !== emptyGuid;
 }
 
 function isTrimmedNonEmptyString(value: unknown): value is string {
