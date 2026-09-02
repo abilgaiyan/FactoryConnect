@@ -7,8 +7,12 @@ import {
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
 import { productionDayPath } from "./application/production-day-navigation.ts";
-import { ProductionDayOverviewSurface } from "./application/ProductionDayOverviewSurface.ts";
+import { ProductionDayOverviewSurface } from "./application/ProductionDayOverviewSurface.tsx";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
+import {
+  isShiftPerformanceProductionDaySelection,
+  shiftPerformancePath,
+} from "./application/shift-performance-navigation.ts";
 import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
@@ -75,6 +79,8 @@ function RouteView({ route, navigate, runtime }: RouteViewProps) {
       return <ProductionDaySelection navigate={navigate} sourceCount={runtime.configuration.sources.length} />;
     case "productionDayDetail":
       return <ProductionDayDetail productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
+    case "shiftPerformance":
+      return <ShiftPerformanceSelection productionDay={route.productionDay} navigate={navigate} />;
     case "machineDetail":
       return <section aria-labelledby="route-title"><RouteContext current="Machine" navigate={navigate} /><h1 id="route-title">Machine</h1><p>{route.machineId}</p><p>Machine detail placeholder.</p></section>;
     case "dailyReport":
@@ -124,14 +130,63 @@ function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDay
       <h1 id="route-title">Production day</h1>
       {isProductionDaySelection(productionDay)
         ? (
-          <ProductionDayOverviewVertical
-            key={productionDay}
-            productionDay={productionDay}
-            runtime={runtime}
-            onProductionDayChange={(nextProductionDay) => navigate(productionDayPath(nextProductionDay))}
-          />
+          <>
+            <nav aria-label="Production-day views">
+              <ApplicationLink href={shiftPerformancePath(productionDay)} navigate={navigate}>
+                Shift performance
+              </ApplicationLink>
+            </nav>
+            <ProductionDayOverviewVertical
+              key={productionDay}
+              productionDay={productionDay}
+              runtime={runtime}
+              onProductionDayChange={(nextProductionDay) => navigate(productionDayPath(nextProductionDay))}
+            />
+          </>
         )
         : <p role="alert">The selected production day is not a valid calendar date.</p>}
+    </section>
+  );
+}
+
+interface ShiftPerformanceSelectionProps {
+  readonly productionDay: string;
+  readonly navigate: (href: string) => void;
+}
+
+function ShiftPerformanceSelection({ productionDay, navigate }: ShiftPerformanceSelectionProps) {
+  const validSelection = isShiftPerformanceProductionDaySelection(productionDay);
+  const [selectedProductionDay, setSelectedProductionDay] = useState(validSelection ? productionDay : "");
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isShiftPerformanceProductionDaySelection(selectedProductionDay)) {
+      navigate(shiftPerformancePath(selectedProductionDay));
+    }
+  };
+
+  return (
+    <section aria-labelledby="route-title">
+      <RouteContext current="Shift performance" navigate={navigate} />
+      <h1 id="route-title">Shift performance</h1>
+      {validSelection
+        ? <p>Selected production day: <time dateTime={productionDay}>{productionDay}</time></p>
+        : <p role="alert">The selected production day is not a valid calendar date.</p>}
+      <form onSubmit={handleSubmit}>
+        <label htmlFor="shift-production-day">Production day</label>
+        <input
+          id="shift-production-day"
+          name="shift-production-day"
+          type="date"
+          required
+          value={selectedProductionDay}
+          onChange={(event) => setSelectedProductionDay(event.currentTarget.value)}
+        />
+        <button type="submit">Select production day</button>
+      </form>
+      {validSelection
+        ? <p>Shift reporting composition will load this authoritative production day in the next slice.</p>
+        : null}
     </section>
   );
 }
