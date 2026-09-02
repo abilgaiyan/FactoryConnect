@@ -35,7 +35,13 @@ internal static class OperationalMetricReportingProblemDetails
         }
         catch (ArgumentException exception)
         {
-            return ContinuationTokenProblem(exception);
+            var problem = TryContinuationTokenProblem(exception);
+            if (problem is null)
+            {
+                throw;
+            }
+
+            return problem;
         }
     }
 
@@ -67,17 +73,23 @@ internal static class OperationalMetricReportingProblemDetails
         }
         catch (ArgumentException exception)
         {
-            return ContinuationTokenProblem(exception);
+            var problem = TryContinuationTokenProblem(exception);
+            if (problem is null)
+            {
+                throw;
+            }
+
+            return problem;
         }
     }
 
-    private static IResult ContinuationTokenProblem(ArgumentException exception)
+    private static IResult? TryContinuationTokenProblem(ArgumentException exception)
     {
         if (!OperationalMetricReportingQueryFailureClassifier.TryClassify(
                 exception,
                 out var failure))
         {
-            throw exception;
+            return null;
         }
 
         return failure switch
