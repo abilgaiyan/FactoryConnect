@@ -1,4 +1,5 @@
 import {
+  ProductionDayShiftRosterCoverageRequiredFailure,
   ReportingCancellationFailure,
   ReportingHttpFailure,
   ReportingIncompatibleContinuationTokenFailure,
@@ -121,6 +122,17 @@ export function createQueryLifecycleController<T>(
           return publish({ kind: "invalidRequest", details: error.problemDetails });
         }
 
+        if (error instanceof ProductionDayShiftRosterCoverageRequiredFailure) {
+          return publish({
+            kind: "coverageRequired",
+            details: {
+              machineId: error.machineId,
+              siteId: error.siteId,
+              businessDate: error.businessDate,
+            },
+          });
+        }
+
         if (isReportingClientFailure(error)) {
           return publish({ kind: "failed", failure: error });
         }
@@ -154,6 +166,7 @@ function isReportingClientFailure(error: unknown): error is ReportingClientFailu
     error instanceof ReportingInvalidQueryFailure ||
     error instanceof ReportingMalformedContinuationTokenFailure ||
     error instanceof ReportingIncompatibleContinuationTokenFailure ||
+    error instanceof ProductionDayShiftRosterCoverageRequiredFailure ||
     error instanceof ReportingHttpFailure ||
     error instanceof ReportingProtocolFailure
   );
