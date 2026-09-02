@@ -27,7 +27,7 @@ export function presentQueryState<T>(state: QueryState<T>): QueryStatePresentati
     case "coverageRequired":
       return {
         kind: "coverageRequired",
-        message: `Shift roster coverage is required for machine ${state.machineId}, site ${state.siteId}, production day ${state.businessDate}.`,
+        message: `Shift roster coverage is required for machine ${state.details.machineId}, site ${state.details.siteId}, production day ${state.details.businessDate}.`,
       };
     case "failed":
       return { kind: "failed", message: state.failure.message };
