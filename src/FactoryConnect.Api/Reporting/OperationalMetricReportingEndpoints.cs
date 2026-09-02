@@ -23,6 +23,12 @@ public static class OperationalMetricReportingEndpoints
             .Produces<OperationalMetricPageResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
+        group.MapPost("/production-day-shifts/query", QueryProductionDayShiftsAsync)
+            .WithName("QueryProductionDayShiftOperationalMetrics")
+            .Produces<ProductionDayShiftOperationalMetricPageResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         return endpoints;
     }
 
@@ -70,6 +76,30 @@ public static class OperationalMetricReportingEndpoints
         }
 
         return OperationalMetricReportingProblemDetails.ExecuteAsync(
+            token => reader.ReadAsync(query, token),
+            cancellationToken);
+    }
+
+    internal static Task<IResult> QueryProductionDayShiftsAsync(
+        ProductionDayShiftOperationalMetricQueryRequest request,
+        IProductionDayShiftOperationalMetricQueryReader reader,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(reader);
+
+        ProductionDayShiftOperationalMetricPageQuery query;
+        try
+        {
+            OperationalMetricHttpRequestValidator.Validate(request);
+            query = OperationalMetricHttpMapper.ToQuery(request);
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(OperationalMetricReportingProblemDetails.InvalidRequest());
+        }
+
+        return OperationalMetricReportingProblemDetails.ExecuteProductionDayShiftsAsync(
             token => reader.ReadAsync(query, token),
             cancellationToken);
     }
