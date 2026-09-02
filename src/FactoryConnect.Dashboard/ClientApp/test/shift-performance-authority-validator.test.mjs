@@ -60,11 +60,54 @@ test("accepts valid same-source occurrences and preserves original result items"
   assert.equal(validated.items, items);
 });
 
+test("accepts aggregation revision processor distinct from reporting processor and preserves revision", () => {
+  const revision = {
+    machineId: sourceA.machineId,
+    processorId: "aggregation",
+    streamKey: "metric-inputs",
+    position: 73,
+  };
+  const item = report(sourceA, {
+    processorId: "projection-shifts",
+    sourceRevision: revision,
+  });
+  const configured = { ...sourceA, processorId: "projection-shifts" };
+  const validated = validateProductionDayShiftAuthority(day, [configured], { items: [item] });
+  assert.equal(validated.items[0].sourceRevision, revision);
+});
+
 test("accepts interleaved sources while validating each source relative order", () => {
   const a1 = report(sourceA);
   const b1 = report(sourceB);
   const a2 = report(sourceA, { shift: { ...a1.shift, shiftId: "shift-b", startsAtUtc: "2026-09-02T08:00:00Z", endsAtUtc: "2026-09-02T16:00:00Z" } });
   assert.doesNotThrow(() => validateProductionDayShiftAuthority(day, [sourceA, sourceB], { items: [a1, b1, a2] }));
+});
+
+test("accepts +00:00 ordered occurrences", () => {
+  const first = report(sourceA, { shift: { ...report().shift, startsAtUtc: "2026-09-02T00:00:00+00:00", endsAtUtc: "2026-09-02T08:00:00+00:00" } });
+  const second = report(sourceA, { shift: { ...report().shift, shiftId: "shift-b", startsAtUtc: "2026-09-02T08:00:00+00:00", endsAtUtc: "2026-09-02T16:00:00+00:00" } });
+  assert.doesNotThrow(() => validateProductionDayShiftAuthority(day, [sourceA], { items: [first, second] }));
+});
+
+test("treats Z and +00:00 as equivalent instants for ordering", () => {
+  const first = report(sourceA, { shift: { ...report().shift, shiftId: "shift-a", startsAtUtc: "2026-09-02T00:00:00Z", endsAtUtc: "2026-09-02T08:00:00Z" } });
+  const second = report(sourceA, { shift: { ...report().shift, shiftId: "shift-b", startsAtUtc: "2026-09-02T00:00:00+00:00", endsAtUtc: "2026-09-02T08:00:00+00:00" } });
+  assert.doesNotThrow(() => validateProductionDayShiftAuthority(day, [sourceA], { items: [first, second] }));
+});
+
+test("rejects non-zero UTC offsets", () => {
+  const item = report(sourceA, { shift: { ...report().shift, startsAtUtc: "2026-09-02T00:00:00+05:30" } });
+  expectFailure("inconsistent-occurrence-descriptor", [sourceA], [item]);
+});
+
+test("rejects year zero outside DateTimeOffset domain", () => {
+  const item = report(sourceA, { shift: { ...report().shift, startsAtUtc: "0000-09-02T00:00:00Z" } });
+  expectFailure("inconsistent-occurrence-descriptor", [sourceA], [item]);
+});
+
+test("rejects fractional precision beyond DateTimeOffset ticks", () => {
+  const item = report(sourceA, { shift: { ...report().shift, startsAtUtc: "2026-09-02T00:00:00.12345678Z" } });
+  expectFailure("inconsistent-occurrence-descriptor", [sourceA], [item]);
 });
 
 test("compares UTC instants exactly across differing fractional precision", () => {
@@ -79,7 +122,7 @@ test("rejects wrong production day", () => expectFailure("unexpected-production-
 test("rejects wrong site", () => expectFailure("unexpected-site", [sourceA], [report(sourceA, { productionDay: { siteId: "site-b", businessDate: day } })]));
 test("rejects wrong production line", () => expectFailure("unexpected-production-line", [sourceA], [report(sourceA, { productionLineId: "line-b" })]));
 test("rejects partitioned context", () => expectFailure("unexpected-context", [sourceA], [report(sourceA, { context: { productionOrderId: "order-a", operationId: null, partId: null, operatorId: null } })]));
-test("rejects foreign source revision", () => expectFailure("unexpected-source-revision", [sourceA], [report(sourceA, { sourceRevision: { machineId: sourceB.machineId, processorId: sourceA.processorId, streamKey: "stream", position: 1 } })]));
+test("rejects foreign source revision", () => expectFailure("unexpected-source-revision", [sourceA], [report(sourceA, { sourceRevision: { machineId: sourceB.machineId, processorId: "aggregation", streamKey: "stream", position: 1 } })]));
 
 test("rejects duplicate occurrence", () => {
   const item = report();
@@ -93,7 +136,6 @@ test("rejects conflicting occurrence descriptor", () => {
 });
 
 test("rejects duplicate metric", () => {
-  const item = report();
   expectFailure("duplicate-metric", [sourceA], [report(sourceA, { metrics: [metric(), metric()] })]);
 });
 
