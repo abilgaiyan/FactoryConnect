@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using Microsoft.AspNetCore.Mvc;
 
 namespace FactoryConnect.Api.Reporting;
 
@@ -34,7 +35,7 @@ public static class OperationalMetricReportingEndpoints
 
     internal static Task<IResult> QueryShiftsAsync(
         ShiftOperationalMetricQueryRequest request,
-        IOperationalMetricQueryReader reader,
+        [FromServices] IOperationalMetricQueryReader reader,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -58,7 +59,7 @@ public static class OperationalMetricReportingEndpoints
 
     internal static Task<IResult> QueryProductionDaysAsync(
         ProductionDayOperationalMetricQueryRequest request,
-        IOperationalMetricQueryReader reader,
+        [FromServices] IOperationalMetricQueryReader reader,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -82,7 +83,7 @@ public static class OperationalMetricReportingEndpoints
 
     internal static Task<IResult> QueryProductionDayShiftsAsync(
         ProductionDayShiftOperationalMetricQueryRequest request,
-        IProductionDayShiftOperationalMetricQueryReader reader,
+        [FromServices] IProductionDayShiftOperationalMetricQueryReader reader,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
