@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Api.Reporting;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
 using FactoryConnect.Persistence.SqlServer;
@@ -21,6 +22,8 @@ public sealed class OperationalMetricReportingCompositionTests
         var providerServices = factory.Services.GetRequiredService<PersistenceProviderServices>();
         var store = Assert.IsType<InMemoryOperationalMetricProjectionStore>(
             providerServices.OperationalMetricProjectionStore);
+        var rosterStore = Assert.IsType<InMemoryMachineShiftOccurrenceRosterStore>(
+            providerServices.MachineShiftOccurrenceRosterStore);
 
         var machineA = new MachineId(
             Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
@@ -32,9 +35,11 @@ public sealed class OperationalMetricReportingCompositionTests
             "operational-metrics:machine-b:builtins-v1");
         var firstDay = new DateOnly(2026, 8, 29);
         var secondDay = firstDay.AddDays(1);
+        var siteId = new SiteId("site-a");
+        var productionDayId = new ProductionDayId(siteId, firstDay);
         var shiftStart = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
         var shift = new ShiftOccurrenceId(
-            new SiteId("site-a"),
+            siteId,
             new ShiftScheduleAssignmentId("schedule-a"),
             new ShiftId("shift-a"),
             shiftStart,
@@ -50,14 +55,14 @@ public sealed class OperationalMetricReportingCompositionTests
                     processorA,
                     machineA,
                     new OperationalMetricPeriodId.ProductionDay(
-                        new ProductionDayId(new SiteId("site-a"), firstDay)),
+                        productionDayId),
                     0.81m,
                     42),
                 CreateProjection(
                     processorA,
                     machineA,
                     new OperationalMetricPeriodId.ProductionDay(
-                        new ProductionDayId(new SiteId("site-a"), secondDay)),
+                        new ProductionDayId(siteId, secondDay)),
                     0.82m,
                     42),
                 CreateProjection(
@@ -77,15 +82,37 @@ public sealed class OperationalMetricReportingCompositionTests
                     processorB,
                     machineB,
                     new OperationalMetricPeriodId.ProductionDay(
-                        new ProductionDayId(new SiteId("site-a"), firstDay)),
+                        new ProductionDayId(siteId, firstDay)),
                     0.91m,
                     51),
             ]);
 
-        Assert.IsType<FactoryConnect.Core.Metrics.OperationalMetricReportingQueryReader>(
+        var lineId = new ProductionLineId("line-a");
+        await rosterStore.CommitAsync(
+            new MachineShiftOccurrenceRosterCommit(
+                null,
+                new MachineShiftOccurrenceRoster(
+                    machineA,
+                    lineId,
+                    productionDayId,
+                    new MachineShiftOccurrenceRosterRevision(1),
+                    [new MachineShiftOccurrenceOwnership(
+                        machineA,
+                        lineId,
+                        shift,
+                        productionDayId)])),
+            CancellationToken.None);
+
+        Assert.IsType<OperationalMetricReportingQueryReader>(
             factory.Services.GetRequiredService<IOperationalMetricReportingQueryReader>());
-        Assert.IsType<FactoryConnect.Core.Metrics.OperationalMetricQueryReader>(
+        Assert.IsType<OperationalMetricQueryReader>(
             factory.Services.GetRequiredService<IOperationalMetricQueryReader>());
+        Assert.IsType<OperationalMetricReportReader>(
+            factory.Services.GetRequiredService<IOperationalMetricReportReader>());
+        Assert.IsType<ProductionDayShiftOperationalMetricReader>(
+            factory.Services.GetRequiredService<IProductionDayShiftOperationalMetricReader>());
+        Assert.IsType<ProductionDayShiftOperationalMetricQueryReader>(
+            factory.Services.GetRequiredService<IProductionDayShiftOperationalMetricQueryReader>());
 
         using var client = factory.CreateClient();
         var firstPage = await QueryProductionDaysAsync(
@@ -139,6 +166,44 @@ public sealed class OperationalMetricReportingCompositionTests
         Assert.Equal(machineA.Value, shiftItem.MachineId);
         Assert.Equal(shiftStart, shiftItem.Shift?.StartsAtUtc);
         Assert.Equal(0.83m, shiftItem.Value);
+
+        using var productionDayShiftResponse = await client.PostAsJsonAsync(
+            "/api/reporting/v1/operational-metrics/production-day-shifts/query",
+            new ProductionDayShiftOperationalMetricQueryRequest(
+                [new ProductionDayShiftReportingSourceRequest(
+                    machineA.Value,
+                    processorA.Value,
+                    siteId.Value,
+                    firstDay)],
+                null,
+                [new OperationalMetricDefinitionRequest("OEE", "1.0")],
+                ["calculated"],
+                25,
+                null));
+
+        Assert.Equal(HttpStatusCode.OK, productionDayShiftResponse.StatusCode);
+        var productionDayShiftPage = await productionDayShiftResponse.Content
+            .ReadFromJsonAsync<ProductionDayShiftOperationalMetricPageResponse>();
+        Assert.NotNull(productionDayShiftPage);
+        var productionDayShiftItem = Assert.Single(productionDayShiftPage.Items);
+        Assert.Equal(machineA.Value, productionDayShiftItem.MachineId);
+        Assert.Equal(processorA.Value, productionDayShiftItem.ProcessorId);
+        Assert.Equal(firstDay, productionDayShiftItem.ProductionDay.BusinessDate);
+        Assert.Equal(siteId.Value, productionDayShiftItem.ProductionDay.SiteId);
+        Assert.Equal(lineId.Value, productionDayShiftItem.ProductionLineId);
+        Assert.Equal(shift, new ShiftOccurrenceId(
+            new SiteId(productionDayShiftItem.Shift.SiteId),
+            new ShiftScheduleAssignmentId(productionDayShiftItem.Shift.ShiftScheduleAssignmentId),
+            new ShiftId(productionDayShiftItem.Shift.ShiftId),
+            productionDayShiftItem.Shift.StartsAtUtc,
+            productionDayShiftItem.Shift.EndsAtUtc));
+        Assert.NotNull(productionDayShiftItem.SourceRevision);
+        Assert.Equal(42UL, productionDayShiftItem.SourceRevision.Position);
+        var productionDayShiftMetric = Assert.Single(productionDayShiftItem.Metrics);
+        Assert.Equal("OEE", productionDayShiftMetric.MetricKey);
+        Assert.Equal("1.0", productionDayShiftMetric.DefinitionVersion);
+        Assert.Equal("calculated", productionDayShiftMetric.Status);
+        Assert.Equal(0.83m, productionDayShiftMetric.Value);
     }
 
     [Fact]
