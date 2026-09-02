@@ -34,6 +34,7 @@ public sealed class DashboardOverviewConfigurationTests
         {
             var sourceNumber = index + 1;
             Assert.Equal($"site-{sourceNumber:D2}", sources[index].GetProperty("siteId").GetString());
+            Assert.Equal($"production-line-{sourceNumber:D2}", sources[index].GetProperty("productionLineId").GetString());
         }
     }
 
@@ -41,10 +42,10 @@ public sealed class DashboardOverviewConfigurationTests
     public async Task RuntimeConfigurationOrdersSourcesByConfiguredPresentationOrderWithStableTies()
     {
         var values = BaseOverrides();
-        AddSource(values, 0, "00000000-0000-0000-0000-000000000003", "processor-c", "site-c", "Machine C", "Line 2", 20);
-        AddSource(values, 1, "00000000-0000-0000-0000-000000000002", "processor-b", "site-b", "Machine B", "Line 1", 10);
-        AddSource(values, 2, "00000000-0000-0000-0000-000000000001", "processor-a", "site-a", "Machine A", "Line 1", 10);
-        AddSource(values, 3, "00000000-0000-0000-0000-000000000004", "processor-d", "site-d", "Machine D", null, 5);
+        AddSource(values, 0, "00000000-0000-0000-0000-000000000003", "processor-c", "site-c", "production-line-c", "Machine C", "Line 2", 20);
+        AddSource(values, 1, "00000000-0000-0000-0000-000000000002", "processor-b", "site-b", "production-line-b", "Machine B", "Line 1", 10);
+        AddSource(values, 2, "00000000-0000-0000-0000-000000000001", "processor-a", "site-a", "production-line-a", "Machine A", "Line 1", 10);
+        AddSource(values, 3, "00000000-0000-0000-0000-000000000004", "processor-d", "site-d", "production-line-d", "Machine D", null, 5);
 
         await using var factory = CreateFactory(values);
         using var client = factory.CreateClient();
@@ -60,9 +61,12 @@ public sealed class DashboardOverviewConfigurationTests
         Assert.Equal(ExpectedDisplayNames, displayNames);
         Assert.Equal(ExpectedDisplayOrders, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
         Assert.Equal("site-d", sources[0].GetProperty("siteId").GetString());
+        Assert.Equal("production-line-d", sources[0].GetProperty("productionLineId").GetString());
         Assert.Equal("site-a", sources[1].GetProperty("siteId").GetString());
+        Assert.Equal("production-line-a", sources[1].GetProperty("productionLineId").GetString());
         Assert.Null(sources[0].GetProperty("groupName").GetString());
         Assert.Equal("Line 1", sources[1].GetProperty("groupName").GetString());
+        Assert.NotEqual(sources[1].GetProperty("groupName").GetString(), sources[1].GetProperty("productionLineId").GetString());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(Dictionary<string, string?> values) =>
@@ -88,6 +92,7 @@ public sealed class DashboardOverviewConfigurationTests
                 GuidFromIndex(index + 1).ToString(),
                 $"processor-{index + 1:D2}",
                 $"site-{index + 1:D2}",
+                $"production-line-{index + 1:D2}",
                 $"Machine {index + 1:D2}",
                 $"Line {(index % 4) + 1}",
                 index);
@@ -108,6 +113,7 @@ public sealed class DashboardOverviewConfigurationTests
         string machineId,
         string processorId,
         string siteId,
+        string productionLineId,
         string displayName,
         string? groupName,
         int displayOrder)
@@ -116,6 +122,7 @@ public sealed class DashboardOverviewConfigurationTests
         values[$"{prefix}:MachineId"] = machineId;
         values[$"{prefix}:ProcessorId"] = processorId;
         values[$"{prefix}:SiteId"] = siteId;
+        values[$"{prefix}:ProductionLineId"] = productionLineId;
         values[$"{prefix}:DisplayName"] = displayName;
         values[$"{prefix}:GroupName"] = groupName;
         values[$"{prefix}:DisplayOrder"] = displayOrder.ToString(System.Globalization.CultureInfo.InvariantCulture);
