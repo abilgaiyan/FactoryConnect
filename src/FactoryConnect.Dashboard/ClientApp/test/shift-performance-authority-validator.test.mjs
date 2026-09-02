@@ -100,6 +100,11 @@ test("rejects non-zero UTC offsets", () => {
   expectFailure("inconsistent-occurrence-descriptor", [sourceA], [item]);
 });
 
+test("rejects RFC 3339 unknown local offset", () => {
+  const item = report(sourceA, { shift: { ...report().shift, startsAtUtc: "2026-09-02T00:00:00-00:00" } });
+  expectFailure("inconsistent-occurrence-descriptor", [sourceA], [item]);
+});
+
 test("rejects year zero outside DateTimeOffset domain", () => {
   const item = report(sourceA, { shift: { ...report().shift, startsAtUtc: "0000-09-02T00:00:00Z" } });
   expectFailure("inconsistent-occurrence-descriptor", [sourceA], [item]);
