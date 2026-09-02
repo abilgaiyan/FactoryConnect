@@ -53,10 +53,33 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
             Assert.Equal(fixture.MachineId, report.Source.MachineId);
             Assert.Equal(fixture.Day, report.ProductionDayId);
             Assert.Equal(fixture.LineId, report.ProductionLineId);
+            Assert.Same(OperationalMetricEvaluationContextKey.Unpartitioned, report.ContextKey);
             Assert.Null(report.SourceRevision);
             Assert.Empty(report.Metrics);
         });
         Assert.Equal(2, fixture.MetricReader.ShiftReadCount);
+    }
+
+    [Fact]
+    public async Task NonDefaultContextIsPreservedExactly()
+    {
+        var fixture = CreateFixture();
+        await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var context = new OperationalMetricEvaluationContextKey
+        {
+            ProductionOrderId = new ProductionOrderId("ORDER-42"),
+            OperationId = new OperationId("OP-10"),
+        };
+        var revision = fixture.Revision();
+        fixture.MetricReader.ShiftReport = fixture.MetricReport(
+            revision,
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            contextKey: context);
+
+        var report = Assert.Single(
+            await fixture.Reader.ReadAsync(fixture.Query(contextKey: context), CancellationToken.None));
+
+        Assert.Same(context, report.ContextKey);
     }
 
     [Fact]
@@ -165,10 +188,11 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
         ProductionDayShiftOperationalMetricReader Reader)
     {
         public ProductionDayShiftOperationalMetricQuery Query(
-            OperationalMetricDefinitionSelection? metrics = null) =>
+            OperationalMetricDefinitionSelection? metrics = null,
+            OperationalMetricEvaluationContextKey? contextKey = null) =>
             new(
                 [new ProductionDayShiftReportingSource(Source, Day)],
-                OperationalMetricEvaluationContextKey.Unpartitioned,
+                contextKey ?? OperationalMetricEvaluationContextKey.Unpartitioned,
                 metrics);
 
         public MetricAggregationCheckpoint Revision(MachineId? machineId = null) =>
@@ -180,16 +204,18 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
         public ShiftOperationalMetricReport MetricReport(
             MetricAggregationCheckpoint revision,
             OperationalMetricDefinitionId definitionId,
-            MachineId? machineId = null)
+            MachineId? machineId = null,
+            OperationalMetricEvaluationContextKey? contextKey = null)
         {
             var reportMachineId = machineId ?? MachineId;
+            var reportContext = contextKey ?? OperationalMetricEvaluationContextKey.Unpartitioned;
             var summary = new OperationalMetricProjectionSummary(
                 Source.ProcessorId,
                 new OperationalMetricEvaluationKey(
                     reportMachineId,
                     new OperationalMetricPeriodId.Shift(Occurrence),
                     definitionId,
-                    OperationalMetricEvaluationContextKey.Unpartitioned),
+                    reportContext),
                 OperationalMetricEvaluationStatus.Calculated,
                 0.8m,
                 OperationalMetricUnits.Ratio,
@@ -200,7 +226,7 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
                 Source.ProcessorId,
                 reportMachineId,
                 Occurrence,
-                OperationalMetricEvaluationContextKey.Unpartitioned,
+                reportContext,
                 revision,
                 [new OperationalMetricReportItem(summary)]);
         }
