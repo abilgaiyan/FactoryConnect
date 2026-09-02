@@ -22,6 +22,9 @@ public static class OperationalMetricReportingServiceCollectionExtensions
         services.TryAddSingleton<IOperationalMetricQueryReader>(
             static provider => new OperationalMetricQueryReader(
                 provider.GetRequiredService<IOperationalMetricReportingQueryReader>()));
+        services.TryAddSingleton<IOperationalMetricReportReader>(
+            static provider => new OperationalMetricReportReader(
+                provider.GetRequiredService<IOperationalMetricProjectionQueryReader>()));
         services.TryAddSingleton<IProductionDayShiftOperationalMetricReader>(
             static provider => new ProductionDayShiftOperationalMetricReader(
                 provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>(),
