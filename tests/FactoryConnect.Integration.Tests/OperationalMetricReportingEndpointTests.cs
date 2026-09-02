@@ -300,11 +300,11 @@ public sealed class OperationalMetricReportingEndpointTests
             "/api/reporting/v1/operational-metrics/shifts/query",
             request,
             cancellation.Token);
-        await reader.Entered.WaitAsync(TimeSpan.FromSeconds(5));
+        await reader.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await pending);
-        await reader.CancellationObserved.WaitAsync(TimeSpan.FromSeconds(5));
+        await reader.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Fact]
