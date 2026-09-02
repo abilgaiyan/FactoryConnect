@@ -20,6 +20,7 @@ export {
 export type { ReportingTransportFailure } from "./reporting-transport-failures.ts";
 
 export {
+  ProductionDayShiftRosterCoverageRequiredFailure,
   ReportingHttpFailure,
   ReportingIncompatibleContinuationTokenFailure,
   ReportingInvalidQueryFailure,
@@ -27,6 +28,7 @@ export {
   ReportingProtocolFailure,
 } from "./reporting-response-failures.ts";
 export type {
+  ProductionDayShiftRosterCoverageDetails,
   ReportingClientFailure,
   ReportingResponseFailure,
 } from "./reporting-response-failures.ts";
