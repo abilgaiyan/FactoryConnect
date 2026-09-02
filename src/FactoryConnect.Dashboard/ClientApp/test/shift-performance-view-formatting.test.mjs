@@ -18,6 +18,20 @@ test("calculated ratios preserve decimal precision while formatting as percentag
   );
 });
 
+test("calculated ratio zero remains zero percent", () => {
+  assert.deepEqual(
+    formatPresentedMetric({ ...identity("Quality"), state: "calculated", value: "0.0000", unit: "Ratio" }),
+    { primary: "0%", evidence: null },
+  );
+});
+
+test("calculated ratio exponent strings use precision-preserving percentage formatting", () => {
+  assert.deepEqual(
+    formatPresentedMetric({ ...identity("Performance"), state: "calculated", value: "3.7e-1", unit: "Ratio" }),
+    { primary: "37%", evidence: null },
+  );
+});
+
 test("calculated non-ratio values remain authoritative text plus unit", () => {
   assert.deepEqual(
     formatPresentedMetric({ ...identity("Availability"), state: "calculated", value: "12.3400", unit: "Seconds" }),
