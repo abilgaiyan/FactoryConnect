@@ -74,6 +74,7 @@ public sealed class ProductionDayShiftOperationalMetricReader :
                     roster.ProductionDayId,
                     roster.ProductionLineId,
                     ownership.ShiftOccurrenceId,
+                    query.ContextKey,
                     metricReport?.SourceRevision,
                     metrics));
             }
@@ -81,6 +82,7 @@ public sealed class ProductionDayShiftOperationalMetricReader :
 
         return results
             .OrderBy(static report => report.Source.MachineId.Value)
+            .ThenBy(static report => report.Source.ProcessorId.Value, StringComparer.Ordinal)
             .ThenBy(static report => report.ProductionDayId.BusinessDate)
             .ThenBy(static report => report.ProductionDayId.SiteId.Value, StringComparer.Ordinal)
             .ThenBy(static report => report.ShiftOccurrenceId.StartsAtUtc)
