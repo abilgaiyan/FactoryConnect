@@ -13,6 +13,7 @@ const runtimeConfiguration = {
     {
       machineId: "11111111-1111-1111-1111-111111111111",
       processorId: "operational-metrics",
+      siteId: "factory-1",
       displayName: "Machine 1",
       groupName: "Line 1",
       displayOrder: 10,
@@ -80,6 +81,7 @@ test("runtime configuration accepts an empty configured factory", async () => {
 
 test("runtime configuration rejects malformed overview presentation metadata", async () => {
   for (const source of [
+    { ...runtimeConfiguration.sources[0], siteId: "" },
     { ...runtimeConfiguration.sources[0], groupName: "" },
     { ...runtimeConfiguration.sources[0], displayOrder: -1 },
     { ...runtimeConfiguration.sources[0], displayOrder: 1.5 },
