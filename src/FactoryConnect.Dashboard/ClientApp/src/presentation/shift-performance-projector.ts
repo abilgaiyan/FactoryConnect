@@ -1,10 +1,10 @@
 import type { ProductionDayShiftPage } from "../api/reporting/index.ts";
+import type { AuthoritativeProductionDayShiftResult } from "../application/production-day-shift-reporting.ts";
 import type { DashboardRuntimeSource } from "../application/runtime-configuration.ts";
-import type { ValidatedProductionDayShiftResult } from "./shift-performance-authority-validator.ts";
+import { validateProductionDayShiftAuthority } from "./shift-performance-authority-validator.ts";
 import type {
   PresentedMetric,
   ShiftOverviewMetricKey,
-  ShiftPerformanceGroup,
   ShiftPerformanceMachine,
   ShiftPerformanceOverview,
   ShiftPerformanceShift,
@@ -21,13 +21,22 @@ const metricDefinitions = [
   ["OEE", "oee"],
 ] as const satisfies readonly (readonly [ShiftOverviewMetricKey, keyof Pick<ShiftPerformanceShift, "availability" | "utilization" | "performance" | "quality" | "oee">])[];
 
-export function projectShiftPerformanceOverview(
+export function mapShiftPerformanceOverview(
   productionDay: string,
   sources: readonly DashboardRuntimeSource[],
-  validated: ValidatedProductionDayShiftResult,
+  result: AuthoritativeProductionDayShiftResult,
+): ShiftPerformanceOverview {
+  const validated = validateProductionDayShiftAuthority(productionDay, sources, result);
+  return projectValidatedShiftPerformanceOverview(productionDay, sources, validated.items);
+}
+
+function projectValidatedShiftPerformanceOverview(
+  productionDay: string,
+  sources: readonly DashboardRuntimeSource[],
+  items: ProductionDayShiftPage["items"],
 ): ShiftPerformanceOverview {
   const reportsBySource = new Map<string, ShiftReport[]>();
-  for (const report of validated.items) {
+  for (const report of items) {
     const key = sourceKey(report.machineId, report.processorId);
     const reports = reportsBySource.get(key);
     if (reports === undefined) {
