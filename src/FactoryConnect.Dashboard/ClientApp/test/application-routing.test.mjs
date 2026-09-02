@@ -8,6 +8,10 @@ import {
 } from "../src/routing/application-route.ts";
 import { createBrowserRouter } from "../src/routing/browser-router.ts";
 import { shouldHandleApplicationNavigation } from "../src/routing/navigation-policy.ts";
+import {
+  isShiftPerformanceProductionDaySelection,
+  shiftPerformancePath,
+} from "../src/application/shift-performance-navigation.ts";
 
 const machineId = "11111111-1111-1111-1111-111111111111";
 
@@ -19,6 +23,10 @@ test("parses the closed application route set exactly", () => {
   assert.deepEqual(parseApplicationRoute("/"), { kind: "productionDayOverview" });
   assert.deepEqual(parseApplicationRoute("/production-days/2026-08-30"), {
     kind: "productionDayDetail",
+    productionDay: "2026-08-30",
+  });
+  assert.deepEqual(parseApplicationRoute("/production-days/2026-08-30/shifts"), {
+    kind: "shiftPerformance",
     productionDay: "2026-08-30",
   });
   assert.deepEqual(parseApplicationRoute(`/machines/${machineId}`), {
@@ -35,6 +43,9 @@ test("rejects prefixes, missing identifiers, and trailing segments", () => {
   for (const path of [
     "/production-days",
     "/production-days/2026-08-30/",
+    "/production-days/2026-08-30/shifts/",
+    "/production-days/2026-08-30/shifts/extra",
+    "/production-days/2026-08-30/Shifts",
     "/production-days/2026-08-30/report/extra",
     "/machines",
     `/machines/${machineId}/extra`,
@@ -56,6 +67,10 @@ test("malformed URI escapes produce notFound while valid escapes stay presentati
     kind: "productionDayDetail",
     productionDay: "not-a-date",
   });
+  assert.deepEqual(parseApplicationRoute("/production-days/not-a-date/shifts"), {
+    kind: "shiftPerformance",
+    productionDay: "not-a-date",
+  });
 });
 
 test("route path encoding round-trips presentation parameters without interpreting them", () => {
@@ -63,6 +78,30 @@ test("route path encoding round-trips presentation parameters without interpreti
   const path = routePath(route);
   assert.equal(path, "/machines/Line%201%20%2F%20Machine%20A");
   assert.deepEqual(parseApplicationRoute(path), route);
+
+  const shiftRoute = { kind: "shiftPerformance", productionDay: "2026-08-30" };
+  assert.equal(routePath(shiftRoute), "/production-days/2026-08-30/shifts");
+  assert.deepEqual(parseApplicationRoute(routePath(shiftRoute)), shiftRoute);
+});
+
+test("shift performance production-day selection uses calendar identity without timezone conversion", () => {
+  for (const valid of ["0001-01-01", "2000-02-29", "2026-08-30", "9999-12-31"]) {
+    assert.equal(isShiftPerformanceProductionDaySelection(valid), true);
+    assert.equal(shiftPerformancePath(valid), `/production-days/${valid}/shifts`);
+  }
+
+  for (const invalid of [
+    "",
+    "2026-2-03",
+    "2026-02-30",
+    "1900-02-29",
+    "0000-01-01",
+    "10000-01-01",
+    " 2026-08-30",
+    "2026-08-30 ",
+  ]) {
+    assert.equal(isShiftPerformanceProductionDaySelection(invalid), false);
+  }
 });
 
 test("browser routing uses pathname only and normalizes query and fragment away from routing", () => {
@@ -74,9 +113,9 @@ test("browser routing uses pathname only and normalizes query and fragment away 
     productionDay: "2026-08-30",
   });
 
-  const next = router.navigate("https://factory.example/machines/M-1?mode=detail#status");
-  assert.deepEqual(next, { kind: "machineDetail", machineId: "M-1" });
-  assert.deepEqual(browser.pushes, ["/machines/M-1"]);
+  const next = router.navigate("https://factory.example/production-days/2026-08-30/shifts?mode=detail#status");
+  assert.deepEqual(next, { kind: "shiftPerformance", productionDay: "2026-08-30" });
+  assert.deepEqual(browser.pushes, ["/production-days/2026-08-30/shifts"]);
 });
 
 test("same-route navigation is deterministic and does not create duplicate history entries", () => {
@@ -96,9 +135,9 @@ test("popstate subscription reacts and cleanup removes the exact listener", () =
   let notifications = 0;
 
   const dispose = router.subscribe(() => notifications++);
-  browser.raisePopState("/machines/M-2");
+  browser.raisePopState("/production-days/2026-08-31/shifts");
   assert.equal(notifications, 1);
-  assert.deepEqual(router.current(), { kind: "machineDetail", machineId: "M-2" });
+  assert.deepEqual(router.current(), { kind: "shiftPerformance", productionDay: "2026-08-31" });
 
   dispose();
   browser.raisePopState("/production-days/2026-08-31");
