@@ -44,10 +44,12 @@ export async function mountInDom(element, initialUrl = "http://factory-dashboard
     },
     async changeInput(input, value) {
       await act(async () => {
+        input.focus();
+        input.select();
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
         setter.call(input, value);
-        input.dispatchEvent(new window.Event("input", { bubbles: true }));
-        input.dispatchEvent(new window.Event("change", { bubbles: true }));
+        input.dispatchEvent(new window.Event("input", { bubbles: true, composed: true }));
+        input.dispatchEvent(new window.Event("change", { bubbles: true, composed: true }));
       });
     },
     async submit(form) {
