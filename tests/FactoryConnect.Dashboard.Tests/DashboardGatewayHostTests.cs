@@ -36,6 +36,8 @@ public sealed class DashboardGatewayHostTests
     [InlineData("/api/reporting/v1/operational-metrics/unknown/query")]
     [InlineData("/api/reporting/v1/operational-metrics/shifts/query/extra")]
     [InlineData("/api/reporting/v1/operational-metrics/production-day-shifts/query/extra")]
+    [InlineData("/api/reporting/v1/operational-metrics/production-day-shifts/query/")]
+    [InlineData("/api/reporting/v1/operational-metrics/Production-day-shifts/query")]
     [InlineData("/api/reporting/v1/operational-metrics/production-day-shift/query")]
     public async Task ArbitraryReportingPathsAreNotProxied(string path)
     {
@@ -53,6 +55,7 @@ public sealed class DashboardGatewayHostTests
 
     [Theory]
     [InlineData("GET")]
+    [InlineData("HEAD")]
     [InlineData("PUT")]
     [InlineData("DELETE")]
     [InlineData("PATCH")]
