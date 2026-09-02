@@ -8,6 +8,7 @@ public sealed record DashboardRuntimeConfiguration(
 public sealed record DashboardRuntimeSource(
     Guid MachineId,
     string ProcessorId,
+    string SiteId,
     string DisplayName,
     string? GroupName,
     int DisplayOrder);
