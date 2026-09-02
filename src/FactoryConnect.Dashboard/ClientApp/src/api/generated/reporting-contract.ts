@@ -168,7 +168,8 @@ export interface components {
         ProductionDayShiftMetricResponse: {
             metricKey: string;
             definitionVersion: string;
-            status: string;
+            /** @enum {string} */
+            status: "calculated" | "unavailable" | "insufficient-evidence";
             /** Format: double */
             value: null | number | string;
             unit: string;
@@ -183,7 +184,7 @@ export interface components {
             sources: components["schemas"]["ProductionDayShiftReportingSourceRequest"][];
             context: null | components["schemas"]["OperationalMetricContextRequest"];
             metrics: null | components["schemas"]["OperationalMetricDefinitionRequest"][];
-            statuses: null | string[];
+            statuses: null | ("calculated" | "unavailable" | "insufficient-evidence")[];
             /** Format: int32 */
             pageSize: number | string;
             continuationToken: null | string;
