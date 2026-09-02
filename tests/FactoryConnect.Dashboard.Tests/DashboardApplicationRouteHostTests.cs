@@ -38,6 +38,7 @@ public sealed class DashboardApplicationRouteHostTests
         ["Dashboard:RequestTimeout"] = "00:00:30",
         ["Dashboard:Sources:0:MachineId"] = "11111111-1111-1111-1111-111111111111",
         ["Dashboard:Sources:0:ProcessorId"] = "operational-metrics",
+        ["Dashboard:Sources:0:SiteId"] = "plant-1",
         ["Dashboard:Sources:0:DisplayName"] = "Machine 1"
     };
 }
