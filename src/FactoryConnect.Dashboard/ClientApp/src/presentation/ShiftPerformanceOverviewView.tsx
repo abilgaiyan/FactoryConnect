@@ -5,7 +5,7 @@ import type {
   ShiftPerformanceOverview,
   ShiftPerformanceShift,
 } from "./shift-performance-model.ts";
-import { formatRatioAsPercentage } from "../application/production-day-metric-formatting.ts";
+import { formatPresentedMetric } from "./shift-performance-view-formatting.ts";
 
 export interface ShiftPerformanceOverviewViewProps {
   readonly overview: ShiftPerformanceOverview;
@@ -87,19 +87,15 @@ function ShiftOccurrenceView({ shift }: { readonly shift: ShiftPerformanceShift 
 }
 
 function PresentedMetricValue({ metric }: { readonly metric: PresentedMetric }) {
-  switch (metric.state) {
-    case "calculated":
-      return <td>{metric.unit.toLowerCase() === "ratio" ? `${formatRatioAsPercentage(metric.value)}%` : `${String(metric.value)} ${metric.unit}`}</td>;
-    case "unavailable":
-      return <td><strong>Unavailable</strong><ReasonEvidence metric={metric} /></td>;
-    case "insufficient-evidence":
-      return <td><strong>Insufficient evidence</strong><ReasonEvidence metric={metric} /></td>;
-    case "missing":
-      return <td aria-label={`${metric.metricKey} missing`}>—</td>;
-  }
-}
+  const text = formatPresentedMetric(metric);
+  const missingLabel = metric.state === "missing" ? `${metric.metricKey} missing` : undefined;
 
-function ReasonEvidence({ metric }: { readonly metric: Extract<PresentedMetric, { readonly state: "unavailable" | "insufficient-evidence" }> }) {
-  const evidence = [metric.reasonCode, metric.reasonOperandName].filter((value): value is string => value !== null);
-  return evidence.length === 0 ? null : <span> — {evidence.join(" / ")}</span>;
+  return (
+    <td aria-label={missingLabel}>
+      {metric.state === "unavailable" || metric.state === "insufficient-evidence"
+        ? <strong>{text.primary}</strong>
+        : text.primary}
+      {text.evidence === null ? null : <span> — {text.evidence}</span>}
+    </td>
+  );
 }
