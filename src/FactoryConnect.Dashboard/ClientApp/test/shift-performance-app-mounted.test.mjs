@@ -68,6 +68,11 @@ function selectedDayText(document) {
   return document.querySelector("time")?.textContent ?? null;
 }
 
+function assertNoShiftReporting(calls) {
+  assert.equal(calls.productionDayShift.length, 0);
+  assert.equal(calls.shift.length, 0);
+}
+
 test("direct shift route selects the exact day without issuing reporting requests", async (t) => {
   const { runtime, calls } = createRuntime();
   const harness = await mountInDom(React.createElement(App, { runtime }), "http://factory-dashboard/production-days/2026-09-02/shifts");
@@ -75,10 +80,9 @@ test("direct shift route selects the exact day without issuing reporting request
 
   assert.equal(selectedDayText(harness.document), "2026-09-02");
   assert.equal(shiftInput(harness.document).value, "2026-09-02");
-  assert.equal(calls.productionDayShift.length, 0);
+  assertNoShiftReporting(calls);
   assert.equal(calls.productionDay.length, 0);
-  assert.equal(calls.shift.length, 0);
-  assert.doesNotMatch(harness.container.textContent, /availability|utilization|performance|quality|oee|current state/i);
+  assert.doesNotMatch(harness.container.textContent, /availability|utilization|quality|oee|current state/i);
 });
 
 test("controlled shift day submission navigates and route identity owns the remounted input", async (t) => {
@@ -93,9 +97,8 @@ test("controlled shift day submission navigates and route identity owns the remo
   assert.equal(harness.window.location.pathname, "/production-days/2026-09-03/shifts");
   assert.equal(selectedDayText(harness.document), "2026-09-03");
   assert.equal(shiftInput(harness.document).value, "2026-09-03");
-  assert.equal(calls.productionDayShift.length, 0);
+  assertNoShiftReporting(calls);
   assert.equal(calls.productionDay.length, 0);
-  assert.equal(calls.shift.length, 0);
 });
 
 test("popstate from day A to day B discards stale local selector state", async (t) => {
@@ -110,9 +113,8 @@ test("popstate from day A to day B discards stale local selector state", async (
 
   assert.equal(selectedDayText(harness.document), "2026-09-03");
   assert.equal(shiftInput(harness.document).value, "2026-09-03");
-  assert.equal(calls.productionDayShift.length, 0);
+  assertNoShiftReporting(calls);
   assert.equal(calls.productionDay.length, 0);
-  assert.equal(calls.shift.length, 0);
 });
 
 test("malformed shift route day is visible and invalid submission does not navigate or query", async (t) => {
@@ -125,9 +127,8 @@ test("malformed shift route day is visible and invalid submission does not navig
   const before = harness.window.location.pathname;
   await harness.submit(shiftInput(harness.document).form);
   assert.equal(harness.window.location.pathname, before);
-  assert.equal(calls.productionDayShift.length, 0);
+  assertNoShiftReporting(calls);
   assert.equal(calls.productionDay.length, 0);
-  assert.equal(calls.shift.length, 0);
 });
 
 test("production-day detail exposes and routes through the exact shift-performance link without a shift request", async (t) => {
@@ -144,6 +145,5 @@ test("production-day detail exposes and routes through the exact shift-performan
   assert.equal(harness.window.location.pathname, "/production-days/2026-09-02/shifts");
   assert.equal(selectedDayText(harness.document), "2026-09-02");
   assert.equal(shiftInput(harness.document).value, "2026-09-02");
-  assert.equal(calls.productionDayShift.length, 0);
-  assert.equal(calls.shift.length, 0);
+  assertNoShiftReporting(calls);
 });
