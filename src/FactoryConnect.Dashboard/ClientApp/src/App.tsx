@@ -80,7 +80,7 @@ function RouteView({ route, navigate, runtime }: RouteViewProps) {
     case "productionDayDetail":
       return <ProductionDayDetail productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "shiftPerformance":
-      return <ShiftPerformanceSelection productionDay={route.productionDay} navigate={navigate} />;
+      return <ShiftPerformanceSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} />;
     case "machineDetail":
       return <section aria-labelledby="route-title"><RouteContext current="Machine" navigate={navigate} /><h1 id="route-title">Machine</h1><p>{route.machineId}</p><p>Machine detail placeholder.</p></section>;
     case "dailyReport":
