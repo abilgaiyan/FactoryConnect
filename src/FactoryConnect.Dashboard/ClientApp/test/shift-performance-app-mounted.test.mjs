@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import React from "react";
+import { createServer } from "vite";
 
-import { App } from "../src/App.tsx";
 import { mountInDom } from "./dom-test-harness.mjs";
+
+const clientRoot = fileURLToPath(new URL("../", import.meta.url));
+const vite = await createServer({
+  root: clientRoot,
+  server: { middlewareMode: true },
+  appType: "custom",
+  logLevel: "silent",
+});
+const { App } = await vite.ssrLoadModule("/src/App.tsx");
+after(async () => vite.close());
 
 const source = {
   machineId: "11111111-1111-1111-1111-111111111111",
@@ -135,5 +146,4 @@ test("production-day detail exposes and routes through the exact shift-performan
   assert.equal(shiftInput(harness.document).value, "2026-09-02");
   assert.equal(calls.productionDayShift.length, 0);
   assert.equal(calls.shift.length, 0);
-  assert.ok(calls.productionDay.length >= 0);
 });
