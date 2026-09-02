@@ -53,9 +53,64 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
             Assert.Equal(fixture.MachineId, report.Source.MachineId);
             Assert.Equal(fixture.Day, report.ProductionDayId);
             Assert.Equal(fixture.LineId, report.ProductionLineId);
+            Assert.Null(report.SourceRevision);
             Assert.Empty(report.Metrics);
         });
         Assert.Equal(2, fixture.MetricReader.ShiftReadCount);
+    }
+
+    [Fact]
+    public async Task AuthoritativeSourceRevisionIsPreservedExactly()
+    {
+        var fixture = CreateFixture();
+        await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var revision = fixture.Revision();
+        fixture.MetricReader.ShiftReport = fixture.MetricReport(
+            revision,
+            BuiltInOperationalMetricDefinitions.AvailabilityId);
+
+        var report = Assert.Single(
+            await fixture.Reader.ReadAsync(fixture.Query(), CancellationToken.None));
+
+        Assert.Same(revision, report.SourceRevision);
+        Assert.Equal(
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            Assert.Single(report.Metrics).DefinitionId);
+    }
+
+    [Fact]
+    public async Task SourceRevisionRemainsWhenMetricFilterEliminatesEveryMetric()
+    {
+        var fixture = CreateFixture();
+        await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var revision = fixture.Revision();
+        fixture.MetricReader.ShiftReport = fixture.MetricReport(
+            revision,
+            BuiltInOperationalMetricDefinitions.AvailabilityId);
+        var metrics = new OperationalMetricDefinitionSelection(
+            [BuiltInOperationalMetricDefinitions.OeeId]);
+
+        var report = Assert.Single(
+            await fixture.Reader.ReadAsync(fixture.Query(metrics), CancellationToken.None));
+
+        Assert.Same(revision, report.SourceRevision);
+        Assert.Empty(report.Metrics);
+    }
+
+    [Fact]
+    public async Task MismatchedMetricReportIsRejectedBeforeRevisionOrMetricsAreExposed()
+    {
+        var fixture = CreateFixture();
+        await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var otherMachineId = MachineId.New();
+        var revision = fixture.Revision(otherMachineId);
+        fixture.MetricReader.ShiftReport = fixture.MetricReport(
+            revision,
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            otherMachineId);
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await fixture.Reader.ReadAsync(fixture.Query(), CancellationToken.None));
     }
 
     [Fact]
@@ -93,7 +148,7 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
             machineId,
             new OperationalMetricProjectionProcessorId("processor"));
         var rosterStore = new InMemoryMachineShiftOccurrenceRosterStore();
-        var metricReader = new EmptyMetricReader();
+        var metricReader = new StubMetricReader();
         var reader = new ProductionDayShiftOperationalMetricReader(rosterStore, metricReader);
         return new Fixture(machineId, siteId, lineId, day, occurrence, source, rosterStore, metricReader, reader);
     }
@@ -106,13 +161,49 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
         ShiftOccurrenceId Occurrence,
         OperationalMetricReportingSource Source,
         InMemoryMachineShiftOccurrenceRosterStore RosterStore,
-        EmptyMetricReader MetricReader,
+        StubMetricReader MetricReader,
         ProductionDayShiftOperationalMetricReader Reader)
     {
-        public ProductionDayShiftOperationalMetricQuery Query() =>
+        public ProductionDayShiftOperationalMetricQuery Query(
+            OperationalMetricDefinitionSelection? metrics = null) =>
             new(
                 [new ProductionDayShiftReportingSource(Source, Day)],
-                OperationalMetricEvaluationContextKey.Unpartitioned);
+                OperationalMetricEvaluationContextKey.Unpartitioned,
+                metrics);
+
+        public MetricAggregationCheckpoint Revision(MachineId? machineId = null) =>
+            new(
+                new MetricAggregationProcessorId("aggregate"),
+                MetricInputStreamId.ForMachine(machineId ?? MachineId),
+                new MetricInputPosition(12));
+
+        public ShiftOperationalMetricReport MetricReport(
+            MetricAggregationCheckpoint revision,
+            OperationalMetricDefinitionId definitionId,
+            MachineId? machineId = null)
+        {
+            var reportMachineId = machineId ?? MachineId;
+            var summary = new OperationalMetricProjectionSummary(
+                Source.ProcessorId,
+                new OperationalMetricEvaluationKey(
+                    reportMachineId,
+                    new OperationalMetricPeriodId.Shift(Occurrence),
+                    definitionId,
+                    OperationalMetricEvaluationContextKey.Unpartitioned),
+                OperationalMetricEvaluationStatus.Calculated,
+                0.8m,
+                OperationalMetricUnits.Ratio,
+                null,
+                null,
+                revision);
+            return new ShiftOperationalMetricReport(
+                Source.ProcessorId,
+                reportMachineId,
+                Occurrence,
+                OperationalMetricEvaluationContextKey.Unpartitioned,
+                revision,
+                [new OperationalMetricReportItem(summary)]);
+        }
 
         public ValueTask PublishRosterAsync(IReadOnlyList<ShiftOccurrenceId> occurrences)
         {
@@ -132,9 +223,11 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
         }
     }
 
-    private sealed class EmptyMetricReader : IOperationalMetricReportReader
+    private sealed class StubMetricReader : IOperationalMetricReportReader
     {
         public int ShiftReadCount { get; private set; }
+
+        public ShiftOperationalMetricReport? ShiftReport { get; set; }
 
         public ValueTask<ShiftOperationalMetricReport?> ReadShiftAsync(
             OperationalMetricProjectionProcessorId processorId,
@@ -144,7 +237,7 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
             CancellationToken cancellationToken)
         {
             ShiftReadCount++;
-            return ValueTask.FromResult<ShiftOperationalMetricReport?>(null);
+            return ValueTask.FromResult(ShiftReport);
         }
 
         public ValueTask<ProductionDayOperationalMetricReport?> ReadProductionDayAsync(
