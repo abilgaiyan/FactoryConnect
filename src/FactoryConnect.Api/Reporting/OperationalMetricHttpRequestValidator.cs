@@ -22,6 +22,35 @@ internal static class OperationalMetricHttpRequestValidator
             request.Order);
     }
 
+    public static void Validate(ProductionDayShiftOperationalMetricQueryRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Sources is null)
+        {
+            throw new ArgumentException("Production-day shift reporting sources are required.", nameof(request));
+        }
+
+        if (request.Sources.Any(static source => source is null))
+        {
+            throw new ArgumentException(
+                "Production-day shift reporting sources cannot contain null values.",
+                nameof(request));
+        }
+
+        ValidateFilters(request.Metrics, request.Statuses);
+
+        if (request.Context is { UnpartitionedOnly: true } context &&
+            (context.ProductionOrderId is not null ||
+             context.OperationId is not null ||
+             context.PartId is not null ||
+             context.OperatorId is not null))
+        {
+            throw new ArgumentException(
+                "An unpartitioned production-day shift context cannot also specify context identifiers.",
+                nameof(request));
+        }
+    }
+
     private static void ValidateCommon(
         IReadOnlyList<ReportingSourceRequest>? sources,
         IReadOnlyList<OperationalMetricDefinitionRequest>? metrics,
@@ -40,6 +69,18 @@ internal static class OperationalMetricHttpRequestValidator
                 nameof(sources));
         }
 
+        ValidateFilters(metrics, statuses);
+
+        if (string.IsNullOrWhiteSpace(order))
+        {
+            throw new ArgumentException("Reporting order is required.", nameof(order));
+        }
+    }
+
+    private static void ValidateFilters(
+        IReadOnlyList<OperationalMetricDefinitionRequest>? metrics,
+        IReadOnlyList<string>? statuses)
+    {
         if (metrics?.Any(static metric => metric is null) == true)
         {
             throw new ArgumentException(
@@ -52,11 +93,6 @@ internal static class OperationalMetricHttpRequestValidator
             throw new ArgumentException(
                 "Status filters cannot contain null values.",
                 nameof(statuses));
-        }
-
-        if (string.IsNullOrWhiteSpace(order))
-        {
-            throw new ArgumentException("Reporting order is required.", nameof(order));
         }
     }
 }
