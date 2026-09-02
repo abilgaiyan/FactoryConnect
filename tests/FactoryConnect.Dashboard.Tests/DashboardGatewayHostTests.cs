@@ -35,6 +35,8 @@ public sealed class DashboardGatewayHostTests
     [Theory]
     [InlineData("/api/reporting/v1/operational-metrics/unknown/query")]
     [InlineData("/api/reporting/v1/operational-metrics/shifts/query/extra")]
+    [InlineData("/api/reporting/v1/operational-metrics/production-day-shifts/query/extra")]
+    [InlineData("/api/reporting/v1/operational-metrics/production-day-shift/query")]
     public async Task ArbitraryReportingPathsAreNotProxied(string path)
     {
         await using var factory = CreateFactory();
@@ -50,10 +52,31 @@ public sealed class DashboardGatewayHostTests
     }
 
     [Theory]
+    [InlineData("GET")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    [InlineData("PATCH")]
+    public async Task ProductionDayShiftRouteRejectsNonPostMethods(string method)
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            new HttpMethod(method),
+            "/api/reporting/v1/operational-metrics/production-day-shifts/query");
+
+        using var response = await client.SendAsync(request);
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("data-fc-dashboard-placeholder", content, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("/dashboard/unknown")]
     [InlineData("/api/reporting/v1/operational-metrics/unknown/query")]
     [InlineData("/api/reporting/v1/operational-metrics/shifts/query")]
     [InlineData("/api/reporting/v1/operational-metrics/production-days/query")]
+    [InlineData("/api/reporting/v1/operational-metrics/production-day-shifts/query")]
     public async Task ReservedGetPathsNeverFallThroughToSpa(string path)
     {
         await using var factory = CreateFactory();
@@ -79,6 +102,7 @@ public sealed class DashboardGatewayHostTests
                         ["Dashboard:Sources:0:MachineId"] = "11111111-1111-1111-1111-111111111111",
                         ["Dashboard:Sources:0:ProcessorId"] = "operational-metrics",
                         ["Dashboard:Sources:0:SiteId"] = "plant-1",
+                        ["Dashboard:Sources:0:ProductionLineId"] = "line-1",
                         ["Dashboard:Sources:0:DisplayName"] = "Machine 1"
                     }));
             });
