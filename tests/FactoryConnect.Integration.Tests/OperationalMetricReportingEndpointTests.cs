@@ -381,6 +381,46 @@ public sealed class OperationalMetricReportingEndpointTests
             expectConflict: true);
     }
 
+    [Fact]
+    public async Task GeneratedOpenApiDocumentClosesProductionDayShiftStatusVocabulary()
+    {
+        var reader = new StubQueryReader((_, _) => new ReportingPage<OperationalMetricQueryItem>([], null));
+        await using var app = await CreateAppAsync(reader);
+        using var client = app.GetTestClient();
+
+        using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
+        var schemas = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas");
+        var expected = new[]
+        {
+            "calculated",
+            "unavailable",
+            "insufficient-evidence",
+        };
+
+        var requestStatuses = schemas
+            .GetProperty(nameof(ProductionDayShiftOperationalMetricQueryRequest))
+            .GetProperty("properties")
+            .GetProperty("statuses")
+            .GetProperty("items")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(static value => value.GetString())
+            .ToArray();
+        var responseStatus = schemas
+            .GetProperty(nameof(ProductionDayShiftMetricResponse))
+            .GetProperty("properties")
+            .GetProperty("status")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(static value => value.GetString())
+            .ToArray();
+
+        Assert.Equal(expected, requestStatuses);
+        Assert.Equal(expected, responseStatus);
+    }
+
     private static void AssertOpenApiOperation(
         JsonElement paths,
         string path,
@@ -428,9 +468,14 @@ public sealed class OperationalMetricReportingEndpointTests
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(reader);
-        builder.Services.AddOpenApi();
-
+        builder.Services.AddSingleton<IProductionDayShiftOperationalMetricQueryReader>(
+            new StubProductionDayShiftQueryReader((_, _) =>
+                new ReportingPage<ProductionDayShiftOperationalMetricReport>([], null)));
+        builder.Services.AddFactoryConnectOperationalMetricReporting();
+        builder.Services.AddOpenApi("v1", options =>
+            options.AddSchemaTransformer<OperationalMetricStatusOpenApiTransformer>());
         var app = builder.Build();
+        app.UseExceptionHandler();
         app.MapOpenApi();
         app.MapOperationalMetricReportingEndpoints();
         await app.StartAsync();
@@ -443,29 +488,50 @@ public sealed class OperationalMetricReportingEndpointTests
     {
         public ValueTask<ReportingPage<OperationalMetricQueryItem>> ReadAsync(
             OperationalMetricReportQuery query,
-            CancellationToken cancellationToken) =>
-            ValueTask.FromResult(read(query, cancellationToken));
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(read(query, cancellationToken));
+        }
     }
 
     private sealed class CancellationObservingReader : IOperationalMetricQueryReader
     {
-        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _cancellationObserved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Entered { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task Entered => _entered.Task;
-
-        public Task CancellationObserved => _cancellationObserved.Task;
+        public TaskCompletionSource CancellationObserved { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async ValueTask<ReportingPage<OperationalMetricQueryItem>> ReadAsync(
             OperationalMetricReportQuery query,
             CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(query);
-            _entered.TrySetResult();
+            Entered.TrySetResult();
 
-            using var registration = cancellationToken.Register(() => _cancellationObserved.TrySetResult());
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-            return new ReportingPage<OperationalMetricQueryItem>([], null);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The cancellation delay unexpectedly completed.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                CancellationObserved.TrySetResult();
+                throw;
+            }
+        }
+    }
+
+    private sealed class StubProductionDayShiftQueryReader(
+        Func<ProductionDayShiftOperationalMetricPageQuery, CancellationToken, ReportingPage<ProductionDayShiftOperationalMetricReport>> read)
+        : IProductionDayShiftOperationalMetricQueryReader
+    {
+        public ValueTask<ReportingPage<ProductionDayShiftOperationalMetricReport>> ReadAsync(
+            ProductionDayShiftOperationalMetricPageQuery query,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(read(query, cancellationToken));
         }
     }
 }
