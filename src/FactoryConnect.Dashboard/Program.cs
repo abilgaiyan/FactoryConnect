@@ -46,6 +46,7 @@ app.MapGet("/dashboard/config", (IOptions<DashboardOptions> options) =>
             source.MachineId,
             source.ProcessorId,
             source.SiteId,
+            source.ProductionLineId,
             source.DisplayName,
             source.GroupName,
             source.DisplayOrder))
