@@ -26,6 +26,7 @@ public sealed class DashboardGatewayHostTests
         var source = Assert.Single(root.GetProperty("sources").EnumerateArray());
         Assert.Equal("11111111-1111-1111-1111-111111111111", source.GetProperty("machineId").GetString());
         Assert.Equal("operational-metrics", source.GetProperty("processorId").GetString());
+        Assert.Equal("plant-1", source.GetProperty("siteId").GetString());
         Assert.Equal("Machine 1", source.GetProperty("displayName").GetString());
         Assert.DoesNotContain("factory-server:5080", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("reportingApiBaseAddress", json, StringComparison.OrdinalIgnoreCase);
@@ -77,6 +78,7 @@ public sealed class DashboardGatewayHostTests
                         ["Dashboard:RequestTimeout"] = "00:00:30",
                         ["Dashboard:Sources:0:MachineId"] = "11111111-1111-1111-1111-111111111111",
                         ["Dashboard:Sources:0:ProcessorId"] = "operational-metrics",
+                        ["Dashboard:Sources:0:SiteId"] = "plant-1",
                         ["Dashboard:Sources:0:DisplayName"] = "Machine 1"
                     }));
             });
