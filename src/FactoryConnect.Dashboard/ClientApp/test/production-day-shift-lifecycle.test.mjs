@@ -60,6 +60,30 @@ function createRuntime(queryProductionDayShiftMetrics, sources = [{
   };
 }
 
+function shiftItem(shiftId) {
+  return {
+    processorId: "operational-metrics",
+    machineId,
+    productionDay: { siteId: "site-1", businessDate: "2026-09-02" },
+    productionLineId: "line-1",
+    shift: {
+      siteId: "site-1",
+      shiftScheduleAssignmentId: `assignment-${shiftId}`,
+      shiftId,
+      startsAtUtc: "2026-09-01T20:00:00Z",
+      endsAtUtc: "2026-09-02T04:00:00Z",
+    },
+    context: {
+      productionOrderId: null,
+      operationId: null,
+      partId: null,
+      operatorId: null,
+    },
+    sourceRevision: null,
+    metrics: [],
+  };
+}
+
 async function withMountedHarness(run) {
   const originalDocument = globalThis.document;
   const originalWindow = globalThis.window;
@@ -101,6 +125,49 @@ test("mounted shift reporting publishes authoritative empty state without HTTP f
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     assert.equal(binding.state.kind, "empty");
     assert.equal(calls, 0);
+  });
+});
+
+test("mounted lifecycle contains pagination and publishes only the complete non-empty result", async () => {
+  const first = deferred();
+  const second = deferred();
+  const calls = [];
+  const observedKinds = [];
+  let binding;
+  const runtime = createRuntime((request, options) => {
+    calls.push({ request, signal: options.signal });
+    return calls.length === 1 ? first.promise : second.promise;
+  });
+
+  function Harness() {
+    binding = useProductionDayShiftReporting("2026-09-02", runtime);
+    observedKinds.push(binding.state.kind);
+    return null;
+  }
+
+  await withMountedHarness(async (root) => {
+    await act(async () => { root.render(React.createElement(Harness)); await Promise.resolve(); });
+    assert.equal(binding.state.kind, "loading");
+    assert.equal(calls.length, 1);
+
+    first.resolve({ items: [shiftItem("shift-a")], continuationToken: "opaque-next" });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].request.continuationToken, "opaque-next");
+    assert.equal(calls[1].signal, calls[0].signal);
+    assert.equal(binding.state.kind, "loading");
+    assert.equal(observedKinds.includes("success"), false);
+    assert.equal(observedKinds.includes("empty"), false);
+
+    second.resolve({ items: [shiftItem("shift-b")], continuationToken: null });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    assert.equal(binding.state.kind, "success");
+    assert.deepEqual(
+      binding.state.data.items.map(({ shift }) => shift.shiftId),
+      ["shift-a", "shift-b"],
+    );
   });
 });
 
