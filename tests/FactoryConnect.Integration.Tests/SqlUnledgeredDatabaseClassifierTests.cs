@@ -83,7 +83,7 @@ public sealed class SqlUnledgeredDatabaseClassifierTests
     }
 
     [Fact]
-    public void RecognizableSnapshotWithUnexpectedOwnedTableIsPartialOrIncompatibleLegacy()
+    public void SuppliedOwnedSnapshotWithUnexpectedTableIsPartialOrIncompatibleLegacy()
     {
         var legacy = SqlRepositorySchemaDescriptors.LegacyPost004;
         var unexpected = legacy.Tables[0] with
