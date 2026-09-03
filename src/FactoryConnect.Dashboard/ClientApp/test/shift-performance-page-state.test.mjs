@@ -50,6 +50,12 @@ function metric(metricKey, value) {
   };
 }
 
+function malformedResult(configured) {
+  const malformed = report(configured);
+  malformed.productionLineId = "wrong-line";
+  return { items: [malformed] };
+}
+
 test("idle and loading derive loading without manufacturing reporting data", () => {
   assert.deepEqual(deriveShiftPerformancePageState({ kind: "idle" }, day, []), { kind: "loading", productionDay: day });
   assert.deepEqual(deriveShiftPerformancePageState({ kind: "loading" }, day, []), { kind: "loading", productionDay: day });
@@ -137,12 +143,57 @@ test("reporting failure becomes controlled transport failure without retaining s
 
 test("known presentation contract violations are contained as controlled page failures", () => {
   const configured = source();
-  const malformed = report(configured);
-  malformed.productionLineId = "wrong-line";
-  const state = deriveShiftPerformancePageState({ kind: "success", data: { items: [malformed] } }, day, [configured]);
+  const state = deriveShiftPerformancePageState(
+    { kind: "success", data: malformedResult(configured) },
+    day,
+    [configured],
+  );
   assert.equal(state.kind, "presentation-contract-failure");
   assert.equal(state.productionDay, day);
+  assert.equal(state.isRefreshing, false);
   assert.equal(Object.hasOwn(state, "overview"), false);
+});
+
+test("refreshing a presentation contract violation preserves only controlled failure plus lifecycle activity", () => {
+  const configured = source();
+  const previous = malformedResult(configured);
+  const state = deriveShiftPerformancePageState(
+    { kind: "refreshing", previous },
+    day,
+    [configured],
+  );
+
+  assert.equal(state.kind, "presentation-contract-failure");
+  assert.equal(state.productionDay, day);
+  assert.equal(state.isRefreshing, true);
+  assert.equal(Object.hasOwn(state, "overview"), false);
+  assert.equal(Object.hasOwn(state, "previous"), false);
+  assert.equal(Object.hasOwn(state, "data"), false);
+});
+
+test("presentation failure refresh terminates according to the new lifecycle outcome", () => {
+  const configured = source();
+  const malformed = malformedResult(configured);
+  const refreshing = deriveShiftPerformancePageState({ kind: "refreshing", previous: malformed }, day, [configured]);
+  assert.equal(refreshing.kind, "presentation-contract-failure");
+  assert.equal(refreshing.isRefreshing, true);
+
+  const valid = deriveShiftPerformancePageState(
+    { kind: "success", data: { items: [report(configured)] } },
+    day,
+    [configured],
+  );
+  assert.equal(valid.kind, "success");
+  assert.equal(valid.isRefreshing, false);
+
+  const invalidAgain = deriveShiftPerformancePageState({ kind: "success", data: malformed }, day, [configured]);
+  assert.equal(invalidAgain.kind, "presentation-contract-failure");
+  assert.equal(invalidAgain.isRefreshing, false);
+
+  const failure = new ReportingNetworkFailure(new Error("offline"));
+  const failed = deriveShiftPerformancePageState({ kind: "failed", failure }, day, [configured]);
+  assert.equal(failed.kind, "transport-failure");
+  assert.equal(Object.hasOwn(failed, "overview"), false);
 });
 
 test("unexpected mapper defects propagate unchanged", () => {
