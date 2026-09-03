@@ -31,33 +31,33 @@ internal static class SqlRepositorySchemaDescriptors
         "ObservationStreamCheckpoint",
         columns:
         [
-            Column("MachineId", 1, "uniqueidentifier"),
-            Column("StreamKeyBinary", 2, "varbinary", 512),
-            Column("StreamKey", 3, "nvarchar", 256, collation: BinaryCollation),
-            Decimal("InstanceId", 4, 20, 0),
-            Decimal("NextSequence", 5, 20, 0)
+            Column("MachineId", "uniqueidentifier"),
+            Column("StreamKeyBinary", "varbinary", 512),
+            Column("StreamKey", "nvarchar", 256, collation: BinaryCollation),
+            Decimal("InstanceId", 20, 0),
+            Decimal("NextSequence", 20, 0)
         ],
         primaryKey: PrimaryKey("PK_ObservationStreamCheckpoint", "MachineId", "StreamKeyBinary"),
         checks:
         [
-            Check("CK_ObservationStreamCheckpoint_InstanceId_UInt64", "InstanceId >= 0 AND InstanceId <= 18446744073709551615"),
-            Check("CK_ObservationStreamCheckpoint_NextSequence_UInt64", "NextSequence >= 0 AND NextSequence <= 18446744073709551615")
+            Check("CK_ObservationStreamCheckpoint_InstanceId_UInt64", "([InstanceId]>=(0) AND [InstanceId]<=(18446744073709551615.))"),
+            Check("CK_ObservationStreamCheckpoint_NextSequence_UInt64", "([NextSequence]>=(0) AND [NextSequence]<=(18446744073709551615.))")
         ]);
 
     private static SqlTableDescriptor MachineObservation() => Table(
         "MachineObservation",
         columns:
         [
-            Column("MachineId", 1, "uniqueidentifier"),
-            Column("StreamKeyBinary", 2, "varbinary", 512),
-            Decimal("InstanceId", 3, 20, 0),
-            Decimal("Sequence", 4, 20, 0),
-            Column("Source", 5, "nvarchar", 256, collation: BinaryCollation),
-            Column("Address", 6, "nvarchar", 512, collation: BinaryCollation),
-            Column("SignalType", 7, "tinyint"),
-            ColumnMax("ObservationValue", 8, "nvarchar", isNullable: true, collation: BinaryCollation),
-            Column("Quality", 9, "tinyint"),
-            DateTimeOffset("ObservedAt", 10, 7)
+            Column("MachineId", "uniqueidentifier"),
+            Column("StreamKeyBinary", "varbinary", 512),
+            Decimal("InstanceId", 20, 0),
+            Decimal("Sequence", 20, 0),
+            Column("Source", "nvarchar", 256, collation: BinaryCollation),
+            Column("Address", "nvarchar", 512, collation: BinaryCollation),
+            Column("SignalType", "tinyint"),
+            ColumnMax("ObservationValue", "nvarchar", isNullable: true, collation: BinaryCollation),
+            Column("Quality", "tinyint"),
+            DateTimeOffset("ObservedAt", 7)
         ],
         primaryKey: PrimaryKey("PK_MachineObservation", "MachineId", "StreamKeyBinary", "InstanceId", "Sequence"),
         foreignKeys:
@@ -66,20 +66,20 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_MachineObservation_InstanceId_UInt64", "InstanceId >= 0 AND InstanceId <= 18446744073709551615"),
-            Check("CK_MachineObservation_Sequence_UInt64", "Sequence >= 0 AND Sequence <= 18446744073709551615"),
-            Check("CK_MachineObservation_SignalType", "SignalType BETWEEN 0 AND 7"),
-            Check("CK_MachineObservation_Quality", "Quality BETWEEN 0 AND 2")
+            Check("CK_MachineObservation_InstanceId_UInt64", "([InstanceId]>=(0) AND [InstanceId]<=(18446744073709551615.))"),
+            Check("CK_MachineObservation_Sequence_UInt64", "([Sequence]>=(0) AND [Sequence]<=(18446744073709551615.))"),
+            Check("CK_MachineObservation_SignalType", "([SignalType]>=(0) AND [SignalType]<=(7))"),
+            Check("CK_MachineObservation_Quality", "([Quality]>=(0) AND [Quality]<=(2))")
         ]);
 
     private static SqlTableDescriptor MetricInputStream() => Table(
         "MetricInputStream",
         columns:
         [
-            IdentityBigInt("MetricInputStreamRowId", 1),
-            Column("MachineId", 2, "uniqueidentifier"),
-            Column("StreamKeyBinary", 3, "varbinary", 512),
-            Column("StreamKey", 4, "nvarchar", 256, collation: BinaryCollation)
+            IdentityBigInt("MetricInputStreamRowId"),
+            Column("MachineId", "uniqueidentifier"),
+            Column("StreamKeyBinary", "varbinary", 512),
+            Column("StreamKey", "nvarchar", 256, collation: BinaryCollation)
         ],
         primaryKey: PrimaryKey("PK_MetricInputStream", "MetricInputStreamRowId"),
         uniques:
@@ -92,39 +92,39 @@ internal static class SqlRepositorySchemaDescriptors
         "MetricInputFact",
         columns:
         [
-            IdentityBigInt("MetricInputFactRowId", 1),
-            Column("MetricInputStreamRowId", 2, "bigint"),
-            Decimal("Position", 3, 20, 0),
-            Column("FactIdBinary", 4, "varbinary", 512),
-            Column("FactId", 5, "nvarchar", 256, collation: BinaryCollation),
-            Column("MetricInputKey", 6, "nvarchar", 256, collation: BinaryCollation),
-            Column("MetricValue", 7, "nvarchar", 64, collation: BinaryCollation),
-            Column("Unit", 8, "nvarchar", 128, collation: BinaryCollation),
-            DateTimeOffset("StartsAtUtc", 9, 7),
-            DateTimeOffset("EndsAtUtc", 10, 7),
-            Column("CompanyId", 11, "nvarchar", 256, collation: BinaryCollation),
-            Column("SiteId", 12, "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionLineId", 13, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("MachineId", 14, "uniqueidentifier"),
-            Column("ShiftId", 15, "nvarchar", 256, collation: BinaryCollation),
-            Column("ShiftScheduleAssignmentId", 16, "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionContextAssignmentId", 17, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("ProductionOrderId", 18, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("OperationId", 19, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("PartId", 20, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("OperatorId", 21, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("IsPlannedProductionTime", 22, "bit", isNullable: true),
-            Column("PlannedProductionScheduleAssignmentId", 23, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("SourceContextualizedActivityIntervalId", 24, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("SourceEligibilityIntervalId", 25, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("SourceQuantityEvidenceId", 26, "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("OccurrenceSiteId", 27, "nvarchar", 256, collation: BinaryCollation),
-            Column("OccurrenceShiftScheduleAssignmentId", 28, "nvarchar", 256, collation: BinaryCollation),
-            Column("OccurrenceShiftId", 29, "nvarchar", 256, collation: BinaryCollation),
-            DateTimeOffset("OccurrenceStartsAtUtc", 30, 7),
-            DateTimeOffset("OccurrenceEndsAtUtc", 31, 7),
-            Column("ProductionDaySiteId", 32, "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionBusinessDate", 33, "date")
+            IdentityBigInt("MetricInputFactRowId"),
+            Column("MetricInputStreamRowId", "bigint"),
+            Decimal("Position", 20, 0),
+            Column("FactIdBinary", "varbinary", 512),
+            Column("FactId", "nvarchar", 256, collation: BinaryCollation),
+            Column("MetricInputKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("MetricValue", "nvarchar", 64, collation: BinaryCollation),
+            Column("Unit", "nvarchar", 128, collation: BinaryCollation),
+            DateTimeOffset("StartsAtUtc", 7),
+            DateTimeOffset("EndsAtUtc", 7),
+            Column("CompanyId", "nvarchar", 256, collation: BinaryCollation),
+            Column("SiteId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ProductionLineId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("MachineId", "uniqueidentifier"),
+            Column("ShiftId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ShiftScheduleAssignmentId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ProductionContextAssignmentId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("ProductionOrderId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("OperationId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("PartId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("OperatorId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("IsPlannedProductionTime", "bit", isNullable: true),
+            Column("PlannedProductionScheduleAssignmentId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("SourceContextualizedActivityIntervalId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("SourceEligibilityIntervalId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("SourceQuantityEvidenceId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
+            Column("OccurrenceSiteId", "nvarchar", 256, collation: BinaryCollation),
+            Column("OccurrenceShiftScheduleAssignmentId", "nvarchar", 256, collation: BinaryCollation),
+            Column("OccurrenceShiftId", "nvarchar", 256, collation: BinaryCollation),
+            DateTimeOffset("OccurrenceStartsAtUtc", 7),
+            DateTimeOffset("OccurrenceEndsAtUtc", 7),
+            Column("ProductionDaySiteId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ProductionBusinessDate", "date")
         ],
         primaryKey: PrimaryKey("PK_MetricInputFact", "MetricInputFactRowId"),
         uniques:
@@ -139,14 +139,14 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_MetricInputFact_Position_UInt64", "Position >= 1 AND Position <= 18446744073709551615"),
-            Check("CK_MetricInputFact_Interval", "EndsAtUtc >= StartsAtUtc"),
-            Check("CK_MetricInputFact_OccurrenceInterval", "OccurrenceEndsAtUtc > OccurrenceStartsAtUtc"),
-            Check("CK_MetricInputFact_OwnershipContainment", "StartsAtUtc >= OccurrenceStartsAtUtc AND EndsAtUtc <= OccurrenceEndsAtUtc"),
-            Check("CK_MetricInputFact_SiteOwnership", "SiteId = OccurrenceSiteId AND SiteId = ProductionDaySiteId"),
-            Check("CK_MetricInputFact_ShiftOwnership", "ShiftId = OccurrenceShiftId"),
-            Check("CK_MetricInputFact_ScheduleOwnership", "ShiftScheduleAssignmentId = OccurrenceShiftScheduleAssignmentId"),
-            Check("CK_MetricInputFact_UtcOffsets", "DATEPART(TZOFFSET, StartsAtUtc) = 0 AND DATEPART(TZOFFSET, EndsAtUtc) = 0 AND DATEPART(TZOFFSET, OccurrenceStartsAtUtc) = 0 AND DATEPART(TZOFFSET, OccurrenceEndsAtUtc) = 0")
+            Check("CK_MetricInputFact_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))"),
+            Check("CK_MetricInputFact_Interval", "([EndsAtUtc]>=[StartsAtUtc])"),
+            Check("CK_MetricInputFact_OccurrenceInterval", "([OccurrenceEndsAtUtc]>[OccurrenceStartsAtUtc])"),
+            Check("CK_MetricInputFact_OwnershipContainment", "([StartsAtUtc]>=[OccurrenceStartsAtUtc] AND [EndsAtUtc]<=[OccurrenceEndsAtUtc])"),
+            Check("CK_MetricInputFact_SiteOwnership", "([SiteId]=[OccurrenceSiteId] AND [SiteId]=[ProductionDaySiteId])"),
+            Check("CK_MetricInputFact_ShiftOwnership", "([ShiftId]=[OccurrenceShiftId])"),
+            Check("CK_MetricInputFact_ScheduleOwnership", "([ShiftScheduleAssignmentId]=[OccurrenceShiftScheduleAssignmentId])"),
+            Check("CK_MetricInputFact_UtcOffsets", "(datepart(tzoffset,[StartsAtUtc])=(0) AND datepart(tzoffset,[EndsAtUtc])=(0) AND datepart(tzoffset,[OccurrenceStartsAtUtc])=(0) AND datepart(tzoffset,[OccurrenceEndsAtUtc])=(0))")
         ],
         indexes:
         [
@@ -157,10 +157,10 @@ internal static class SqlRepositorySchemaDescriptors
         "MetricAggregationProcessor",
         columns:
         [
-            IdentityBigInt("MetricAggregationProcessorRowId", 1),
-            Column("ProcessorKeyBinary", 2, "varbinary", 512),
-            Column("ProcessorKey", 3, "nvarchar", 256, collation: BinaryCollation),
-            Column("MetricInputStreamRowId", 4, "bigint")
+            IdentityBigInt("MetricAggregationProcessorRowId"),
+            Column("ProcessorKeyBinary", "varbinary", 512),
+            Column("ProcessorKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("MetricInputStreamRowId", "bigint")
         ],
         primaryKey: PrimaryKey("PK_MetricAggregationProcessor", "MetricAggregationProcessorRowId"),
         uniques:
@@ -177,8 +177,8 @@ internal static class SqlRepositorySchemaDescriptors
         "MetricAggregationCheckpoint",
         columns:
         [
-            Column("MetricAggregationProcessorRowId", 1, "bigint"),
-            Decimal("Position", 2, 20, 0)
+            Column("MetricAggregationProcessorRowId", "bigint"),
+            Decimal("Position", 20, 0)
         ],
         primaryKey: PrimaryKey("PK_MetricAggregationCheckpoint", "MetricAggregationProcessorRowId"),
         foreignKeys:
@@ -187,17 +187,17 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_MetricAggregationCheckpoint_Position_UInt64", "Position >= 1 AND Position <= 18446744073709551615")
+            Check("CK_MetricAggregationCheckpoint_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))")
         ]);
 
     private static SqlTableDescriptor MetricAggregationContribution() => Table(
         "MetricAggregationContribution",
         columns:
         [
-            Column("MetricAggregationProcessorRowId", 1, "bigint"),
-            Column("MetricInputStreamRowId", 2, "bigint"),
-            Column("MetricInputFactRowId", 3, "bigint"),
-            Decimal("Position", 4, 20, 0)
+            Column("MetricAggregationProcessorRowId", "bigint"),
+            Column("MetricInputStreamRowId", "bigint"),
+            Column("MetricInputFactRowId", "bigint"),
+            Decimal("Position", 20, 0)
         ],
         primaryKey: PrimaryKey("PK_MetricAggregationContribution", "MetricAggregationProcessorRowId", "MetricInputFactRowId"),
         uniques:
@@ -211,29 +211,29 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_MetricAggregationContribution_Position_UInt64", "Position >= 1 AND Position <= 18446744073709551615")
+            Check("CK_MetricAggregationContribution_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))")
         ]);
 
     private static SqlTableDescriptor ShiftMetricAggregate() => Table(
         "ShiftMetricAggregate",
         columns:
         [
-            IdentityBigInt("ShiftMetricAggregateRowId", 1),
-            Column("MetricAggregationProcessorRowId", 2, "bigint"),
-            Column("AggregateKeyHash", 3, "binary", 32),
-            ColumnMax("AggregateKeyBinary", 4, "varbinary"),
-            Column("MachineId", 5, "uniqueidentifier"),
-            Column("SiteId", 6, "nvarchar", 256, collation: BinaryCollation),
-            Column("ShiftScheduleAssignmentId", 7, "nvarchar", 256, collation: BinaryCollation),
-            Column("ShiftId", 8, "nvarchar", 256, collation: BinaryCollation),
-            DateTimeOffset("ShiftStartsAtUtc", 9, 7),
-            DateTimeOffset("ShiftEndsAtUtc", 10, 7),
-            Column("MetricInputKey", 11, "nvarchar", 256, collation: BinaryCollation),
-            Column("AggregateValue", 12, "nvarchar", 64, collation: BinaryCollation),
-            Column("Unit", 13, "nvarchar", 128, collation: BinaryCollation),
-            Column("InputCount", 14, "bigint"),
-            DateTimeOffset("FirstInputTimestamp", 15, 7),
-            DateTimeOffset("LastInputTimestamp", 16, 7)
+            IdentityBigInt("ShiftMetricAggregateRowId"),
+            Column("MetricAggregationProcessorRowId", "bigint"),
+            Column("AggregateKeyHash", "binary", 32),
+            ColumnMax("AggregateKeyBinary", "varbinary"),
+            Column("MachineId", "uniqueidentifier"),
+            Column("SiteId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ShiftScheduleAssignmentId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ShiftId", "nvarchar", 256, collation: BinaryCollation),
+            DateTimeOffset("ShiftStartsAtUtc", 7),
+            DateTimeOffset("ShiftEndsAtUtc", 7),
+            Column("MetricInputKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("AggregateValue", "nvarchar", 64, collation: BinaryCollation),
+            Column("Unit", "nvarchar", 128, collation: BinaryCollation),
+            Column("InputCount", "bigint"),
+            DateTimeOffset("FirstInputTimestamp", 7),
+            DateTimeOffset("LastInputTimestamp", 7)
         ],
         primaryKey: PrimaryKey("PK_ShiftMetricAggregate", "ShiftMetricAggregateRowId"),
         uniques:
@@ -246,10 +246,10 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_ShiftMetricAggregate_ShiftInterval", "ShiftEndsAtUtc > ShiftStartsAtUtc"),
-            Check("CK_ShiftMetricAggregate_InputCount", "InputCount > 0"),
-            Check("CK_ShiftMetricAggregate_InputInterval", "LastInputTimestamp >= FirstInputTimestamp"),
-            Check("CK_ShiftMetricAggregate_UtcOffsets", "DATEPART(TZOFFSET, ShiftStartsAtUtc) = 0 AND DATEPART(TZOFFSET, ShiftEndsAtUtc) = 0 AND DATEPART(TZOFFSET, FirstInputTimestamp) = 0 AND DATEPART(TZOFFSET, LastInputTimestamp) = 0")
+            Check("CK_ShiftMetricAggregate_ShiftInterval", "([ShiftEndsAtUtc]>[ShiftStartsAtUtc])"),
+            Check("CK_ShiftMetricAggregate_InputCount", "([InputCount]>(0))"),
+            Check("CK_ShiftMetricAggregate_InputInterval", "([LastInputTimestamp]>=[FirstInputTimestamp])"),
+            Check("CK_ShiftMetricAggregate_UtcOffsets", "(datepart(tzoffset,[ShiftStartsAtUtc])=(0) AND datepart(tzoffset,[ShiftEndsAtUtc])=(0) AND datepart(tzoffset,[FirstInputTimestamp])=(0) AND datepart(tzoffset,[LastInputTimestamp])=(0))")
         ],
         indexes:
         [
@@ -260,19 +260,19 @@ internal static class SqlRepositorySchemaDescriptors
         "ProductionDayMetricAggregate",
         columns:
         [
-            IdentityBigInt("ProductionDayMetricAggregateRowId", 1),
-            Column("MetricAggregationProcessorRowId", 2, "bigint"),
-            Column("AggregateKeyHash", 3, "binary", 32),
-            ColumnMax("AggregateKeyBinary", 4, "varbinary"),
-            Column("MachineId", 5, "uniqueidentifier"),
-            Column("SiteId", 6, "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionBusinessDate", 7, "date"),
-            Column("MetricInputKey", 8, "nvarchar", 256, collation: BinaryCollation),
-            Column("AggregateValue", 9, "nvarchar", 64, collation: BinaryCollation),
-            Column("Unit", 10, "nvarchar", 128, collation: BinaryCollation),
-            Column("InputCount", 11, "bigint"),
-            DateTimeOffset("FirstInputTimestamp", 12, 7),
-            DateTimeOffset("LastInputTimestamp", 13, 7)
+            IdentityBigInt("ProductionDayMetricAggregateRowId"),
+            Column("MetricAggregationProcessorRowId", "bigint"),
+            Column("AggregateKeyHash", "binary", 32),
+            ColumnMax("AggregateKeyBinary", "varbinary"),
+            Column("MachineId", "uniqueidentifier"),
+            Column("SiteId", "nvarchar", 256, collation: BinaryCollation),
+            Column("ProductionBusinessDate", "date"),
+            Column("MetricInputKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("AggregateValue", "nvarchar", 64, collation: BinaryCollation),
+            Column("Unit", "nvarchar", 128, collation: BinaryCollation),
+            Column("InputCount", "bigint"),
+            DateTimeOffset("FirstInputTimestamp", 7),
+            DateTimeOffset("LastInputTimestamp", 7)
         ],
         primaryKey: PrimaryKey("PK_ProductionDayMetricAggregate", "ProductionDayMetricAggregateRowId"),
         uniques:
@@ -285,9 +285,9 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_ProductionDayMetricAggregate_InputCount", "InputCount > 0"),
-            Check("CK_ProductionDayMetricAggregate_InputInterval", "LastInputTimestamp >= FirstInputTimestamp"),
-            Check("CK_ProductionDayMetricAggregate_UtcOffsets", "DATEPART(TZOFFSET, FirstInputTimestamp) = 0 AND DATEPART(TZOFFSET, LastInputTimestamp) = 0")
+            Check("CK_ProductionDayMetricAggregate_InputCount", "([InputCount]>(0))"),
+            Check("CK_ProductionDayMetricAggregate_InputInterval", "([LastInputTimestamp]>=[FirstInputTimestamp])"),
+            Check("CK_ProductionDayMetricAggregate_UtcOffsets", "(datepart(tzoffset,[FirstInputTimestamp])=(0) AND datepart(tzoffset,[LastInputTimestamp])=(0))")
         ],
         indexes:
         [
@@ -298,14 +298,14 @@ internal static class SqlRepositorySchemaDescriptors
         "ProductionContextProcessor",
         columns:
         [
-            IdentityBigInt("ProductionContextProcessorRowId", 1),
-            Column("ProcessorKeyHash", 2, "binary", 32),
-            Column("ProcessorKeyBinary", 3, "varbinary", 512),
-            Column("ProcessorKey", 4, "nvarchar", 256, collation: BinaryCollation),
-            Column("MachineId", 5, "uniqueidentifier"),
-            Column("ObservationStreamKeyHash", 6, "binary", 32),
-            Column("ObservationStreamKeyBinary", 7, "varbinary", 512),
-            Column("ObservationStreamKey", 8, "nvarchar", 256, collation: BinaryCollation)
+            IdentityBigInt("ProductionContextProcessorRowId"),
+            Column("ProcessorKeyHash", "binary", 32),
+            Column("ProcessorKeyBinary", "varbinary", 512),
+            Column("ProcessorKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("MachineId", "uniqueidentifier"),
+            Column("ObservationStreamKeyHash", "binary", 32),
+            Column("ObservationStreamKeyBinary", "varbinary", 512),
+            Column("ObservationStreamKey", "nvarchar", 256, collation: BinaryCollation)
         ],
         primaryKey: PrimaryKey("PK_ProductionContextProcessor", "ProductionContextProcessorRowId"),
         uniques:
@@ -317,8 +317,8 @@ internal static class SqlRepositorySchemaDescriptors
         "ProductionContextCheckpoint",
         columns:
         [
-            Column("ProductionContextProcessorRowId", 1, "bigint"),
-            Decimal("Position", 2, 20, 0)
+            Column("ProductionContextProcessorRowId", "bigint"),
+            Decimal("Position", 20, 0)
         ],
         primaryKey: PrimaryKey("PK_ProductionContextCheckpoint", "ProductionContextProcessorRowId"),
         foreignKeys:
@@ -327,7 +327,7 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         checks:
         [
-            Check("CK_ProductionContextCheckpoint_Position_UInt64", "Position >= 1 AND Position <= 18446744073709551615")
+            Check("CK_ProductionContextCheckpoint_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))")
         ]);
 
     private static SqlTableDescriptor ContextualizedActivityOutput() => OutputTable(
@@ -346,12 +346,12 @@ internal static class SqlRepositorySchemaDescriptors
         tableName,
         columns:
         [
-            IdentityBigInt(rowId, 1),
-            Column("IdentityHash", 2, "binary", 32),
-            Column("IdentityBinary", 3, "varbinary", 512),
-            Column("IdentityText", 4, "nvarchar", 256, collation: BinaryCollation),
-            Column("PayloadHash", 5, "binary", 32),
-            ColumnMax("Payload", 6, "nvarchar", collation: BinaryCollation)
+            IdentityBigInt(rowId),
+            Column("IdentityHash", "binary", 32),
+            Column("IdentityBinary", "varbinary", 512),
+            Column("IdentityText", "nvarchar", 256, collation: BinaryCollation),
+            Column("PayloadHash", "binary", 32),
+            ColumnMax("Payload", "nvarchar", collation: BinaryCollation)
         ],
         primaryKey: PrimaryKey(primaryKeyName, rowId),
         uniques: [Unique(uniqueName, "IdentityHash")]);
@@ -372,9 +372,8 @@ internal static class SqlRepositorySchemaDescriptors
             EmptyIfDefault(checks),
             EmptyIfDefault(indexes));
 
-    private static SqlColumnDescriptor IdentityBigInt(string name, int ordinal) => new(
+    private static SqlColumnDescriptor IdentityBigInt(string name) => new(
         name,
-        ordinal,
         "bigint",
         MaxLength: null,
         Precision: null,
@@ -383,9 +382,8 @@ internal static class SqlRepositorySchemaDescriptors
         Collation: null,
         Identity: new SqlIdentityDescriptor(1m, 1m, IsNotForReplication: false));
 
-    private static SqlColumnDescriptor Decimal(string name, int ordinal, byte precision, byte scale) => new(
+    private static SqlColumnDescriptor Decimal(string name, byte precision, byte scale) => new(
         name,
-        ordinal,
         "decimal",
         MaxLength: null,
         Precision: precision,
@@ -394,9 +392,8 @@ internal static class SqlRepositorySchemaDescriptors
         Collation: null,
         Identity: null);
 
-    private static SqlColumnDescriptor DateTimeOffset(string name, int ordinal, byte scale) => new(
+    private static SqlColumnDescriptor DateTimeOffset(string name, byte scale) => new(
         name,
-        ordinal,
         "datetimeoffset",
         MaxLength: null,
         Precision: null,
@@ -407,13 +404,11 @@ internal static class SqlRepositorySchemaDescriptors
 
     private static SqlColumnDescriptor Column(
         string name,
-        int ordinal,
         string sqlType,
         int? maxLength = null,
         bool isNullable = false,
         string? collation = null) => new(
             name,
-            ordinal,
             sqlType,
             maxLength is null ? null : SqlLengthDescriptor.Bounded(maxLength.Value),
             Precision: null,
@@ -424,12 +419,10 @@ internal static class SqlRepositorySchemaDescriptors
 
     private static SqlColumnDescriptor ColumnMax(
         string name,
-        int ordinal,
         string sqlType,
         bool isNullable = false,
         string? collation = null) => new(
             name,
-            ordinal,
             sqlType,
             SqlLengthDescriptor.Max,
             Precision: null,
