@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { ShiftPerformancePageStateView } from "../src/presentation/ShiftPerformancePageStateView.tsx";
@@ -45,7 +46,7 @@ function overview(value = "0.37") {
 }
 
 function render(state) {
-  return renderToStaticMarkup(<ShiftPerformancePageStateView state={state} />);
+  return renderToStaticMarkup(createElement(ShiftPerformancePageStateView, { state }));
 }
 
 test("loading renders status without an overview", () => {
