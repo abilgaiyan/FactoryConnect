@@ -18,6 +18,27 @@ internal enum SqlReferentialAction
     SetDefault = 3
 }
 
+internal readonly record struct SqlLengthDescriptor
+{
+    private SqlLengthDescriptor(int? value)
+    {
+        if (value is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "SQL length must be positive when specified.");
+        }
+
+        Value = value;
+    }
+
+    public int? Value { get; }
+
+    public bool IsMax => Value is null;
+
+    public static SqlLengthDescriptor Fixed(int value) => new(value);
+
+    public static SqlLengthDescriptor Max { get; } = new(null);
+}
+
 internal sealed record SqlIdentityDescriptor(
     decimal SeedValue,
     decimal IncrementValue,
@@ -27,7 +48,7 @@ internal sealed record SqlColumnDescriptor(
     string Name,
     int Ordinal,
     string SqlType,
-    int? MaxLength,
+    SqlLengthDescriptor? MaxLength,
     byte? Precision,
     byte? Scale,
     bool IsNullable,
