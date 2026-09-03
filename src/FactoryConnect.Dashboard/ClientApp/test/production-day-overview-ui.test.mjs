@@ -71,7 +71,7 @@ function render(model) {
 
 test("lifecycle empty maps configured machines to five missing metric slots", () => {
   const sources = [source("11111111-1111-1111-1111-111111111111", "Machine 1")];
-  const state = derive({ kind: "empty" }, sources);
+  const state = derive({ kind: "empty", data: { items: [] } }, sources);
 
   assert.equal(state.kind, "success");
   const machine = state.model.groups[0].machines[0];
@@ -82,7 +82,7 @@ test("lifecycle empty maps configured machines to five missing metric slots", ()
 });
 
 test("zero configured machines has a distinct empty-factory state", () => {
-  assert.deepEqual(derive({ kind: "empty" }, []), { kind: "empty-factory" });
+  assert.deepEqual(derive({ kind: "empty", data: { items: [] } }, []), { kind: "empty-factory" });
 });
 
 test("presentation failures are contained instead of escaping rendering", () => {
@@ -114,7 +114,7 @@ test("group and machine order from the presentation model is rendered without re
     source("22222222-2222-2222-2222-222222222222", "B1", "Line B", 20),
     source("33333333-3333-3333-3333-333333333333", "A2", "Line A", 30),
   ];
-  const state = derive({ kind: "empty" }, sources);
+  const state = derive({ kind: "empty", data: { items: [] } }, sources);
   assert.equal(state.kind, "success");
 
   const html = render(state.model);
@@ -124,7 +124,7 @@ test("group and machine order from the presentation model is rendered without re
 
 test("matrix renders all five metric columns with accessible row and column headers", () => {
   const state = derive(
-    { kind: "empty" },
+    { kind: "empty", data: { items: [] } },
     [source("11111111-1111-1111-1111-111111111111", "Machine 1")],
   );
   assert.equal(state.kind, "success");
@@ -206,7 +206,7 @@ test("arbitrary configured populations render without a seven-machine assumption
     index % 2 === 0 ? "Line A" : "Line B",
     index,
   ));
-  const state = derive({ kind: "empty" }, sources);
+  const state = derive({ kind: "empty", data: { items: [] } }, sources);
   assert.equal(state.kind, "success");
 
   const html = render(state.model);
