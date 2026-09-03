@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlMigrationCatalogTests
 {
     [Fact]
-    public void Load_ExistingResources_ReturnsDeterministicLegacyCatalog()
+    public void LoadExistingResourcesReturnsDeterministicLegacyCatalog()
     {
         var catalog = SqlMigrationCatalog.Load();
 
@@ -20,7 +20,7 @@ public sealed class SqlMigrationCatalogTests
     }
 
     [Fact]
-    public void Load_EachDescriptor_HashesExactCanonicalExecutionBytes()
+    public void LoadEachDescriptorHashesExactCanonicalExecutionBytes()
     {
         var catalog = SqlMigrationCatalog.Load();
 
@@ -40,13 +40,13 @@ public sealed class SqlMigrationCatalogTests
     [InlineData("FactoryConnect.Persistence.SqlServer.Sql.001_Bad.Name.sql")]
     [InlineData("FactoryConnect.Persistence.SqlServer.Other.001_Name.sql")]
     [InlineData("FactoryConnect.Persistence.SqlServer.Sql.001_Name.SQL")]
-    public void ParseResourceIdentity_InvalidGrammar_Throws(string resourceName)
+    public void ParseResourceIdentityInvalidGrammarThrows(string resourceName)
     {
         Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.ParseResourceIdentity(resourceName));
     }
 
     [Fact]
-    public void ParseResourceIdentity_ValidGrammar_ReturnsIdentity()
+    public void ParseResourceIdentityValidGrammarReturnsIdentity()
     {
         var identity = SqlMigrationCatalog.ParseResourceIdentity(
             "FactoryConnect.Persistence.SqlServer.Sql.017_Add-Reporting_Index.sql");
@@ -58,7 +58,7 @@ public sealed class SqlMigrationCatalogTests
     [Theory]
     [InlineData("SELECT 1;\r\nSELECT 2;\r\n")]
     [InlineData("SELECT 1;\rSELECT 2;\r")]
-    public void Canonicalize_Newlines_NormalizesToLfAndPreservesFinalNewline(string source)
+    public void CanonicalizeNewlinesNormalizesToLfAndPreservesFinalNewline(string source)
     {
         var canonical = SqlMigrationCanonicalizer.Canonicalize(Encoding.UTF8.GetBytes(source));
 
@@ -67,7 +67,7 @@ public sealed class SqlMigrationCatalogTests
     }
 
     [Fact]
-    public void Canonicalize_NoFinalNewline_DoesNotAddOne()
+    public void CanonicalizeNoFinalNewlineDoesNotAddOne()
     {
         var canonical = SqlMigrationCanonicalizer.Canonicalize(Encoding.UTF8.GetBytes("SELECT 1;\r\nSELECT 2;"));
 
@@ -75,7 +75,7 @@ public sealed class SqlMigrationCatalogTests
     }
 
     [Fact]
-    public void Canonicalize_OneLeadingBom_RemovesOnlyLeadingBom()
+    public void CanonicalizeOneLeadingBomRemovesOnlyLeadingBom()
     {
         var payload = Encoding.UTF8.GetBytes("\uFEFFSELECT N'\uFEFF';");
         var source = new byte[payload.Length + 3];
@@ -93,7 +93,7 @@ public sealed class SqlMigrationCatalogTests
     }
 
     [Fact]
-    public void Canonicalize_InvalidUtf8_Throws()
+    public void CanonicalizeInvalidUtf8Throws()
     {
         Assert.Throws<DecoderFallbackException>(() =>
             SqlMigrationCanonicalizer.Canonicalize(new byte[] { 0xC3, 0x28 }));
@@ -106,7 +106,7 @@ public sealed class SqlMigrationCatalogTests
     [InlineData("GO -- comment")]
     [InlineData("GO;")]
     [InlineData("GO 2;")]
-    public void Validate_ExecutableGo_Throws(string sql)
+    public void ValidateExecutableGoThrows(string sql)
     {
         Assert.Throws<InvalidOperationException>(() =>
             SqlMigrationLexicalPolicy.Validate(sql, SqlMigrationTransactionPolicy.EngineOwned));
@@ -123,7 +123,7 @@ public sealed class SqlMigrationCatalogTests
     [InlineData("SELECT \"a\"\"GO\";")]
     [InlineData("SELECT [a]]GO];")]
     [InlineData("/* outer /* GO */ still comment */ SELECT 1;")]
-    public void Validate_GoInNonDirectiveContext_IsAllowed(string sql)
+    public void ValidateGoInNonDirectiveContextIsAllowed(string sql)
     {
         SqlMigrationLexicalPolicy.Validate(sql, SqlMigrationTransactionPolicy.EngineOwned);
     }
@@ -133,14 +133,14 @@ public sealed class SqlMigrationCatalogTests
     [InlineData("\"unterminated")]
     [InlineData("[unterminated")]
     [InlineData("/* unterminated")]
-    public void Validate_UnterminatedLexicalRegion_Throws(string sql)
+    public void ValidateUnterminatedLexicalRegionThrows(string sql)
     {
         Assert.Throws<InvalidOperationException>(() =>
             SqlMigrationLexicalPolicy.Validate(sql, SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
-    public void Validate_LineCommentAtEof_IsAllowed()
+    public void ValidateLineCommentAtEofIsAllowed()
     {
         SqlMigrationLexicalPolicy.Validate("SELECT 1; -- comment", SqlMigrationTransactionPolicy.EngineOwned);
     }
@@ -158,7 +158,7 @@ public sealed class SqlMigrationCatalogTests
     [InlineData("ROLLBACK TRANSACTION;")]
     [InlineData("SAVE TRAN savepoint;")]
     [InlineData("SAVE /* comment */ TRANSACTION savepoint;")]
-    public void Validate_TransactionControlForEngineOwnedMigration_Throws(string sql)
+    public void ValidateTransactionControlForEngineOwnedMigrationThrows(string sql)
     {
         Assert.Throws<InvalidOperationException>(() =>
             SqlMigrationLexicalPolicy.Validate(sql, SqlMigrationTransactionPolicy.EngineOwned));
@@ -170,13 +170,13 @@ public sealed class SqlMigrationCatalogTests
     [InlineData("SELECT \"ROLLBACK\";")]
     [InlineData("-- SAVE TRAN\nSELECT 1;")]
     [InlineData("/* BEGIN TRAN */ SELECT 1;")]
-    public void Validate_TransactionWordsInNonExecutableRegions_AreAllowed(string sql)
+    public void ValidateTransactionWordsInNonExecutableRegionsAreAllowed(string sql)
     {
         SqlMigrationLexicalPolicy.Validate(sql, SqlMigrationTransactionPolicy.EngineOwned);
     }
 
     [Fact]
-    public void Validate_LegacyMigration003Policy_AllowsEmbeddedTransactionControl()
+    public void ValidateLegacyMigration003PolicyAllowsEmbeddedTransactionControl()
     {
         SqlMigrationLexicalPolicy.Validate(
             "BEGIN TRANSACTION; UPDATE Example SET Value = 1; COMMIT TRANSACTION;",
