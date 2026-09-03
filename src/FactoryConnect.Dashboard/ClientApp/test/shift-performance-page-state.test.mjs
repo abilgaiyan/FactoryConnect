@@ -144,3 +144,24 @@ test("known presentation contract violations are contained as controlled page fa
   assert.equal(state.productionDay, day);
   assert.equal(Object.hasOwn(state, "overview"), false);
 });
+
+test("unexpected mapper defects propagate unchanged", () => {
+  const defect = new Error("programming defect");
+  const result = new Proxy(
+    { items: [] },
+    {
+      get() {
+        throw defect;
+      },
+    },
+  );
+
+  assert.throws(
+    () => deriveShiftPerformancePageState(
+      { kind: "success", data: result },
+      day,
+      [source()],
+    ),
+    error => error === defect,
+  );
+});
