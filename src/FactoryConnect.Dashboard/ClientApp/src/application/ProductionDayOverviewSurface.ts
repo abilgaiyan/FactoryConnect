@@ -17,6 +17,7 @@ export function ProductionDayOverviewSurface({
   onProductionDayChange,
 }: ProductionDayOverviewSurfaceProps): ReactElement {
   const loading = overview.state.kind === "loading";
+  const refreshing = overview.state.kind === "refreshing";
 
   const handleProductionDayChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextProductionDay = event.currentTarget.value;
@@ -31,7 +32,7 @@ export function ProductionDayOverviewSurface({
 
   return createElement(
     "div",
-    { "aria-busy": loading ? "true" : "false" },
+    { "aria-busy": loading || refreshing ? "true" : "false" },
     createElement("label", { htmlFor: "production-day-overview-selector" }, "Production day"),
     createElement("input", {
       id: "production-day-overview-selector",
@@ -65,6 +66,13 @@ export function ProductionDayOverviewStateView({
     case "idle":
     case "loading":
       return createElement("p", { role: "status" }, "Loading production-day reporting…");
+    case "refreshing":
+      return createElement(
+        "div",
+        null,
+        createElement(ProductionDayOverviewMatrix, { model: state.model }),
+        createElement("p", { role: "status" }, "Refreshing production-day reporting…"),
+      );
     case "empty-factory":
       return createElement("p", null, "No machines are configured for this dashboard.");
     case "success":
