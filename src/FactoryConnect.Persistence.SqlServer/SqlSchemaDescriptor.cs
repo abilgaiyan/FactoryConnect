@@ -52,7 +52,22 @@ internal sealed record SqlColumnDescriptor(
     byte? Scale,
     bool IsNullable,
     string? Collation,
-    SqlIdentityDescriptor? Identity);
+    SqlIdentityDescriptor? Identity)
+{
+    public SqlColumnDescriptor(
+        string name,
+        int _,
+        string sqlType,
+        SqlLengthDescriptor? maxLength,
+        byte? precision,
+        byte? scale,
+        bool isNullable,
+        string? collation,
+        SqlIdentityDescriptor? identity)
+        : this(name, sqlType, maxLength, precision, scale, isNullable, collation, identity)
+    {
+    }
+}
 
 internal sealed record SqlIndexColumnDescriptor(
     string Name,
@@ -68,12 +83,24 @@ internal sealed record SqlIndexStructureDescriptor(
 internal sealed record SqlPrimaryKeyDescriptor(
     string Name,
     bool IsEnabled,
-    SqlIndexStructureDescriptor IndexStructure);
+    SqlIndexStructureDescriptor IndexStructure)
+{
+    public SqlPrimaryKeyDescriptor(string name, SqlIndexStructureDescriptor indexStructure)
+        : this(name, IsEnabled: true, indexStructure)
+    {
+    }
+}
 
 internal sealed record SqlUniqueConstraintDescriptor(
     string Name,
     bool IsEnabled,
-    SqlIndexStructureDescriptor IndexStructure);
+    SqlIndexStructureDescriptor IndexStructure)
+{
+    public SqlUniqueConstraintDescriptor(string name, SqlIndexStructureDescriptor indexStructure)
+        : this(name, IsEnabled: true, indexStructure)
+    {
+    }
+}
 
 internal sealed record SqlForeignKeyDescriptor(
     string Name,
