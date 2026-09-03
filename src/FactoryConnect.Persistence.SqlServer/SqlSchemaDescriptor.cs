@@ -46,7 +46,6 @@ internal sealed record SqlIdentityDescriptor(
 
 internal sealed record SqlColumnDescriptor(
     string Name,
-    int Ordinal,
     string SqlType,
     SqlLengthDescriptor? MaxLength,
     byte? Precision,
@@ -68,10 +67,12 @@ internal sealed record SqlIndexStructureDescriptor(
 
 internal sealed record SqlPrimaryKeyDescriptor(
     string Name,
+    bool IsEnabled,
     SqlIndexStructureDescriptor IndexStructure);
 
 internal sealed record SqlUniqueConstraintDescriptor(
     string Name,
+    bool IsEnabled,
     SqlIndexStructureDescriptor IndexStructure);
 
 internal sealed record SqlForeignKeyDescriptor(
