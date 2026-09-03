@@ -25,6 +25,9 @@ export function useShiftPerformanceOverview(
     ),
     [query.state, productionDay, runtime.configuration.sources],
   );
+  const refresh = async () => {
+    await query.execute();
+  };
 
-  return { state, refresh: query.execute };
+  return { state, refresh };
 }
