@@ -14,6 +14,8 @@ import {
   shiftPerformancePath,
 } from "./application/shift-performance-navigation.ts";
 import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
+import { useShiftPerformanceOverview } from "./application/use-shift-performance-overview.ts";
+import { ShiftPerformancePageStateView } from "./presentation/ShiftPerformancePageStateView.tsx";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -80,7 +82,7 @@ function RouteView({ route, navigate, runtime }: RouteViewProps) {
     case "productionDayDetail":
       return <ProductionDayDetail productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "shiftPerformance":
-      return <ShiftPerformanceSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} />;
+      return <ShiftPerformanceSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "machineDetail":
       return <section aria-labelledby="route-title"><RouteContext current="Machine" navigate={navigate} /><h1 id="route-title">Machine</h1><p>{route.machineId}</p><p>Machine detail placeholder.</p></section>;
     case "dailyReport":
@@ -152,9 +154,10 @@ function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDay
 interface ShiftPerformanceSelectionProps {
   readonly productionDay: string;
   readonly navigate: (href: string) => void;
+  readonly runtime: DashboardApplicationRuntime;
 }
 
-function ShiftPerformanceSelection({ productionDay, navigate }: ShiftPerformanceSelectionProps) {
+function ShiftPerformanceSelection({ productionDay, navigate, runtime }: ShiftPerformanceSelectionProps) {
   const validSelection = isShiftPerformanceProductionDaySelection(productionDay);
   const [selectedProductionDay, setSelectedProductionDay] = useState(validSelection ? productionDay : "");
 
@@ -185,10 +188,20 @@ function ShiftPerformanceSelection({ productionDay, navigate }: ShiftPerformance
         <button type="submit">Select production day</button>
       </form>
       {validSelection
-        ? <p>Shift reporting composition will load this authoritative production day in the next slice.</p>
+        ? <ShiftPerformanceVertical productionDay={productionDay} runtime={runtime} />
         : null}
     </section>
   );
+}
+
+interface ShiftPerformanceVerticalProps {
+  readonly productionDay: string;
+  readonly runtime: DashboardApplicationRuntime;
+}
+
+function ShiftPerformanceVertical({ productionDay, runtime }: ShiftPerformanceVerticalProps) {
+  const overview = useShiftPerformanceOverview(productionDay, runtime);
+  return <ShiftPerformancePageStateView state={overview.state} />;
 }
 
 interface ProductionDayOverviewVerticalProps {
