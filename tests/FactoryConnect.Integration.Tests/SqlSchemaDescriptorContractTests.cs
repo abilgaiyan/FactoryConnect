@@ -12,7 +12,7 @@ public sealed class SqlSchemaDescriptorContractTests
             "RowId",
             Ordinal: 1,
             "bigint",
-            MaxLength: 8,
+            MaxLength: SqlLengthDescriptor.Fixed(8),
             Precision: 19,
             Scale: 0,
             IsNullable: false,
@@ -24,6 +24,20 @@ public sealed class SqlSchemaDescriptorContractTests
         Assert.Equal(1m, retainedIdentity.SeedValue);
         Assert.Equal(2m, retainedIdentity.IncrementValue);
         Assert.True(retainedIdentity.IsNotForReplication);
+    }
+
+    [Fact]
+    public void LengthDescriptorDistinguishesFixedMaxAndNotApplicable()
+    {
+        var fixedLength = SqlLengthDescriptor.Fixed(256);
+        var maxLength = SqlLengthDescriptor.Max;
+        SqlLengthDescriptor? notApplicable = null;
+
+        Assert.Equal(256, fixedLength.Value);
+        Assert.False(fixedLength.IsMax);
+        Assert.Null(maxLength.Value);
+        Assert.True(maxLength.IsMax);
+        Assert.Null(notApplicable);
     }
 
     [Fact]
