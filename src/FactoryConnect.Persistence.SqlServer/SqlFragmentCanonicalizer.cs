@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace FactoryConnect.Persistence.SqlServer;
 
 internal static class SqlFragmentCanonicalizer
