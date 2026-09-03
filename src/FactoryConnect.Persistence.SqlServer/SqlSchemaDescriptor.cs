@@ -52,22 +52,7 @@ internal sealed record SqlColumnDescriptor(
     byte? Scale,
     bool IsNullable,
     string? Collation,
-    SqlIdentityDescriptor? Identity)
-{
-    public SqlColumnDescriptor(
-        string Name,
-        int _,
-        string SqlType,
-        SqlLengthDescriptor? MaxLength,
-        byte? Precision,
-        byte? Scale,
-        bool IsNullable,
-        string? Collation,
-        SqlIdentityDescriptor? Identity)
-        : this(Name, SqlType, MaxLength, Precision, Scale, IsNullable, Collation, Identity)
-    {
-    }
-}
+    SqlIdentityDescriptor? Identity);
 
 internal sealed record SqlIndexColumnDescriptor(
     string Name,
