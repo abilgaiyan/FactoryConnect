@@ -82,7 +82,7 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
 
         var snapshot = await reader.ReadFactoryConnectOwnedSchemaAsync(
             connection,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(13, snapshot.Tables.Length);
         var names = snapshot.Tables.Select(static table => table.Name).ToArray();
@@ -104,7 +104,7 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
 
         var snapshot = await reader.ReadFactoryConnectOwnedSchemaAsync(
             connection,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         var metricInputStream = snapshot.Tables.Single(
             static table => table.Name.ObjectName == "MetricInputStream");
@@ -132,7 +132,7 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
 
         var snapshot = await reader.ReadFactoryConnectOwnedSchemaAsync(
             connection,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         var fact = snapshot.Tables.Single(static table => table.Name.ObjectName == "MetricInputFact");
         var foreignKey = Assert.Single(fact.ForeignKeys);
@@ -155,7 +155,7 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
 
         var snapshot = await reader.ReadFactoryConnectOwnedSchemaAsync(
             connection,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         var fact = snapshot.Tables.Single(static table => table.Name.ObjectName == "MetricInputFact");
         var index = Assert.Single(fact.Indexes);
