@@ -13,6 +13,16 @@ export function QueryStateView<T>({ state, children }: QueryStateViewProps<T>) {
     return <>{children(state.data)}</>;
   }
 
+  if (state.kind === "refreshing") {
+    const presentation = presentQueryState(state);
+    return (
+      <>
+        {children(state.previous)}
+        <p role="status">{presentation.message}</p>
+      </>
+    );
+  }
+
   const presentation = presentQueryState(state);
   const role = presentation.kind === "failed" || presentation.kind === "invalidRequest"
     ? "alert"
