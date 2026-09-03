@@ -15,7 +15,7 @@ import {
 } from "./application/shift-performance-navigation.ts";
 import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
 import { useShiftPerformanceOverview } from "./application/use-shift-performance-overview.ts";
-import { ShiftPerformancePageStateView } from "./presentation/ShiftPerformancePageStateView.tsx";
+import { ShiftPerformancePage } from "./presentation/ShiftPerformancePage.tsx";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -201,7 +201,7 @@ interface ShiftPerformanceVerticalProps {
 
 function ShiftPerformanceVertical({ productionDay, runtime }: ShiftPerformanceVerticalProps) {
   const overview = useShiftPerformanceOverview(productionDay, runtime);
-  return <ShiftPerformancePageStateView state={overview.state} />;
+  return <ShiftPerformancePage state={overview.state} refresh={overview.refresh} />;
 }
 
 interface ProductionDayOverviewVerticalProps {
