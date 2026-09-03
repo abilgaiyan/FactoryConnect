@@ -1,13 +1,42 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { after, test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createServer } from "vite";
 
-import { ShiftPerformancePageStateView } from "../src/presentation/ShiftPerformancePageStateView.tsx";
+const vite = await createServer({
+  appType: "custom",
+  logLevel: "silent",
+  server: { middlewareMode: true },
+});
+const { ShiftPerformancePageStateView } = await vite.ssrLoadModule(
+  "/src/presentation/ShiftPerformancePageStateView.tsx",
+);
+
+after(async () => {
+  await vite.close();
+});
 
 const day = "2026-09-03";
 
-function overview(value = "0.37") {
+function metric(metricKey, state, overrides = {}) {
+  if (state === "calculated") {
+    return { metricKey, version: "1.0", state, value: "0.80", unit: "Ratio", ...overrides };
+  }
+  if (state === "missing") {
+    return { metricKey, version: "1.0", state };
+  }
+  return {
+    metricKey,
+    version: "1.0",
+    state,
+    reasonCode: "missing-input",
+    reasonOperandName: "Input",
+    ...overrides,
+  };
+}
+
+function overview(value = "0.3700") {
   return {
     productionDay: day,
     groups: [{
@@ -15,8 +44,9 @@ function overview(value = "0.37") {
       machines: [{
         machineId: "M1",
         processorId: "P1",
-        displayName: "Machine 1",
+        siteId: "site-a",
         productionLineId: "line-a",
+        displayName: "Machine 1",
         shifts: [{
           productionLineId: "line-a",
           sourceRevision: null,
@@ -27,18 +57,11 @@ function overview(value = "0.37") {
             startsAtUtc: "2026-09-03T00:00:00Z",
             endsAtUtc: "2026-09-03T08:00:00Z",
           },
-          availability: { kind: "missing" },
-          utilization: { kind: "missing" },
-          performance: { kind: "missing" },
-          quality: { kind: "missing" },
-          oee: {
-            kind: "reported",
-            status: "calculated",
-            value,
-            unit: "Ratio",
-            reasonCode: null,
-            reasonOperandName: null,
-          },
+          availability: metric("Availability", "missing"),
+          utilization: metric("Utilization", "missing"),
+          performance: metric("Performance", "missing"),
+          quality: metric("Quality", "missing"),
+          oee: metric("OEE", "calculated", { value }),
         }],
       }],
     }],
@@ -57,22 +80,24 @@ test("loading renders status without an overview", () => {
 });
 
 test("ordinary success delegates the exact supplied overview without refresh presentation", () => {
-  const html = render({ kind: "success", productionDay: day, overview: overview("0.37"), isRefreshing: false });
+  const html = render({ kind: "success", productionDay: day, overview: overview(), isRefreshing: false });
   assert.match(html, /Machine 1/);
   assert.match(html, /Shift A/);
-  assert.match(html, /37%/);
+  assert.match(html, />37%<\/td>/);
+  assert.doesNotMatch(html, />36%<\/td>/);
   assert.doesNotMatch(html, /Refreshing shift performance/);
 });
 
 test("refreshing success renders the same overview plus status only", () => {
-  const supplied = overview("0.37");
+  const supplied = overview();
   const html = render({ kind: "success", productionDay: day, overview: supplied, isRefreshing: true });
   assert.match(html, /Machine 1/);
   assert.match(html, /Shift A/);
-  assert.match(html, /37%/);
+  assert.match(html, />37%<\/td>/);
+  assert.doesNotMatch(html, />36%<\/td>/);
   assert.match(html, /role="status"/);
   assert.match(html, /Refreshing shift performance/);
-  assert.equal(supplied.groups[0].machines[0].shifts[0].oee.value, "0.37");
+  assert.equal(supplied.groups[0].machines[0].shifts[0].oee.value, "0.3700");
 });
 
 test("invalid request renders the already-classified message as an alert", () => {
