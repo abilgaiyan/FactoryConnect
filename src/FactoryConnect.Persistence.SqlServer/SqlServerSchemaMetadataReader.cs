@@ -6,15 +6,13 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal sealed class SqlServerSchemaMetadataReader
 {
-    private readonly SqlServerOwnedObjectResolver _resolver = new();
-
     public async Task<SqlSchemaDescriptor> ReadFactoryConnectOwnedSchemaAsync(
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
 
-        var resolvedObjects = await _resolver.ResolveAsync(
+        var resolvedObjects = await SqlServerOwnedObjectResolver.ResolveAsync(
             connection,
             SqlRepositorySchemaAuthority.OwnedObjects,
             cancellationToken);
@@ -58,10 +56,8 @@ internal sealed class SqlServerSchemaMetadataReader
         return new SqlTableDescriptor(
             resolvedObject.RepositoryIdentity,
             columns,
-            keys.SingleOrDefault(static key => key.ConstraintType == "PK")?.PrimaryKey,
-            keys.Where(static key => key.ConstraintType == "UQ")
-                .Select(static key => key.UniqueConstraint!)
-                .ToImmutableArray(),
+            keys.PrimaryKey,
+            keys.UniqueConstraints,
             foreignKeys,
             checks,
             indexes);
@@ -97,7 +93,7 @@ internal sealed class SqlServerSchemaMetadataReader
             """;
         command.Parameters.AddWithValue("@ObjectId", objectId);
 
-        var result = ImmutableArray.CreateBuilder<SqlColumnDescriptor>();
+        var columns = ImmutableArray.CreateBuilder<SqlColumnDescriptor>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -109,7 +105,7 @@ internal sealed class SqlServerSchemaMetadataReader
                     Convert.ToDecimal(reader.GetValue(9), CultureInfo.InvariantCulture),
                     reader.GetBoolean(10));
 
-            result.Add(new SqlColumnDescriptor(
+            columns.Add(new SqlColumnDescriptor(
                 reader.GetString(0),
                 reader.GetInt32(1),
                 sqlType,
@@ -121,10 +117,10 @@ internal sealed class SqlServerSchemaMetadataReader
                 identity));
         }
 
-        return result.ToImmutable();
+        return columns.ToImmutable();
     }
 
-    private static async Task<ImmutableArray<KeyConstraintRead>> ReadKeyConstraintsAsync(
+    private static async Task<(SqlPrimaryKeyDescriptor? PrimaryKey, ImmutableArray<SqlUniqueConstraintDescriptor> UniqueConstraints)> ReadKeyConstraintsAsync(
         SqlConnection connection,
         int objectId,
         CancellationToken cancellationToken)
@@ -132,14 +128,16 @@ internal sealed class SqlServerSchemaMetadataReader
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT
-                kc.name AS ConstraintName,
-                kc.type AS ConstraintType,
-                i.type AS IndexType,
+                kc.name,
+                kc.type,
+                i.index_id,
+                i.type,
+                i.has_filter,
                 i.filter_definition,
                 ic.key_ordinal,
-                ic.index_column_id,
-                ic.is_included_column,
                 ic.is_descending_key,
+                ic.is_included_column,
+                ic.index_column_id,
                 c.name AS ColumnName
             FROM sys.key_constraints AS kc
             INNER JOIN sys.indexes AS i
@@ -152,7 +150,7 @@ internal sealed class SqlServerSchemaMetadataReader
                 ON c.object_id = ic.object_id
                 AND c.column_id = ic.column_id
             WHERE kc.parent_object_id = @ObjectId
-            ORDER BY kc.name, ic.is_included_column, ic.key_ordinal, ic.index_column_id;
+            ORDER BY kc.name, ic.index_column_id;
             """;
         command.Parameters.AddWithValue("@ObjectId", objectId);
 
@@ -160,25 +158,27 @@ internal sealed class SqlServerSchemaMetadataReader
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            rows.Add(new IndexRow(
-                reader.GetString(0),
-                reader.GetString(1),
-                reader.GetByte(2) == 1,
-                reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.GetByte(4),
-                reader.GetInt32(5),
-                reader.GetBoolean(6),
-                reader.GetBoolean(7),
-                reader.GetString(8),
-                IsUnique: true,
-                IsEnabled: true));
+            rows.Add(ReadIndexRow(reader));
         }
 
-        return rows
-            .GroupBy(static row => (row.Name, row.ConstraintType))
-            .OrderBy(static group => group.Key.Name, StringComparer.Ordinal)
-            .Select(static group => CreateKeyConstraint(group.Key.ConstraintType, group.ToArray()))
-            .ToImmutableArray();
+        SqlPrimaryKeyDescriptor? primaryKey = null;
+        var uniques = ImmutableArray.CreateBuilder<SqlUniqueConstraintDescriptor>();
+        foreach (var group in rows.GroupBy(static row => (row.Name, row.ConstraintType, row.IndexType, row.FilterDefinition)))
+        {
+            var structure = CreateIndexStructure(group.Key.IndexType, group, group.Key.FilterDefinition);
+            if (string.Equals(group.Key.ConstraintType, "PK", StringComparison.Ordinal))
+            {
+                primaryKey = new SqlPrimaryKeyDescriptor(group.Key.Name, structure);
+            }
+            else
+            {
+                uniques.Add(new SqlUniqueConstraintDescriptor(group.Key.Name, structure));
+            }
+        }
+
+        return (
+            primaryKey,
+            uniques.OrderBy(static item => item.Name, StringComparer.Ordinal).ToImmutableArray());
     }
 
     private static async Task<ImmutableArray<SqlForeignKeyDescriptor>> ReadForeignKeysAsync(
@@ -192,24 +192,24 @@ internal sealed class SqlServerSchemaMetadataReader
             SELECT
                 fk.name,
                 fk.referenced_object_id,
-                rs.name AS ReferencedSchemaName,
-                rt.name AS ReferencedTableName,
                 fk.delete_referential_action,
                 fk.update_referential_action,
                 fk.is_disabled,
                 fk.is_not_trusted,
                 fk.is_not_for_replication,
                 fkc.constraint_column_id,
-                pc.name AS ParentColumnName,
-                rc.name AS ReferencedColumnName
+                pc.name AS ParentColumn,
+                rc.name AS ReferencedColumn,
+                rs.name AS ReferencedSchema,
+                rt.name AS ReferencedTable
             FROM sys.foreign_keys AS fk
             INNER JOIN sys.foreign_key_columns AS fkc
                 ON fkc.constraint_object_id = fk.object_id
             INNER JOIN sys.columns AS pc
-                ON pc.object_id = fk.parent_object_id
+                ON pc.object_id = fkc.parent_object_id
                 AND pc.column_id = fkc.parent_column_id
             INNER JOIN sys.columns AS rc
-                ON rc.object_id = fk.referenced_object_id
+                ON rc.object_id = fkc.referenced_object_id
                 AND rc.column_id = fkc.referenced_column_id
             INNER JOIN sys.tables AS rt
                 ON rt.object_id = fk.referenced_object_id
@@ -227,38 +227,38 @@ internal sealed class SqlServerSchemaMetadataReader
             rows.Add(new ForeignKeyRow(
                 reader.GetString(0),
                 reader.GetInt32(1),
-                new SqlObjectName(reader.GetString(2), reader.GetString(3)),
-                ToReferentialAction(reader.GetByte(4)),
-                ToReferentialAction(reader.GetByte(5)),
-                !reader.GetBoolean(6),
-                !reader.GetBoolean(7),
-                reader.GetBoolean(8),
-                reader.GetInt32(9),
-                reader.GetString(10),
-                reader.GetString(11)));
+                (byte)reader.GetInt32(2),
+                (byte)reader.GetInt32(3),
+                reader.GetBoolean(4),
+                reader.GetBoolean(5),
+                reader.GetBoolean(6),
+                reader.GetInt32(7),
+                reader.GetString(8),
+                reader.GetString(9),
+                new SqlObjectName(reader.GetString(10), reader.GetString(11))));
         }
 
         return rows
             .GroupBy(static row => row.Name, StringComparer.Ordinal)
-            .OrderBy(static group => group.Key, StringComparer.Ordinal)
             .Select(group =>
             {
-                var ordered = group.OrderBy(static row => row.Ordinal).ToArray();
-                var first = ordered[0];
+                var first = group.First();
                 var referencedTable = repositoryIdentityByObjectId.TryGetValue(first.ReferencedObjectId, out var repositoryIdentity)
                     ? repositoryIdentity
                     : first.CatalogReferencedTable;
+                var ordered = group.OrderBy(static row => row.Ordinal).ToArray();
                 return new SqlForeignKeyDescriptor(
                     first.Name,
                     ordered.Select(static row => row.ParentColumn).ToImmutableArray(),
                     referencedTable,
                     ordered.Select(static row => row.ReferencedColumn).ToImmutableArray(),
-                    first.DeleteAction,
-                    first.UpdateAction,
-                    first.IsEnabled,
-                    first.IsTrusted,
+                    MapReferentialAction(first.DeleteAction),
+                    MapReferentialAction(first.UpdateAction),
+                    !first.IsDisabled,
+                    !first.IsNotTrusted,
                     first.IsNotForReplication);
             })
+            .OrderBy(static item => item.Name, StringComparer.Ordinal)
             .ToImmutableArray();
     }
 
@@ -281,11 +281,11 @@ internal sealed class SqlServerSchemaMetadataReader
             """;
         command.Parameters.AddWithValue("@ObjectId", objectId);
 
-        var result = ImmutableArray.CreateBuilder<SqlCheckConstraintDescriptor>();
+        var checks = ImmutableArray.CreateBuilder<SqlCheckConstraintDescriptor>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            result.Add(new SqlCheckConstraintDescriptor(
+            checks.Add(new SqlCheckConstraintDescriptor(
                 reader.GetString(0),
                 reader.GetString(1),
                 !reader.GetBoolean(2),
@@ -293,7 +293,7 @@ internal sealed class SqlServerSchemaMetadataReader
                 reader.GetBoolean(4)));
         }
 
-        return result.ToImmutable();
+        return checks.ToImmutable();
     }
 
     private static async Task<ImmutableArray<SqlIndexDescriptor>> ReadOrdinaryIndexesAsync(
@@ -310,9 +310,9 @@ internal sealed class SqlServerSchemaMetadataReader
                 i.type,
                 i.filter_definition,
                 ic.key_ordinal,
-                ic.index_column_id,
-                ic.is_included_column,
                 ic.is_descending_key,
+                ic.is_included_column,
+                ic.index_column_id,
                 c.name AS ColumnName
             FROM sys.indexes AS i
             INNER JOIN sys.index_columns AS ic
@@ -322,11 +322,10 @@ internal sealed class SqlServerSchemaMetadataReader
                 ON c.object_id = ic.object_id
                 AND c.column_id = ic.column_id
             WHERE i.object_id = @ObjectId
-                AND i.index_id > 0
-                AND i.is_primary_key = 0
-                AND i.is_unique_constraint = 0
-                AND i.is_hypothetical = 0
-            ORDER BY i.name, ic.is_included_column, ic.key_ordinal, ic.index_column_id;
+              AND i.is_primary_key = 0
+              AND i.is_unique_constraint = 0
+              AND i.name IS NOT NULL
+            ORDER BY i.name, ic.index_column_id;
             """;
         command.Parameters.AddWithValue("@ObjectId", objectId);
 
@@ -336,50 +335,81 @@ internal sealed class SqlServerSchemaMetadataReader
         {
             rows.Add(new IndexRow(
                 reader.GetString(0),
-                ConstraintType: string.Empty,
-                reader.GetByte(3) == 1,
-                reader.IsDBNull(4) ? null : reader.GetString(4),
-                reader.GetByte(5),
-                reader.GetInt32(6),
-                reader.GetBoolean(7),
-                reader.GetBoolean(8),
-                reader.GetString(9),
+                null,
                 reader.GetBoolean(1),
-                !reader.GetBoolean(2)));
+                reader.GetBoolean(2),
+                reader.GetByte(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.GetInt32(5),
+                reader.GetBoolean(6),
+                reader.GetBoolean(7),
+                reader.GetInt32(8),
+                reader.GetString(9)));
         }
 
         return rows
-            .GroupBy(static row => row.Name, StringComparer.Ordinal)
-            .OrderBy(static group => group.Key, StringComparer.Ordinal)
-            .Select(static group =>
-            {
-                var rows = group.ToArray();
-                var first = rows[0];
-                return new SqlIndexDescriptor(
-                    first.Name,
-                    first.IsUnique,
-                    first.IsEnabled,
-                    CreateIndexStructure(rows));
-            })
+            .GroupBy(static row => (row.Name, row.IsUnique, row.IsDisabled, row.IndexType, row.FilterDefinition))
+            .Select(group => new SqlIndexDescriptor(
+                group.Key.Name,
+                group.Key.IsUnique,
+                !group.Key.IsDisabled,
+                CreateIndexStructure(group.Key.IndexType, group, group.Key.FilterDefinition)))
+            .OrderBy(static item => item.Name, StringComparer.Ordinal)
             .ToImmutableArray();
+    }
+
+    private static IndexRow ReadIndexRow(SqlDataReader reader) => new(
+        reader.GetString(0),
+        reader.GetString(1),
+        IsUnique: true,
+        IsDisabled: false,
+        reader.GetByte(3),
+        reader.IsDBNull(5) ? null : reader.GetString(5),
+        reader.GetInt32(6),
+        reader.GetBoolean(7),
+        reader.GetBoolean(8),
+        reader.GetInt32(9),
+        reader.GetString(10));
+
+    private static SqlIndexStructureDescriptor CreateIndexStructure(
+        byte indexType,
+        IEnumerable<IndexRow> rows,
+        string? filterDefinition)
+    {
+        var ordered = rows.OrderBy(static row => row.IndexColumnId).ToArray();
+        var keys = ordered
+            .Where(static row => !row.IsIncluded)
+            .OrderBy(static row => row.KeyOrdinal)
+            .Select(static row => new SqlIndexColumnDescriptor(
+                row.ColumnName,
+                row.IsDescending ? SqlIndexColumnDirection.Descending : SqlIndexColumnDirection.Ascending,
+                row.KeyOrdinal))
+            .ToImmutableArray();
+        var included = ordered
+            .Where(static row => row.IsIncluded)
+            .Select(static row => row.ColumnName)
+            .ToImmutableArray();
+
+        return new SqlIndexStructureDescriptor(
+            IsClustered: indexType == 1,
+            keys,
+            included,
+            filterDefinition);
     }
 
     internal static SqlLengthDescriptor? NormalizeLength(string sqlType, short catalogMaxLength)
     {
-        if (sqlType is not ("binary" or "char" or "nchar" or "nvarchar" or "varbinary" or "varchar"))
-        {
-            return null;
-        }
-
         if (catalogMaxLength == -1)
         {
             return SqlLengthDescriptor.Max;
         }
 
-        var semanticLength = sqlType is "nchar" or "nvarchar"
-            ? catalogMaxLength / 2
-            : catalogMaxLength;
-        return SqlLengthDescriptor.Bounded(semanticLength);
+        return sqlType switch
+        {
+            "char" or "varchar" or "binary" or "varbinary" => SqlLengthDescriptor.Bounded(catalogMaxLength),
+            "nchar" or "nvarchar" => SqlLengthDescriptor.Bounded(catalogMaxLength / 2),
+            _ => null
+        };
     }
 
     internal static byte? NormalizePrecision(string sqlType, byte catalogPrecision) =>
@@ -390,80 +420,38 @@ internal sealed class SqlServerSchemaMetadataReader
             ? catalogScale
             : null;
 
-    private static KeyConstraintRead CreateKeyConstraint(string constraintType, IndexRow[] rows)
-    {
-        var first = rows[0];
-        var structure = CreateIndexStructure(rows);
-        return constraintType switch
-        {
-            "PK" => new KeyConstraintRead(
-                constraintType,
-                new SqlPrimaryKeyDescriptor(first.Name, structure),
-                null),
-            "UQ" => new KeyConstraintRead(
-                constraintType,
-                null,
-                new SqlUniqueConstraintDescriptor(first.Name, structure)),
-            _ => throw new InvalidOperationException($"Unsupported SQL key constraint type '{constraintType}'.")
-        };
-    }
-
-    private static SqlIndexStructureDescriptor CreateIndexStructure(IndexRow[] rows)
-    {
-        var first = rows[0];
-        return new SqlIndexStructureDescriptor(
-            first.IsClustered,
-            rows.Where(static row => !row.IsIncluded)
-                .OrderBy(static row => row.KeyOrdinal)
-                .Select(static row => new SqlIndexColumnDescriptor(
-                    row.ColumnName,
-                    row.IsDescending ? SqlIndexColumnDirection.Descending : SqlIndexColumnDirection.Ascending,
-                    row.KeyOrdinal))
-                .ToImmutableArray(),
-            rows.Where(static row => row.IsIncluded)
-                .OrderBy(static row => row.IndexColumnOrdinal)
-                .Select(static row => row.ColumnName)
-                .ToImmutableArray(),
-            first.FilterDefinition);
-    }
-
-    private static SqlReferentialAction ToReferentialAction(byte value) => value switch
+    private static SqlReferentialAction MapReferentialAction(byte action) => action switch
     {
         0 => SqlReferentialAction.NoAction,
         1 => SqlReferentialAction.Cascade,
         2 => SqlReferentialAction.SetNull,
         3 => SqlReferentialAction.SetDefault,
-        _ => throw new InvalidOperationException($"Unknown SQL Server referential action '{value}'.")
+        _ => throw new InvalidOperationException($"Unsupported SQL Server referential action '{action}'.")
     };
 
     private sealed record IndexRow(
         string Name,
-        string ConstraintType,
-        bool IsClustered,
+        string? ConstraintType,
+        bool IsUnique,
+        bool IsDisabled,
+        byte IndexType,
         string? FilterDefinition,
         int KeyOrdinal,
-        int IndexColumnOrdinal,
-        bool IsIncluded,
         bool IsDescending,
-        string ColumnName,
-        bool IsUnique,
-        bool IsEnabled);
+        bool IsIncluded,
+        int IndexColumnId,
+        string ColumnName);
 
     private sealed record ForeignKeyRow(
         string Name,
         int ReferencedObjectId,
-        SqlObjectName CatalogReferencedTable,
-        SqlReferentialAction DeleteAction,
-        SqlReferentialAction UpdateAction,
-        bool IsEnabled,
-        bool IsTrusted,
+        byte DeleteAction,
+        byte UpdateAction,
+        bool IsDisabled,
+        bool IsNotTrusted,
         bool IsNotForReplication,
         int Ordinal,
         string ParentColumn,
-        string ReferencedColumn);
-
-    private sealed record KeyConstraintRead(
-        string ConstraintType,
-        SqlPrimaryKeyDescriptor? PrimaryKey,
-        SqlUniqueConstraintDescriptor? UniqueConstraint);
+        string ReferencedColumn,
+        SqlObjectName CatalogReferencedTable);
 }
