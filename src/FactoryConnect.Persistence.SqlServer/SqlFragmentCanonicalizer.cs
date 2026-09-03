@@ -37,8 +37,8 @@ internal static class SqlFragmentCanonicalizer
 
             tokens.Add(text[index] switch
             {
-                '\'' => ReadDelimited(text, ref index, '\'', "single-quoted string", doubledEscape: true),
-                '"' => ReadDelimited(text, ref index, '"', "double-quoted identifier", doubledEscape: true),
+                '\'' => ReadDelimited(text, ref index, '\'', "single-quoted string"),
+                '"' => ReadDelimited(text, ref index, '"', "double-quoted identifier"),
                 '[' => ReadBracketIdentifier(text, ref index),
                 _ => ReadExecutableToken(text, ref index)
             });
@@ -51,8 +51,7 @@ internal static class SqlFragmentCanonicalizer
         string text,
         ref int index,
         char delimiter,
-        string description,
-        bool doubledEscape)
+        string description)
     {
         var start = index++;
         while (index < text.Length)
@@ -63,7 +62,7 @@ internal static class SqlFragmentCanonicalizer
                 continue;
             }
 
-            if (doubledEscape && index + 1 < text.Length && text[index + 1] == delimiter)
+            if (index + 1 < text.Length && text[index + 1] == delimiter)
             {
                 index += 2;
                 continue;
@@ -185,7 +184,7 @@ internal static class SqlFragmentCanonicalizer
 
     private static bool StartsWith(string text, int index, string value) =>
         index + value.Length <= text.Length &&
-        text.AsSpan(index, value.Length).SequenceEqual(value);
+        text.AsSpan(index, value.Length).StartsWith(value, StringComparison.Ordinal);
 
     private static bool IsPunctuation(char value) => value is '(' or ')' or ',' or '.' or ';';
 
