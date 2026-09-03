@@ -1,11 +1,11 @@
 import type { QueryState } from "../query/query-state.ts";
 import {
-  ShiftPresentationContractFailure,
-} from "../presentation/shift-performance-authority-validator.ts";
-import {
   mapShiftPerformanceOverview,
 } from "../presentation/shift-performance-projector.ts";
-import type { ShiftPerformanceOverview } from "../presentation/shift-performance-model.ts";
+import {
+  ShiftPresentationContractFailure,
+  type ShiftPerformanceOverview,
+} from "../presentation/shift-performance-model.ts";
 import type { AuthoritativeProductionDayShiftResult } from "./production-day-shift-reporting.ts";
 import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
 
