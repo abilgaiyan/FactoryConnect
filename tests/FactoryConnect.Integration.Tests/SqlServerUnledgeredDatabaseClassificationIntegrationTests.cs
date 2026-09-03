@@ -7,6 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerUnledgeredDatabaseClassificationIntegrationTests
 {
     private const string BinaryCollation = "Latin1_General_100_BIN2";
+    private const string CaseInsensitiveDatabaseCollation = "Latin1_General_100_CI_AS";
 
     [Fact]
     public async Task DatabaseWithNoFactoryConnectTablesIsUninitialized()
@@ -78,7 +79,7 @@ public sealed class SqlServerUnledgeredDatabaseClassificationIntegrationTests
     }
 
     [Fact]
-    public async Task CasingOnlyCatalogIdentityUsesSqlServerResolutionSemantics()
+    public async Task CasingOnlyCatalogIdentityUsesCaseInsensitiveSqlServerResolutionSemantics()
     {
         await using var database = await IsolatedPost004Database.CreateAsync();
         await using var connection = await database.OpenConnectionAsync();
@@ -240,6 +241,29 @@ public sealed class SqlServerUnledgeredDatabaseClassificationIntegrationTests
                 FOREIGN KEY (MetricInputStreamRowId, MachineId)
                 REFERENCES dbo.MetricInputStream (MetricInputStreamRowId, MachineId)
                 ON DELETE CASCADE;
+            ALTER TABLE dbo.MetricInputFact
+                CHECK CONSTRAINT FK_MetricInputFact_StreamMachine;
+            """);
+
+        await AssertPartialOrIncompatibleLegacyAsync(connection);
+    }
+
+    [Fact]
+    public async Task Post004DatabaseWithForeignKeyColumnMappingChangedIsPartialOrIncompatibleLegacy()
+    {
+        await using var database = await IsolatedPost004Database.CreateAsync();
+        await using var connection = await database.OpenConnectionAsync();
+        await AssertLegacyAdoptableAsync(connection);
+
+        await ExecuteAsync(
+            connection,
+            """
+            ALTER TABLE dbo.MetricInputFact
+                DROP CONSTRAINT FK_MetricInputFact_StreamMachine;
+            ALTER TABLE dbo.MetricInputFact WITH CHECK
+                ADD CONSTRAINT FK_MetricInputFact_StreamMachine
+                FOREIGN KEY (MetricInputStreamRowId)
+                REFERENCES dbo.MetricInputStream (MetricInputStreamRowId);
             ALTER TABLE dbo.MetricInputFact
                 CHECK CONSTRAINT FK_MetricInputFact_StreamMachine;
             """);
@@ -618,7 +642,8 @@ public sealed class SqlServerUnledgeredDatabaseClassificationIntegrationTests
             await using var connection = new SqlConnection(_adminConnectionString);
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = $"CREATE DATABASE {QuoteIdentifier(_databaseName)};";
+            command.CommandText =
+                $"CREATE DATABASE {QuoteIdentifier(_databaseName)} COLLATE {CaseInsensitiveDatabaseCollation};";
             await command.ExecuteNonQueryAsync();
         }
 
