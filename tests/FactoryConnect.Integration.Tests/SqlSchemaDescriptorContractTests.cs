@@ -12,7 +12,7 @@ public sealed class SqlSchemaDescriptorContractTests
             "RowId",
             Ordinal: 1,
             "bigint",
-            MaxLength: SqlLengthDescriptor.Fixed(8),
+            MaxLength: SqlLengthDescriptor.Bounded(8),
             Precision: 19,
             Scale: 0,
             IsNullable: false,
@@ -27,14 +27,14 @@ public sealed class SqlSchemaDescriptorContractTests
     }
 
     [Fact]
-    public void LengthDescriptorDistinguishesFixedMaxAndNotApplicable()
+    public void LengthDescriptorDistinguishesBoundedMaxAndNotApplicable()
     {
-        var fixedLength = SqlLengthDescriptor.Fixed(256);
+        var boundedLength = SqlLengthDescriptor.Bounded(256);
         var maxLength = SqlLengthDescriptor.Max;
         SqlLengthDescriptor? notApplicable = null;
 
-        Assert.Equal(256, fixedLength.Value);
-        Assert.False(fixedLength.IsMax);
+        Assert.Equal(256, boundedLength.Value);
+        Assert.False(boundedLength.IsMax);
         Assert.Null(maxLength.Value);
         Assert.True(maxLength.IsMax);
         Assert.Null(notApplicable);
@@ -118,7 +118,7 @@ public sealed class SqlSchemaDescriptorContractTests
         Assert.Equal(2, set.OwnedTables.Length);
         Assert.Equal(new SqlObjectName("dbo", "MachineObservation"), set.OwnedTables[0]);
         Assert.Equal(new SqlObjectName("dbo", "MetricInputFact"), set.OwnedTables[1]);
-        Assert.True(set.Recognizes(new SqlObjectName("dbo", "MetricInputFact")));
-        Assert.False(set.Recognizes(new SqlObjectName("dbo", "CustomerOrders")));
+        Assert.True(set.ContainsRepositoryIdentity(new SqlObjectName("dbo", "MetricInputFact")));
+        Assert.False(set.ContainsRepositoryIdentity(new SqlObjectName("dbo", "CustomerOrders")));
     }
 }
