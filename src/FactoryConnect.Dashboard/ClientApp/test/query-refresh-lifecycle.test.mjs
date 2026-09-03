@@ -28,79 +28,63 @@ function problemDetails() {
   };
 }
 
-test("refresh from success retains the exact completed result until replacement completes", async () => {
-  const requests = [];
+test("success refresh retains the last completed result until replacement succeeds", async () => {
+  const refresh = deferred();
+  let call = 0;
   const controller = createQueryLifecycleController({
-    query: () => {
-      const pending = deferred();
-      requests.push(pending);
-      return pending.promise;
-    },
+    query: async () => ++call === 1 ? { items: ["A"] } : refresh.promise,
     isEmpty: (data) => data.items.length === 0,
   });
 
-  const first = controller.execute();
-  const completed = { items: ["A"] };
-  requests[0].resolve(completed);
-  await first;
+  await controller.execute();
+  const execution = controller.execute();
+  assert.deepEqual(controller.current(), { kind: "refreshing", previous: { items: ["A"] } });
 
-  const refresh = controller.execute();
-  assert.deepEqual(controller.current(), { kind: "refreshing", previous: completed });
-
-  const replacement = { items: ["B"] };
-  requests[1].resolve(replacement);
-  assert.deepEqual(await refresh, { kind: "success", data: replacement });
+  refresh.resolve({ items: ["B"] });
+  assert.deepEqual(await execution, { kind: "success", data: { items: ["B"] } });
 });
 
-test("refresh from authoritative empty retains that exact empty result", async () => {
-  const requests = [];
-  const controller = createQueryLifecycleController({
-    query: () => {
-      const pending = deferred();
-      requests.push(pending);
-      return pending.promise;
-    },
-    isEmpty: (data) => data.items.length === 0,
-  });
-
+test("authoritative empty result is retained while refreshing", async () => {
+  const refresh = deferred();
+  let call = 0;
   const empty = { items: [] };
-  const first = controller.execute();
-  requests[0].resolve(empty);
-  assert.deepEqual(await first, { kind: "empty", data: empty });
+  const controller = createQueryLifecycleController({
+    query: async () => ++call === 1 ? empty : refresh.promise,
+    isEmpty: (data) => data.items.length === 0,
+  });
 
-  const refresh = controller.execute();
+  assert.deepEqual(await controller.execute(), { kind: "empty", data: empty });
+  const execution = controller.execute();
   assert.deepEqual(controller.current(), { kind: "refreshing", previous: empty });
-  requests[1].resolve({ items: ["B"] });
-  await refresh;
+  refresh.resolve({ items: ["B"] });
+  await execution;
 });
 
-test("repeated refresh keeps the original last completed result and supersedes the in-flight generation", async () => {
+test("repeated refresh cancels the current generation and retains the original completed result", async () => {
   const requests = [];
+  let call = 0;
   const controller = createQueryLifecycleController({
     query: (signal) => {
+      if (++call === 1) {
+        return Promise.resolve({ items: ["A"] });
+      }
       const pending = deferred();
-      requests.push({ pending, signal });
+      requests.push({ signal, pending });
       return pending.promise;
     },
     isEmpty: () => false,
   });
 
-  const initial = controller.execute();
-  const completed = { items: ["A"] };
-  requests[0].pending.resolve(completed);
-  await initial;
+  await controller.execute();
+  const b = controller.execute();
+  const c = controller.execute();
+  assert.equal(requests[0].signal.aborted, true);
+  assert.deepEqual(controller.current(), { kind: "refreshing", previous: { items: ["A"] } });
 
-  const refreshB = controller.execute();
-  assert.deepEqual(controller.current(), { kind: "refreshing", previous: completed });
-  const refreshC = controller.execute();
-  assert.equal(requests[1].signal.aborted, true);
-  assert.deepEqual(controller.current(), { kind: "refreshing", previous: completed });
-
-  requests[2].pending.resolve({ items: ["C"] });
-  await refreshC;
-  requests[1].pending.resolve({ items: ["B"] });
-  await refreshB;
-
+  requests[1].pending.resolve({ items: ["C"] });
+  await c;
+  requests[0].pending.resolve({ items: ["B"] });
+  await b;
   assert.deepEqual(controller.current(), { kind: "success", data: { items: ["C"] } });
 });
 
@@ -113,9 +97,9 @@ test("refresh failure terminates previous-result retention", async () => {
   });
 
   await controller.execute();
-  assert.equal(controller.current().kind, "success");
   const result = await controller.execute();
   assert.deepEqual(result, { kind: "failed", failure });
+  assert.equal(Object.hasOwn(result, "previous"), false);
 });
 
 test("refresh invalid request terminates previous-result retention", async () => {
@@ -133,20 +117,27 @@ test("refresh invalid request terminates previous-result retention", async () =>
 
 test("refresh coverage failure terminates previous-result retention", async () => {
   let call = 0;
+  const details = { machineId: "machine-1", siteId: "site-1", businessDate: "2026-09-03" };
   const controller = createQueryLifecycleController({
     query: async () => {
       if (++call === 1) {
         return { items: ["A"] };
       }
-      throw new ProductionDayShiftRosterCoverageRequiredFailure("machine-1", "site-1", "2026-09-03");
+      throw new ProductionDayShiftRosterCoverageRequiredFailure(
+        {
+          type: "urn:factoryconnect:problem:reporting:production-day-shift-roster-coverage-required",
+          title: "Roster coverage required",
+          status: 409,
+          detail: "Coverage is required.",
+          instance: null,
+        },
+        details,
+      );
     },
     isEmpty: () => false,
   });
 
   await controller.execute();
   const result = await controller.execute();
-  assert.deepEqual(result, {
-    kind: "coverageRequired",
-    details: { machineId: "machine-1", siteId: "site-1", businessDate: "2026-09-03" },
-  });
+  assert.deepEqual(result, { kind: "coverageRequired", details });
 });
