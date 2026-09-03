@@ -33,7 +33,7 @@ internal static class SqlMigrationCanonicalizer
 
     private static string NormalizeNewlines(string value)
     {
-        if (!value.Contains('\r', StringComparison.Ordinal))
+        if (value.IndexOf('\r') < 0)
         {
             return value;
         }
