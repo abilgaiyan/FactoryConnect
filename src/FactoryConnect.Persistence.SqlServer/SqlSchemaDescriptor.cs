@@ -55,16 +55,16 @@ internal sealed record SqlColumnDescriptor(
     SqlIdentityDescriptor? Identity)
 {
     public SqlColumnDescriptor(
-        string name,
+        string Name,
         int _,
-        string sqlType,
-        SqlLengthDescriptor? maxLength,
-        byte? precision,
-        byte? scale,
-        bool isNullable,
-        string? collation,
-        SqlIdentityDescriptor? identity)
-        : this(name, sqlType, maxLength, precision, scale, isNullable, collation, identity)
+        string SqlType,
+        SqlLengthDescriptor? MaxLength,
+        byte? Precision,
+        byte? Scale,
+        bool IsNullable,
+        string? Collation,
+        SqlIdentityDescriptor? Identity)
+        : this(Name, SqlType, MaxLength, Precision, Scale, IsNullable, Collation, Identity)
     {
     }
 }
