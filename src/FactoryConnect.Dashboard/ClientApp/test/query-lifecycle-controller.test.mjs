@@ -48,13 +48,14 @@ test("controller starts idle and publishes loading then success", async () => {
   assert.deepEqual(controller.current(), result);
 });
 
-test("successful zero-item result becomes empty", async () => {
+test("successful zero-item result becomes empty and retains authoritative data", async () => {
+  const data = { items: [] };
   const controller = createQueryLifecycleController({
-    query: async () => ({ items: [] }),
-    isEmpty: (data) => data.items.length === 0,
+    query: async () => data,
+    isEmpty: (result) => result.items.length === 0,
   });
 
-  assert.deepEqual(await controller.execute(), { kind: "empty" });
+  assert.deepEqual(await controller.execute(), { kind: "empty", data });
 });
 
 test("calculated zero remains successful data", async () => {
@@ -125,7 +126,7 @@ test("unexpected cancellation of the current execution is observable as failed",
   assert.deepEqual(result, { kind: "failed", failure });
 });
 
-test("sequential re-execution replaces prior terminal state through loading", async () => {
+test("sequential re-execution retains completed result while refreshing", async () => {
   const responses = [
     { items: [1] },
     { items: [] },
@@ -146,9 +147,9 @@ test("sequential re-execution replaces prior terminal state through loading", as
   assert.deepEqual(states, [
     "loading",
     "success",
-    "loading",
+    "refreshing",
     "empty",
-    "loading",
+    "refreshing",
     "success",
   ]);
   assert.deepEqual(controller.current(), {
