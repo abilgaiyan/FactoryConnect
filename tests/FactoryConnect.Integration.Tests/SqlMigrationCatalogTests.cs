@@ -7,6 +7,8 @@ namespace FactoryConnect.Integration.Tests;
 
 public sealed class SqlMigrationCatalogTests
 {
+    private static readonly int[] ExpectedMigrationIds = [1, 2, 3, 4];
+
     [Fact]
     public void LoadExistingResourcesReturnsDeterministicLegacyCatalog()
     {
@@ -289,7 +291,7 @@ public sealed class SqlMigrationCatalogTests
 
         var catalog = SqlMigrationCatalog.Create(shuffled);
 
-        Assert.Equal(new[] { 1, 2, 3, 4 }, catalog.Migrations.Select(static migration => migration.MigrationId));
+        Assert.Equal(ExpectedMigrationIds, catalog.Migrations.Select(static migration => migration.MigrationId));
     }
 
     private static ImmutableArray<SqlMigrationDescriptor> CreateValidDescriptors() =>
