@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 using FactoryConnect.Persistence.SqlServer;
@@ -20,6 +21,19 @@ public sealed class SqlMigrationCatalogTests
     }
 
     [Fact]
+    public void LoadExistingResourcesMatchesFrozenHistoricalChecksums()
+    {
+        var catalog = SqlMigrationCatalog.Load();
+
+        Assert.Collection(
+            catalog.Migrations,
+            migration => Assert.Equal("E1C14282B7A246BBD9D5734370498695721D3F0A78D60F74531E35D5FEDC9057", migration.Sha256Checksum),
+            migration => Assert.Equal("F8DA0AFF348E3ED8964D5ED03042581A55D7C94898AAC739B81E60CA7F5E5113", migration.Sha256Checksum),
+            migration => Assert.Equal("98A9635782C4D822441269ECEE8E13BBCDC5A61C07B64608F81A0107133535C6", migration.Sha256Checksum),
+            migration => Assert.Equal("786CDD68F66E222A4E4EFB8220595E46390A0F81880D0D45A54FA22DD7A498D5", migration.Sha256Checksum));
+    }
+
+    [Fact]
     public void LoadEachDescriptorHashesExactCanonicalExecutionBytes()
     {
         var catalog = SqlMigrationCatalog.Load();
@@ -30,6 +44,22 @@ public sealed class SqlMigrationCatalogTests
             Assert.Equal(bytesFromText, migration.CanonicalBytes.ToArray());
             Assert.Equal(Convert.ToHexString(SHA256.HashData(bytesFromText)), migration.Sha256Checksum);
         }
+    }
+
+    [Fact]
+    public void DescriptorCanonicalBytesCannotBeChangedThroughCallerOwnedCopy()
+    {
+        var migration = SqlMigrationCatalog.Load().Migrations[0];
+        var originalFirstByte = migration.CanonicalBytes[0];
+        var callerOwnedCopy = migration.CanonicalBytes.ToArray();
+
+        callerOwnedCopy[0] ^= 0xFF;
+
+        Assert.Equal(originalFirstByte, migration.CanonicalBytes[0]);
+        Assert.NotEqual(callerOwnedCopy[0], migration.CanonicalBytes[0]);
+        Assert.Equal(
+            migration.Sha256Checksum,
+            Convert.ToHexString(SHA256.HashData(migration.CanonicalBytes.AsSpan())));
     }
 
     [Theory]
@@ -87,9 +117,9 @@ public sealed class SqlMigrationCatalogTests
         var canonical = SqlMigrationCanonicalizer.Canonicalize(source);
 
         Assert.Equal("\uFEFFSELECT N'\uFEFF';", canonical.Text);
-        Assert.Equal(0xEF, canonical.Bytes.Span[0]);
-        Assert.Equal(0xBB, canonical.Bytes.Span[1]);
-        Assert.Equal(0xBF, canonical.Bytes.Span[2]);
+        Assert.Equal(0xEF, canonical.Bytes[0]);
+        Assert.Equal(0xBB, canonical.Bytes[1]);
+        Assert.Equal(0xBF, canonical.Bytes[2]);
     }
 
     [Fact]
@@ -183,6 +213,108 @@ public sealed class SqlMigrationCatalogTests
             SqlMigrationTransactionPolicy.LegacyMigration003Embedded);
     }
 
+    [Fact]
+    public void CreateWithZeroDescriptorsThrows()
+    {
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(Array.Empty<SqlMigrationDescriptor>()));
+    }
+
+    [Fact]
+    public void CreateWithDuplicateMigrationIdThrows()
+    {
+        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(2, "OtherMigration"));
+
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
+    }
+
+    [Fact]
+    public void CreateWithDuplicateMigrationNameThrows()
+    {
+        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(5, "DurableMetricAggregation"));
+
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
+    }
+
+    [Fact]
+    public void CreateWithDuplicateResourceThrows()
+    {
+        var duplicateResource = CreateDescriptor(5, "OtherMigration") with
+        {
+            ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}004_ProductionContextMetricInputHandoff.sql"
+        };
+        var descriptors = CreateValidDescriptors().Add(duplicateResource);
+
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
+    }
+
+    [Fact]
+    public void CreateWithoutMigration003Throws()
+    {
+        var descriptors = CreateValidDescriptors().Where(static descriptor => descriptor.MigrationId != 3);
+
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
+    }
+
+    [Fact]
+    public void CreateWithIncorrectMigration003NameThrows()
+    {
+        var descriptors = CreateValidDescriptors()
+            .Select(static descriptor => descriptor.MigrationId == 3
+                ? descriptor with
+                {
+                    Name = "IncorrectMigration003",
+                    ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}003_IncorrectMigration003.sql"
+                }
+                : descriptor);
+
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
+    }
+
+    [Fact]
+    public void CreateWithLegacyPolicyOnNon003MigrationThrows()
+    {
+        var descriptors = CreateValidDescriptors()
+            .Select(static descriptor => descriptor.MigrationId == 4
+                ? descriptor with { TransactionPolicy = SqlMigrationTransactionPolicy.LegacyMigration003Embedded }
+                : descriptor);
+
+        Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
+    }
+
+    [Fact]
+    public void CreateOrdersShuffledDescriptorsDeterministically()
+    {
+        var valid = CreateValidDescriptors();
+        var shuffled = new[] { valid[3], valid[1], valid[2], valid[0] };
+
+        var catalog = SqlMigrationCatalog.Create(shuffled);
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, catalog.Migrations.Select(static migration => migration.MigrationId));
+    }
+
+    private static ImmutableArray<SqlMigrationDescriptor> CreateValidDescriptors() =>
+        ImmutableArray.Create(
+            CreateDescriptor(1, "InitialObservationIngestion"),
+            CreateDescriptor(2, "DurableMetricAggregation"),
+            CreateDescriptor(3, "BindMetricInputFactMachine", SqlMigrationTransactionPolicy.LegacyMigration003Embedded),
+            CreateDescriptor(4, "ProductionContextMetricInputHandoff"));
+
+    private static SqlMigrationDescriptor CreateDescriptor(
+        int id,
+        string name,
+        SqlMigrationTransactionPolicy policy = SqlMigrationTransactionPolicy.EngineOwned)
+    {
+        var canonical = SqlMigrationCanonicalizer.Canonicalize(Encoding.UTF8.GetBytes($"SELECT {id};"));
+        return new SqlMigrationDescriptor(
+            id,
+            name,
+            $"{SqlMigrationCatalog.ResourcePrefix}{id:000}_{name}.sql",
+            policy,
+            canonical.Text,
+            canonical.Bytes,
+            canonical.Sha256Checksum);
+    }
+
     private static void AssertMigration(
         SqlMigrationDescriptor migration,
         int id,
@@ -194,7 +326,7 @@ public sealed class SqlMigrationCatalogTests
         Assert.Equal($"{SqlMigrationCatalog.ResourcePrefix}{id:000}_{name}.sql", migration.ResourceName);
         Assert.Equal(policy, migration.TransactionPolicy);
         Assert.False(string.IsNullOrEmpty(migration.CanonicalSql));
-        Assert.NotEmpty(migration.CanonicalBytes.ToArray());
+        Assert.False(migration.CanonicalBytes.IsDefaultOrEmpty);
         Assert.Equal(64, migration.Sha256Checksum.Length);
     }
 }
