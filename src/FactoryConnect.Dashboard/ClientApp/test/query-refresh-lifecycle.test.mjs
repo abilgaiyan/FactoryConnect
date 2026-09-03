@@ -60,6 +60,36 @@ test("authoritative empty result is retained while refreshing", async () => {
   await execution;
 });
 
+test("success undefined is retained by state presence while refreshing", async () => {
+  const refresh = deferred();
+  let call = 0;
+  const controller = createQueryLifecycleController({
+    query: async () => ++call === 1 ? undefined : refresh.promise,
+    isEmpty: () => false,
+  });
+
+  assert.deepEqual(await controller.execute(), { kind: "success", data: undefined });
+  const execution = controller.execute();
+  assert.deepEqual(controller.current(), { kind: "refreshing", previous: undefined });
+  refresh.resolve("replacement");
+  await execution;
+});
+
+test("empty undefined is retained by state presence while refreshing", async () => {
+  const refresh = deferred();
+  let call = 0;
+  const controller = createQueryLifecycleController({
+    query: async () => ++call === 1 ? undefined : refresh.promise,
+    isEmpty: (data) => data === undefined,
+  });
+
+  assert.deepEqual(await controller.execute(), { kind: "empty", data: undefined });
+  const execution = controller.execute();
+  assert.deepEqual(controller.current(), { kind: "refreshing", previous: undefined });
+  refresh.resolve("replacement");
+  await execution;
+});
+
 test("repeated refresh cancels the current generation and retains the original completed result", async () => {
   const requests = [];
   let call = 0;
