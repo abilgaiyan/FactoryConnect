@@ -10,7 +10,6 @@ public sealed class SqlSchemaDescriptorContractTests
         var identity = new SqlIdentityDescriptor(1m, 2m, IsNotForReplication: true);
         var column = new SqlColumnDescriptor(
             "RowId",
-            Ordinal: 1,
             "bigint",
             MaxLength: SqlLengthDescriptor.Bounded(8),
             Precision: 19,
