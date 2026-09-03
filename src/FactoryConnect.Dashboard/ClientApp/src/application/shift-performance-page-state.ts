@@ -26,7 +26,12 @@ export type ShiftPerformancePageState =
       readonly businessDate: string;
     }
   | { readonly kind: "transport-failure"; readonly productionDay: string; readonly message: string }
-  | { readonly kind: "presentation-contract-failure"; readonly productionDay: string; readonly message: string };
+  | {
+      readonly kind: "presentation-contract-failure";
+      readonly productionDay: string;
+      readonly message: string;
+      readonly isRefreshing: boolean;
+    };
 
 export function deriveShiftPerformancePageState(
   queryState: QueryState<AuthoritativeProductionDayShiftResult>,
@@ -84,6 +89,7 @@ function mapCompletedResult(
         kind: "presentation-contract-failure",
         productionDay,
         message: "The shift reporting results could not be presented because they violated the Shift Performance contract.",
+        isRefreshing,
       };
     }
 
