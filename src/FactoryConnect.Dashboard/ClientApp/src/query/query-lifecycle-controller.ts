@@ -19,6 +19,10 @@ type ApplicationCancellationReason =
   | typeof supersededCancellationReason
   | typeof disposedCancellationReason;
 
+type LastCompletedResult<T> =
+  | { readonly found: false }
+  | { readonly found: true; readonly data: T };
+
 interface ActiveExecution {
   readonly generation: number;
   readonly controller: AbortController;
@@ -66,15 +70,15 @@ export function createQueryLifecycleController<T>(
     execution.controller.abort(reason);
   };
 
-  const lastCompletedResult = (): T | undefined => {
+  const lastCompletedResult = (): LastCompletedResult<T> => {
     switch (state.kind) {
       case "success":
       case "empty":
-        return state.data;
+        return { found: true, data: state.data };
       case "refreshing":
-        return state.previous;
+        return { found: true, data: state.previous };
       default:
-        return undefined;
+        return { found: false };
     }
   };
 
@@ -105,9 +109,9 @@ export function createQueryLifecycleController<T>(
         controller: new AbortController(),
       };
       activeExecution = execution;
-      publish(previous === undefined
-        ? { kind: "loading" }
-        : { kind: "refreshing", previous });
+      publish(previous.found
+        ? { kind: "refreshing", previous: previous.data }
+        : { kind: "loading" });
 
       try {
         const data = await options.query(execution.controller.signal);
