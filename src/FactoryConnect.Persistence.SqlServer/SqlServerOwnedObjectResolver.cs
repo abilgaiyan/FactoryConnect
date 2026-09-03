@@ -8,9 +8,9 @@ internal sealed record SqlResolvedObject(
     SqlObjectName CatalogIdentity,
     int ObjectId);
 
-internal sealed class SqlServerOwnedObjectResolver
+internal static class SqlServerOwnedObjectResolver
 {
-    public async Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
+    public static async Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
         SqlConnection connection,
         SqlOwnedObjectRecognitionSet recognitionSet,
         CancellationToken cancellationToken)
