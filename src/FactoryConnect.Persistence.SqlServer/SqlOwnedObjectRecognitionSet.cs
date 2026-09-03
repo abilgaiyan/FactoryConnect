@@ -17,5 +17,6 @@ internal sealed class SqlOwnedObjectRecognitionSet
 
     public ImmutableArray<SqlObjectName> OwnedTables { get; }
 
-    public bool Recognizes(SqlObjectName table) => OwnedTables.Contains(table);
+    public bool ContainsRepositoryIdentity(SqlObjectName repositoryIdentity) =>
+        OwnedTables.Contains(repositoryIdentity);
 }
