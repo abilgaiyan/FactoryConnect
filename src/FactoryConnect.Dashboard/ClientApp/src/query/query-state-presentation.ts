@@ -3,6 +3,7 @@ import type { QueryState } from "./query-state.ts";
 export type QueryStatePresentation =
   | { readonly kind: "idle"; readonly message: string }
   | { readonly kind: "loading"; readonly message: string }
+  | { readonly kind: "refreshing"; readonly message: string }
   | { readonly kind: "success"; readonly message: string }
   | { readonly kind: "empty"; readonly message: string }
   | { readonly kind: "invalidRequest"; readonly message: string }
@@ -15,6 +16,8 @@ export function presentQueryState<T>(state: QueryState<T>): QueryStatePresentati
       return { kind: "idle", message: "Ready." };
     case "loading":
       return { kind: "loading", message: "Loading." };
+    case "refreshing":
+      return { kind: "refreshing", message: "Refreshing." };
     case "success":
       return { kind: "success", message: "Data loaded." };
     case "empty":
