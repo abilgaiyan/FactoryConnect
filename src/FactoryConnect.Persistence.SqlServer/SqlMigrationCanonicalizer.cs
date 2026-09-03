@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -5,7 +6,7 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal sealed record CanonicalSqlMigration(
     string Text,
-    ReadOnlyMemory<byte> Bytes,
+    ImmutableArray<byte> Bytes,
     string Sha256Checksum);
 
 internal static class SqlMigrationCanonicalizer
@@ -19,8 +20,8 @@ internal static class SqlMigrationCanonicalizer
         var offset = HasUtf8Bom(source) ? 3 : 0;
         var text = StrictUtf8.GetString(source[offset..]);
         var normalized = NormalizeNewlines(text);
-        var bytes = StrictUtf8.GetBytes(normalized);
-        var checksum = Convert.ToHexString(SHA256.HashData(bytes));
+        var bytes = StrictUtf8.GetBytes(normalized).ToImmutableArray();
+        var checksum = Convert.ToHexString(SHA256.HashData(bytes.AsSpan()));
 
         return new CanonicalSqlMigration(normalized, bytes, checksum);
     }
