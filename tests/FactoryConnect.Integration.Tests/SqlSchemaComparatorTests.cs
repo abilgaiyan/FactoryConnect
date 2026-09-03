@@ -103,7 +103,7 @@ public sealed class SqlSchemaComparatorTests
         var first = SqlSchemaComparator.Compare(expected, actual).Differences;
         var second = SqlSchemaComparator.Compare(reversedExpected, reversedActual).Differences;
 
-        Assert.Equal(first, second);
+        Assert.True(first.SequenceEqual(second));
         Assert.Collection(
             first,
             difference =>
