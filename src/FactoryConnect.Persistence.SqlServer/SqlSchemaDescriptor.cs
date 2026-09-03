@@ -34,7 +34,7 @@ internal readonly record struct SqlLengthDescriptor
 
     public bool IsMax => Value is null;
 
-    public static SqlLengthDescriptor Fixed(int value) => new(value);
+    public static SqlLengthDescriptor Bounded(int value) => new(value);
 
     public static SqlLengthDescriptor Max { get; } = new(null);
 }
