@@ -76,7 +76,6 @@ internal sealed class SqlServerSchemaMetadataReader
         command.CommandText = """
             SELECT
                 c.name,
-                c.column_id,
                 ty.name AS SqlType,
                 c.max_length,
                 c.precision,
@@ -101,23 +100,22 @@ internal sealed class SqlServerSchemaMetadataReader
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var sqlType = reader.GetString(2);
-            var identity = reader.IsDBNull(8)
+            var sqlType = reader.GetString(1);
+            var identity = reader.IsDBNull(7)
                 ? null
                 : new SqlIdentityDescriptor(
+                    Convert.ToDecimal(reader.GetValue(7), CultureInfo.InvariantCulture),
                     Convert.ToDecimal(reader.GetValue(8), CultureInfo.InvariantCulture),
-                    Convert.ToDecimal(reader.GetValue(9), CultureInfo.InvariantCulture),
-                    reader.GetBoolean(10));
+                    reader.GetBoolean(9));
 
             columns.Add(new SqlColumnDescriptor(
                 reader.GetString(0),
-                reader.GetInt32(1),
                 sqlType,
-                NormalizeLength(sqlType, reader.GetInt16(3)),
-                NormalizePrecision(sqlType, reader.GetByte(4)),
-                NormalizeScale(sqlType, reader.GetByte(5)),
-                reader.GetBoolean(6),
-                reader.IsDBNull(7) ? null : reader.GetString(7),
+                NormalizeLength(sqlType, reader.GetInt16(2)),
+                NormalizePrecision(sqlType, reader.GetByte(3)),
+                NormalizeScale(sqlType, reader.GetByte(4)),
+                reader.GetBoolean(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6),
                 identity));
         }
 
@@ -134,9 +132,8 @@ internal sealed class SqlServerSchemaMetadataReader
             SELECT
                 kc.name,
                 kc.type,
-                i.index_id,
                 i.type,
-                i.has_filter,
+                i.is_disabled,
                 i.filter_definition,
                 ic.key_ordinal,
                 ic.is_descending_key,
@@ -162,21 +159,43 @@ internal sealed class SqlServerSchemaMetadataReader
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            rows.Add(ReadIndexRow(reader));
+            rows.Add(new IndexRow(
+                reader.GetString(0),
+                reader.GetString(1),
+                IsUnique: true,
+                reader.GetBoolean(3),
+                reader.GetByte(2),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.GetByte(5),
+                reader.GetBoolean(6),
+                reader.GetBoolean(7),
+                reader.GetInt32(8),
+                reader.GetString(9)));
         }
 
         SqlPrimaryKeyDescriptor? primaryKey = null;
         var uniques = ImmutableArray.CreateBuilder<SqlUniqueConstraintDescriptor>();
-        foreach (var group in rows.GroupBy(static row => (row.Name, row.ConstraintType, row.IndexType, row.FilterDefinition)))
+        foreach (var group in rows.GroupBy(static row => (
+            row.Name,
+            row.ConstraintType,
+            row.IsDisabled,
+            row.IndexType,
+            row.FilterDefinition)))
         {
             var structure = CreateIndexStructure(group.Key.IndexType, group, group.Key.FilterDefinition);
             if (string.Equals(group.Key.ConstraintType, "PK", StringComparison.Ordinal))
             {
-                primaryKey = new SqlPrimaryKeyDescriptor(group.Key.Name, structure);
+                primaryKey = new SqlPrimaryKeyDescriptor(
+                    group.Key.Name,
+                    IsEnabled: !group.Key.IsDisabled,
+                    structure);
             }
             else
             {
-                uniques.Add(new SqlUniqueConstraintDescriptor(group.Key.Name, structure));
+                uniques.Add(new SqlUniqueConstraintDescriptor(
+                    group.Key.Name,
+                    IsEnabled: !group.Key.IsDisabled,
+                    structure));
             }
         }
 
@@ -361,19 +380,6 @@ internal sealed class SqlServerSchemaMetadataReader
             .OrderBy(static item => item.Name, StringComparer.Ordinal)
             .ToImmutableArray();
     }
-
-    private static IndexRow ReadIndexRow(SqlDataReader reader) => new(
-        reader.GetString(0),
-        reader.GetString(1),
-        IsUnique: true,
-        IsDisabled: false,
-        reader.GetByte(3),
-        reader.IsDBNull(5) ? null : reader.GetString(5),
-        reader.GetByte(6),
-        reader.GetBoolean(7),
-        reader.GetBoolean(8),
-        reader.GetInt32(9),
-        reader.GetString(10));
 
     private static SqlIndexStructureDescriptor CreateIndexStructure(
         byte indexType,
