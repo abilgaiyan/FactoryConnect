@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using FactoryConnect.Persistence.SqlServer;
 
 namespace FactoryConnect.Integration.Tests;
@@ -20,10 +19,11 @@ public sealed class SqlSchemaDescriptorContractTests
             Collation: null,
             identity);
 
-        Assert.Same(identity, column.Identity);
-        Assert.Equal(1m, column.Identity.SeedValue);
-        Assert.Equal(2m, column.Identity.IncrementValue);
-        Assert.True(column.Identity.IsNotForReplication);
+        var retainedIdentity = Assert.IsType<SqlIdentityDescriptor>(column.Identity);
+        Assert.Same(identity, retainedIdentity);
+        Assert.Equal(1m, retainedIdentity.SeedValue);
+        Assert.Equal(2m, retainedIdentity.IncrementValue);
+        Assert.True(retainedIdentity.IsNotForReplication);
     }
 
     [Fact]
