@@ -26,7 +26,15 @@ const source = {
   displayOrder: 10,
 };
 
-function createRuntime() {
+const expectedMetrics = [
+  { metricKey: "Availability", version: "1.0" },
+  { metricKey: "Utilization", version: "1.0" },
+  { metricKey: "Performance", version: "1.0" },
+  { metricKey: "Quality", version: "1.0" },
+  { metricKey: "OEE", version: "1.0" },
+];
+
+function createRuntime({ sources = [source], queryProductionDayShiftMetrics } = {}) {
   const calls = {
     productionDayShift: [],
     productionDay: [],
@@ -39,12 +47,14 @@ function createRuntime() {
       configuration: {
         reportingBasePath: "/",
         requestTimeoutMilliseconds: 30_000,
-        sources: [source],
+        sources,
       },
       reportingClient: {
-        async queryProductionDayShiftMetrics(request) {
-          calls.productionDayShift.push(request);
-          return { items: [], continuationToken: null };
+        async queryProductionDayShiftMetrics(request, options) {
+          calls.productionDayShift.push({ request, options });
+          return queryProductionDayShiftMetrics
+            ? queryProductionDayShiftMetrics(request, options)
+            : { items: [], continuationToken: null };
         },
         async queryProductionDayMetrics(request) {
           calls.productionDay.push(request);
@@ -68,53 +78,98 @@ function selectedDayText(document) {
   return document.querySelector("time")?.textContent ?? null;
 }
 
-function assertNoShiftReporting(calls) {
-  assert.equal(calls.productionDayShift.length, 0);
+function assertExactShiftRequest(call, day) {
+  assert.deepEqual(call.request.sources, [{
+    machineId: source.machineId,
+    processorId: source.processorId,
+    siteId: source.siteId,
+    businessDate: day,
+  }]);
+  assert.deepEqual(call.request.metrics, expectedMetrics);
+  assert.deepEqual(call.request.context, {
+    productionOrderId: null,
+    operationId: null,
+    partId: null,
+    operatorId: null,
+    unpartitionedOnly: true,
+  });
+  assert.equal(call.request.pageSize, 200);
+  assert.equal(call.request.continuationToken, null);
+  assert.ok(call.options.signal instanceof AbortSignal);
+  assert.equal("order" in call.request, false);
+  assert.equal("startsAtOrAfterUtc" in call.request, false);
+  assert.equal("startsBeforeUtc" in call.request, false);
+}
+
+function assertOnlyProductionDayShiftReporting(calls) {
+  assert.equal(calls.productionDay.length, 0);
   assert.equal(calls.shift.length, 0);
 }
 
-test("direct shift route selects the exact day without issuing reporting requests", async (t) => {
+function assertConfiguredMachineWithZeroOccurrences(document) {
+  assert.match(document.body.textContent, /Machine 1/);
+  assert.match(document.body.textContent, /No shift occurrences/i);
+}
+
+test("direct valid shift route queries the exact production-day shift identity and renders authoritative zero occurrences", async (t) => {
   const { runtime, calls } = createRuntime();
   const harness = await mountInDom(React.createElement(App, { runtime }), "http://factory-dashboard/production-days/2026-09-02/shifts");
   t.after(() => harness.dispose());
 
   assert.equal(selectedDayText(harness.document), "2026-09-02");
   assert.equal(shiftInput(harness.document).value, "2026-09-02");
-  assertNoShiftReporting(calls);
-  assert.equal(calls.productionDay.length, 0);
-  assert.doesNotMatch(harness.container.textContent, /availability|utilization|quality|oee|current state/i);
+  assert.equal(calls.productionDayShift.length, 1);
+  assertExactShiftRequest(calls.productionDayShift[0], "2026-09-02");
+  assertOnlyProductionDayShiftReporting(calls);
+  assertConfiguredMachineWithZeroOccurrences(harness.document);
 });
 
-test("controlled shift day submission navigates and route identity owns the remounted input", async (t) => {
+test("controlled day submission replaces route identity and queries exact day B", async (t) => {
   const { runtime, calls } = createRuntime();
   const harness = await mountInDom(React.createElement(App, { runtime }), "http://factory-dashboard/production-days/2026-09-02/shifts");
   t.after(() => harness.dispose());
 
+  assert.equal(calls.productionDayShift.length, 1);
   await harness.changeInput(shiftInput(harness.document), "2026-09-03");
-  assert.equal(shiftInput(harness.document).value, "2026-09-03");
   await harness.submit(shiftInput(harness.document).form);
 
   assert.equal(harness.window.location.pathname, "/production-days/2026-09-03/shifts");
   assert.equal(selectedDayText(harness.document), "2026-09-03");
   assert.equal(shiftInput(harness.document).value, "2026-09-03");
-  assertNoShiftReporting(calls);
-  assert.equal(calls.productionDay.length, 0);
+  assert.equal(calls.productionDayShift.length, 2);
+  assertExactShiftRequest(calls.productionDayShift[1], "2026-09-03");
+  assertOnlyProductionDayShiftReporting(calls);
+  assertConfiguredMachineWithZeroOccurrences(harness.document);
 });
 
-test("popstate from day A to day B discards stale local selector state", async (t) => {
-  const { runtime, calls } = createRuntime();
+test("popstate from day A to day B aborts A and cannot publish A under B", async (t) => {
+  let resolveA;
+  const { runtime, calls } = createRuntime({
+    queryProductionDayShiftMetrics(request) {
+      if (request.sources[0].businessDate === "2026-09-02") {
+        return new Promise((resolve) => { resolveA = resolve; });
+      }
+      return Promise.resolve({ items: [], continuationToken: null });
+    },
+  });
   const harness = await mountInDom(React.createElement(App, { runtime }), "http://factory-dashboard/production-days/2026-09-02/shifts");
   t.after(() => harness.dispose());
 
-  await harness.changeInput(shiftInput(harness.document), "2026-09-04");
-  assert.equal(shiftInput(harness.document).value, "2026-09-04");
-
+  assert.equal(calls.productionDayShift.length, 1);
+  const signalA = calls.productionDayShift[0].options.signal;
   await harness.popstate("/production-days/2026-09-03/shifts");
 
+  assert.equal(signalA.aborted, true);
+  assert.equal(calls.productionDayShift.length, 2);
+  assertExactShiftRequest(calls.productionDayShift[1], "2026-09-03");
   assert.equal(selectedDayText(harness.document), "2026-09-03");
-  assert.equal(shiftInput(harness.document).value, "2026-09-03");
-  assertNoShiftReporting(calls);
-  assert.equal(calls.productionDay.length, 0);
+  assertConfiguredMachineWithZeroOccurrences(harness.document);
+
+  resolveA({ items: [], continuationToken: null });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(selectedDayText(harness.document), "2026-09-03");
+  assertConfiguredMachineWithZeroOccurrences(harness.document);
+  assertOnlyProductionDayShiftReporting(calls);
 });
 
 test("malformed shift route day is visible and invalid submission does not navigate or query", async (t) => {
@@ -127,11 +182,11 @@ test("malformed shift route day is visible and invalid submission does not navig
   const before = harness.window.location.pathname;
   await harness.submit(shiftInput(harness.document).form);
   assert.equal(harness.window.location.pathname, before);
-  assertNoShiftReporting(calls);
-  assert.equal(calls.productionDay.length, 0);
+  assert.equal(calls.productionDayShift.length, 0);
+  assertOnlyProductionDayShiftReporting(calls);
 });
 
-test("production-day detail exposes and routes through the exact shift-performance link without a shift request", async (t) => {
+test("production-day detail shift link starts exact selected-day shift reporting without legacy shift queries", async (t) => {
   const { runtime, calls } = createRuntime();
   const harness = await mountInDom(React.createElement(App, { runtime }), "http://factory-dashboard/production-days/2026-09-02");
   t.after(() => harness.dispose());
@@ -139,11 +194,25 @@ test("production-day detail exposes and routes through the exact shift-performan
   const link = [...harness.document.querySelectorAll("a")].find((anchor) => anchor.textContent === "Shift performance");
   assert.ok(link);
   assert.equal(link.getAttribute("href"), "/production-days/2026-09-02/shifts");
+  assert.equal(calls.productionDayShift.length, 0);
+  assert.equal(calls.shift.length, 0);
 
   await harness.click(link);
 
   assert.equal(harness.window.location.pathname, "/production-days/2026-09-02/shifts");
   assert.equal(selectedDayText(harness.document), "2026-09-02");
-  assert.equal(shiftInput(harness.document).value, "2026-09-02");
-  assertNoShiftReporting(calls);
+  assert.equal(calls.productionDayShift.length, 1);
+  assertExactShiftRequest(calls.productionDayShift[0], "2026-09-02");
+  assert.equal(calls.shift.length, 0);
+  assertConfiguredMachineWithZeroOccurrences(harness.document);
+});
+
+test("configured zero-source factory completes authoritatively without any reporting operation", async (t) => {
+  const { runtime, calls } = createRuntime({ sources: [] });
+  const harness = await mountInDom(React.createElement(App, { runtime }), "http://factory-dashboard/production-days/2026-09-02/shifts");
+  t.after(() => harness.dispose());
+
+  assert.equal(calls.productionDayShift.length, 0);
+  assertOnlyProductionDayShiftReporting(calls);
+  assert.match(harness.document.body.textContent, /No machines are configured/i);
 });
