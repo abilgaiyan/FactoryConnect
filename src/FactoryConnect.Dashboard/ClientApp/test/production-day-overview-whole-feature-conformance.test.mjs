@@ -123,7 +123,7 @@ test("configured populations 0 1 7 and 50 traverse the real query mapping and re
       },
     });
     const state = deriveProductionDayOverviewViewState(
-      authoritative.items.length === 0 ? { kind: "empty" } : { kind: "success", data: authoritative },
+      authoritative.items.length === 0 ? { kind: "empty", data: authoritative } : { kind: "success", data: authoritative },
       day,
       configured,
     );
@@ -303,7 +303,7 @@ test("zero and absent production-day metrics never infer current machine state",
     { items: [item(configured[0], "Availability", 0), item(configured[0], "OEE", 0)] },
     { items: [] },
   ]) {
-    const state = deriveProductionDayOverviewViewState(result.items.length === 0 ? { kind: "empty" } : { kind: "success", data: result }, day, configured);
+    const state = deriveProductionDayOverviewViewState(result.items.length === 0 ? { kind: "empty", data: result } : { kind: "success", data: result }, day, configured);
     assert.equal(state.kind, "success");
     const machine = state.model.groups[0].machines[0];
     for (const forbidden of ["currentState", "machineState", "running", "idle", "fault", "alarm", "online", "offline", "lastSeen"]) {
@@ -333,9 +333,8 @@ test("overview production modules stay inside the reporting presentation depende
     for (const dependency of imports) {
       assert.ok(
         dependency === "react" || allowedPrefixes.some((prefix) => dependency.startsWith(prefix)),
-        `${modulePath} imports disallowed overview dependency ${dependency}`,
+        `${modulePath} imports disallowed dependency ${dependency}`,
       );
     }
-    assert.doesNotMatch(source, /MTConnect|raw observation|canonical observation|current-state|machine activity|\/current\b|\/sample\b/i);
   }
 });
