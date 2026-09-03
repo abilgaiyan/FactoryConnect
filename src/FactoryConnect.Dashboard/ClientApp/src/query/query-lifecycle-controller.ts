@@ -66,6 +66,18 @@ export function createQueryLifecycleController<T>(
     execution.controller.abort(reason);
   };
 
+  const lastCompletedResult = (): T | undefined => {
+    switch (state.kind) {
+      case "success":
+      case "empty":
+        return state.data;
+      case "refreshing":
+        return state.previous;
+      default:
+        return undefined;
+    }
+  };
+
   return {
     current() {
       return state;
@@ -83,6 +95,7 @@ export function createQueryLifecycleController<T>(
         throw new Error("Query lifecycle controller is disposed.");
       }
 
+      const previous = lastCompletedResult();
       if (activeExecution !== undefined) {
         cancel(activeExecution, supersededCancellationReason);
       }
@@ -92,7 +105,9 @@ export function createQueryLifecycleController<T>(
         controller: new AbortController(),
       };
       activeExecution = execution;
-      publish({ kind: "loading" });
+      publish(previous === undefined
+        ? { kind: "loading" }
+        : { kind: "refreshing", previous });
 
       try {
         const data = await options.query(execution.controller.signal);
@@ -106,7 +121,7 @@ export function createQueryLifecycleController<T>(
         }
 
         activeExecution = undefined;
-        return publish(empty ? { kind: "empty" } : { kind: "success", data });
+        return publish(empty ? { kind: "empty", data } : { kind: "success", data });
       } catch (error) {
         if (!ownsPublication(execution)) {
           if (!isReportingClientFailure(error)) {
