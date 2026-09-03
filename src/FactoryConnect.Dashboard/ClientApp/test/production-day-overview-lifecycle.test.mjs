@@ -147,7 +147,7 @@ test("mounted overview records one injected timestamp, refreshes same day, and p
     assert.equal(binding.lastSuccessfulRetrieval.retrievedAt.toISOString(), "2026-09-01T08:00:00.000Z");
 
     await act(async () => { void binding.refresh(); await Promise.resolve(); });
-    assert.equal(binding.state.kind, "loading");
+    assert.equal(binding.state.kind, "refreshing");
     assert.equal(calls[1].request.fromInclusive, "2026-09-01");
     assert.equal(binding.lastSuccessfulRetrieval.retrievedAt.toISOString(), "2026-09-01T08:00:00.000Z");
 
