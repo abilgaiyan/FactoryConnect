@@ -5,7 +5,7 @@ import {
   deriveShiftPerformancePageState,
   type ShiftPerformancePageState,
 } from "./shift-performance-page-state.ts";
-import { useShiftPerformanceReporting } from "./use-shift-performance-reporting.ts";
+import { useProductionDayShiftReporting } from "./use-production-day-shift-reporting.ts";
 
 export interface ShiftPerformanceOverviewBinding {
   readonly state: ShiftPerformancePageState;
@@ -16,7 +16,7 @@ export function useShiftPerformanceOverview(
   productionDay: string,
   runtime: DashboardApplicationRuntime,
 ): ShiftPerformanceOverviewBinding {
-  const query = useShiftPerformanceReporting(productionDay, runtime);
+  const query = useProductionDayShiftReporting(productionDay, runtime);
   const state = useMemo(
     () => deriveShiftPerformancePageState(
       query.state,
