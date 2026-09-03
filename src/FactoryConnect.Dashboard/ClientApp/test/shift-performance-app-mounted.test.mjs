@@ -108,7 +108,7 @@ function assertOnlyProductionDayShiftReporting(calls) {
 
 function assertConfiguredMachineWithZeroOccurrences(document) {
   assert.match(document.body.textContent, /Machine 1/);
-  assert.match(document.body.textContent, /No shift occurrences/i);
+  assert.match(document.body.textContent, /No authoritative shift occurrences returned\./i);
 }
 
 test("direct valid shift route queries the exact production-day shift identity and renders authoritative zero occurrences", async (t) => {
@@ -214,5 +214,5 @@ test("configured zero-source factory completes authoritatively without any repor
 
   assert.equal(calls.productionDayShift.length, 0);
   assertOnlyProductionDayShiftReporting(calls);
-  assert.match(harness.document.body.textContent, /No machines are configured/i);
+  assert.match(harness.document.body.textContent, /No configured machines\./i);
 });
