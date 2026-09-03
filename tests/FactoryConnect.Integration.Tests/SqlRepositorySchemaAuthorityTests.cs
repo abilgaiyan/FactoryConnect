@@ -4,6 +4,8 @@ namespace FactoryConnect.Integration.Tests;
 
 public sealed class SqlRepositorySchemaAuthorityTests
 {
+    private const string CreateTablePrefix = "CREATE TABLE dbo.";
+
     private static readonly string[] ExpectedOwnedTableNames =
     [
         "ContextualizedActivityOutput",
@@ -22,7 +24,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     ];
 
     [Fact]
-    public void OwnedObjectsFreezeExactPost004TableRecognitionSet()
+    public void OwnedObjectsFreezePost004RepositoryTableRecognitionAuthority()
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
@@ -32,11 +34,46 @@ public sealed class SqlRepositorySchemaAuthorityTests
     }
 
     [Fact]
-    public void OwnedObjectsDoNotTreatDboSchemaAsOwned()
+    public void OwnedObjectsMatchTablesCreatedByLegacyRepositoryMigrations()
+    {
+        var createdTables = SqlMigrationCatalog.Load().Migrations
+            .SelectMany(static migration => ExtractCreatedDboTables(migration.CanonicalSql))
+            .Distinct()
+            .OrderBy(static table => table.SchemaName, StringComparer.Ordinal)
+            .ThenBy(static table => table.ObjectName, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables, createdTables);
+    }
+
+    [Fact]
+    public void OwnedObjectsExposeRepositoryMembershipWithoutCatalogCaseResolution()
     {
         var ownedObjects = SqlRepositorySchemaAuthority.OwnedObjects;
 
-        Assert.False(ownedObjects.Recognizes(new SqlObjectName("dbo", "CustomerOrders")));
-        Assert.False(ownedObjects.Recognizes(new SqlObjectName("audit", "MetricInputFact")));
+        Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "MetricInputFact")));
+        Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "metricinputfact")));
+        Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "CustomerOrders")));
+        Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("audit", "MetricInputFact")));
+    }
+
+    private static IEnumerable<SqlObjectName> ExtractCreatedDboTables(string canonicalSql)
+    {
+        using var reader = new StringReader(canonicalSql);
+        while (reader.ReadLine() is { } line)
+        {
+            if (!line.StartsWith(CreateTablePrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var tableName = line[CreateTablePrefix.Length..].Trim();
+            if (tableName.Length == 0)
+            {
+                throw new InvalidOperationException("Legacy migration contains an empty CREATE TABLE identity.");
+            }
+
+            yield return new SqlObjectName("dbo", tableName);
+        }
     }
 }
