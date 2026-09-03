@@ -231,8 +231,8 @@ internal sealed class SqlServerSchemaMetadataReader
             rows.Add(new ForeignKeyRow(
                 reader.GetString(0),
                 reader.GetInt32(1),
-                (byte)reader.GetInt32(2),
-                (byte)reader.GetInt32(3),
+                reader.GetByte(2),
+                reader.GetByte(3),
                 reader.GetBoolean(4),
                 reader.GetBoolean(5),
                 reader.GetBoolean(6),
@@ -380,6 +380,7 @@ internal sealed class SqlServerSchemaMetadataReader
         IEnumerable<IndexRow> rows,
         string? filterDefinition)
     {
+        var isClustered = MapIndexClusteredness(indexType);
         var ordered = rows.OrderBy(static row => row.IndexColumnId).ToArray();
         var keys = ordered
             .Where(static row => !row.IsIncluded)
@@ -395,11 +396,19 @@ internal sealed class SqlServerSchemaMetadataReader
             .ToImmutableArray();
 
         return new SqlIndexStructureDescriptor(
-            IsClustered: indexType == 1,
+            isClustered,
             keys,
             included,
             filterDefinition);
     }
+
+    internal static bool MapIndexClusteredness(byte indexType) => indexType switch
+    {
+        1 => true,
+        2 => false,
+        _ => throw new InvalidOperationException(
+            $"Unsupported SQL Server index type '{indexType}'.")
+    };
 
     internal static SqlLengthDescriptor? NormalizeLength(string sqlType, short catalogMaxLength)
     {
