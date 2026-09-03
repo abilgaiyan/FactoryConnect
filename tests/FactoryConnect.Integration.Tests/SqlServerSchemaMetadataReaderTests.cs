@@ -96,6 +96,18 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
     }
 
     [Fact]
+    public async Task MigratedPost004DatabaseExactlyMatchesRepositoryDescriptors()
+    {
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        var actual = await new SqlServerSchemaMetadataReader()
+            .ReadFactoryConnectOwnedSchemaAsync(connection, CancellationToken.None);
+
+        AssertExactMatch(SqlRepositorySchemaDescriptors.LegacyPost004, actual, "LegacyPost004");
+        AssertExactMatch(SqlRepositorySchemaDescriptors.Current, actual, "Current");
+    }
+
+    [Fact]
     public async Task ReaderNormalizesRepresentativeColumnAndIdentityMetadata()
     {
         await using var connection = _fixture.CreateConnection();
@@ -195,5 +207,19 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => reader.ReadFactoryConnectOwnedSchemaAsync(connection, cancellation.Token));
+    }
+
+    private static void AssertExactMatch(
+        SqlSchemaDescriptor expected,
+        SqlSchemaDescriptor actual,
+        string descriptorName)
+    {
+        var result = SqlSchemaComparator.Compare(expected, actual);
+        var diagnostics = string.Join(
+            Environment.NewLine,
+            result.Differences.Select(static difference =>
+                $"{difference.Kind}: {difference.Table.SchemaName}.{difference.Table.ObjectName}.{difference.ArtifactName} — {difference.Detail}"));
+
+        Assert.True(result.IsExactMatch, $"{descriptorName} did not exactly match the migrated post-004 database:{Environment.NewLine}{diagnostics}");
     }
 }
