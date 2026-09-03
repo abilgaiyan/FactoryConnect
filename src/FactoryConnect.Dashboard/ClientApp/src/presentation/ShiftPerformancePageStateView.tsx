@@ -29,6 +29,13 @@ export function ShiftPerformancePageStateView({ state }: ShiftPerformancePageSta
     case "transport-failure":
       return <p role="alert">{state.message}</p>;
     case "presentation-contract-failure":
-      return <p role="alert">{state.message}</p>;
+      return (
+        <>
+          <p role="alert">{state.message}</p>
+          {state.isRefreshing
+            ? <p role="status" aria-live="polite">Refreshing shift performance…</p>
+            : null}
+        </>
+      );
   }
 }
