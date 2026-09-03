@@ -10,6 +10,7 @@ import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
 export type ProductionDayOverviewViewState =
   | { readonly kind: "idle" }
   | { readonly kind: "loading" }
+  | { readonly kind: "refreshing"; readonly model: ProductionDayOverviewModel }
   | { readonly kind: "empty-factory" }
   | { readonly kind: "success"; readonly model: ProductionDayOverviewModel }
   | { readonly kind: "request-invalid"; readonly message: string }
@@ -30,10 +31,12 @@ export function deriveProductionDayOverviewViewState(
       return { kind: "idle" };
     case "loading":
       return { kind: "loading" };
+    case "refreshing":
+      return mapResult(productionDay, sources, queryState.previous, "refreshing");
     case "success":
       return mapResult(productionDay, sources, queryState.data);
     case "empty":
-      return mapResult(productionDay, sources, { items: [] });
+      return mapResult(productionDay, sources, queryState.data);
     case "invalidRequest":
       return {
         kind: "request-invalid",
@@ -56,12 +59,13 @@ function mapResult(
   productionDay: string,
   sources: readonly DashboardRuntimeSource[],
   result: AuthoritativeProductionDayResult,
+  successKind: "success" | "refreshing" = "success",
 ): ProductionDayOverviewViewState {
   try {
-    return {
-      kind: "success",
-      model: mapProductionDayOverview({ productionDay, sources, result }),
-    };
+    const model = mapProductionDayOverview({ productionDay, sources, result });
+    return successKind === "refreshing"
+      ? { kind: "refreshing", model }
+      : { kind: "success", model };
   } catch (error) {
     if (error instanceof ProductionDayPresentationFailure) {
       return {
