@@ -15,7 +15,7 @@ internal sealed record SqlMigrationDescriptor(
     string ResourceName,
     SqlMigrationTransactionPolicy TransactionPolicy,
     string CanonicalSql,
-    ReadOnlyMemory<byte> CanonicalBytes,
+    ImmutableArray<byte> CanonicalBytes,
     string Sha256Checksum);
 
 internal sealed class SqlMigrationCatalog
@@ -42,19 +42,24 @@ internal sealed class SqlMigrationCatalog
             .OrderBy(static value => value, StringComparer.Ordinal)
             .ToArray();
 
-        if (resourceNames.Length == 0)
-        {
-            throw new InvalidOperationException("No SQL migration resources were discovered.");
-        }
-
         var descriptors = resourceNames
-            .Select(resourceName => LoadDescriptor(assembly, resourceName))
+            .Select(resourceName => LoadDescriptor(assembly, resourceName));
+
+        return Create(descriptors);
+    }
+
+    internal static SqlMigrationCatalog Create(IEnumerable<SqlMigrationDescriptor> descriptors)
+    {
+        ArgumentNullException.ThrowIfNull(descriptors);
+
+        var ordered = descriptors
             .OrderBy(static descriptor => descriptor.MigrationId)
             .ThenBy(static descriptor => descriptor.Name, StringComparer.Ordinal)
+            .ThenBy(static descriptor => descriptor.ResourceName, StringComparer.Ordinal)
             .ToImmutableArray();
 
-        ValidateCatalog(descriptors);
-        return new SqlMigrationCatalog(descriptors);
+        ValidateCatalog(ordered);
+        return new SqlMigrationCatalog(ordered);
     }
 
     private static bool IsMigrationNamespaceSqlResource(string resourceName) =>
@@ -127,6 +132,11 @@ internal sealed class SqlMigrationCatalog
 
     private static void ValidateCatalog(ImmutableArray<SqlMigrationDescriptor> descriptors)
     {
+        if (descriptors.IsDefaultOrEmpty)
+        {
+            throw new InvalidOperationException("No SQL migration resources were discovered.");
+        }
+
         var ids = new HashSet<int>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         var resources = new HashSet<string>(StringComparer.Ordinal);
