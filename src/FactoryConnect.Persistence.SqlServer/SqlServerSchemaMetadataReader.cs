@@ -6,6 +6,10 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal sealed class SqlServerSchemaMetadataReader
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "The reader remains an instance boundary so callers can depend on a reader object while its current implementation is stateless.")]
     public async Task<SqlSchemaDescriptor> ReadFactoryConnectOwnedSchemaAsync(
         SqlConnection connection,
         CancellationToken cancellationToken)
