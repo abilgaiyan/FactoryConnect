@@ -137,8 +137,14 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
         var fact = snapshot.Tables.Single(static table => table.Name.ObjectName == "MetricInputFact");
         var foreignKey = Assert.Single(fact.ForeignKeys);
         Assert.Equal("FK_MetricInputFact_StreamMachine", foreignKey.Name);
-        Assert.Equal(["MetricInputStreamRowId", "MachineId"], foreignKey.Columns);
-        Assert.Equal(["MetricInputStreamRowId", "MachineId"], foreignKey.ReferencedColumns);
+        Assert.Collection(
+            foreignKey.Columns,
+            static column => Assert.Equal("MetricInputStreamRowId", column),
+            static column => Assert.Equal("MachineId", column));
+        Assert.Collection(
+            foreignKey.ReferencedColumns,
+            static column => Assert.Equal("MetricInputStreamRowId", column),
+            static column => Assert.Equal("MachineId", column));
         Assert.True(foreignKey.IsEnabled);
         Assert.True(foreignKey.IsTrusted);
         Assert.False(foreignKey.IsNotForReplication);
@@ -169,9 +175,13 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
         Assert.All(
             index.IndexStructure.KeyColumns,
             static column => Assert.Equal(SqlIndexColumnDirection.Ascending, column.Direction));
-        Assert.Equal(
-            ["MetricInputFactRowId", "FactId", "MetricInputKey", "MetricValue", "Unit"],
-            index.IndexStructure.IncludedColumns);
+        Assert.Collection(
+            index.IndexStructure.IncludedColumns,
+            static column => Assert.Equal("MetricInputFactRowId", column),
+            static column => Assert.Equal("FactId", column),
+            static column => Assert.Equal("MetricInputKey", column),
+            static column => Assert.Equal("MetricValue", column),
+            static column => Assert.Equal("Unit", column));
     }
 
     [Fact]
