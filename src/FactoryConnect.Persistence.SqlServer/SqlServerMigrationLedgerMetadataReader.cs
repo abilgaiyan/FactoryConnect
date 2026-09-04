@@ -5,6 +5,10 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal sealed class SqlServerMigrationLedgerMetadataReader
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "The ledger metadata reader remains an instance boundary so callers can depend on one cohesive metadata-reader object while its current implementation is stateless.")]
     public async Task<SqlMigrationLedgerObjectState> ResolveObjectAsync(
         SqlConnection connection,
         CancellationToken cancellationToken)
@@ -36,6 +40,10 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
             : new SqlMigrationLedgerObjectState(SqlMigrationLedgerObjectKind.IncompatibleObject, objectId, objectType);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "The ledger metadata reader remains an instance boundary so callers can depend on one cohesive metadata-reader object while its current implementation is stateless.")]
     public async Task<SqlMigrationLedgerSchemaSnapshot> ReadSchemaAsync(
         SqlConnection connection,
         int objectId,
