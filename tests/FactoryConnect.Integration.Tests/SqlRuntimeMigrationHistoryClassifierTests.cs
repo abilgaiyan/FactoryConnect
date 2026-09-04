@@ -107,11 +107,8 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(new SqlMigrationHistoryRow(
-                5,
-                "SyntheticFutureMigration",
-                new string('A', 64),
-                AppliedAtUtc));
+            .Add(CreateFutureRow(5, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(6, "Synthetic-Future_006"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -124,11 +121,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length).ToBuilder();
         history[0] = history[0] with { Name = "WrongName" };
-        history.Add(new SqlMigrationHistoryRow(
-            5,
-            "SyntheticFutureMigration",
-            new string('A', 64),
-            AppliedAtUtc));
+        history.Add(CreateFutureRow(5, "SyntheticFutureMigration"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history.ToImmutable(), catalog);
 
@@ -138,23 +131,69 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     [Theory]
     [InlineData(4, "DuplicateSupportedId")]
     [InlineData(3, "ReorderedFutureId")]
-    [InlineData(5, " ")]
+    [InlineData(5, "")]
+    [InlineData(5, "Future Migration")]
+    [InlineData(5, "Future.Migration")]
+    [InlineData(5, "Future/Migration")]
     public void InvalidFutureIdentityDoesNotQualifyAsNewerThanSupported(
         int migrationId,
         string name)
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(new SqlMigrationHistoryRow(
-                migrationId,
-                name,
-                new string('A', 64),
-                AppliedAtUtc));
+            .Add(CreateFutureRow(migrationId, name));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
         Assert.Equal(SqlRuntimeMigrationHistoryClassification.IdentityMismatch, result);
     }
+
+    [Fact]
+    public void FutureRowCannotDuplicateSupportedMigrationName()
+    {
+        var catalog = SqlMigrationCatalog.Load();
+        var history = CreateExactHistory(catalog, catalog.Migrations.Length)
+            .Add(CreateFutureRow(5, catalog.Migrations[0].Name));
+
+        var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
+
+        Assert.Equal(SqlRuntimeMigrationHistoryClassification.IdentityMismatch, result);
+    }
+
+    [Fact]
+    public void FutureRowsCannotDuplicateEachOtherByName()
+    {
+        var catalog = SqlMigrationCatalog.Load();
+        var history = CreateExactHistory(catalog, catalog.Migrations.Length)
+            .Add(CreateFutureRow(5, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(6, "SyntheticFutureMigration"));
+
+        var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
+
+        Assert.Equal(SqlRuntimeMigrationHistoryClassification.IdentityMismatch, result);
+    }
+
+    [Fact]
+    public void FutureRowMalformedChecksumStillPrecedesNewerClassification()
+    {
+        var catalog = SqlMigrationCatalog.Load();
+        var history = CreateExactHistory(catalog, catalog.Migrations.Length)
+            .Add(CreateFutureRow(5, "SyntheticFutureMigration") with
+            {
+                CanonicalChecksum = new string('a', 64)
+            });
+
+        var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
+
+        Assert.Equal(SqlRuntimeMigrationHistoryClassification.RowSemanticsInvalid, result);
+    }
+
+    private static SqlMigrationHistoryRow CreateFutureRow(int migrationId, string name) =>
+        new(
+            migrationId,
+            name,
+            new string('A', 64),
+            AppliedAtUtc);
 
     private static ImmutableArray<SqlMigrationHistoryRow> CreateExactHistory(
         SqlMigrationCatalog catalog,
