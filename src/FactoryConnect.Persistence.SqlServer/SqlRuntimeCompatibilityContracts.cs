@@ -46,32 +46,15 @@ internal static class SqlRuntimeCompatibilityDecisionPrecedence
 
 internal static class SqlRuntimeMigrationHistoryCompatibilityMapping
 {
-    public static bool TryMapTerminal(
-        SqlRuntimeMigrationHistoryClassification classification,
-        out SqlRuntimeCompatibilityClassification compatibilityClassification)
-    {
-        switch (classification)
+    public static SqlRuntimeCompatibilityClassification? MapTerminal(
+        SqlRuntimeMigrationHistoryClassification classification) => classification switch
         {
-            case SqlRuntimeMigrationHistoryClassification.ExactCurrent:
-                compatibilityClassification = default;
-                return false;
-            case SqlRuntimeMigrationHistoryClassification.ExactPrefixPending:
-                compatibilityClassification = SqlRuntimeCompatibilityClassification.MigrationPending;
-                return true;
-            case SqlRuntimeMigrationHistoryClassification.DatabaseNewerThanSupported:
-                compatibilityClassification = SqlRuntimeCompatibilityClassification.DatabaseNewerThanSupported;
-                return true;
-            case SqlRuntimeMigrationHistoryClassification.IdentityMismatch:
-                compatibilityClassification = SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch;
-                return true;
-            case SqlRuntimeMigrationHistoryClassification.ChecksumMismatch:
-                compatibilityClassification = SqlRuntimeCompatibilityClassification.MigrationChecksumMismatch;
-                return true;
-            case SqlRuntimeMigrationHistoryClassification.RowSemanticsInvalid:
-                compatibilityClassification = SqlRuntimeCompatibilityClassification.MigrationHistoryInvalid;
-                return true;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(classification), classification, "Unknown migration history classification.");
-        }
-    }
+            SqlRuntimeMigrationHistoryClassification.ExactCurrent => null,
+            SqlRuntimeMigrationHistoryClassification.ExactPrefixPending => SqlRuntimeCompatibilityClassification.MigrationPending,
+            SqlRuntimeMigrationHistoryClassification.DatabaseNewerThanSupported => SqlRuntimeCompatibilityClassification.DatabaseNewerThanSupported,
+            SqlRuntimeMigrationHistoryClassification.IdentityMismatch => SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch,
+            SqlRuntimeMigrationHistoryClassification.ChecksumMismatch => SqlRuntimeCompatibilityClassification.MigrationChecksumMismatch,
+            SqlRuntimeMigrationHistoryClassification.RowSemanticsInvalid => SqlRuntimeCompatibilityClassification.MigrationHistoryInvalid,
+            _ => throw new ArgumentOutOfRangeException(nameof(classification), classification, "Unknown migration history classification.")
+        };
 }
