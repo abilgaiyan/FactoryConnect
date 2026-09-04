@@ -57,11 +57,17 @@ internal static class SqlRuntimeMigrationHistoryClassifier
             return SqlRuntimeMigrationHistoryClassification.ExactCurrent;
         }
 
+        var knownNames = new HashSet<string>(
+            catalog.Migrations.Select(static migration => migration.Name),
+            StringComparer.Ordinal);
         var previousMigrationId = catalog.Migrations[^1].MigrationId;
+
         for (var index = catalog.Migrations.Length; index < history.Length; index++)
         {
             var row = history[index];
-            if (row.MigrationId <= previousMigrationId || string.IsNullOrWhiteSpace(row.Name))
+            if (row.MigrationId <= previousMigrationId ||
+                !SqlMigrationCatalog.IsValidMigrationName(row.Name) ||
+                !knownNames.Add(row.Name))
             {
                 return SqlRuntimeMigrationHistoryClassification.IdentityMismatch;
             }
