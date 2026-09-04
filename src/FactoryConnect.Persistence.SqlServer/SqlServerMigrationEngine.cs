@@ -16,6 +16,11 @@ internal sealed class FinalSchemaValidationException : InvalidOperationException
         : base(message)
     {
     }
+
+    public FinalSchemaValidationException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }
 
 internal sealed class SqlServerMigrationEngine
@@ -200,28 +205,43 @@ internal sealed class SqlServerMigrationEngine
             transaction,
             cancellationToken);
 
-        if (ledgerState.Kind != SqlMigrationLedgerObjectKind.UserTable)
+        if (ledgerState.Kind != SqlMigrationLedgerObjectKind.UserTable || ledgerState.ObjectId is not int objectId)
         {
             throw new FinalSchemaValidationException(
                 "Final migration validation requires the exact FactoryConnect migration ledger table.");
         }
 
-        var ledgerSchema = await _ledgerMetadataReader.ReadSchemaAsync(
-            connection,
-            transaction,
-            RequireObjectId(ledgerState),
-            cancellationToken);
-        SqlMigrationLedgerSchemaValidator.Validate(ledgerSchema);
+        try
+        {
+            var ledgerSchema = await _ledgerMetadataReader.ReadSchemaAsync(
+                connection,
+                transaction,
+                objectId,
+                cancellationToken);
+            SqlMigrationLedgerSchemaValidator.Validate(ledgerSchema);
 
-        var history = await _historyStore.ReadAsync(
-            connection,
-            transaction,
-            cancellationToken);
-        var prefixLength = SqlMigrationHistoryPrefixValidator.ValidateExactPrefix(history, _catalog);
-        if (prefixLength != _catalog.Migrations.Length)
+            var history = await _historyStore.ReadAsync(
+                connection,
+                transaction,
+                cancellationToken);
+            var prefixLength = SqlMigrationHistoryPrefixValidator.ValidateExactPrefix(history, _catalog);
+            if (prefixLength != _catalog.Migrations.Length)
+            {
+                throw new FinalSchemaValidationException(
+                    "Final migration history does not exactly match the repository migration catalog.");
+            }
+        }
+        catch (SqlMigrationLedgerSchemaException exception)
         {
             throw new FinalSchemaValidationException(
-                "Final migration history does not exactly match the repository migration catalog.");
+                "Final FactoryConnect migration ledger structure is invalid.",
+                exception);
+        }
+        catch (SqlMigrationHistoryException exception)
+        {
+            throw new FinalSchemaValidationException(
+                "Final migration history does not exactly match the repository migration catalog.",
+                exception);
         }
 
         var liveSchema = await _schemaMetadataReader.ReadFactoryConnectOwnedSchemaInTransactionAsync(
