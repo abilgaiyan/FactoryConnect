@@ -28,11 +28,14 @@ internal sealed class SqlServerMigrationHistoryStore
         Justification = "The history store remains an instance boundary because reads and writes are intentionally exposed through one cohesive store abstraction while only writes currently require the injected clock.")]
     public async Task<ImmutableArray<SqlMigrationHistoryRow>> ReadAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT MigrationId, Name, CanonicalChecksum, AppliedAtUtc
             FROM dbo.FactoryConnectMigrationHistory
@@ -57,10 +60,12 @@ internal sealed class SqlServerMigrationHistoryStore
 
     public async Task InsertAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         SqlMigrationDescriptor migration,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
         ArgumentNullException.ThrowIfNull(migration);
 
         var appliedAtUtc = _clock.UtcNow;
@@ -70,6 +75,7 @@ internal sealed class SqlServerMigrationHistoryStore
         }
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO dbo.FactoryConnectMigrationHistory
                 (MigrationId, Name, CanonicalChecksum, AppliedAtUtc)
