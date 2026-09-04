@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using Microsoft.Data.SqlClient;
-using Microsoft.Data.SqlClient.Server;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
@@ -26,7 +25,7 @@ internal sealed class SqlServerMigrationHistoryStore
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Performance",
         "CA1822:Mark members as static",
-        Justification = "The history store remains an instance boundary because insertion depends on the injected UTC clock and callers should use one cohesive store abstraction for read/write behavior.")]
+        Justification = "The history store remains an instance boundary because reads and writes are intentionally exposed through one cohesive store abstraction while only writes currently require the injected clock.")]
     public async Task<ImmutableArray<SqlMigrationHistoryRow>> ReadAsync(
         SqlConnection connection,
         CancellationToken cancellationToken)
