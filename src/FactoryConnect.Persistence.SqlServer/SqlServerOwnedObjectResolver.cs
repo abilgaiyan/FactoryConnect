@@ -14,19 +14,19 @@ internal static class SqlServerOwnedObjectResolver
         SqlConnection connection,
         SqlOwnedObjectRecognitionSet recognitionSet,
         CancellationToken cancellationToken) =>
-        ResolveAsync(connection, transaction: null, recognitionSet, cancellationToken);
+        ResolveCoreAsync(connection, transaction: null, recognitionSet, cancellationToken);
 
-    public static async Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
+    public static Task<ImmutableArray<SqlResolvedObject>> ResolveInTransactionAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         SqlOwnedObjectRecognitionSet recognitionSet,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(transaction);
-        return await ResolveAsync(connection, (SqlTransaction?)transaction, recognitionSet, cancellationToken);
+        return ResolveCoreAsync(connection, transaction, recognitionSet, cancellationToken);
     }
 
-    private static async Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
+    private static async Task<ImmutableArray<SqlResolvedObject>> ResolveCoreAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
         SqlOwnedObjectRecognitionSet recognitionSet,
