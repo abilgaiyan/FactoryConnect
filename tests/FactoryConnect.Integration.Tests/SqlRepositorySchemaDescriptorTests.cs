@@ -51,8 +51,8 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "FK_MetricInputFact_StreamMachine",
                 StringComparison.Ordinal));
 
-        Assert.Equal(["MetricInputStreamRowId", "MachineId"], foreignKey.Columns);
-        Assert.Equal(["MetricInputStreamRowId", "MachineId"], foreignKey.ReferencedColumns);
+        Assert.Equal<string>(["MetricInputStreamRowId", "MachineId"], foreignKey.Columns);
+        Assert.Equal<string>(["MetricInputStreamRowId", "MachineId"], foreignKey.ReferencedColumns);
         Assert.True(foreignKey.IsEnabled);
         Assert.True(foreignKey.IsTrusted);
         Assert.Equal(SqlReferentialAction.NoAction, foreignKey.DeleteAction);
@@ -100,7 +100,7 @@ public sealed class SqlRepositorySchemaDescriptorTests
         Assert.All(
             index.IndexStructure.KeyColumns,
             static column => Assert.Equal(SqlIndexColumnDirection.Ascending, column.Direction));
-        Assert.Equal(
+        Assert.Equal<string>(
             ["MetricInputFactRowId", "FactId", "MetricInputKey", "MetricValue", "Unit"],
             index.IndexStructure.IncludedColumns);
     }
