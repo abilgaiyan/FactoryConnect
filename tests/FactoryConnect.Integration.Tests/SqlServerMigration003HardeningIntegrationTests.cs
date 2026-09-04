@@ -6,6 +6,9 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigration003HardeningIntegrationTests
 {
+    private static readonly int[] MigrationIdsThrough002 = [1, 2];
+    private static readonly int[] MigrationIdsThrough004 = [1, 2, 3, 4];
+
     [Fact]
     public async Task SuccessfulMigration003LeavesCallerTransactionActive()
     {
@@ -41,7 +44,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
             connection,
             "UQ_MetricInputStream_RowMachine",
             "MetricInputStream"));
-        Assert.Equal(new[] { 1, 2 }, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough002, await ReadMigrationIdsAsync(connection));
     }
 
     [Fact]
@@ -69,7 +72,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         Assert.Equal(3, exception.MigrationId);
         Assert.Equal("BindMetricInputFactMachine", exception.MigrationName);
         Assert.IsType<SqlException>(exception.InnerException);
-        Assert.Equal(new[] { 1, 2 }, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough002, await ReadMigrationIdsAsync(connection));
         Assert.True(await ForeignKeyExistsAsync(connection, "FK_MetricInputFact_MetricInputStream"));
         Assert.False(await ConstraintExistsOnTableAsync(
             connection,
@@ -80,7 +83,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         await ExecuteAsync(connection, "DROP TABLE dbo.C4ConstraintConflict;");
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        Assert.Equal(new[] { 1, 2, 3, 4 }, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough004, await ReadMigrationIdsAsync(connection));
         Assert.False(await ForeignKeyExistsAsync(connection, "FK_MetricInputFact_MetricInputStream"));
         Assert.True(await ConstraintExistsOnTableAsync(
             connection,
