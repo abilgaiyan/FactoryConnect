@@ -111,12 +111,30 @@ internal sealed class SqlMigrationCatalog
         }
 
         var name = fileName[4..];
-        if (name.Length == 0 || name.Any(static character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_')))
+        if (!IsValidMigrationName(name))
         {
             throw new InvalidOperationException($"Migration resource '{resourceName}' contains an invalid migration name component.");
         }
 
         return (int.Parse(idText, System.Globalization.CultureInfo.InvariantCulture), name);
+    }
+
+    internal static bool IsValidMigrationName(string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        foreach (var character in name)
+        {
+            if (!(char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static SqlMigrationTransactionPolicy GetTransactionPolicy(int migrationId, string name)
