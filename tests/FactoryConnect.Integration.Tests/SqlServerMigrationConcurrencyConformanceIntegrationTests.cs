@@ -7,6 +7,8 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough004 = [1, 2, 3, 4];
+    private static readonly TimeSpan MigratorLockTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan BarrierLockTimeout = TimeSpan.FromSeconds(10);
 
     private static readonly string[] MigrationManagedTables =
     [
@@ -26,26 +28,49 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
     ];
 
     [Fact]
-    public async Task ConcurrentFreshInstallInvocationsSerializeAndConvergeToOneCanonicalHistory()
+    public async Task ConcurrentFreshInstallInvocationsWaitOnSharedLockAndConvergeToOneCanonicalHistory()
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
+        await using var barrierConnection = database.CreateConnection();
         await using var firstConnection = database.CreateConnection();
         await using var secondConnection = database.CreateConnection();
+        await barrierConnection.OpenAsync();
         await firstConnection.OpenAsync();
         await secondConnection.OpenAsync();
 
+        var firstSessionId = await ReadSessionIdAsync(firstConnection);
+        var secondSessionId = await ReadSessionIdAsync(secondConnection);
         var catalog = SqlMigrationCatalog.Load();
         var firstClock = new FixedUtcClock(new DateTimeOffset(2026, 9, 4, 1, 0, 0, TimeSpan.Zero));
         var secondClock = new FixedUtcClock(new DateTimeOffset(2026, 9, 4, 2, 0, 0, TimeSpan.Zero));
         var firstEngine = new SqlServerMigrationEngine(catalog, firstClock);
         var secondEngine = new SqlServerMigrationEngine(catalog, secondClock);
-        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var firstApply = ApplyAfterSignalAsync(firstEngine, firstConnection, start.Task);
-        var secondApply = ApplyAfterSignalAsync(secondEngine, secondConnection, start.Task);
-        start.SetResult();
+        await using (var barrier = await SqlServerMigrationTransactionScope.BeginAsync(
+            barrierConnection,
+            BarrierLockTimeout,
+            CancellationToken.None))
+        {
+            var firstApply = firstEngine.ApplyAsync(
+                firstConnection,
+                MigratorLockTimeout,
+                CancellationToken.None);
+            var secondApply = secondEngine.ApplyAsync(
+                secondConnection,
+                MigratorLockTimeout,
+                CancellationToken.None);
 
-        await Task.WhenAll(firstApply, secondApply);
+            await AssertBothMigratorsWaitingOnApplicationLockAsync(
+                barrierConnection,
+                barrier.Transaction,
+                firstSessionId,
+                secondSessionId,
+                firstApply,
+                secondApply);
+
+            await barrier.CommitAsync(CancellationToken.None);
+            await Task.WhenAll(firstApply, secondApply);
+        }
 
         var history = await ReadHistoryAsync(firstConnection);
         Assert.Equal(4, history.Length);
@@ -59,11 +84,18 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
     }
 
     [Fact]
-    public async Task ConcurrentFreshInstallMigration003FailuresRollbackIndependentlyAndConcurrentRetryConverges()
+    public async Task ConcurrentFreshInstallMigration003FailuresWaitRollbackIndependentlyAndRetryConverges()
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var setupConnection = database.CreateConnection();
+        await using var barrierConnection = database.CreateConnection();
+        await using var firstConnection = database.CreateConnection();
+        await using var secondConnection = database.CreateConnection();
         await setupConnection.OpenAsync();
+        await barrierConnection.OpenAsync();
+        await firstConnection.OpenAsync();
+        await secondConnection.OpenAsync();
+
         await ExecuteAsync(
             setupConnection,
             """
@@ -74,29 +106,35 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
             );
             """);
 
-        await using var firstConnection = database.CreateConnection();
-        await using var secondConnection = database.CreateConnection();
-        await firstConnection.OpenAsync();
-        await secondConnection.OpenAsync();
-
+        var firstSessionId = await ReadSessionIdAsync(firstConnection);
+        var secondSessionId = await ReadSessionIdAsync(secondConnection);
         var catalog = SqlMigrationCatalog.Load();
         var firstClock = new FixedUtcClock(new DateTimeOffset(2026, 9, 4, 3, 0, 0, TimeSpan.Zero));
         var secondClock = new FixedUtcClock(new DateTimeOffset(2026, 9, 4, 4, 0, 0, TimeSpan.Zero));
         var firstEngine = new SqlServerMigrationEngine(catalog, firstClock);
         var secondEngine = new SqlServerMigrationEngine(catalog, secondClock);
-        var failureStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var firstFailure = CaptureMigration003FailureAfterSignalAsync(
-            firstEngine,
-            firstConnection,
-            failureStart.Task);
-        var secondFailure = CaptureMigration003FailureAfterSignalAsync(
-            secondEngine,
-            secondConnection,
-            failureStart.Task);
-        failureStart.SetResult();
+        MigrationExecutionException[] failures;
+        await using (var failureBarrier = await SqlServerMigrationTransactionScope.BeginAsync(
+            barrierConnection,
+            BarrierLockTimeout,
+            CancellationToken.None))
+        {
+            var firstFailure = CaptureMigration003FailureAsync(firstEngine, firstConnection);
+            var secondFailure = CaptureMigration003FailureAsync(secondEngine, secondConnection);
 
-        var failures = await Task.WhenAll(firstFailure, secondFailure);
+            await AssertBothMigratorsWaitingOnApplicationLockAsync(
+                barrierConnection,
+                failureBarrier.Transaction,
+                firstSessionId,
+                secondSessionId,
+                firstFailure,
+                secondFailure);
+
+            await failureBarrier.CommitAsync(CancellationToken.None);
+            failures = await Task.WhenAll(firstFailure, secondFailure);
+        }
+
         Assert.All(failures, AssertMigration003Failure);
         Assert.False(await ObjectExistsAsync(setupConnection, "dbo.FactoryConnectMigrationHistory"));
         foreach (var tableName in MigrationManagedTables)
@@ -112,12 +150,31 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 
         await ExecuteAsync(setupConnection, "DROP TABLE dbo.C5ConstraintConflict;");
 
-        var retryStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var firstRetry = ApplyAfterSignalAsync(firstEngine, firstConnection, retryStart.Task);
-        var secondRetry = ApplyAfterSignalAsync(secondEngine, secondConnection, retryStart.Task);
-        retryStart.SetResult();
+        await using (var retryBarrier = await SqlServerMigrationTransactionScope.BeginAsync(
+            barrierConnection,
+            BarrierLockTimeout,
+            CancellationToken.None))
+        {
+            var firstRetry = firstEngine.ApplyAsync(
+                firstConnection,
+                MigratorLockTimeout,
+                CancellationToken.None);
+            var secondRetry = secondEngine.ApplyAsync(
+                secondConnection,
+                MigratorLockTimeout,
+                CancellationToken.None);
 
-        await Task.WhenAll(firstRetry, secondRetry);
+            await AssertBothMigratorsWaitingOnApplicationLockAsync(
+                barrierConnection,
+                retryBarrier.Transaction,
+                firstSessionId,
+                secondSessionId,
+                firstRetry,
+                secondRetry);
+
+            await retryBarrier.CommitAsync(CancellationToken.None);
+            await Task.WhenAll(firstRetry, secondRetry);
+        }
 
         var history = await ReadHistoryAsync(setupConnection);
         Assert.Equal(4, history.Length);
@@ -130,23 +187,85 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         await AssertCurrentStateAsync(setupConnection, catalog);
     }
 
-    private static async Task ApplyAfterSignalAsync(
+    private static async Task<MigrationExecutionException> CaptureMigration003FailureAsync(
         SqlServerMigrationEngine engine,
-        SqlConnection connection,
-        Task startSignal)
+        SqlConnection connection) =>
+        await Assert.ThrowsAsync<MigrationExecutionException>(() =>
+            engine.ApplyAsync(connection, MigratorLockTimeout, CancellationToken.None));
+
+    private static async Task AssertBothMigratorsWaitingOnApplicationLockAsync(
+        SqlConnection observerConnection,
+        SqlTransaction observerTransaction,
+        int firstSessionId,
+        int secondSessionId,
+        Task firstMigration,
+        Task secondMigration)
     {
-        await startSignal;
-        await engine.ApplyAsync(connection, TimeSpan.FromSeconds(30), CancellationToken.None);
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            var waitingSessionIds = await ReadWaitingApplicationLockSessionIdsAsync(
+                observerConnection,
+                observerTransaction,
+                firstSessionId,
+                secondSessionId);
+
+            if (waitingSessionIds.Contains(firstSessionId) &&
+                waitingSessionIds.Contains(secondSessionId))
+            {
+                Assert.False(firstMigration.IsCompleted);
+                Assert.False(secondMigration.IsCompleted);
+                return;
+            }
+
+            if (firstMigration.IsCompleted || secondMigration.IsCompleted)
+            {
+                throw new Xunit.Sdk.XunitException(
+                    "A migrator completed before both sessions were observed waiting on the shared SQL application lock.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new Xunit.Sdk.XunitException(
+            $"Did not observe both migrator sessions ({firstSessionId}, {secondSessionId}) waiting on an APPLICATION lock.");
     }
 
-    private static async Task<MigrationExecutionException> CaptureMigration003FailureAfterSignalAsync(
-        SqlServerMigrationEngine engine,
+    private static async Task<HashSet<int>> ReadWaitingApplicationLockSessionIdsAsync(
         SqlConnection connection,
-        Task startSignal)
+        SqlTransaction transaction,
+        int firstSessionId,
+        int secondSessionId)
     {
-        await startSignal;
-        return await Assert.ThrowsAsync<MigrationExecutionException>(() =>
-            engine.ApplyAsync(connection, TimeSpan.FromSeconds(30), CancellationToken.None));
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT DISTINCT request_session_id
+            FROM sys.dm_tran_locks
+            WHERE resource_type = N'APPLICATION'
+              AND resource_database_id = DB_ID()
+              AND request_status = N'WAIT'
+              AND request_session_id IN (@FirstSessionId, @SecondSessionId);
+            """;
+        command.Parameters.AddWithValue("@FirstSessionId", firstSessionId);
+        command.Parameters.AddWithValue("@SecondSessionId", secondSessionId);
+
+        var sessionIds = new HashSet<int>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            sessionIds.Add(reader.GetInt32(0));
+        }
+
+        return sessionIds;
+    }
+
+    private static async Task<int> ReadSessionIdAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT @@SPID;";
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static void AssertMigration003Failure(MigrationExecutionException exception)
