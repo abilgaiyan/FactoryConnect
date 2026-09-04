@@ -45,6 +45,22 @@ internal sealed record SqlMigrationHistoryRow(
     string CanonicalChecksum,
     DateTimeOffset AppliedAtUtc);
 
+internal sealed class SqlMigrationLedgerSchemaException : InvalidOperationException
+{
+    public SqlMigrationLedgerSchemaException(string message)
+        : base(message)
+    {
+    }
+}
+
+internal sealed class SqlMigrationHistoryException : InvalidOperationException
+{
+    public SqlMigrationHistoryException(string message)
+        : base(message)
+    {
+    }
+}
+
 internal static class SqlMigrationLedgerContract
 {
     public const string SchemaName = "dbo";
@@ -75,13 +91,13 @@ internal static class SqlMigrationHistoryRowValidator
 
         if (!IsCanonicalChecksum(row.CanonicalChecksum))
         {
-            throw new InvalidOperationException(
+            throw new SqlMigrationHistoryException(
                 $"Migration history row '{row.MigrationId:000}' has an invalid canonical checksum.");
         }
 
         if (row.AppliedAtUtc.Offset != TimeSpan.Zero)
         {
-            throw new InvalidOperationException(
+            throw new SqlMigrationHistoryException(
                 $"Migration history row '{row.MigrationId:000}' must use UTC offset zero.");
         }
     }
@@ -116,7 +132,8 @@ internal static class SqlMigrationHistoryPrefixValidator
 
         if (history.Length > catalog.Migrations.Length)
         {
-            throw new InvalidOperationException("Migration history is not an exact prefix of the repository catalog.");
+            throw new SqlMigrationHistoryException(
+                "Migration history contains more rows than the repository catalog and is not an exact prefix.");
         }
 
         for (var index = 0; index < history.Length; index++)
@@ -129,7 +146,8 @@ internal static class SqlMigrationHistoryPrefixValidator
                 !string.Equals(row.Name, descriptor.Name, StringComparison.Ordinal) ||
                 !string.Equals(row.CanonicalChecksum, descriptor.Sha256Checksum, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("Migration history is not an exact prefix of the repository catalog.");
+                throw new SqlMigrationHistoryException(
+                    $"Migration history row '{row.MigrationId:000}' does not match repository catalog position {index + 1}.");
             }
         }
 
