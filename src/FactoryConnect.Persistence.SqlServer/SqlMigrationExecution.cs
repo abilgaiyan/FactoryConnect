@@ -2,9 +2,9 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-internal sealed class SqlMigrationExecutionException : Exception
+internal sealed class MigrationExecutionException : Exception
 {
-    public SqlMigrationExecutionException(
+    public MigrationExecutionException(
         int migrationId,
         string migrationName,
         SqlException innerException)
@@ -70,7 +70,7 @@ internal static class SqlServerMigrationExecutor
         }
         catch (SqlException exception)
         {
-            throw new SqlMigrationExecutionException(
+            throw new MigrationExecutionException(
                 migration.MigrationId,
                 migration.Name,
                 exception);
