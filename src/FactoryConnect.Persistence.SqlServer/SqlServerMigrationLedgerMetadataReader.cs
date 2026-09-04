@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
@@ -84,10 +85,16 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
                 c.max_length,
                 c.scale,
                 c.is_nullable,
-                c.collation_name
+                c.collation_name,
+                ic.seed_value,
+                ic.increment_value,
+                ic.is_not_for_replication
             FROM sys.columns AS c
             INNER JOIN sys.types AS ty
                 ON ty.user_type_id = c.user_type_id
+            LEFT JOIN sys.identity_columns AS ic
+                ON ic.object_id = c.object_id
+                AND ic.column_id = c.column_id
             WHERE c.object_id = @ObjectId
             ORDER BY c.column_id;
             """;
@@ -98,13 +105,21 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
         while (await reader.ReadAsync(cancellationToken))
         {
             var sqlType = reader.GetString(1);
+            var identity = reader.IsDBNull(6)
+                ? null
+                : new SqlIdentityDescriptor(
+                    Convert.ToDecimal(reader.GetValue(6), CultureInfo.InvariantCulture),
+                    Convert.ToDecimal(reader.GetValue(7), CultureInfo.InvariantCulture),
+                    reader.GetBoolean(8));
+
             columns.Add(new SqlMigrationLedgerColumnDescriptor(
                 reader.GetString(0),
                 sqlType,
                 SqlServerSchemaMetadataReader.NormalizeLength(sqlType, reader.GetInt16(2)),
                 SqlServerSchemaMetadataReader.NormalizeScale(sqlType, reader.GetByte(3)),
                 reader.GetBoolean(4),
-                reader.IsDBNull(5) ? null : reader.GetString(5)));
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                identity));
         }
 
         return columns.ToImmutable();
@@ -235,7 +250,7 @@ internal static class SqlMigrationLedgerSchemaValidator
         ArgumentNullException.ThrowIfNull(snapshot);
 
         if (!snapshot.Columns.SequenceEqual(SqlMigrationLedgerContract.Columns) ||
-            snapshot.PrimaryKey != SqlMigrationLedgerContract.PrimaryKey ||
+            !PrimaryKeysEqual(snapshot.PrimaryKey, SqlMigrationLedgerContract.PrimaryKey) ||
             !snapshot.UniqueConstraints.IsEmpty ||
             !snapshot.ForeignKeys.IsEmpty ||
             !snapshot.DefaultConstraints.IsEmpty ||
@@ -245,5 +260,20 @@ internal static class SqlMigrationLedgerSchemaValidator
         {
             throw new InvalidOperationException("FactoryConnect migration ledger schema is invalid.");
         }
+    }
+
+    private static bool PrimaryKeysEqual(
+        SqlMigrationLedgerPrimaryKeyDescriptor? actual,
+        SqlMigrationLedgerPrimaryKeyDescriptor expected)
+    {
+        if (actual is null)
+        {
+            return false;
+        }
+
+        return string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) &&
+            actual.IsClustered == expected.IsClustered &&
+            actual.IsEnabled == expected.IsEnabled &&
+            actual.KeyColumns.SequenceEqual(expected.KeyColumns);
     }
 }

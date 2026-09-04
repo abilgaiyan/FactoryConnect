@@ -20,7 +20,8 @@ internal sealed record SqlMigrationLedgerColumnDescriptor(
     SqlLengthDescriptor? MaxLength,
     byte? Scale,
     bool IsNullable,
-    string? Collation);
+    string? Collation,
+    SqlIdentityDescriptor? Identity);
 
 internal sealed record SqlMigrationLedgerPrimaryKeyDescriptor(
     string Name,
@@ -53,10 +54,10 @@ internal static class SqlMigrationLedgerContract
 
     public static ImmutableArray<SqlMigrationLedgerColumnDescriptor> Columns { get; } =
     [
-        new("MigrationId", "int", null, null, IsNullable: false, Collation: null),
-        new("Name", "nvarchar", SqlLengthDescriptor.Bounded(128), null, IsNullable: false, BinaryCollation),
-        new("CanonicalChecksum", "char", SqlLengthDescriptor.Bounded(64), null, IsNullable: false, BinaryCollation),
-        new("AppliedAtUtc", "datetimeoffset", null, 7, IsNullable: false, Collation: null)
+        new("MigrationId", "int", null, null, IsNullable: false, Collation: null, Identity: null),
+        new("Name", "nvarchar", SqlLengthDescriptor.Bounded(128), null, IsNullable: false, BinaryCollation, Identity: null),
+        new("CanonicalChecksum", "char", SqlLengthDescriptor.Bounded(64), null, IsNullable: false, BinaryCollation, Identity: null),
+        new("AppliedAtUtc", "datetimeoffset", null, 7, IsNullable: false, Collation: null, Identity: null)
     ];
 
     public static SqlMigrationLedgerPrimaryKeyDescriptor PrimaryKey { get; } = new(
