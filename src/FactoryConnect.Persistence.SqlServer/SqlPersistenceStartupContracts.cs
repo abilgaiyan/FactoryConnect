@@ -26,6 +26,15 @@ internal sealed class SqlPersistenceStartupOptions
     public TimeSpan LockTimeout { get; }
 }
 
+internal static class SqlPersistenceStartupCancellationPolicy
+{
+    public static bool MustPropagate(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception is OperationCanceledException;
+    }
+}
+
 internal sealed class SqlPersistenceStartupException : Exception
 {
     private SqlPersistenceStartupException(
@@ -88,10 +97,10 @@ internal sealed class SqlPersistenceStartupException : Exception
     {
         ArgumentNullException.ThrowIfNull(innerException);
 
-        if (innerException is OperationCanceledException)
+        if (SqlPersistenceStartupCancellationPolicy.MustPropagate(innerException))
         {
             throw new ArgumentException(
-                "Startup cancellation must propagate and cannot be wrapped as an operational startup failure.",
+                "OperationCanceledException must propagate unchanged and cannot be wrapped as an operational startup failure.",
                 nameof(innerException));
         }
     }
