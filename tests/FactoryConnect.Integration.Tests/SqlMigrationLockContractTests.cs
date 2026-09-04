@@ -10,6 +10,12 @@ public sealed class SqlMigrationLockContractTests
         Assert.Equal("FactoryConnect.SqlMigration", SqlServerMigrationTransactionScope.LockResource);
     }
 
+    [Fact]
+    public void LockCommandHasNoIndependentCommandTimeout()
+    {
+        Assert.Equal(0, SqlServerMigrationTransactionScope.LockCommandTimeoutSeconds);
+    }
+
     [Theory]
     [InlineData(0, 0)]
     [InlineData(1, 1)]
@@ -53,5 +59,29 @@ public sealed class SqlMigrationLockContractTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(
             () => SqlMigrationLockTimeout.ToMilliseconds(Timeout.InfiniteTimeSpan));
+    }
+
+    [Fact]
+    public void SqlIntLockResultIsAcceptedExactly()
+    {
+        Assert.Equal(1, SqlServerMigrationTransactionScope.RequireLockReturnCode(1));
+    }
+
+    [Fact]
+    public void MissingLockResultIsRejected()
+    {
+        var exception = Assert.Throws<SqlMigrationLockAcquisitionException>(
+            () => SqlServerMigrationTransactionScope.RequireLockReturnCode(null));
+
+        Assert.Null(exception.ReturnCode);
+    }
+
+    [Fact]
+    public void NonSqlIntLockResultIsRejected()
+    {
+        var exception = Assert.Throws<SqlMigrationLockAcquisitionException>(
+            () => SqlServerMigrationTransactionScope.RequireLockReturnCode(0L));
+
+        Assert.Null(exception.ReturnCode);
     }
 }
