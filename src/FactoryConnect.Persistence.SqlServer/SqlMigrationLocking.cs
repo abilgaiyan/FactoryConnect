@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
@@ -11,7 +12,12 @@ internal sealed class SqlMigrationLockAcquisitionException : Exception
         ReturnCode = returnCode;
     }
 
-    public int ReturnCode { get; }
+    public SqlMigrationLockAcquisitionException()
+        : base("Failed to acquire the FactoryConnect SQL migration lock because sp_getapplock did not return a SQL int result.")
+    {
+    }
+
+    public int? ReturnCode { get; }
 }
 
 internal static class SqlMigrationLockTimeout
@@ -41,6 +47,7 @@ internal static class SqlMigrationLockTimeout
 internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
 {
     public const string LockResource = "FactoryConnect.SqlMigration";
+    public const int LockCommandTimeoutSeconds = 0;
 
     private readonly SqlConnection _connection;
     private bool _completed;
@@ -89,8 +96,7 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
         }
         catch
         {
-            await RollbackBestEffortAsync(transaction);
-            await transaction.DisposeAsync();
+            await CleanupBestEffortAsync(transaction, rollback: true);
             throw;
         }
     }
@@ -111,13 +117,18 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (!_completed)
+        await CleanupBestEffortAsync(Transaction, rollback: !_completed);
+        _completed = true;
+    }
+
+    internal static int RequireLockReturnCode(object? result)
+    {
+        if (result is not int returnCode)
         {
-            await RollbackBestEffortAsync(Transaction);
-            _completed = true;
+            throw new SqlMigrationLockAcquisitionException();
         }
 
-        await Transaction.DisposeAsync();
+        return returnCode;
     }
 
     private static async Task<int> AcquireLockAsync(
@@ -128,6 +139,7 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        command.CommandTimeout = LockCommandTimeoutSeconds;
         command.CommandText = """
             DECLARE @ReturnCode int;
             EXEC @ReturnCode = sys.sp_getapplock
@@ -148,22 +160,36 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
         });
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+        return RequireLockReturnCode(result);
     }
 
-    private static async Task RollbackBestEffortAsync(SqlTransaction transaction)
+    [SuppressMessage(
+        "Design",
+        "CA1031:Do not catch general exception types",
+        Justification = "Migration transaction cleanup is deliberately best-effort and must never replace the primary migration failure.")]
+    private static async Task CleanupBestEffortAsync(
+        SqlTransaction transaction,
+        bool rollback)
     {
+        if (rollback)
+        {
+            try
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                // Cleanup must not replace the primary migration operation failure.
+            }
+        }
+
         try
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            await transaction.DisposeAsync();
         }
-        catch (InvalidOperationException)
+        catch (Exception)
         {
-            // The transaction may already have been completed by SQL Server.
-        }
-        catch (SqlException)
-        {
-            // Cleanup must not replace the primary migration-lock failure.
+            // Cleanup must not replace the primary migration operation failure.
         }
     }
 
