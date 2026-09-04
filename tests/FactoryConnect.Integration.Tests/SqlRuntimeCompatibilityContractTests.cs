@@ -65,22 +65,34 @@ public sealed class SqlRuntimeCompatibilityContractTests
         Assert.Equal(expectedIsCompatible, result.IsCompatible);
     }
 
+    [Fact]
+    public void ExactCurrentHistoryRequiresCurrentSchemaComparison()
+    {
+        var mapped = SqlRuntimeMigrationHistoryCompatibilityMapping.TryMapTerminal(
+            SqlRuntimeMigrationHistoryClassification.ExactCurrent,
+            out _);
+
+        Assert.False(mapped);
+    }
+
     [Theory]
-    [InlineData("ExactCurrent", "Compatible")]
     [InlineData("ExactPrefixPending", "MigrationPending")]
     [InlineData("DatabaseNewerThanSupported", "DatabaseNewerThanSupported")]
     [InlineData("IdentityMismatch", "MigrationIdentityMismatch")]
     [InlineData("ChecksumMismatch", "MigrationChecksumMismatch")]
     [InlineData("RowSemanticsInvalid", "MigrationHistoryInvalid")]
-    public void HistoryClassificationMappingIsClosedAndExact(
+    public void TerminalHistoryClassificationMappingIsClosedAndExact(
         string historyClassificationName,
         string compatibilityClassificationName)
     {
         var historyClassification = Enum.Parse<SqlRuntimeMigrationHistoryClassification>(historyClassificationName);
         var expected = Enum.Parse<SqlRuntimeCompatibilityClassification>(compatibilityClassificationName);
 
-        Assert.Equal(
-            expected,
-            SqlRuntimeMigrationHistoryCompatibilityMapping.Map(historyClassification));
+        var mapped = SqlRuntimeMigrationHistoryCompatibilityMapping.TryMapTerminal(
+            historyClassification,
+            out var actual);
+
+        Assert.True(mapped);
+        Assert.Equal(expected, actual);
     }
 }
