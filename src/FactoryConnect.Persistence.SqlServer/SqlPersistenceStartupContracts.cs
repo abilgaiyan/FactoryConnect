@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace FactoryConnect.Persistence.SqlServer;
 
 internal enum SqlPersistenceStartupFailureKind
@@ -97,7 +99,7 @@ internal sealed class SqlPersistenceStartupException : Exception
 
 internal static class SqlPersistenceStartupLogContract
 {
-    public static IReadOnlyList<string> AllowedStructuredFields { get; } =
+    public static ImmutableArray<string> AllowedStructuredFields { get; } =
     [
         "HostName",
         "PersistenceProvider",
@@ -112,7 +114,7 @@ internal static class SqlPersistenceStartupLogContract
         "Detail"
     ];
 
-    public static IReadOnlyList<string> ForbiddenConfigurationFragments { get; } =
+    public static ImmutableArray<string> ForbiddenConfigurationFragments { get; } =
     [
         "ConnectionString",
         "Password",
