@@ -49,6 +49,9 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
     public const string LockResource = "FactoryConnect.SqlMigration";
     public const int LockCommandTimeoutSeconds = 0;
 
+    private const string ExclusiveLockMode = "Exclusive";
+    private const string SharedLockMode = "Shared";
+
     private readonly SqlConnection _connection;
     private bool _completed;
 
@@ -62,9 +65,22 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
 
     public SqlTransaction Transaction { get; }
 
-    public static async Task<SqlServerMigrationTransactionScope> BeginAsync(
+    public static Task<SqlServerMigrationTransactionScope> BeginAsync(
         SqlConnection connection,
         TimeSpan lockTimeout,
+        CancellationToken cancellationToken) =>
+        BeginCoreAsync(connection, lockTimeout, ExclusiveLockMode, cancellationToken);
+
+    public static Task<SqlServerMigrationTransactionScope> BeginSharedAsync(
+        SqlConnection connection,
+        TimeSpan lockTimeout,
+        CancellationToken cancellationToken) =>
+        BeginCoreAsync(connection, lockTimeout, SharedLockMode, cancellationToken);
+
+    private static async Task<SqlServerMigrationTransactionScope> BeginCoreAsync(
+        SqlConnection connection,
+        TimeSpan lockTimeout,
+        string lockMode,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -84,6 +100,7 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
             var returnCode = await AcquireLockAsync(
                 connection,
                 transaction,
+                lockMode,
                 lockTimeoutMilliseconds,
                 cancellationToken);
 
@@ -134,6 +151,7 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
     private static async Task<int> AcquireLockAsync(
         SqlConnection connection,
         SqlTransaction transaction,
+        string lockMode,
         int lockTimeoutMilliseconds,
         CancellationToken cancellationToken)
     {
@@ -144,17 +162,21 @@ internal sealed class SqlServerMigrationTransactionScope : IAsyncDisposable
             DECLARE @ReturnCode int;
             EXEC @ReturnCode = sys.sp_getapplock
                 @Resource = @Resource,
-                @LockMode = N'Exclusive',
+                @LockMode = @LockMode,
                 @LockOwner = N'Transaction',
                 @LockTimeout = @LockTimeout,
                 @DbPrincipal = N'public';
             SELECT @ReturnCode;
             """;
-        command.Parameters.Add(new SqlParameter("@Resource", System.Data.SqlDbType.NVarChar, 255)
+        command.Parameters.Add(new SqlParameter("@Resource", SqlDbType.NVarChar, 255)
         {
             Value = LockResource,
         });
-        command.Parameters.Add(new SqlParameter("@LockTimeout", System.Data.SqlDbType.Int)
+        command.Parameters.Add(new SqlParameter("@LockMode", SqlDbType.NVarChar, 32)
+        {
+            Value = lockMode,
+        });
+        command.Parameters.Add(new SqlParameter("@LockTimeout", SqlDbType.Int)
         {
             Value = lockTimeoutMilliseconds,
         });
