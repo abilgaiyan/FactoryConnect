@@ -10,8 +10,25 @@ internal sealed record SqlResolvedObject(
 
 internal static class SqlServerOwnedObjectResolver
 {
+    public static Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
+        SqlConnection connection,
+        SqlOwnedObjectRecognitionSet recognitionSet,
+        CancellationToken cancellationToken) =>
+        ResolveAsync(connection, transaction: null, recognitionSet, cancellationToken);
+
     public static async Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
+        SqlOwnedObjectRecognitionSet recognitionSet,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        return await ResolveAsync(connection, (SqlTransaction?)transaction, recognitionSet, cancellationToken);
+    }
+
+    private static async Task<ImmutableArray<SqlResolvedObject>> ResolveAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction,
         SqlOwnedObjectRecognitionSet recognitionSet,
         CancellationToken cancellationToken)
     {
@@ -24,6 +41,7 @@ internal static class SqlServerOwnedObjectResolver
             cancellationToken.ThrowIfCancellationRequested();
 
             await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = """
                 SELECT
                     t.object_id,
