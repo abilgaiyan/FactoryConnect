@@ -42,20 +42,21 @@ public sealed class SqlRuntimeCompatibilityContractTests
     }
 
     [Theory]
-    [InlineData(SqlRuntimeCompatibilityClassification.Compatible, true)]
-    [InlineData(SqlRuntimeCompatibilityClassification.DatabaseUninitialized, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.LegacyAdoptionRequired, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.UnledgeredSchemaIncompatible, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.MigrationPending, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.DatabaseNewerThanSupported, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.MigrationChecksumMismatch, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid, false)]
-    [InlineData(SqlRuntimeCompatibilityClassification.MigrationSchemaDrift, false)]
+    [InlineData("Compatible", true)]
+    [InlineData("DatabaseUninitialized", false)]
+    [InlineData("LegacyAdoptionRequired", false)]
+    [InlineData("UnledgeredSchemaIncompatible", false)]
+    [InlineData("MigrationPending", false)]
+    [InlineData("DatabaseNewerThanSupported", false)]
+    [InlineData("MigrationIdentityMismatch", false)]
+    [InlineData("MigrationChecksumMismatch", false)]
+    [InlineData("MigrationLedgerSchemaInvalid", false)]
+    [InlineData("MigrationSchemaDrift", false)]
     public void ResultCompatibilityDependsOnlyOnCompatibleClassification(
-        SqlRuntimeCompatibilityClassification classification,
+        string classificationName,
         bool expectedIsCompatible)
     {
+        var classification = Enum.Parse<SqlRuntimeCompatibilityClassification>(classificationName);
         var result = new SqlRuntimeCompatibilityResult(classification);
 
         Assert.Equal(classification, result.Classification);
