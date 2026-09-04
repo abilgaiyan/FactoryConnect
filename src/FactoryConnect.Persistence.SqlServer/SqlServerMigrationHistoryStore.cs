@@ -23,6 +23,10 @@ internal sealed class SqlServerMigrationHistoryStore
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "The history store remains an instance boundary because insertion depends on the injected UTC clock and callers should use one cohesive store abstraction for read/write behavior.")]
     public async Task<ImmutableArray<SqlMigrationHistoryRow>> ReadAsync(
         SqlConnection connection,
         CancellationToken cancellationToken)
