@@ -12,6 +12,7 @@ internal enum SqlRuntimeCompatibilityClassification
     DatabaseNewerThanSupported,
     MigrationIdentityMismatch,
     MigrationChecksumMismatch,
+    MigrationHistoryInvalid,
     MigrationLedgerSchemaInvalid,
     MigrationSchemaDrift
 }
@@ -41,4 +42,19 @@ internal static class SqlRuntimeCompatibilityDecisionPrecedence
         SqlRuntimeCompatibilityDecisionStage.UnledgeredSchemaClassification,
         SqlRuntimeCompatibilityDecisionStage.CurrentSchemaComparison
     ];
+}
+
+internal static class SqlRuntimeMigrationHistoryCompatibilityMapping
+{
+    public static SqlRuntimeCompatibilityClassification Map(
+        SqlRuntimeMigrationHistoryClassification classification) => classification switch
+        {
+            SqlRuntimeMigrationHistoryClassification.ExactCurrent => SqlRuntimeCompatibilityClassification.Compatible,
+            SqlRuntimeMigrationHistoryClassification.ExactPrefixPending => SqlRuntimeCompatibilityClassification.MigrationPending,
+            SqlRuntimeMigrationHistoryClassification.DatabaseNewerThanSupported => SqlRuntimeCompatibilityClassification.DatabaseNewerThanSupported,
+            SqlRuntimeMigrationHistoryClassification.IdentityMismatch => SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch,
+            SqlRuntimeMigrationHistoryClassification.ChecksumMismatch => SqlRuntimeCompatibilityClassification.MigrationChecksumMismatch,
+            SqlRuntimeMigrationHistoryClassification.RowSemanticsInvalid => SqlRuntimeCompatibilityClassification.MigrationHistoryInvalid,
+            _ => throw new ArgumentOutOfRangeException(nameof(classification), classification, "Unknown migration history classification.")
+        };
 }
