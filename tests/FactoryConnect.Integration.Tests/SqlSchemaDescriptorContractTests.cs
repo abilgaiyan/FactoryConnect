@@ -58,8 +58,8 @@ public sealed class SqlSchemaDescriptorContractTests
         Assert.False(foreignKey.IsEnabled);
         Assert.False(foreignKey.IsTrusted);
         Assert.True(foreignKey.IsNotForReplication);
-        Assert.Equal(["ParentId", "MachineId"], foreignKey.Columns);
-        Assert.Equal(["ParentId", "MachineId"], foreignKey.ReferencedColumns);
+        Assert.Equal<string>(["ParentId", "MachineId"], foreignKey.Columns);
+        Assert.Equal<string>(["ParentId", "MachineId"], foreignKey.ReferencedColumns);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class SqlSchemaDescriptorContractTests
         Assert.False(index.IndexStructure.IsClustered);
         Assert.Equal(SqlIndexColumnDirection.Ascending, index.IndexStructure.KeyColumns[0].Direction);
         Assert.Equal(SqlIndexColumnDirection.Descending, index.IndexStructure.KeyColumns[1].Direction);
-        Assert.Equal(["MetricValue", "Unit"], index.IndexStructure.IncludedColumns);
+        Assert.Equal<string>(["MetricValue", "Unit"], index.IndexStructure.IncludedColumns);
         Assert.Equal("[MetricValue] IS NOT NULL", index.IndexStructure.CanonicalFilterDefinition);
     }
 
