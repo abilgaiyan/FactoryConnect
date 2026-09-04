@@ -115,11 +115,12 @@ internal sealed class SqlServerMigrationEngine
                 break;
 
             case UnledgeredDatabaseClassification.LegacyAdoptable:
+                LegacyPost004MigrationHistory.ValidateExactCatalog(_catalog);
                 await SqlServerMigrationLedgerCreator.CreateAsync(
                     connection,
                     transaction,
                     cancellationToken);
-                await RecordCatalogAsync(connection, transaction, cancellationToken);
+                await RecordLegacyPost004HistoryAsync(connection, transaction, cancellationToken);
                 break;
 
             case UnledgeredDatabaseClassification.PartialOrIncompatibleLegacy:
@@ -180,17 +181,17 @@ internal sealed class SqlServerMigrationEngine
         }
     }
 
-    private async Task RecordCatalogAsync(
+    private async Task RecordLegacyPost004HistoryAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         CancellationToken cancellationToken)
     {
-        foreach (var migration in _catalog.Migrations)
+        for (var index = 0; index < LegacyPost004MigrationHistory.Entries.Length; index++)
         {
             await _historyStore.InsertAsync(
                 connection,
                 transaction,
-                migration,
+                _catalog.Migrations[index],
                 cancellationToken);
         }
     }
