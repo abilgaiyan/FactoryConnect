@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
@@ -32,16 +33,16 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
             lockTimeout,
             cancellationToken);
 
-        var classification = await ClassifyAsync(
+        var result = await ClassifyAsync(
             connection,
             scope.Transaction,
             cancellationToken);
 
         await scope.RollbackAsync(cancellationToken);
-        return new SqlRuntimeCompatibilityResult(classification);
+        return result;
     }
 
-    private async Task<SqlRuntimeCompatibilityClassification> ClassifyAsync(
+    private async Task<SqlRuntimeCompatibilityResult> ClassifyAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -57,7 +58,9 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
                 return await ClassifyWithoutLedgerAsync(connection, transaction, cancellationToken);
 
             case SqlMigrationLedgerObjectKind.IncompatibleObject:
-                return SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid;
+                return new SqlRuntimeCompatibilityResult(
+                    SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid,
+                    SqlRuntimeCompatibilityDiagnostics.IncompatibleLedgerObject(ledgerState.CatalogObjectType));
 
             case SqlMigrationLedgerObjectKind.UserTable:
                 return await ClassifyWithLedgerAsync(
@@ -72,7 +75,7 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
         }
     }
 
-    private async Task<SqlRuntimeCompatibilityClassification> ClassifyWithoutLedgerAsync(
+    private async Task<SqlRuntimeCompatibilityResult> ClassifyWithoutLedgerAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         CancellationToken cancellationToken)
@@ -85,16 +88,20 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
         return SqlUnledgeredDatabaseClassifier.Classify(ownedSchema) switch
         {
             UnledgeredDatabaseClassification.Uninitialized =>
-                SqlRuntimeCompatibilityClassification.DatabaseUninitialized,
+                new SqlRuntimeCompatibilityResult(
+                    SqlRuntimeCompatibilityClassification.DatabaseUninitialized,
+                    SqlRuntimeCompatibilityDiagnostics.DatabaseUninitialized()),
             UnledgeredDatabaseClassification.LegacyAdoptable =>
-                SqlRuntimeCompatibilityClassification.LegacyAdoptionRequired,
+                new SqlRuntimeCompatibilityResult(
+                    SqlRuntimeCompatibilityClassification.LegacyAdoptionRequired,
+                    SqlRuntimeCompatibilityDiagnostics.LegacyAdoptionRequired()),
             UnledgeredDatabaseClassification.PartialOrIncompatibleLegacy =>
-                SqlRuntimeCompatibilityClassification.UnledgeredSchemaIncompatible,
+                CreateUnledgeredSchemaIncompatibleResult(ownedSchema),
             _ => throw new InvalidOperationException("Unsupported unledgered database classification."),
         };
     }
 
-    private async Task<SqlRuntimeCompatibilityClassification> ClassifyWithLedgerAsync(
+    private async Task<SqlRuntimeCompatibilityResult> ClassifyWithLedgerAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         int objectId,
@@ -110,9 +117,11 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
         {
             SqlMigrationLedgerSchemaValidator.Validate(ledgerSchema);
         }
-        catch (SqlMigrationLedgerSchemaException)
+        catch (SqlMigrationLedgerSchemaException exception)
         {
-            return SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid;
+            return new SqlRuntimeCompatibilityResult(
+                SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid,
+                SqlRuntimeCompatibilityDiagnostics.InvalidLedgerStructure(exception));
         }
 
         var history = await _historyReader.ReadAsync(
@@ -124,19 +133,36 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
             historyClassification);
         if (terminalClassification is SqlRuntimeCompatibilityClassification terminal)
         {
-            return terminal;
+            return new SqlRuntimeCompatibilityResult(
+                terminal,
+                SqlRuntimeCompatibilityDiagnostics.ForHistory(historyClassification, history, _catalog));
         }
 
         var liveSchema = await _schemaMetadataReader.ReadFactoryConnectOwnedSchemaInTransactionAsync(
             connection,
             transaction,
             cancellationToken);
-        return SqlSchemaComparator.Compare(
-                SqlRepositorySchemaDescriptors.Current,
-                liveSchema)
-            .IsExactMatch
-                ? SqlRuntimeCompatibilityClassification.Compatible
-                : SqlRuntimeCompatibilityClassification.MigrationSchemaDrift;
+        var comparison = SqlSchemaComparator.Compare(
+            SqlRepositorySchemaDescriptors.Current,
+            liveSchema);
+        return comparison.IsExactMatch
+            ? new SqlRuntimeCompatibilityResult(
+                SqlRuntimeCompatibilityClassification.Compatible,
+                ImmutableArray<SqlRuntimeCompatibilityDiagnostic>.Empty)
+            : new SqlRuntimeCompatibilityResult(
+                SqlRuntimeCompatibilityClassification.MigrationSchemaDrift,
+                SqlRuntimeCompatibilityDiagnostics.SchemaDrift(comparison));
+    }
+
+    private static SqlRuntimeCompatibilityResult CreateUnledgeredSchemaIncompatibleResult(
+        SqlSchemaDescriptor ownedSchema)
+    {
+        var comparison = SqlSchemaComparator.Compare(
+            SqlRepositorySchemaDescriptors.LegacyPost004,
+            ownedSchema);
+        return new SqlRuntimeCompatibilityResult(
+            SqlRuntimeCompatibilityClassification.UnledgeredSchemaIncompatible,
+            SqlRuntimeCompatibilityDiagnostics.UnledgeredSchemaIncompatible(comparison));
     }
 
     private static int RequireObjectId(SqlMigrationLedgerObjectState state) =>
