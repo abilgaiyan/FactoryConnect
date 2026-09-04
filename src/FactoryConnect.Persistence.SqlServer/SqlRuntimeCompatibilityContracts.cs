@@ -51,7 +51,7 @@ internal sealed record SqlRuntimeCompatibilityDiagnostic
         string? expected,
         string? actual,
         string detail,
-        SqlSchemaDifferenceKind? schemaDifferenceKind = null)
+        SqlSchemaDifferenceKind? SchemaDifferenceKind = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(artifact);
         ArgumentException.ThrowIfNullOrWhiteSpace(detail);
@@ -62,7 +62,7 @@ internal sealed record SqlRuntimeCompatibilityDiagnostic
         Expected = expected;
         Actual = actual;
         Detail = detail;
-        SchemaDifferenceKind = schemaDifferenceKind;
+        this.SchemaDifferenceKind = SchemaDifferenceKind;
     }
 
     public SqlRuntimeCompatibilityDiagnosticCode Code { get; }
