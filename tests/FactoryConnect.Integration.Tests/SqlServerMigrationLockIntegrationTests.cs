@@ -45,7 +45,8 @@ public sealed class SqlServerMigrationLockIntegrationTests :
                 TimeSpan.Zero,
                 CancellationToken.None));
 
-        Assert.True(exception.ReturnCode < 0);
+        Assert.NotNull(exception.ReturnCode);
+        Assert.True(exception.ReturnCode.Value < 0);
         Assert.Equal(
             "Exclusive",
             await ReadMigrationLockModeAsync(firstConnection, firstScope.Transaction));
