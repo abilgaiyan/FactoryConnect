@@ -7,7 +7,7 @@ internal sealed class SqlMigrationExecutionException : Exception
     public SqlMigrationExecutionException(
         int migrationId,
         string migrationName,
-        Exception innerException)
+        SqlException innerException)
         : base(
             $"SQL migration '{migrationId:000}_{migrationName}' failed.",
             innerException)
@@ -68,11 +68,7 @@ internal static class SqlServerMigrationExecutor
             command.CommandText = migration.CanonicalSql;
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        catch (SqlMigrationExecutionException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (SqlException exception)
         {
             throw new SqlMigrationExecutionException(
                 migration.MigrationId,
