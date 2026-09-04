@@ -80,6 +80,22 @@ public sealed class SqlMigrationLedgerContractTests
     }
 
     [Fact]
+    public void LedgerSchemaValidatorComparesPrimaryKeyStructurally()
+    {
+        var independentlyConstructedPrimaryKey = new SqlMigrationLedgerPrimaryKeyDescriptor(
+            SqlMigrationLedgerContract.PrimaryKeyName,
+            IsClustered: true,
+            IsEnabled: true,
+            ImmutableArray.Create(new SqlIndexColumnDescriptor(
+                "MigrationId",
+                SqlIndexColumnDirection.Ascending,
+                1)));
+        var snapshot = ExactSnapshot() with { PrimaryKey = independentlyConstructedPrimaryKey };
+
+        SqlMigrationLedgerSchemaValidator.Validate(snapshot);
+    }
+
+    [Fact]
     public void LedgerSchemaValidatorRejectsEveryForbiddenArtifactCategory()
     {
         var exact = ExactSnapshot();
