@@ -32,7 +32,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
             command.CommandText = "SELECT XACT_STATE(), @@TRANCOUNT;";
             await using var reader = await command.ExecuteReaderAsync();
             Assert.True(await reader.ReadAsync());
-            Assert.Equal(1, reader.GetInt32(0));
+            Assert.Equal((short)1, reader.GetInt16(0));
             Assert.Equal(1, reader.GetInt32(1));
             Assert.Same(connection, transaction.Connection);
 
