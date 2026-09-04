@@ -9,20 +9,20 @@ public sealed class SqlServerRuntimeCompatibilityMatrixIntegrationTests
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(30);
 
     [Theory]
-    [InlineData(D5Scenario.Compatible, SqlRuntimeCompatibilityClassification.Compatible)]
-    [InlineData(D5Scenario.DatabaseUninitialized, SqlRuntimeCompatibilityClassification.DatabaseUninitialized)]
-    [InlineData(D5Scenario.LegacyAdoptionRequired, SqlRuntimeCompatibilityClassification.LegacyAdoptionRequired)]
-    [InlineData(D5Scenario.UnledgeredSchemaIncompatible, SqlRuntimeCompatibilityClassification.UnledgeredSchemaIncompatible)]
-    [InlineData(D5Scenario.MigrationPending, SqlRuntimeCompatibilityClassification.MigrationPending)]
-    [InlineData(D5Scenario.DatabaseNewerThanSupported, SqlRuntimeCompatibilityClassification.DatabaseNewerThanSupported)]
-    [InlineData(D5Scenario.MigrationIdentityMismatch, SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch)]
-    [InlineData(D5Scenario.MigrationChecksumMismatch, SqlRuntimeCompatibilityClassification.MigrationChecksumMismatch)]
-    [InlineData(D5Scenario.MigrationHistoryInvalid, SqlRuntimeCompatibilityClassification.MigrationHistoryInvalid)]
-    [InlineData(D5Scenario.MigrationLedgerSchemaInvalid, SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid)]
-    [InlineData(D5Scenario.MigrationSchemaDrift, SqlRuntimeCompatibilityClassification.MigrationSchemaDrift)]
+    [InlineData(D5Scenario.Compatible, "Compatible")]
+    [InlineData(D5Scenario.DatabaseUninitialized, "DatabaseUninitialized")]
+    [InlineData(D5Scenario.LegacyAdoptionRequired, "LegacyAdoptionRequired")]
+    [InlineData(D5Scenario.UnledgeredSchemaIncompatible, "UnledgeredSchemaIncompatible")]
+    [InlineData(D5Scenario.MigrationPending, "MigrationPending")]
+    [InlineData(D5Scenario.DatabaseNewerThanSupported, "DatabaseNewerThanSupported")]
+    [InlineData(D5Scenario.MigrationIdentityMismatch, "MigrationIdentityMismatch")]
+    [InlineData(D5Scenario.MigrationChecksumMismatch, "MigrationChecksumMismatch")]
+    [InlineData(D5Scenario.MigrationHistoryInvalid, "MigrationHistoryInvalid")]
+    [InlineData(D5Scenario.MigrationLedgerSchemaInvalid, "MigrationLedgerSchemaInvalid")]
+    [InlineData(D5Scenario.MigrationSchemaDrift, "MigrationSchemaDrift")]
     public async Task RealSqlMatrixCoversEveryFinalCompatibilityClassification(
         D5Scenario scenario,
-        SqlRuntimeCompatibilityClassification expectedClassification)
+        string expectedClassificationName)
     {
         await using var database = await IsolatedCompatibilityMatrixDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
@@ -30,6 +30,8 @@ public sealed class SqlServerRuntimeCompatibilityMatrixIntegrationTests
         await PrepareScenarioAsync(connection, scenario);
 
         var result = await VerifyAsync(connection);
+        var expectedClassification = Enum.Parse<SqlRuntimeCompatibilityClassification>(
+            expectedClassificationName);
 
         Assert.Equal(expectedClassification, result.Classification);
         var expectedCompatible = expectedClassification == SqlRuntimeCompatibilityClassification.Compatible;
