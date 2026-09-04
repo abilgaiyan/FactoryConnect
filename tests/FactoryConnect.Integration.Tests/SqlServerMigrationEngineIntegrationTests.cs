@@ -120,9 +120,9 @@ public sealed class SqlServerMigrationEngineIntegrationTests
     }
 
     [Theory]
-    [InlineData(LedgerIdentityOccupant.View)]
-    [InlineData(LedgerIdentityOccupant.Synonym)]
-    public async Task NonTableLedgerIdentityIsRejectedBeforeUnledgeredClassification(LedgerIdentityOccupant occupant)
+    [InlineData("view")]
+    [InlineData("synonym")]
+    public async Task NonTableLedgerIdentityIsRejectedBeforeUnledgeredClassification(string occupant)
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
@@ -130,7 +130,7 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         await ExecuteAsync(connection, "CREATE TABLE dbo.CustomerOwnedProbe (Id int NOT NULL);");
         await ExecuteAsync(
             connection,
-            occupant == LedgerIdentityOccupant.View
+            string.Equals(occupant, "view", StringComparison.Ordinal)
                 ? "CREATE VIEW dbo.FactoryConnectMigrationHistory AS SELECT 1 AS MigrationId;"
                 : "CREATE SYNONYM dbo.FactoryConnectMigrationHistory FOR dbo.CustomerOwnedProbe;");
         var engine = CreateEngine();
@@ -157,10 +157,10 @@ public sealed class SqlServerMigrationEngineIntegrationTests
     }
 
     [Theory]
-    [InlineData(HistoryCorruption.NameMismatch)]
-    [InlineData(HistoryCorruption.LowercaseChecksum)]
-    [InlineData(HistoryCorruption.NonUtcOffset)]
-    public async Task InvalidExistingHistoryIsRejectedBeforePendingDdl(HistoryCorruption corruption)
+    [InlineData("name")]
+    [InlineData("checksum")]
+    [InlineData("offset")]
+    public async Task InvalidExistingHistoryIsRejectedBeforePendingDdl(string corruption)
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
@@ -237,13 +237,13 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         await transaction.CommitAsync();
     }
 
-    private static async Task CorruptFirstHistoryRowAsync(SqlConnection connection, HistoryCorruption corruption)
+    private static async Task CorruptFirstHistoryRowAsync(SqlConnection connection, string corruption)
     {
         var sql = corruption switch
         {
-            HistoryCorruption.NameMismatch => "UPDATE dbo.FactoryConnectMigrationHistory SET Name = N'UnexpectedName' WHERE MigrationId = 1;",
-            HistoryCorruption.LowercaseChecksum => "UPDATE dbo.FactoryConnectMigrationHistory SET CanonicalChecksum = LOWER(CanonicalChecksum) WHERE MigrationId = 1;",
-            HistoryCorruption.NonUtcOffset => "UPDATE dbo.FactoryConnectMigrationHistory SET AppliedAtUtc = CAST('2026-09-04T05:30:00+05:30' AS datetimeoffset(7)) WHERE MigrationId = 1;",
+            "name" => "UPDATE dbo.FactoryConnectMigrationHistory SET Name = N'UnexpectedName' WHERE MigrationId = 1;",
+            "checksum" => "UPDATE dbo.FactoryConnectMigrationHistory SET CanonicalChecksum = LOWER(CanonicalChecksum) WHERE MigrationId = 1;",
+            "offset" => "UPDATE dbo.FactoryConnectMigrationHistory SET AppliedAtUtc = CAST('2026-09-04T05:30:00+05:30' AS datetimeoffset(7)) WHERE MigrationId = 1;",
             _ => throw new InvalidOperationException($"Unsupported history corruption '{corruption}'.")
         };
 
@@ -297,19 +297,6 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         command.Parameters.AddWithValue("@ObjectName", objectName);
         var result = await command.ExecuteScalarAsync();
         return result is not null && result != DBNull.Value;
-    }
-
-    public enum HistoryCorruption
-    {
-        NameMismatch,
-        LowercaseChecksum,
-        NonUtcOffset
-    }
-
-    public enum LedgerIdentityOccupant
-    {
-        View,
-        Synonym
     }
 
     private sealed class FixedUtcClock : ISqlMigrationUtcClock
