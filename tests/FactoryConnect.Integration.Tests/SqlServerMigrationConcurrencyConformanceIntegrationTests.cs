@@ -6,6 +6,8 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 {
+    private static readonly int[] MigrationIdsThrough004 = [1, 2, 3, 4];
+
     private static readonly string[] MigrationManagedTables =
     [
         "dbo.ObservationStreamCheckpoint",
@@ -47,7 +49,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 
         var history = await ReadHistoryAsync(firstConnection);
         Assert.Equal(4, history.Length);
-        Assert.Equal(new[] { 1, 2, 3, 4 }, history.Select(static row => row.MigrationId).ToArray());
+        Assert.Equal(MigrationIdsThrough004, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
             winningTimestamp == firstClock.UtcNow || winningTimestamp == secondClock.UtcNow,
@@ -119,7 +121,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 
         var history = await ReadHistoryAsync(setupConnection);
         Assert.Equal(4, history.Length);
-        Assert.Equal(new[] { 1, 2, 3, 4 }, history.Select(static row => row.MigrationId).ToArray());
+        Assert.Equal(MigrationIdsThrough004, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
             winningTimestamp == firstClock.UtcNow || winningTimestamp == secondClock.UtcNow,
