@@ -10,16 +10,37 @@ internal sealed class SqlServerSchemaMetadataReader
         "Performance",
         "CA1822:Mark members as static",
         Justification = "The reader remains an instance boundary so callers can depend on a reader object while its current implementation is stateless.")]
-    public async Task<SqlSchemaDescriptor> ReadFactoryConnectOwnedSchemaAsync(
+    public Task<SqlSchemaDescriptor> ReadFactoryConnectOwnedSchemaAsync(
         SqlConnection connection,
+        CancellationToken cancellationToken) =>
+        ReadCoreAsync(connection, transaction: null, cancellationToken);
+
+    public Task<SqlSchemaDescriptor> ReadFactoryConnectOwnedSchemaInTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+        return ReadCoreAsync(connection, transaction, cancellationToken);
+    }
+
+    private static async Task<SqlSchemaDescriptor> ReadCoreAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
 
-        var resolvedObjects = await SqlServerOwnedObjectResolver.ResolveAsync(
-            connection,
-            SqlRepositorySchemaAuthority.OwnedObjects,
-            cancellationToken);
+        var resolvedObjects = transaction is null
+            ? await SqlServerOwnedObjectResolver.ResolveAsync(
+                connection,
+                SqlRepositorySchemaAuthority.OwnedObjects,
+                cancellationToken)
+            : await SqlServerOwnedObjectResolver.ResolveInTransactionAsync(
+                connection,
+                transaction,
+                SqlRepositorySchemaAuthority.OwnedObjects,
+                cancellationToken);
         var repositoryIdentityByObjectId = resolvedObjects.ToDictionary(
             static item => item.ObjectId,
             static item => item.RepositoryIdentity);
@@ -30,6 +51,7 @@ internal sealed class SqlServerSchemaMetadataReader
             cancellationToken.ThrowIfCancellationRequested();
             tables.Add(await ReadTableAsync(
                 connection,
+                transaction,
                 resolvedObject,
                 repositoryIdentityByObjectId,
                 cancellationToken));
@@ -43,19 +65,21 @@ internal sealed class SqlServerSchemaMetadataReader
 
     private static async Task<SqlTableDescriptor> ReadTableAsync(
         SqlConnection connection,
+        SqlTransaction? transaction,
         SqlResolvedObject resolvedObject,
         IReadOnlyDictionary<int, SqlObjectName> repositoryIdentityByObjectId,
         CancellationToken cancellationToken)
     {
-        var columns = await ReadColumnsAsync(connection, resolvedObject.ObjectId, cancellationToken);
-        var keys = await ReadKeyConstraintsAsync(connection, resolvedObject.ObjectId, cancellationToken);
+        var columns = await ReadColumnsAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
+        var keys = await ReadKeyConstraintsAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
         var foreignKeys = await ReadForeignKeysAsync(
             connection,
+            transaction,
             resolvedObject.ObjectId,
             repositoryIdentityByObjectId,
             cancellationToken);
-        var checks = await ReadCheckConstraintsAsync(connection, resolvedObject.ObjectId, cancellationToken);
-        var indexes = await ReadOrdinaryIndexesAsync(connection, resolvedObject.ObjectId, cancellationToken);
+        var checks = await ReadCheckConstraintsAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
+        var indexes = await ReadOrdinaryIndexesAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
 
         return new SqlTableDescriptor(
             resolvedObject.RepositoryIdentity,
@@ -69,10 +93,12 @@ internal sealed class SqlServerSchemaMetadataReader
 
     private static async Task<ImmutableArray<SqlColumnDescriptor>> ReadColumnsAsync(
         SqlConnection connection,
+        SqlTransaction? transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT
                 c.name,
@@ -124,10 +150,12 @@ internal sealed class SqlServerSchemaMetadataReader
 
     private static async Task<(SqlPrimaryKeyDescriptor? PrimaryKey, ImmutableArray<SqlUniqueConstraintDescriptor> UniqueConstraints)> ReadKeyConstraintsAsync(
         SqlConnection connection,
+        SqlTransaction? transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT
                 kc.name,
@@ -206,11 +234,13 @@ internal sealed class SqlServerSchemaMetadataReader
 
     private static async Task<ImmutableArray<SqlForeignKeyDescriptor>> ReadForeignKeysAsync(
         SqlConnection connection,
+        SqlTransaction? transaction,
         int objectId,
         IReadOnlyDictionary<int, SqlObjectName> repositoryIdentityByObjectId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT
                 fk.name,
@@ -287,10 +317,12 @@ internal sealed class SqlServerSchemaMetadataReader
 
     private static async Task<ImmutableArray<SqlCheckConstraintDescriptor>> ReadCheckConstraintsAsync(
         SqlConnection connection,
+        SqlTransaction? transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT
                 name,
@@ -321,10 +353,12 @@ internal sealed class SqlServerSchemaMetadataReader
 
     private static async Task<ImmutableArray<SqlIndexDescriptor>> ReadOrdinaryIndexesAsync(
         SqlConnection connection,
+        SqlTransaction? transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT
                 i.name,
