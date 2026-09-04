@@ -125,6 +125,19 @@ public sealed class SqlPersistenceStartupContractTests
     }
 
     [Fact]
+    public void AnyOperationCanceledExceptionMustPropagateRegardlessOfSuppliedTokenState()
+    {
+        using var source = new CancellationTokenSource();
+        var unrelatedCancellation = new OperationCanceledException();
+        var suppliedTokenCancellation = new OperationCanceledException(source.Token);
+
+        Assert.False(source.IsCancellationRequested);
+        Assert.True(SqlPersistenceStartupCancellationPolicy.MustPropagate(unrelatedCancellation));
+        Assert.True(SqlPersistenceStartupCancellationPolicy.MustPropagate(suppliedTokenCancellation));
+        Assert.False(SqlPersistenceStartupCancellationPolicy.MustPropagate(new InvalidOperationException()));
+    }
+
+    [Fact]
     public void MigrationOperationalFailureRejectsCancellationWrapping()
     {
         Assert.Throws<ArgumentException>(
