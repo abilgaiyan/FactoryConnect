@@ -34,7 +34,7 @@ public sealed class SqlMigrationLedgerContractTests
     }
 
     [Fact]
-    public void HistoryRowRejectsNonZeroUtcOffset()
+    public void HistoryRowRejectsNonZeroUtcOffsetWithHistoryFailure()
     {
         var row = new SqlMigrationHistoryRow(
             1,
@@ -42,7 +42,7 @@ public sealed class SqlMigrationLedgerContractTests
             "E1C14282B7A246BBD9D5734370498695721D3F0A78D60F74531E35D5FEDC9057",
             new DateTimeOffset(2026, 9, 4, 5, 0, 0, TimeSpan.FromHours(5.5)));
 
-        var exception = Assert.Throws<InvalidOperationException>(
+        var exception = Assert.Throws<SqlMigrationHistoryException>(
             () => SqlMigrationHistoryRowValidator.Validate(row));
 
         Assert.Contains("UTC offset zero", exception.Message, StringComparison.Ordinal);
@@ -65,7 +65,7 @@ public sealed class SqlMigrationLedgerContractTests
     }
 
     [Fact]
-    public void ChecksumCasingDifferenceIsNotAnExactCatalogPrefix()
+    public void ChecksumCasingDifferenceIsHistoryFailure()
     {
         var catalog = SqlMigrationCatalog.Load();
         var migration = catalog.Migrations[0];
@@ -75,7 +75,7 @@ public sealed class SqlMigrationLedgerContractTests
             migration.Sha256Checksum.ToLowerInvariant(),
             new DateTimeOffset(2026, 9, 4, 5, 0, 0, TimeSpan.Zero)));
 
-        Assert.Throws<InvalidOperationException>(
+        Assert.Throws<SqlMigrationHistoryException>(
             () => SqlMigrationHistoryPrefixValidator.ValidateExactPrefix(history, catalog));
     }
 
@@ -96,7 +96,16 @@ public sealed class SqlMigrationLedgerContractTests
     }
 
     [Fact]
-    public void LedgerSchemaValidatorRejectsEveryForbiddenArtifactCategory()
+    public void LedgerSchemaValidatorIgnoresPhysicalColumnOrder()
+    {
+        var reorderedColumns = SqlMigrationLedgerContract.Columns.Reverse().ToImmutableArray();
+        var snapshot = ExactSnapshot() with { Columns = reorderedColumns };
+
+        SqlMigrationLedgerSchemaValidator.Validate(snapshot);
+    }
+
+    [Fact]
+    public void LedgerSchemaValidatorRejectsEveryForbiddenArtifactCategoryWithSchemaFailure()
     {
         var exact = ExactSnapshot();
         SqlMigrationLedgerSchemaValidator.Validate(exact);
@@ -120,5 +129,6 @@ public sealed class SqlMigrationLedgerContractTests
         []);
 
     private static void AssertInvalid(SqlMigrationLedgerSchemaSnapshot snapshot) =>
-        Assert.Throws<InvalidOperationException>(() => SqlMigrationLedgerSchemaValidator.Validate(snapshot));
+        Assert.Throws<SqlMigrationLedgerSchemaException>(
+            () => SqlMigrationLedgerSchemaValidator.Validate(snapshot));
 }
