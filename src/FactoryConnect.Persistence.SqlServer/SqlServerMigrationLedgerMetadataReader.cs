@@ -12,13 +12,15 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
         Justification = "The ledger metadata reader remains an instance boundary so callers can depend on one cohesive metadata-reader object while its current implementation is stateless.")]
     public async Task<SqlMigrationLedgerObjectState> ResolveObjectAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
 
-        await using var command = connection.CreateCommand();
+        await using var command = CreateCommand(connection, transaction);
         command.CommandText = """
-            SELECT o.object_id, o.type
+            SELECT o.object_id, RTRIM(o.type)
             FROM sys.objects AS o
             INNER JOIN sys.schemas AS s
                 ON s.schema_id = o.schema_id
@@ -47,19 +49,21 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
         Justification = "The ledger metadata reader remains an instance boundary so callers can depend on one cohesive metadata-reader object while its current implementation is stateless.")]
     public async Task<SqlMigrationLedgerSchemaSnapshot> ReadSchemaAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
 
-        var columns = await ReadColumnsAsync(connection, objectId, cancellationToken);
-        var primaryKey = await ReadPrimaryKeyAsync(connection, objectId, cancellationToken);
-        var uniqueConstraints = await ReadNamesAsync(connection, "sys.key_constraints", "parent_object_id", objectId, "type = 'UQ'", cancellationToken);
-        var foreignKeys = await ReadNamesAsync(connection, "sys.foreign_keys", "parent_object_id", objectId, null, cancellationToken);
-        var defaultConstraints = await ReadNamesAsync(connection, "sys.default_constraints", "parent_object_id", objectId, null, cancellationToken);
-        var checkConstraints = await ReadNamesAsync(connection, "sys.check_constraints", "parent_object_id", objectId, null, cancellationToken);
-        var ordinaryIndexes = await ReadOrdinaryIndexesAsync(connection, objectId, cancellationToken);
-        var triggers = await ReadNamesAsync(connection, "sys.triggers", "parent_id", objectId, null, cancellationToken);
+        var columns = await ReadColumnsAsync(connection, transaction, objectId, cancellationToken);
+        var primaryKey = await ReadPrimaryKeyAsync(connection, transaction, objectId, cancellationToken);
+        var uniqueConstraints = await ReadNamesAsync(connection, transaction, "sys.key_constraints", "parent_object_id", objectId, "type = 'UQ'", cancellationToken);
+        var foreignKeys = await ReadNamesAsync(connection, transaction, "sys.foreign_keys", "parent_object_id", objectId, null, cancellationToken);
+        var defaultConstraints = await ReadNamesAsync(connection, transaction, "sys.default_constraints", "parent_object_id", objectId, null, cancellationToken);
+        var checkConstraints = await ReadNamesAsync(connection, transaction, "sys.check_constraints", "parent_object_id", objectId, null, cancellationToken);
+        var ordinaryIndexes = await ReadOrdinaryIndexesAsync(connection, transaction, objectId, cancellationToken);
+        var triggers = await ReadNamesAsync(connection, transaction, "sys.triggers", "parent_id", objectId, null, cancellationToken);
 
         return new SqlMigrationLedgerSchemaSnapshot(
             columns,
@@ -74,10 +78,11 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
 
     private static async Task<ImmutableArray<SqlMigrationLedgerColumnDescriptor>> ReadColumnsAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        await using var command = CreateCommand(connection, transaction);
         command.CommandText = """
             SELECT
                 c.name,
@@ -127,10 +132,11 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
 
     private static async Task<SqlMigrationLedgerPrimaryKeyDescriptor?> ReadPrimaryKeyAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        await using var command = CreateCommand(connection, transaction);
         command.CommandText = """
             SELECT
                 kc.name,
@@ -187,10 +193,11 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
 
     private static async Task<ImmutableArray<string>> ReadOrdinaryIndexesAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         int objectId,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        await using var command = CreateCommand(connection, transaction);
         command.CommandText = """
             SELECT name
             FROM sys.indexes
@@ -206,13 +213,14 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
 
     private static async Task<ImmutableArray<string>> ReadNamesAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         string catalogView,
         string objectIdColumn,
         int objectId,
         string? extraPredicate,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        await using var command = CreateCommand(connection, transaction);
         command.CommandText = $"SELECT name FROM {catalogView} WHERE {objectIdColumn} = @ObjectId" +
             (extraPredicate is null ? string.Empty : $" AND {extraPredicate}") +
             " ORDER BY name;";
@@ -234,6 +242,15 @@ internal sealed class SqlServerMigrationLedgerMetadataReader
         return values.ToImmutable();
     }
 
+    private static SqlCommand CreateCommand(
+        SqlConnection connection,
+        SqlTransaction transaction)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        return command;
+    }
+
     private sealed record PrimaryKeyRow(
         string Name,
         byte IndexType,
@@ -249,31 +266,78 @@ internal static class SqlMigrationLedgerSchemaValidator
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (!snapshot.Columns.SequenceEqual(SqlMigrationLedgerContract.Columns) ||
-            !PrimaryKeysEqual(snapshot.PrimaryKey, SqlMigrationLedgerContract.PrimaryKey) ||
-            !snapshot.UniqueConstraints.IsEmpty ||
-            !snapshot.ForeignKeys.IsEmpty ||
-            !snapshot.DefaultConstraints.IsEmpty ||
-            !snapshot.CheckConstraints.IsEmpty ||
-            !snapshot.OrdinaryIndexes.IsEmpty ||
-            !snapshot.Triggers.IsEmpty)
+        ValidateColumns(snapshot.Columns);
+        ValidatePrimaryKey(snapshot.PrimaryKey);
+
+        if (!snapshot.UniqueConstraints.IsEmpty)
         {
-            throw new InvalidOperationException("FactoryConnect migration ledger schema is invalid.");
+            throw Invalid("unexpected unique constraint");
+        }
+
+        if (!snapshot.ForeignKeys.IsEmpty)
+        {
+            throw Invalid("unexpected foreign key");
+        }
+
+        if (!snapshot.DefaultConstraints.IsEmpty)
+        {
+            throw Invalid("unexpected default constraint");
+        }
+
+        if (!snapshot.CheckConstraints.IsEmpty)
+        {
+            throw Invalid("unexpected check constraint");
+        }
+
+        if (!snapshot.OrdinaryIndexes.IsEmpty)
+        {
+            throw Invalid("unexpected ordinary index");
+        }
+
+        if (!snapshot.Triggers.IsEmpty)
+        {
+            throw Invalid("unexpected trigger");
         }
     }
 
-    private static bool PrimaryKeysEqual(
-        SqlMigrationLedgerPrimaryKeyDescriptor? actual,
-        SqlMigrationLedgerPrimaryKeyDescriptor expected)
+    private static void ValidateColumns(ImmutableArray<SqlMigrationLedgerColumnDescriptor> columns)
     {
-        if (actual is null)
+        if (columns.Length != SqlMigrationLedgerContract.Columns.Length)
         {
-            return false;
+            throw Invalid("column set");
         }
 
-        return string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) &&
-            actual.IsClustered == expected.IsClustered &&
-            actual.IsEnabled == expected.IsEnabled &&
-            actual.KeyColumns.SequenceEqual(expected.KeyColumns);
+        var actualByName = new Dictionary<string, SqlMigrationLedgerColumnDescriptor>(StringComparer.Ordinal);
+        foreach (var column in columns)
+        {
+            if (!actualByName.TryAdd(column.Name, column))
+            {
+                throw Invalid($"duplicate column '{column.Name}'");
+            }
+        }
+
+        foreach (var expected in SqlMigrationLedgerContract.Columns)
+        {
+            if (!actualByName.TryGetValue(expected.Name, out var actual) || actual != expected)
+            {
+                throw Invalid($"column '{expected.Name}'");
+            }
+        }
     }
+
+    private static void ValidatePrimaryKey(SqlMigrationLedgerPrimaryKeyDescriptor? actual)
+    {
+        var expected = SqlMigrationLedgerContract.PrimaryKey;
+        if (actual is null ||
+            !string.Equals(actual.Name, expected.Name, StringComparison.Ordinal) ||
+            actual.IsClustered != expected.IsClustered ||
+            actual.IsEnabled != expected.IsEnabled ||
+            !actual.KeyColumns.SequenceEqual(expected.KeyColumns))
+        {
+            throw Invalid("primary key");
+        }
+    }
+
+    private static SqlMigrationLedgerSchemaException Invalid(string category) =>
+        new($"FactoryConnect migration ledger schema is invalid: {category} mismatch.");
 }
