@@ -66,13 +66,12 @@ public sealed class SqlRuntimeCompatibilityContractTests
     }
 
     [Fact]
-    public void ExactCurrentHistoryRequiresCurrentSchemaComparison()
+    public void ExactCurrentHistoryHasNoTerminalCompatibilityClassification()
     {
-        var mapped = SqlRuntimeMigrationHistoryCompatibilityMapping.TryMapTerminal(
-            SqlRuntimeMigrationHistoryClassification.ExactCurrent,
-            out _);
+        var mapped = SqlRuntimeMigrationHistoryCompatibilityMapping.MapTerminal(
+            SqlRuntimeMigrationHistoryClassification.ExactCurrent);
 
-        Assert.False(mapped);
+        Assert.Null(mapped);
     }
 
     [Theory]
@@ -88,11 +87,9 @@ public sealed class SqlRuntimeCompatibilityContractTests
         var historyClassification = Enum.Parse<SqlRuntimeMigrationHistoryClassification>(historyClassificationName);
         var expected = Enum.Parse<SqlRuntimeCompatibilityClassification>(compatibilityClassificationName);
 
-        var mapped = SqlRuntimeMigrationHistoryCompatibilityMapping.TryMapTerminal(
-            historyClassification,
-            out var actual);
+        var actual = SqlRuntimeMigrationHistoryCompatibilityMapping.MapTerminal(historyClassification);
 
-        Assert.True(mapped);
-        Assert.Equal(expected, actual);
+        Assert.NotNull(actual);
+        Assert.Equal(expected, actual.Value);
     }
 }
