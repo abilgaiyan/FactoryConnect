@@ -12,11 +12,13 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
+        await ExecuteAsync(connection, "CREATE TABLE dbo.CustomerOwnedProbe (Id int NOT NULL);");
         var engine = CreateEngine();
 
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
         await AssertCurrentStateAsync(connection);
+        Assert.True(await ObjectExistsAsync(connection, "dbo.CustomerOwnedProbe"));
     }
 
     [Fact]
@@ -27,11 +29,13 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
         await ApplySchemaPrefixWithoutLedgerAsync(connection, catalog, catalog.Migrations.Length);
+        await ExecuteAsync(connection, "CREATE TABLE dbo.CustomerOwnedProbe (Id int NOT NULL);");
         var engine = CreateEngine();
 
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
         await AssertCurrentStateAsync(connection);
+        Assert.True(await ObjectExistsAsync(connection, "dbo.CustomerOwnedProbe"));
     }
 
     [Theory]
@@ -85,6 +89,26 @@ public sealed class SqlServerMigrationEngineIntegrationTests
             UnledgeredDatabaseClassification.PartialOrIncompatibleLegacy,
             expectedPrefixDatabase);
         await transaction.RollbackAsync();
+    }
+
+    [Theory]
+    [InlineData(HistoryCorruption.NameMismatch)]
+    [InlineData(HistoryCorruption.LowercaseChecksum)]
+    [InlineData(HistoryCorruption.NonUtcOffset)]
+    public async Task InvalidExistingHistoryIsRejectedBeforePendingDdl(HistoryCorruption corruption)
+    {
+        await using var database = await IsolatedMigrationDatabase.CreateAsync();
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var catalog = SqlMigrationCatalog.Load();
+        await CreateExactPrefixAsync(connection, catalog, prefixLength: 1);
+        await CorruptFirstHistoryRowAsync(connection, corruption);
+        var engine = CreateEngine();
+
+        await Assert.ThrowsAsync<SqlMigrationHistoryException>(() =>
+            engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None));
+
+        Assert.False(await ObjectExistsAsync(connection, "dbo.MetricInputStream"));
     }
 
     private static SqlServerMigrationEngine CreateEngine() =>
@@ -142,6 +166,24 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         await transaction.CommitAsync();
     }
 
+    private static async Task CorruptFirstHistoryRowAsync(
+        SqlConnection connection,
+        HistoryCorruption corruption)
+    {
+        var sql = corruption switch
+        {
+            HistoryCorruption.NameMismatch =>
+                "UPDATE dbo.FactoryConnectMigrationHistory SET Name = N'UnexpectedName' WHERE MigrationId = 1;",
+            HistoryCorruption.LowercaseChecksum =>
+                "UPDATE dbo.FactoryConnectMigrationHistory SET CanonicalChecksum = LOWER(CanonicalChecksum) WHERE MigrationId = 1;",
+            HistoryCorruption.NonUtcOffset =>
+                "UPDATE dbo.FactoryConnectMigrationHistory SET AppliedAtUtc = CAST('2026-09-04T05:30:00+05:30' AS datetimeoffset(7)) WHERE MigrationId = 1;",
+            _ => throw new InvalidOperationException($"Unsupported history corruption '{corruption}'.")
+        };
+
+        await ExecuteAsync(connection, sql);
+    }
+
     private static async Task AssertCurrentStateAsync(SqlConnection connection)
     {
         var catalog = SqlMigrationCatalog.Load();
@@ -176,6 +218,29 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Current, schema);
         Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
         await transaction.RollbackAsync();
+    }
+
+    private static async Task ExecuteAsync(SqlConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<bool> ObjectExistsAsync(SqlConnection connection, string objectName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT OBJECT_ID(@ObjectName, N'U');";
+        command.Parameters.AddWithValue("@ObjectName", objectName);
+        var result = await command.ExecuteScalarAsync();
+        return result is not null && result != DBNull.Value;
+    }
+
+    private enum HistoryCorruption
+    {
+        NameMismatch,
+        LowercaseChecksum,
+        NonUtcOffset
     }
 
     private sealed class FixedUtcClock : ISqlMigrationUtcClock
