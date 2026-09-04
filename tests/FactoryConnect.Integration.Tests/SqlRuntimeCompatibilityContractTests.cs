@@ -14,6 +14,7 @@ public sealed class SqlRuntimeCompatibilityContractTests
         SqlRuntimeCompatibilityClassification.DatabaseNewerThanSupported,
         SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch,
         SqlRuntimeCompatibilityClassification.MigrationChecksumMismatch,
+        SqlRuntimeCompatibilityClassification.MigrationHistoryInvalid,
         SqlRuntimeCompatibilityClassification.MigrationLedgerSchemaInvalid,
         SqlRuntimeCompatibilityClassification.MigrationSchemaDrift
     ];
@@ -50,6 +51,7 @@ public sealed class SqlRuntimeCompatibilityContractTests
     [InlineData("DatabaseNewerThanSupported", false)]
     [InlineData("MigrationIdentityMismatch", false)]
     [InlineData("MigrationChecksumMismatch", false)]
+    [InlineData("MigrationHistoryInvalid", false)]
     [InlineData("MigrationLedgerSchemaInvalid", false)]
     [InlineData("MigrationSchemaDrift", false)]
     public void ResultCompatibilityDependsOnlyOnCompatibleClassification(
@@ -61,5 +63,24 @@ public sealed class SqlRuntimeCompatibilityContractTests
 
         Assert.Equal(classification, result.Classification);
         Assert.Equal(expectedIsCompatible, result.IsCompatible);
+    }
+
+    [Theory]
+    [InlineData("ExactCurrent", "Compatible")]
+    [InlineData("ExactPrefixPending", "MigrationPending")]
+    [InlineData("DatabaseNewerThanSupported", "DatabaseNewerThanSupported")]
+    [InlineData("IdentityMismatch", "MigrationIdentityMismatch")]
+    [InlineData("ChecksumMismatch", "MigrationChecksumMismatch")]
+    [InlineData("RowSemanticsInvalid", "MigrationHistoryInvalid")]
+    public void HistoryClassificationMappingIsClosedAndExact(
+        string historyClassificationName,
+        string compatibilityClassificationName)
+    {
+        var historyClassification = Enum.Parse<SqlRuntimeMigrationHistoryClassification>(historyClassificationName);
+        var expected = Enum.Parse<SqlRuntimeCompatibilityClassification>(compatibilityClassificationName);
+
+        Assert.Equal(
+            expected,
+            SqlRuntimeMigrationHistoryCompatibilityMapping.Map(historyClassification));
     }
 }
