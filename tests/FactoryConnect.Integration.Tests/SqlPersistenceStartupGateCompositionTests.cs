@@ -33,7 +33,8 @@ public sealed class SqlPersistenceStartupGateCompositionTests
     {
         var configuration = BuildConfiguration(("Persistence:Provider", "InMemory"));
         var services = new ServiceCollection();
-        services.AddSqlServerPersistenceProvider(configuration);
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
         services.AddInMemoryPersistenceProvider();
         services.AddFactoryConnectPersistence(configuration);
 
@@ -177,14 +178,15 @@ public sealed class SqlPersistenceStartupGateCompositionTests
             ("PersistenceProviders:SqlServer:ConnectionString", "Server=unused;Database=unused"),
             ("PersistenceProviders:SqlServer:Startup:LockTimeout", "00:00:07"));
         var services = new ServiceCollection();
-        services.AddSqlServerPersistenceProvider(configuration);
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
         services.AddFactoryConnectPersistence(configuration);
 
         await using var provider = services.BuildServiceProvider();
         var gate = Assert.IsType<SqlServerPersistenceStartupGate>(
             provider.GetRequiredService<IPersistenceStartupGate>());
 
-        Assert.NotNull(gate);
+        Assert.Equal(TimeSpan.FromSeconds(7), gate.LockTimeout);
     }
 
     private static SqlServerPersistenceStartupGate CreateGate(
