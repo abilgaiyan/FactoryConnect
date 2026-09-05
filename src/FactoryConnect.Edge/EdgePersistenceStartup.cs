@@ -14,14 +14,20 @@ internal static class EdgePersistenceStartup
         ArgumentNullException.ThrowIfNull(runHost);
         ArgumentNullException.ThrowIfNull(startupCancellationFactory);
 
-        using var startupCancellation = startupCancellationFactory.Create()
+        var startupCancellation = startupCancellationFactory.Create()
             ?? throw new InvalidOperationException(
                 "Edge startup cancellation factory returned no registration.");
 
-        var startupGate = services.GetRequiredService<IPersistenceStartupGate>();
-        await startupGate.EnsureReadyAsync(startupCancellation.Token);
+        try
+        {
+            var startupGate = services.GetRequiredService<IPersistenceStartupGate>();
+            await startupGate.EnsureReadyAsync(startupCancellation.Token);
+        }
+        finally
+        {
+            startupCancellation.Dispose();
+        }
 
-        startupCancellation.Dispose();
         await runHost();
     }
 }
