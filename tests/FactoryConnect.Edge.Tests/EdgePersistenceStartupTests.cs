@@ -18,12 +18,11 @@ public sealed class EdgePersistenceStartupTests
         });
         var worker = new ProbeHostedService(() => order.Add("worker"));
         var startupCancellation = new TestStartupCancellationRegistration();
-        await using var host = CreateHost(gate, worker);
+        await using var host = CreateHost(gate, worker, startupCancellation);
 
         await EdgePersistenceStartup.RunAsync(
             host.Services,
-            () => host.StartAsync(),
-            new TestStartupCancellationRegistrationFactory(startupCancellation));
+            () => host.StartAsync());
 
         try
         {
@@ -44,13 +43,12 @@ public sealed class EdgePersistenceStartupTests
         var gate = new DelegateStartupGate(_ => ValueTask.FromException(failure));
         var worker = new ProbeHostedService();
         var startupCancellation = new TestStartupCancellationRegistration();
-        await using var host = CreateHost(gate, worker);
+        await using var host = CreateHost(gate, worker, startupCancellation);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(
             () => EdgePersistenceStartup.RunAsync(
                 host.Services,
-                () => host.StartAsync(),
-                new TestStartupCancellationRegistrationFactory(startupCancellation)));
+                () => host.StartAsync()));
 
         Assert.Same(failure, actual);
         Assert.Equal(0, worker.StartCount);
@@ -64,13 +62,12 @@ public sealed class EdgePersistenceStartupTests
         var gate = new DelegateStartupGate(_ => ValueTask.FromException(cancellation));
         var worker = new ProbeHostedService();
         var startupCancellation = new TestStartupCancellationRegistration();
-        await using var host = CreateHost(gate, worker);
+        await using var host = CreateHost(gate, worker, startupCancellation);
 
         var actual = await Assert.ThrowsAsync<OperationCanceledException>(
             () => EdgePersistenceStartup.RunAsync(
                 host.Services,
-                () => host.StartAsync(),
-                new TestStartupCancellationRegistrationFactory(startupCancellation)));
+                () => host.StartAsync()));
 
         Assert.Same(cancellation, actual);
         Assert.Equal(0, worker.StartCount);
@@ -84,13 +81,12 @@ public sealed class EdgePersistenceStartupTests
         var worker = new ProbeHostedService();
         var startupCancellation = new TestStartupCancellationRegistration();
         startupCancellation.Cancel();
-        await using var host = CreateHost(gate, worker);
+        await using var host = CreateHost(gate, worker, startupCancellation);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => EdgePersistenceStartup.RunAsync(
                 host.Services,
-                () => host.StartAsync(),
-                new TestStartupCancellationRegistrationFactory(startupCancellation)));
+                () => host.StartAsync()));
 
         Assert.True(gate.ObservedCancelledToken);
         Assert.Equal(0, worker.StartCount);
@@ -104,12 +100,11 @@ public sealed class EdgePersistenceStartupTests
         var gate = new DelegateStartupGate(_ => ValueTask.CompletedTask);
         var worker = new ProbeHostedService(() =>
             Assert.True(startupCancellation.IsDisposed));
-        await using var host = CreateHost(gate, worker);
+        await using var host = CreateHost(gate, worker, startupCancellation);
 
         await EdgePersistenceStartup.RunAsync(
             host.Services,
-            () => host.StartAsync(),
-            new TestStartupCancellationRegistrationFactory(startupCancellation));
+            () => host.StartAsync());
 
         try
         {
@@ -123,11 +118,14 @@ public sealed class EdgePersistenceStartupTests
 
     private static IHost CreateHost(
         IPersistenceStartupGate gate,
-        ProbeHostedService worker)
+        ProbeHostedService worker,
+        TestStartupCancellationRegistration startupCancellation)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton<IPersistenceStartupGate>(gate);
         builder.Services.AddSingleton<IHostedService>(worker);
+        builder.Services.AddSingleton<IEdgeStartupCancellationRegistrationFactory>(
+            new TestStartupCancellationRegistrationFactory(startupCancellation));
         return builder.Build();
     }
 
