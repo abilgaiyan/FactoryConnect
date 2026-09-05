@@ -7,7 +7,7 @@ internal static class ApiPersistenceStartup
 {
     public static async Task RunAsync(
         IServiceProvider services,
-        Func<CancellationToken, Task> runHost,
+        Func<Task> runHost,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -15,6 +15,6 @@ internal static class ApiPersistenceStartup
 
         var startupGate = services.GetRequiredService<IPersistenceStartupGate>();
         await startupGate.EnsureReadyAsync(cancellationToken);
-        await runHost(cancellationToken);
+        await runHost();
     }
 }
