@@ -189,6 +189,31 @@ public sealed class SqlPersistenceStartupGateCompositionTests
         Assert.Equal(TimeSpan.FromSeconds(7), gate.LockTimeout);
     }
 
+    [Fact]
+    public async Task SqlProviderSharesFirstLazyConfigurationSnapshotBetweenGateAndStores()
+    {
+        var configuration = BuildConfiguration(
+            ("Persistence:Provider", "SqlServer"),
+            ("PersistenceProviders:SqlServer:ConnectionString", "Server=initial;Database=initial"),
+            ("PersistenceProviders:SqlServer:Startup:LockTimeout", "00:00:07"));
+        var services = new ServiceCollection();
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(configuration);
+
+        await using var provider = services.BuildServiceProvider();
+        var gate = Assert.IsType<SqlServerPersistenceStartupGate>(
+            provider.GetRequiredService<IPersistenceStartupGate>());
+
+        configuration["PersistenceProviders:SqlServer:ConnectionString"] = "";
+        configuration["PersistenceProviders:SqlServer:Startup:LockTimeout"] = "-00:00:01";
+
+        var providerServices = provider.GetRequiredService<PersistenceProviderServices>();
+
+        Assert.NotNull(providerServices.ObservationIngestionStore);
+        Assert.Equal(TimeSpan.FromSeconds(7), gate.LockTimeout);
+    }
+
     private static SqlServerPersistenceStartupGate CreateGate(
         Func<string, TimeSpan, CancellationToken, Task> migration,
         Func<string, TimeSpan, CancellationToken, Task<SqlRuntimeCompatibilityResult>> verification) =>
