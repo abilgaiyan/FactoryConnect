@@ -9,5 +9,4 @@ var host = builder.Build();
 
 await EdgePersistenceStartup.RunAsync(
     host.Services,
-    () => host.RunAsync(),
-    host.Services.GetRequiredService<IEdgeStartupCancellationRegistrationFactory>());
+    () => host.RunAsync());
