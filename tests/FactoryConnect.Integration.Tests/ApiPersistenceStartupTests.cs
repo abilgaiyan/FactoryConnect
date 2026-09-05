@@ -177,9 +177,7 @@ public sealed class ApiPersistenceStartupTests
         IPersistenceStartupGate gate,
         TestStartupCancellationRegistration startupCancellation) =>
         new ServiceCollection()
-            .AddSingleton(gate)
-            .AddSingleton<IPersistenceStartupGate>(static services =>
-                services.GetRequiredService<DelegateStartupGate>())
+            .AddSingleton<IPersistenceStartupGate>(gate)
             .AddSingleton<IApiStartupCancellationRegistrationFactory>(
                 new TestStartupCancellationRegistrationFactory(startupCancellation))
             .BuildServiceProvider();
