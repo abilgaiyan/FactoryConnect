@@ -1,6 +1,7 @@
 using FactoryConnect.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Xunit;
 
 namespace FactoryConnect.Edge.Tests;
 
