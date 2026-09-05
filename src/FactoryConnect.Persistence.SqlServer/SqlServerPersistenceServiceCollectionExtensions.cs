@@ -15,15 +15,18 @@ public static class SqlServerPersistenceServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        var configurationSnapshot = new Lazy<SqlServerPersistenceConfigurationSnapshot>(
+            () => SqlServerPersistenceConfigurationSnapshot.Create(configuration),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
                 PersistenceProviderCapabilities.Core,
                 _ =>
                 {
-                    var options = new SqlServerPersistenceOptions();
-                    configuration.Bind(options);
-                    var connectionString = options.GetRequiredConnectionString();
+                    var snapshot = configurationSnapshot.Value;
+                    var connectionString = snapshot.ConnectionString;
 
                     return new PersistenceProviderServices(
                         new SqlServerObservationIngestionStore(connectionString),
@@ -33,12 +36,27 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                 },
                 _ =>
                 {
-                    var options = new SqlServerPersistenceOptions();
-                    configuration.Bind(options);
+                    var snapshot = configurationSnapshot.Value;
 
                     return new SqlServerPersistenceStartupGate(
-                        options.GetRequiredConnectionString(),
-                        options.GetStartupOptions());
+                        snapshot.ConnectionString,
+                        snapshot.StartupOptions);
                 }));
+    }
+
+    private sealed record SqlServerPersistenceConfigurationSnapshot(
+        string ConnectionString,
+        SqlPersistenceStartupOptions StartupOptions)
+    {
+        public static SqlServerPersistenceConfigurationSnapshot Create(
+            IConfiguration configuration)
+        {
+            var options = new SqlServerPersistenceOptions();
+            configuration.Bind(options);
+
+            return new SqlServerPersistenceConfigurationSnapshot(
+                options.GetRequiredConnectionString(),
+                options.GetStartupOptions());
+        }
     }
 }
