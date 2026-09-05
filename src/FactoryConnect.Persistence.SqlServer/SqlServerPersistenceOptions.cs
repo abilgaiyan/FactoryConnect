@@ -6,6 +6,8 @@ public sealed class SqlServerPersistenceOptions
 
     public string? ConnectionString { get; set; }
 
+    public SqlServerStartupOptions Startup { get; set; } = new();
+
     internal string GetRequiredConnectionString()
     {
         if (string.IsNullOrWhiteSpace(ConnectionString))
@@ -16,4 +18,15 @@ public sealed class SqlServerPersistenceOptions
 
         return ConnectionString;
     }
+
+    internal SqlPersistenceStartupOptions GetStartupOptions()
+    {
+        Startup ??= new SqlServerStartupOptions();
+        return new SqlPersistenceStartupOptions(Startup.LockTimeout);
+    }
+}
+
+public sealed class SqlServerStartupOptions
+{
+    public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }
