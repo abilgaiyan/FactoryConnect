@@ -157,7 +157,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
     }
 
     [Fact]
-    public async Task VerificationCancellationWhileWaitingPropagatesExactOperationCanceledException()
+    public async Task VerificationCancellationWhileWaitingPreservesProviderOperationalFailure()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         using var cancellationSource = new CancellationTokenSource();
@@ -168,7 +168,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
             TaskCreationOptions.RunContinuationsAsynchronously);
         var verificationSessionId = new TaskCompletionSource<int>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        OperationCanceledException? verificationCancellation = null;
+        Exception? verificationFailure = null;
         Exception? primaryFailure = null;
         var activationCount = 0;
 
@@ -201,9 +201,9 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
                         lockTimeout,
                         cancellationToken);
                 }
-                catch (OperationCanceledException exception)
+                catch (Exception exception)
                 {
-                    verificationCancellation = exception;
+                    verificationFailure = exception;
                     throw;
                 }
             });
@@ -229,12 +229,17 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
             cancellationSource.Cancel();
 
-            var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
                 () => startupTask.WaitAsync(TimeSpan.FromSeconds(10)));
             primaryFailure = exception;
 
-            Assert.NotNull(verificationCancellation);
-            Assert.Same(verificationCancellation, exception);
+            Assert.Equal(
+                SqlPersistenceStartupFailureKind.VerificationOperationalFailure,
+                exception.FailureKind);
+            Assert.Null(exception.CompatibilityResult);
+            Assert.NotNull(verificationFailure);
+            Assert.IsType<SqlException>(verificationFailure);
+            Assert.Same(verificationFailure, exception.InnerException);
             Assert.Equal(0, activationCount);
         }
         catch (Exception exception)
@@ -249,6 +254,44 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
                 blockerTransaction,
                 primaryFailure);
         }
+    }
+
+    [Fact]
+    public async Task OperationCanceledExceptionAfterRealMigrationPropagatesUnchanged()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        var activationCount = 0;
+        var migrationCompleted = false;
+        OperationCanceledException? emittedCancellation = null;
+
+        var gate = new SqlServerPersistenceStartupGate(
+            database.ConnectionString,
+            new SqlPersistenceStartupOptions(LockTimeout),
+            async (connectionString, lockTimeout, cancellationToken) =>
+            {
+                await RunRealMigrationAsync(connectionString, lockTimeout, cancellationToken);
+                migrationCompleted = true;
+            },
+            (_, _, cancellationToken) =>
+            {
+                Assert.True(migrationCompleted);
+                emittedCancellation = new OperationCanceledException(
+                    "E.5.3 verification-stage cancellation.",
+                    innerException: null,
+                    cancellationToken);
+                return Task.FromException<SqlRuntimeCompatibilityResult>(emittedCancellation);
+            });
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () =>
+            {
+                await gate.EnsureReadyAsync(CancellationToken.None);
+                activationCount++;
+            });
+
+        Assert.NotNull(emittedCancellation);
+        Assert.Same(emittedCancellation, exception);
+        Assert.Equal(0, activationCount);
     }
 
     private static async Task RunRealMigrationAsync(
