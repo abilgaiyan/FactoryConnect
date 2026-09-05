@@ -5,6 +5,7 @@ using Xunit;
 
 namespace FactoryConnect.Integration.Tests;
 
+[Collection(SqlStartupConcurrencyDefinition.CollectionName)]
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTests
 {
