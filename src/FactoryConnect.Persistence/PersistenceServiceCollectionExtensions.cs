@@ -95,6 +95,8 @@ public static class PersistenceServiceCollectionExtensions
         }
 
         services.AddSingleton(options);
+        services.AddSingleton<IPersistenceStartupGate>(
+            serviceProvider => selected.CreateStartupGate(serviceProvider));
         services.AddSingleton<PersistenceProviderServices>(
             serviceProvider => selected.Create(serviceProvider));
         services.AddSingleton<IObservationIngestionStore>(
