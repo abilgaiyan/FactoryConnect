@@ -19,7 +19,7 @@ public sealed class EdgePersistenceStartupTests
         });
         var worker = new ProbeHostedService(() => order.Add("worker"));
         var startupCancellation = new TestStartupCancellationRegistration();
-        await using var host = CreateHost(gate, worker, startupCancellation);
+        using var host = CreateHost(gate, worker, startupCancellation);
 
         await EdgePersistenceStartup.RunAsync(
             host.Services,
@@ -44,7 +44,7 @@ public sealed class EdgePersistenceStartupTests
         var gate = new DelegateStartupGate(_ => ValueTask.FromException(failure));
         var worker = new ProbeHostedService();
         var startupCancellation = new TestStartupCancellationRegistration();
-        await using var host = CreateHost(gate, worker, startupCancellation);
+        using var host = CreateHost(gate, worker, startupCancellation);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(
             () => EdgePersistenceStartup.RunAsync(
@@ -63,7 +63,7 @@ public sealed class EdgePersistenceStartupTests
         var gate = new DelegateStartupGate(_ => ValueTask.FromException(cancellation));
         var worker = new ProbeHostedService();
         var startupCancellation = new TestStartupCancellationRegistration();
-        await using var host = CreateHost(gate, worker, startupCancellation);
+        using var host = CreateHost(gate, worker, startupCancellation);
 
         var actual = await Assert.ThrowsAsync<OperationCanceledException>(
             () => EdgePersistenceStartup.RunAsync(
@@ -82,7 +82,7 @@ public sealed class EdgePersistenceStartupTests
         var worker = new ProbeHostedService();
         var startupCancellation = new TestStartupCancellationRegistration();
         startupCancellation.Cancel();
-        await using var host = CreateHost(gate, worker, startupCancellation);
+        using var host = CreateHost(gate, worker, startupCancellation);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => EdgePersistenceStartup.RunAsync(
@@ -101,7 +101,7 @@ public sealed class EdgePersistenceStartupTests
         var gate = new DelegateStartupGate(_ => ValueTask.CompletedTask);
         var worker = new ProbeHostedService(() =>
             Assert.True(startupCancellation.IsDisposed));
-        await using var host = CreateHost(gate, worker, startupCancellation);
+        using var host = CreateHost(gate, worker, startupCancellation);
 
         await EdgePersistenceStartup.RunAsync(
             host.Services,
