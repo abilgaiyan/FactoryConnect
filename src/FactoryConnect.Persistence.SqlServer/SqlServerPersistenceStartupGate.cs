@@ -42,6 +42,8 @@ internal sealed class SqlServerPersistenceStartupGate : IPersistenceStartupGate
         _verificationStage = verificationStage;
     }
 
+    internal TimeSpan LockTimeout => _options.LockTimeout;
+
     public async ValueTask EnsureReadyAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
