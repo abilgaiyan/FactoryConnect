@@ -38,4 +38,6 @@ public interface IPersistenceProviderRegistration
     PersistenceProviderCapabilities Capabilities { get; }
 
     PersistenceProviderServices Create(IServiceProvider services);
+
+    IPersistenceStartupGate CreateStartupGate(IServiceProvider services);
 }
