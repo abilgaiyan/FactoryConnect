@@ -27,6 +27,10 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapOpenApi();
 app.MapOperationalMetricReportingEndpoints();
 
-app.Run();
+await app.Services
+    .GetRequiredService<IPersistenceStartupGate>()
+    .EnsureReadyAsync(CancellationToken.None);
+
+await app.RunAsync();
 
 public partial class Program;
