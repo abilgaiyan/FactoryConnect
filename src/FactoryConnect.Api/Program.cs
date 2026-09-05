@@ -30,7 +30,7 @@ app.MapOperationalMetricReportingEndpoints();
 
 await ApiPersistenceStartup.RunAsync(
     app.Services,
-    app.RunAsync,
+    () => app.RunAsync(),
     CancellationToken.None);
 
 public partial class Program;
