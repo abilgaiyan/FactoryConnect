@@ -9,7 +9,8 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTests
 {
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan SetupTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(5);
 
     [Fact]
     public async Task SchemaDriftAfterRealMigrationProducesExactDatabaseIncompatibleResult()
@@ -66,9 +67,12 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
         SqlConnection? blockerConnection = null;
         SqlTransaction? blockerTransaction = null;
+        var blockerReady = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var verificationSessionId = new TaskCompletionSource<int>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         Exception? verificationFailure = null;
+        Exception? primaryFailure = null;
         var activationCount = 0;
 
         var gate = new SqlServerPersistenceStartupGate(
@@ -85,6 +89,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
                     blockerConnection,
                     blockerTransaction,
                     cancellationToken);
+                blockerReady.TrySetResult();
             },
             async (connectionString, lockTimeout, cancellationToken) =>
             {
@@ -116,6 +121,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
         try
         {
+            await blockerReady.Task.WaitAsync(SetupTimeout);
             var sessionId = await verificationSessionId.Task.WaitAsync(ObservationTimeout);
             await AssertWaitingApplicationLockAsync(
                 database.ConnectionString,
@@ -126,6 +132,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
             var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
                 () => startupTask.WaitAsync(TimeSpan.FromSeconds(10)));
+            primaryFailure = exception;
 
             Assert.Equal(
                 SqlPersistenceStartupFailureKind.VerificationOperationalFailure,
@@ -135,9 +142,17 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
             Assert.Same(verificationFailure, exception.InnerException);
             Assert.Equal(0, activationCount);
         }
+        catch (Exception exception)
+        {
+            primaryFailure ??= exception;
+            throw;
+        }
         finally
         {
-            await RollbackAndDisposeBlockerAsync(blockerConnection, blockerTransaction);
+            await CleanupBlockerAsync(
+                blockerConnection,
+                blockerTransaction,
+                primaryFailure);
         }
     }
 
@@ -149,9 +164,12 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
         SqlConnection? blockerConnection = null;
         SqlTransaction? blockerTransaction = null;
+        var blockerReady = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var verificationSessionId = new TaskCompletionSource<int>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         OperationCanceledException? verificationCancellation = null;
+        Exception? primaryFailure = null;
         var activationCount = 0;
 
         var gate = new SqlServerPersistenceStartupGate(
@@ -168,6 +186,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
                     blockerConnection,
                     blockerTransaction,
                     cancellationToken);
+                blockerReady.TrySetResult();
             },
             async (connectionString, lockTimeout, cancellationToken) =>
             {
@@ -199,6 +218,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
         try
         {
+            await blockerReady.Task.WaitAsync(SetupTimeout);
             var sessionId = await verificationSessionId.Task.WaitAsync(ObservationTimeout);
             await AssertWaitingApplicationLockAsync(
                 database.ConnectionString,
@@ -211,14 +231,23 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
 
             var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () => startupTask.WaitAsync(TimeSpan.FromSeconds(10)));
+            primaryFailure = exception;
 
             Assert.NotNull(verificationCancellation);
             Assert.Same(verificationCancellation, exception);
             Assert.Equal(0, activationCount);
         }
+        catch (Exception exception)
+        {
+            primaryFailure ??= exception;
+            throw;
+        }
         finally
         {
-            await RollbackAndDisposeBlockerAsync(blockerConnection, blockerTransaction);
+            await CleanupBlockerAsync(
+                blockerConnection,
+                blockerTransaction,
+                primaryFailure);
         }
     }
 
@@ -295,38 +324,45 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
         await observer.OpenAsync();
         using var timeoutSource = new CancellationTokenSource(timeout);
 
-        while (!timeoutSource.IsCancellationRequested)
+        try
         {
-            await using var command = observer.CreateCommand();
-            command.CommandText = """
-                SELECT TOP (1)
-                    request_status,
-                    request_mode,
-                    request_owner_type
-                FROM sys.dm_tran_locks
-                WHERE request_session_id = @SessionId
-                  AND resource_type = N'APPLICATION'
-                ORDER BY request_status DESC;
-                """;
-            command.Parameters.AddWithValue("@SessionId", sessionId);
-
-            await using var reader = await command.ExecuteReaderAsync(
-                timeoutSource.Token);
-            if (await reader.ReadAsync(timeoutSource.Token))
+            while (!timeoutSource.IsCancellationRequested)
             {
-                var status = reader.GetString(0);
-                var mode = reader.GetString(1);
-                var ownerType = reader.GetString(2);
-                if (string.Equals(status, "WAIT", StringComparison.Ordinal))
-                {
-                    Assert.Equal(expectedMode, mode);
-                    Assert.Equal("TRANSACTION", ownerType);
-                    Assert.False(startupTask.IsCompleted);
-                    return;
-                }
-            }
+                await using var command = observer.CreateCommand();
+                command.CommandText = """
+                    SELECT TOP (1)
+                        request_status,
+                        request_mode,
+                        request_owner_type
+                    FROM sys.dm_tran_locks
+                    WHERE request_session_id = @SessionId
+                      AND resource_type = N'APPLICATION'
+                    ORDER BY request_status DESC;
+                    """;
+                command.Parameters.AddWithValue("@SessionId", sessionId);
 
-            await Task.Delay(TimeSpan.FromMilliseconds(25), timeoutSource.Token);
+                await using var reader = await command.ExecuteReaderAsync(
+                    timeoutSource.Token);
+                if (await reader.ReadAsync(timeoutSource.Token))
+                {
+                    var status = reader.GetString(0);
+                    var mode = reader.GetString(1);
+                    var ownerType = reader.GetString(2);
+                    if (string.Equals(status, "WAIT", StringComparison.Ordinal))
+                    {
+                        Assert.Equal(expectedMode, mode);
+                        Assert.Equal("TRANSACTION", ownerType);
+                        Assert.False(startupTask.IsCompleted);
+                        return;
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(25), timeoutSource.Token);
+            }
+        }
+        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
+        {
+            // Convert observer cancellation into one deterministic timeout assertion below.
         }
 
         throw new TimeoutException(
@@ -345,25 +381,61 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task RollbackAndDisposeBlockerAsync(
+    private static async Task CleanupBlockerAsync(
         SqlConnection? connection,
-        SqlTransaction? transaction)
+        SqlTransaction? transaction,
+        Exception? primaryFailure)
     {
+        List<Exception>? cleanupFailures = null;
+
         if (transaction is not null)
         {
             try
             {
                 await transaction.RollbackAsync();
             }
-            finally
+            catch (Exception exception)
+            {
+                (cleanupFailures ??= []).Add(exception);
+            }
+
+            try
             {
                 await transaction.DisposeAsync();
+            }
+            catch (Exception exception)
+            {
+                (cleanupFailures ??= []).Add(exception);
             }
         }
 
         if (connection is not null)
         {
-            await connection.DisposeAsync();
+            try
+            {
+                await connection.DisposeAsync();
+            }
+            catch (Exception exception)
+            {
+                (cleanupFailures ??= []).Add(exception);
+            }
         }
+
+        if (cleanupFailures is null)
+        {
+            return;
+        }
+
+        var cleanupFailure = new AggregateException(
+            "E.5.3 blocker cleanup failed.",
+            cleanupFailures);
+
+        if (primaryFailure is not null)
+        {
+            primaryFailure.Data["E.5.3 CleanupFailure"] = cleanupFailure;
+            return;
+        }
+
+        throw cleanupFailure;
     }
 }
