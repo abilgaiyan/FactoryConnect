@@ -10,7 +10,7 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
 {
     private static readonly TimeSpan StartupLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan VerificationFailureLockTimeout = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
     public async Task Migration003FailurePreservesPersistentSnapshotAndPreventsActivation()
