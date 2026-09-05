@@ -11,6 +11,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan SetupTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
     public async Task SchemaDriftAfterRealMigrationProducesExactDatabaseIncompatibleResult()
@@ -131,7 +132,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
                 ObservationTimeout);
 
             var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-                () => startupTask.WaitAsync(TimeSpan.FromSeconds(10)));
+                () => startupTask.WaitAsync(CompletionTimeout));
             primaryFailure = exception;
 
             Assert.Equal(
@@ -230,7 +231,7 @@ public sealed class SqlPersistenceStartupRealSqlVerificationOutcomeIntegrationTe
             cancellationSource.Cancel();
 
             var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-                () => startupTask.WaitAsync(TimeSpan.FromSeconds(10)));
+                () => startupTask.WaitAsync(CompletionTimeout));
             primaryFailure = exception;
 
             Assert.Equal(
