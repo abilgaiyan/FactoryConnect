@@ -21,18 +21,27 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureIntegrationTests
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await SeedFailureStateAsync(database.ConnectionString, initialState);
 
+        Exception? migrationFailure = null;
         var verificationCount = 0;
         var activationCount = 0;
-        var gate = CreateGate(database.ConnectionString, () => verificationCount++);
+        var gate = CreateGate(
+            database.ConnectionString,
+            exception => migrationFailure = exception,
+            () => verificationCount++);
 
         var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-            async () => await gate.EnsureReadyAsync(CancellationToken.None));
+            async () =>
+            {
+                await gate.EnsureReadyAsync(CancellationToken.None);
+                activationCount++;
+            });
 
         Assert.Equal(
             SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
             exception.FailureKind);
         Assert.Null(exception.CompatibilityResult);
-        Assert.NotNull(exception.InnerException);
+        Assert.NotNull(migrationFailure);
+        Assert.Same(migrationFailure, exception.InnerException);
         Assert.Equal(0, verificationCount);
         Assert.Equal(0, activationCount);
     }
@@ -47,29 +56,30 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureIntegrationTests
             (SqlTransaction)await blocker.BeginTransactionAsync();
         await AcquireExclusiveMigrationLockAsync(blocker, blockerTransaction);
 
+        Exception? migrationFailure = null;
         var verificationCount = 0;
         var activationCount = 0;
-        var gate = new SqlServerPersistenceStartupGate(
+        var gate = CreateGate(
             database.ConnectionString,
-            new SqlPersistenceStartupOptions(TimeSpan.Zero),
-            RunRealMigrationAsync,
-            (_, _, _) =>
-            {
-                verificationCount++;
-                return Task.FromException<SqlRuntimeCompatibilityResult>(
-                    new InvalidOperationException("Verification must not execute after migration failure."));
-            });
+            exception => migrationFailure = exception,
+            () => verificationCount++,
+            TimeSpan.Zero);
 
         try
         {
             var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-                async () => await gate.EnsureReadyAsync(CancellationToken.None));
+                async () =>
+                {
+                    await gate.EnsureReadyAsync(CancellationToken.None);
+                    activationCount++;
+                });
 
             Assert.Equal(
                 SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
                 exception.FailureKind);
             Assert.Null(exception.CompatibilityResult);
-            Assert.NotNull(exception.InnerException);
+            Assert.NotNull(migrationFailure);
+            Assert.Same(migrationFailure, exception.InnerException);
             Assert.Equal(0, verificationCount);
             Assert.Equal(0, activationCount);
         }
@@ -94,17 +104,27 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureIntegrationTests
             );
             """);
 
+        Exception? migrationFailure = null;
         var verificationCount = 0;
         var activationCount = 0;
-        var firstGate = CreateGate(database.ConnectionString, () => verificationCount++);
+        var firstGate = CreateGate(
+            database.ConnectionString,
+            exception => migrationFailure = exception,
+            () => verificationCount++);
 
         var firstException = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-            async () => await firstGate.EnsureReadyAsync(CancellationToken.None));
+            async () =>
+            {
+                await firstGate.EnsureReadyAsync(CancellationToken.None);
+                activationCount++;
+            });
 
         Assert.Equal(
             SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
             firstException.FailureKind);
         Assert.Null(firstException.CompatibilityResult);
+        Assert.NotNull(migrationFailure);
+        Assert.Same(migrationFailure, firstException.InnerException);
         var migrationException = Assert.IsType<MigrationExecutionException>(
             firstException.InnerException);
         Assert.Equal(3, migrationException.MigrationId);
@@ -130,11 +150,27 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureIntegrationTests
 
     private static SqlServerPersistenceStartupGate CreateGate(
         string connectionString,
-        Action onVerification) =>
+        Action<Exception> onMigrationFailure,
+        Action onVerification,
+        TimeSpan? lockTimeout = null) =>
         new(
             connectionString,
-            new SqlPersistenceStartupOptions(LockTimeout),
-            RunRealMigrationAsync,
+            new SqlPersistenceStartupOptions(lockTimeout ?? LockTimeout),
+            async (stageConnectionString, stageLockTimeout, cancellationToken) =>
+            {
+                try
+                {
+                    await RunRealMigrationAsync(
+                        stageConnectionString,
+                        stageLockTimeout,
+                        cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    onMigrationFailure(exception);
+                    throw;
+                }
+            },
             (_, _, _) =>
             {
                 onVerification();
