@@ -7,6 +7,18 @@ internal interface IApiStartupCancellationRegistration : IDisposable
     CancellationToken Token { get; }
 }
 
+internal interface IApiStartupCancellationRegistrationFactory
+{
+    IApiStartupCancellationRegistration Create();
+}
+
+internal sealed class ApiStartupCancellationRegistrationFactory :
+    IApiStartupCancellationRegistrationFactory
+{
+    public IApiStartupCancellationRegistration Create() =>
+        new ApiStartupCancellationRegistration();
+}
+
 internal sealed class ApiStartupCancellationRegistration :
     IApiStartupCancellationRegistration
 {
@@ -14,7 +26,7 @@ internal sealed class ApiStartupCancellationRegistration :
     private ConsoleCancelEventHandler? _consoleCancelHandler;
     private PosixSignalRegistration? _sigtermRegistration;
 
-    private ApiStartupCancellationRegistration()
+    internal ApiStartupCancellationRegistration()
     {
         _source = new CancellationTokenSource();
         _consoleCancelHandler = OnConsoleCancelKeyPress;
@@ -28,16 +40,12 @@ internal sealed class ApiStartupCancellationRegistration :
         }
         catch (PlatformNotSupportedException)
         {
-            // Console cancellation still provides the pre-activation shutdown path
-            // on platforms where POSIX signal registration is unavailable.
         }
     }
 
     public CancellationToken Token =>
         Volatile.Read(ref _source)?.Token
         ?? throw new ObjectDisposedException(nameof(ApiStartupCancellationRegistration));
-
-    public static IApiStartupCancellationRegistration Create() => new ApiStartupCancellationRegistration();
 
     public void Dispose()
     {
@@ -79,7 +87,6 @@ internal sealed class ApiStartupCancellationRegistration :
         }
         catch (ObjectDisposedException)
         {
-            // Disposal won the race with a process-shutdown callback.
         }
     }
 }
