@@ -23,14 +23,22 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                 {
                     var options = new SqlServerPersistenceOptions();
                     configuration.Bind(options);
-                    var connectionString =
-                        options.GetRequiredConnectionString();
+                    var connectionString = options.GetRequiredConnectionString();
 
                     return new PersistenceProviderServices(
                         new SqlServerObservationIngestionStore(connectionString),
                         new SqlServerProductionContextProcessingStore(connectionString),
                         new SqlServerMetricInputStore(connectionString),
                         new SqlServerMetricAggregationStore(connectionString));
+                },
+                _ =>
+                {
+                    var options = new SqlServerPersistenceOptions();
+                    configuration.Bind(options);
+
+                    return new SqlServerPersistenceStartupGate(
+                        options.GetRequiredConnectionString(),
+                        options.GetStartupOptions());
                 }));
     }
 }
