@@ -1,3 +1,4 @@
+using FactoryConnect.Api;
 using FactoryConnect.Api.Reporting;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
@@ -27,10 +28,9 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapOpenApi();
 app.MapOperationalMetricReportingEndpoints();
 
-await app.Services
-    .GetRequiredService<IPersistenceStartupGate>()
-    .EnsureReadyAsync(CancellationToken.None);
-
-await app.RunAsync();
+await ApiPersistenceStartup.RunAsync(
+    app.Services,
+    app.RunAsync,
+    CancellationToken.None);
 
 public partial class Program;
