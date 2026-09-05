@@ -7,13 +7,13 @@ internal static class EdgePersistenceStartup
 {
     public static async Task RunAsync(
         IServiceProvider services,
-        Func<Task> runHost,
-        IEdgeStartupCancellationRegistrationFactory startupCancellationFactory)
+        Func<Task> runHost)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(runHost);
-        ArgumentNullException.ThrowIfNull(startupCancellationFactory);
 
+        var startupCancellationFactory = services
+            .GetRequiredService<IEdgeStartupCancellationRegistrationFactory>();
         var startupCancellation = startupCancellationFactory.Create()
             ?? throw new InvalidOperationException(
                 "Edge startup cancellation factory returned no registration.");
