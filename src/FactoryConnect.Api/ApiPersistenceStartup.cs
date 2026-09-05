@@ -5,24 +5,16 @@ namespace FactoryConnect.Api;
 
 internal static class ApiPersistenceStartup
 {
-    public static Task RunAsync(
+    public static async Task RunAsync(
         IServiceProvider services,
-        Func<Task> runHost) =>
-        RunAsync(
-            services,
-            runHost,
-            ApiStartupCancellationRegistration.Create);
-
-    internal static async Task RunAsync(
-        IServiceProvider services,
-        Func<Task> runHost,
-        Func<IApiStartupCancellationRegistration> startupCancellationFactory)
+        Func<Task> runHost)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(runHost);
-        ArgumentNullException.ThrowIfNull(startupCancellationFactory);
 
-        var startupCancellation = startupCancellationFactory()
+        var startupCancellationFactory = services
+            .GetRequiredService<IApiStartupCancellationRegistrationFactory>();
+        var startupCancellation = startupCancellationFactory.Create()
             ?? throw new InvalidOperationException(
                 "API startup cancellation factory returned no registration.");
 
