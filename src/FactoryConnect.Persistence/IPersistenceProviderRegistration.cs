@@ -39,5 +39,9 @@ public interface IPersistenceProviderRegistration
 
     PersistenceProviderServices Create(IServiceProvider services);
 
-    IPersistenceStartupGate CreateStartupGate(IServiceProvider services);
+    IPersistenceStartupGate CreateStartupGate(IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        return NoOpPersistenceStartupGate.Instance;
+    }
 }
