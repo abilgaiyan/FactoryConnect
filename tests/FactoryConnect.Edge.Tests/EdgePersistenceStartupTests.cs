@@ -126,9 +126,7 @@ public sealed class EdgePersistenceStartupTests
         ProbeHostedService worker)
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSingleton(gate);
-        builder.Services.AddSingleton<IPersistenceStartupGate>(static services =>
-            services.GetRequiredService<IPersistenceStartupGate>());
+        builder.Services.AddSingleton<IPersistenceStartupGate>(gate);
         builder.Services.AddSingleton<IHostedService>(worker);
         return builder.Build();
     }
