@@ -121,16 +121,19 @@ public sealed class ApiPersistenceStartupTests
 
     private static bool ContainsException(Exception actual, Exception expected)
     {
-        for (Exception? current = actual; current is not null; current = current.InnerException)
+        if (ReferenceEquals(actual, expected))
         {
-            if (ReferenceEquals(current, expected))
-            {
-                return true;
-            }
+            return true;
         }
 
-        return actual is AggregateException aggregate &&
-            aggregate.InnerExceptions.Any(inner => ContainsException(inner, expected));
+        if (actual is AggregateException aggregate &&
+            aggregate.InnerExceptions.Any(inner => ContainsException(inner, expected)))
+        {
+            return true;
+        }
+
+        return actual.InnerException is not null &&
+            ContainsException(actual.InnerException, expected);
     }
 
     private sealed class DelegateStartupGate(
