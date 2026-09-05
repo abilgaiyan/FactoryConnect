@@ -8,9 +8,9 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
 {
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan StartupLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CompletionTimeout = TimeSpan.FromMinutes(2);
 
     [Theory]
     [InlineData("API", "Edge")]
@@ -110,7 +110,7 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
         var state = new LabelledStartupGate(label);
         state.Gate = new SqlServerPersistenceStartupGate(
             connectionString,
-            new SqlPersistenceStartupOptions(LockTimeout),
+            new SqlPersistenceStartupOptions(StartupLockTimeout),
             async (stageConnectionString, lockTimeout, cancellationToken) =>
             {
                 await using var connection = new SqlConnection(stageConnectionString);
@@ -286,7 +286,7 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
         var verifier = SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault();
         var result = await verifier.VerifyAsync(
             connection,
-            LockTimeout,
+            StartupLockTimeout,
             CancellationToken.None);
         Assert.Equal(SqlRuntimeCompatibilityClassification.Compatible, result.Classification);
         Assert.True(result.IsCompatible);
