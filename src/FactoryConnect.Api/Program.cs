@@ -7,6 +7,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer<OperationalMetricStatusOpenApiTransformer>());
+builder.Services.AddSingleton<IApiStartupCancellationRegistrationFactory,
+    ApiStartupCancellationRegistrationFactory>();
 builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
 builder.Services.AddFactoryConnectPersistence(
     builder.Configuration,
