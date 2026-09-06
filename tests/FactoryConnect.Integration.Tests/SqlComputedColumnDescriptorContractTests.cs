@@ -17,6 +17,21 @@ public sealed class SqlComputedColumnDescriptorContractTests
     }
 
     [Fact]
+    public void ExistingDifferenceKindNumericValuesRemainFrozen()
+    {
+        Assert.Equal(11, (int)SqlSchemaDifferenceKind.PrimaryKeyMismatch);
+        Assert.Equal(17, (int)SqlSchemaDifferenceKind.IndexMismatch);
+        Assert.Equal(18, (int)SqlSchemaDifferenceKind.ColumnComputedMismatch);
+    }
+
+    [Fact]
+    public void LengthDescriptorRetainsPositiveLengthValidation()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => SqlLengthDescriptor.Bounded(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => SqlLengthDescriptor.Bounded(-1));
+    }
+
+    [Fact]
     public void ComparatorRejectsOrdinaryColumnSubstitution()
     {
         AssertComputedMismatch(Column(new SqlComputedDescriptor("([Value]+(1))", true)), Column(null));
