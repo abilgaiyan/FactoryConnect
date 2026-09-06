@@ -16,7 +16,7 @@ public sealed class SqlServerMigrationExecutionIntegrationTests :
     }
 
     [Fact]
-    public async Task TransactionAwareSchemaReaderMatchesCurrentDescriptor()
+    public async Task TransactionAwareSchemaReaderMatchesLegacyPost004Descriptor()
     {
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
@@ -27,7 +27,7 @@ public sealed class SqlServerMigrationExecutionIntegrationTests :
             connection,
             transaction,
             CancellationToken.None);
-        var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Current, actual);
+        var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.LegacyPost004, actual);
 
         Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
         await transaction.RollbackAsync();
