@@ -5,28 +5,52 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlRepositorySchemaDescriptorTests
 {
     [Fact]
-    public void LegacyPost004AndCurrentAreDistinctRepositoryValuesWithSameTableIdentities()
+    public void CurrentExtendsLegacyPost004WithMigration005Tables()
     {
         var legacy = SqlRepositorySchemaDescriptors.LegacyPost004;
         var current = SqlRepositorySchemaDescriptors.Current;
 
         Assert.NotSame(legacy, current);
+        Assert.Equal(13, legacy.Tables.Length);
+        Assert.Equal(20, current.Tables.Length);
         Assert.Equal(
             legacy.Tables.Select(static table => table.Name),
-            current.Tables.Select(static table => table.Name));
+            current.Tables.Take(legacy.Tables.Length).Select(static table => table.Name));
+        Assert.Equal(
+            [
+                "OperationalMetricProjectionProcessor",
+                "OperationalMetricProjectionCheckpoint",
+                "OperationalMetricProjection",
+                "OperationalMetricProjectionManifest",
+                "OperationalMetricProjectionEvidence",
+                "MachineShiftOccurrenceRoster",
+                "MachineShiftOccurrenceRosterOccurrence"
+            ],
+            current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }
 
     [Fact]
-    public void LegacyPost004ContainsExactlyTheRecognizedPost004Tables()
+    public void LegacyPost004ContainsExactlyTheFrozenPost004Tables()
     {
-        var expected = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables
-            .OrderBy(static table => table.SchemaName, StringComparer.Ordinal)
-            .ThenBy(static table => table.ObjectName, StringComparer.Ordinal)
-            .ToArray();
+        var expected = new[]
+        {
+            "ContextualizedActivityOutput",
+            "MachineObservation",
+            "MetricAggregationCheckpoint",
+            "MetricAggregationContribution",
+            "MetricAggregationProcessor",
+            "MetricInputFact",
+            "MetricInputStream",
+            "ObservationStreamCheckpoint",
+            "ProductionContextCheckpoint",
+            "ProductionContextProcessor",
+            "ProductionDayMetricAggregate",
+            "ProductionTimeEligibilityOutput",
+            "ShiftMetricAggregate"
+        };
         var actual = SqlRepositorySchemaDescriptors.LegacyPost004.Tables
-            .Select(static table => table.Name)
-            .OrderBy(static table => table.SchemaName, StringComparer.Ordinal)
-            .ThenBy(static table => table.ObjectName, StringComparer.Ordinal)
+            .Select(static table => table.Name.ObjectName)
+            .OrderBy(static table => table, StringComparer.Ordinal)
             .ToArray();
 
         Assert.Equal(expected, actual);
