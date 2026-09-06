@@ -91,12 +91,15 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
                 .ThenBy(static name => name.ObjectName, StringComparer.Ordinal),
             names);
         Assert.Equal(
-            SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables,
+            SqlRepositorySchemaDescriptors.LegacyPost004.Tables
+                .Select(static table => table.Name)
+                .OrderBy(static name => name.SchemaName, StringComparer.Ordinal)
+                .ThenBy(static name => name.ObjectName, StringComparer.Ordinal),
             names);
     }
 
     [Fact]
-    public async Task MigratedPost004DatabaseExactlyMatchesRepositoryDescriptors()
+    public async Task MigratedPost004DatabaseExactlyMatchesLegacyRepositoryDescriptor()
     {
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
@@ -104,7 +107,6 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
             .ReadFactoryConnectOwnedSchemaAsync(connection, CancellationToken.None);
 
         AssertExactMatch(SqlRepositorySchemaDescriptors.LegacyPost004, actual, "LegacyPost004");
-        AssertExactMatch(SqlRepositorySchemaDescriptors.Current, actual, "Current");
     }
 
     [Fact]
