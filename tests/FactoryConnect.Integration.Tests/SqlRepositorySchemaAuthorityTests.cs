@@ -10,12 +10,19 @@ public sealed class SqlRepositorySchemaAuthorityTests
     [
         "ContextualizedActivityOutput",
         "MachineObservation",
+        "MachineShiftOccurrenceRoster",
+        "MachineShiftOccurrenceRosterOccurrence",
         "MetricAggregationCheckpoint",
         "MetricAggregationContribution",
         "MetricAggregationProcessor",
         "MetricInputFact",
         "MetricInputStream",
         "ObservationStreamCheckpoint",
+        "OperationalMetricProjection",
+        "OperationalMetricProjectionCheckpoint",
+        "OperationalMetricProjectionEvidence",
+        "OperationalMetricProjectionManifest",
+        "OperationalMetricProjectionProcessor",
         "ProductionContextCheckpoint",
         "ProductionContextProcessor",
         "ProductionDayMetricAggregate",
@@ -24,17 +31,17 @@ public sealed class SqlRepositorySchemaAuthorityTests
     ];
 
     [Fact]
-    public void OwnedObjectsFreezePost004RepositoryTableRecognitionAuthority()
+    public void OwnedObjectsFreezeCurrentRepositoryTableRecognitionAuthority()
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(13, ownedTables.Length);
+        Assert.Equal(20, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
 
     [Fact]
-    public void OwnedObjectsMatchTablesCreatedByLegacyRepositoryMigrations()
+    public void OwnedObjectsMatchTablesCreatedByRepositoryMigrations()
     {
         var createdTables = SqlMigrationCatalog.Load().Migrations
             .SelectMany(static migration => ExtractCreatedDboTables(migration.CanonicalSql))
@@ -52,6 +59,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
         var ownedObjects = SqlRepositorySchemaAuthority.OwnedObjects;
 
         Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "MetricInputFact")));
+        Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "OperationalMetricProjection")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "metricinputfact")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "CustomerOrders")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("audit", "MetricInputFact")));
@@ -70,7 +78,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
             var tableName = line[CreateTablePrefix.Length..].Trim();
             if (tableName.Length == 0)
             {
-                throw new InvalidOperationException("Legacy migration contains an empty CREATE TABLE identity.");
+                throw new InvalidOperationException("Repository migration contains an empty CREATE TABLE identity.");
             }
 
             yield return new SqlObjectName("dbo", tableName);
