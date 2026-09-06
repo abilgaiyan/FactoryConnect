@@ -6,7 +6,7 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 {
-    private static readonly int[] MigrationIdsThrough004 = [1, 2, 3, 4];
+    private static readonly int[] MigrationIdsThrough005 = [1, 2, 3, 4, 5];
     private static readonly TimeSpan MigratorLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BarrierLockTimeout = TimeSpan.FromSeconds(10);
 
@@ -25,6 +25,13 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         "dbo.ProductionContextCheckpoint",
         "dbo.ContextualizedActivityOutput",
         "dbo.ProductionTimeEligibilityOutput",
+        "dbo.OperationalMetricProjectionProcessor",
+        "dbo.OperationalMetricProjectionCheckpoint",
+        "dbo.OperationalMetricProjection",
+        "dbo.OperationalMetricProjectionManifest",
+        "dbo.OperationalMetricProjectionEvidence",
+        "dbo.MachineShiftOccurrenceRoster",
+        "dbo.MachineShiftOccurrenceRosterOccurrence",
     ];
 
     [Fact]
@@ -51,14 +58,8 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
             BarrierLockTimeout,
             CancellationToken.None))
         {
-            var firstApply = firstEngine.ApplyAsync(
-                firstConnection,
-                MigratorLockTimeout,
-                CancellationToken.None);
-            var secondApply = secondEngine.ApplyAsync(
-                secondConnection,
-                MigratorLockTimeout,
-                CancellationToken.None);
+            var firstApply = firstEngine.ApplyAsync(firstConnection, MigratorLockTimeout, CancellationToken.None);
+            var secondApply = secondEngine.ApplyAsync(secondConnection, MigratorLockTimeout, CancellationToken.None);
 
             await AssertBothMigratorsWaitingOnApplicationLockAsync(
                 barrierConnection,
@@ -73,8 +74,8 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         }
 
         var history = await ReadHistoryAsync(firstConnection);
-        Assert.Equal(4, history.Length);
-        Assert.Equal(MigrationIdsThrough004, history.Select(static row => row.MigrationId).ToArray());
+        Assert.Equal(5, history.Length);
+        Assert.Equal(MigrationIdsThrough005, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
             winningTimestamp == firstClock.UtcNow || winningTimestamp == secondClock.UtcNow,
@@ -155,14 +156,8 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
             BarrierLockTimeout,
             CancellationToken.None))
         {
-            var firstRetry = firstEngine.ApplyAsync(
-                firstConnection,
-                MigratorLockTimeout,
-                CancellationToken.None);
-            var secondRetry = secondEngine.ApplyAsync(
-                secondConnection,
-                MigratorLockTimeout,
-                CancellationToken.None);
+            var firstRetry = firstEngine.ApplyAsync(firstConnection, MigratorLockTimeout, CancellationToken.None);
+            var secondRetry = secondEngine.ApplyAsync(secondConnection, MigratorLockTimeout, CancellationToken.None);
 
             await AssertBothMigratorsWaitingOnApplicationLockAsync(
                 barrierConnection,
@@ -177,8 +172,8 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         }
 
         var history = await ReadHistoryAsync(setupConnection);
-        Assert.Equal(4, history.Length);
-        Assert.Equal(MigrationIdsThrough004, history.Select(static row => row.MigrationId).ToArray());
+        Assert.Equal(5, history.Length);
+        Assert.Equal(MigrationIdsThrough005, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
             winningTimestamp == firstClock.UtcNow || winningTimestamp == secondClock.UtcNow,
@@ -209,8 +204,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
                 firstSessionId,
                 secondSessionId);
 
-            if (waitingSessionIds.Contains(firstSessionId) &&
-                waitingSessionIds.Contains(secondSessionId))
+            if (waitingSessionIds.Contains(firstSessionId) && waitingSessionIds.Contains(secondSessionId))
             {
                 Assert.False(firstMigration.IsCompleted);
                 Assert.False(secondMigration.IsCompleted);
@@ -293,16 +287,11 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         return rows.ToArray();
     }
 
-    private static async Task AssertCurrentStateAsync(
-        SqlConnection connection,
-        SqlMigrationCatalog catalog)
+    private static async Task AssertCurrentStateAsync(SqlConnection connection, SqlMigrationCatalog catalog)
     {
         await using var transaction = connection.BeginTransaction();
         var ledgerReader = new SqlServerMigrationLedgerMetadataReader();
-        var ledgerState = await ledgerReader.ResolveObjectAsync(
-            connection,
-            transaction,
-            CancellationToken.None);
+        var ledgerState = await ledgerReader.ResolveObjectAsync(connection, transaction, CancellationToken.None);
         Assert.Equal(SqlMigrationLedgerObjectKind.UserTable, ledgerState.Kind);
         var ledgerSchema = await ledgerReader.ReadSchemaAsync(
             connection,
@@ -317,11 +306,8 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
             catalog.Migrations.Length,
             SqlMigrationHistoryPrefixValidator.ValidateExactPrefix(history, catalog));
 
-        var schemaReader = new SqlServerSchemaMetadataReader();
-        var schema = await schemaReader.ReadFactoryConnectOwnedSchemaInTransactionAsync(
-            connection,
-            transaction,
-            CancellationToken.None);
+        var schema = await new SqlServerSchemaMetadataReader()
+            .ReadFactoryConnectOwnedSchemaInTransactionAsync(connection, transaction, CancellationToken.None);
         var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Current, schema);
         Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
         await transaction.RollbackAsync();
