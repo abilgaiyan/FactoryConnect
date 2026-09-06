@@ -117,14 +117,16 @@ public sealed class SqlServerRuntimeCompatibilityMatrixIntegrationTests
             return;
         }
 
+        if (scenario == D5Scenario.LegacyAdoptionRequired)
+        {
+            await ApplyLegacyPost004WithoutLedgerAsync(connection);
+            return;
+        }
+
         await ApplyCurrentAsync(connection);
         switch (scenario)
         {
             case D5Scenario.Compatible:
-                return;
-
-            case D5Scenario.LegacyAdoptionRequired:
-                await ExecuteAsync(connection, "DROP TABLE dbo.FactoryConnectMigrationHistory;");
                 return;
 
             case D5Scenario.UnledgeredSchemaIncompatible:
@@ -137,7 +139,7 @@ public sealed class SqlServerRuntimeCompatibilityMatrixIntegrationTests
             case D5Scenario.MigrationPending:
                 await ExecuteAsync(
                     connection,
-                    "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 4;");
+                    "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 5;");
                 return;
 
             case D5Scenario.DatabaseNewerThanSupported:
@@ -147,7 +149,7 @@ public sealed class SqlServerRuntimeCompatibilityMatrixIntegrationTests
                     INSERT INTO dbo.FactoryConnectMigrationHistory
                         (MigrationId, Name, CanonicalChecksum, AppliedAtUtc)
                     VALUES
-                        (5, N'SyntheticFutureMigration',
+                        (6, N'SyntheticFutureMigration',
                          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
                          '2026-09-04T12:00:00+00:00');
                     """);
@@ -187,10 +189,27 @@ public sealed class SqlServerRuntimeCompatibilityMatrixIntegrationTests
                     "ALTER TABLE dbo.MachineObservation ADD D5UnexpectedSchemaColumn int NULL;");
                 return;
 
+            case D5Scenario.LegacyAdoptionRequired:
             case D5Scenario.DatabaseUninitialized:
             default:
                 throw new InvalidOperationException($"Unsupported D.5 compatibility scenario '{scenario}'.");
         }
+    }
+
+    private static async Task ApplyLegacyPost004WithoutLedgerAsync(SqlConnection connection)
+    {
+        var catalog = SqlMigrationCatalog.Load();
+        await using var transaction = connection.BeginTransaction();
+        foreach (var migration in catalog.Migrations.Take(LegacyPost004MigrationHistory.Entries.Length))
+        {
+            await SqlServerMigrationExecutor.ExecuteAsync(
+                connection,
+                transaction,
+                migration,
+                CancellationToken.None);
+        }
+
+        await transaction.CommitAsync();
     }
 
     private static async Task<SqlRuntimeCompatibilityResult> VerifyAsync(SqlConnection connection) =>
