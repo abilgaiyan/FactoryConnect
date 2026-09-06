@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration003HardeningIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough002 = [1, 2];
-    private static readonly int[] MigrationIdsThrough004 = [1, 2, 3, 4];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5];
 
     [Fact]
     public async Task SuccessfulMigration003LeavesCallerTransactionActive()
@@ -85,7 +85,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         await ExecuteAsync(connection, "DROP TABLE dbo.C4ConstraintConflict;");
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough004, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.False(await ForeignKeyExistsAsync(connection, "FK_MetricInputFact_MetricInputStream"));
         Assert.True(await ConstraintExistsOnTableAsync(
             connection,
@@ -93,6 +93,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
             "MetricInputStream"));
         Assert.True(await ForeignKeyExistsAsync(connection, "FK_MetricInputFact_StreamMachine"));
         Assert.True(await ObjectExistsAsync(connection, "dbo.ProductionContextProcessor"));
+        Assert.True(await ObjectExistsAsync(connection, "dbo.OperationalMetricProjection"));
         await AssertCurrentStateAsync(connection, catalog);
     }
 
@@ -103,40 +104,24 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
     {
         Assert.InRange(prefixLength, 0, catalog.Migrations.Length);
         await using var transaction = connection.BeginTransaction();
-        await SqlServerMigrationLedgerCreator.CreateAsync(
-            connection,
-            transaction,
-            CancellationToken.None);
+        await SqlServerMigrationLedgerCreator.CreateAsync(connection, transaction, CancellationToken.None);
         var historyStore = new SqlServerMigrationHistoryStore(new FixedUtcClock());
 
         for (var index = 0; index < prefixLength; index++)
         {
             var migration = catalog.Migrations[index];
-            await SqlServerMigrationExecutor.ExecuteAsync(
-                connection,
-                transaction,
-                migration,
-                CancellationToken.None);
-            await historyStore.InsertAsync(
-                connection,
-                transaction,
-                migration,
-                CancellationToken.None);
+            await SqlServerMigrationExecutor.ExecuteAsync(connection, transaction, migration, CancellationToken.None);
+            await historyStore.InsertAsync(connection, transaction, migration, CancellationToken.None);
         }
 
         await transaction.CommitAsync();
     }
 
-    private static async Task AssertCurrentStateAsync(
-        SqlConnection connection,
-        SqlMigrationCatalog catalog)
+    private static async Task AssertCurrentStateAsync(SqlConnection connection, SqlMigrationCatalog catalog)
     {
         await using var transaction = connection.BeginTransaction();
         var ledgerReader = new SqlServerMigrationLedgerMetadataReader();
-        var ledgerState = await ledgerReader.ResolveObjectAsync(
-            connection,
-            transaction,
-            CancellationToken.None);
+        var ledgerState = await ledgerReader.ResolveObjectAsync(connection, transaction, CancellationToken.None);
         Assert.Equal(SqlMigrationLedgerObjectKind.UserTable, ledgerState.Kind);
         var ledgerSchema = await ledgerReader.ReadSchemaAsync(
             connection,
@@ -149,11 +134,8 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         var history = await historyStore.ReadAsync(connection, transaction, CancellationToken.None);
         Assert.Equal(catalog.Migrations.Length, SqlMigrationHistoryPrefixValidator.ValidateExactPrefix(history, catalog));
 
-        var schemaReader = new SqlServerSchemaMetadataReader();
-        var schema = await schemaReader.ReadFactoryConnectOwnedSchemaInTransactionAsync(
-            connection,
-            transaction,
-            CancellationToken.None);
+        var schema = await new SqlServerSchemaMetadataReader()
+            .ReadFactoryConnectOwnedSchemaInTransactionAsync(connection, transaction, CancellationToken.None);
         var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Current, schema);
         Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
         await transaction.RollbackAsync();
@@ -181,10 +163,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) == 1;
     }
 
-    private static async Task<bool> ConstraintExistsOnTableAsync(
-        SqlConnection connection,
-        string constraintName,
-        string tableName)
+    private static async Task<bool> ConstraintExistsOnTableAsync(SqlConnection connection, string constraintName, string tableName)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -226,10 +205,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         private readonly string _databaseName;
         private bool _exists;
 
-        private IsolatedMigrationDatabase(
-            string adminConnectionString,
-            string databaseName,
-            string connectionString)
+        private IsolatedMigrationDatabase(string adminConnectionString, string databaseName, string connectionString)
         {
             _adminConnectionString = adminConnectionString;
             _databaseName = databaseName;
@@ -251,10 +227,7 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
 
             var sourceBuilder = new SqlConnectionStringBuilder(sourceConnectionString);
             var databaseName = $"FactoryConnect_FC030_C4_{Guid.NewGuid():N}";
-            var adminBuilder = new SqlConnectionStringBuilder(sourceBuilder.ConnectionString)
-            {
-                InitialCatalog = "master",
-            };
+            var adminBuilder = new SqlConnectionStringBuilder(sourceBuilder.ConnectionString) { InitialCatalog = "master" };
 
             await using (var adminConnection = new SqlConnection(adminBuilder.ConnectionString))
             {
@@ -264,15 +237,8 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
                 await command.ExecuteNonQueryAsync();
             }
 
-            var databaseBuilder = new SqlConnectionStringBuilder(sourceBuilder.ConnectionString)
-            {
-                InitialCatalog = databaseName,
-            };
-
-            return new IsolatedMigrationDatabase(
-                adminBuilder.ConnectionString,
-                databaseName,
-                databaseBuilder.ConnectionString);
+            var databaseBuilder = new SqlConnectionStringBuilder(sourceBuilder.ConnectionString) { InitialCatalog = databaseName };
+            return new IsolatedMigrationDatabase(adminBuilder.ConnectionString, databaseName, databaseBuilder.ConnectionString);
         }
 
         public SqlConnection CreateConnection() => new(ConnectionString);
@@ -290,19 +256,14 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
             var escapedIdentifier = EscapeIdentifier(_databaseName);
             var escapedLiteral = EscapeLiteral(_databaseName);
             command.CommandText =
-                $"IF DB_ID(N'{escapedLiteral}') IS NOT NULL " +
-                "BEGIN " +
+                $"IF DB_ID(N'{escapedLiteral}') IS NOT NULL BEGIN " +
                 $"ALTER DATABASE [{escapedIdentifier}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; " +
-                $"DROP DATABASE [{escapedIdentifier}]; " +
-                "END;";
+                $"DROP DATABASE [{escapedIdentifier}]; END;";
             await command.ExecuteNonQueryAsync();
             _exists = false;
         }
 
-        private static string EscapeIdentifier(string value) =>
-            value.Replace("]", "]]", StringComparison.Ordinal);
-
-        private static string EscapeLiteral(string value) =>
-            value.Replace("'", "''", StringComparison.Ordinal);
+        private static string EscapeIdentifier(string value) => value.Replace("]", "]]", StringComparison.Ordinal);
+        private static string EscapeLiteral(string value) => value.Replace("'", "''", StringComparison.Ordinal);
     }
 }
