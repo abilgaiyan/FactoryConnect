@@ -16,6 +16,8 @@
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.003_BindMetricInputFactMachine.sql" />
     <EmbeddedResource Include="Sql\004_ProductionContextMetricInputHandoff.sql"
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.004_ProductionContextMetricInputHandoff.sql" />
+    <EmbeddedResource Include="Sql\005_OperationalMetricReportingPersistence.sql"
+                      LogicalName="FactoryConnect.Persistence.SqlServer.Sql.005_OperationalMetricReportingPersistence.sql" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
