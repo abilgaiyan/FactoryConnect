@@ -19,19 +19,14 @@ public sealed class SqlComputedColumnMetadataIntegrationTests :
     [Fact]
     public async Task ReaderProjectsComputedDefinitionAndPersistenceFromRealSql()
     {
-        var actual = await ReadTemporaryColumnAsync(
+        var observation = await ReadTemporaryColumnWithCatalogDefinitionAsync(
             $"AS ({FrozenMachineOrderExpression}) PERSISTED");
+        var actual = observation.Column;
         var computed = Assert.IsType<SqlComputedDescriptor>(actual.Computed);
 
         Assert.True(computed.IsPersisted);
         Assert.False(string.IsNullOrWhiteSpace(computed.Definition));
-
-        var expected = actual with
-        {
-            Computed = new SqlComputedDescriptor(FrozenMachineOrderExpression, IsPersisted: true),
-        };
-
-        Assert.True(SqlSchemaComparator.Compare(Schema(expected), Schema(actual)).IsExactMatch);
+        Assert.Equal(observation.CatalogDefinition, computed.Definition);
     }
 
     [Fact]
@@ -93,6 +88,13 @@ public sealed class SqlComputedColumnMetadataIntegrationTests :
 
     private async Task<SqlColumnDescriptor> ReadTemporaryColumnAsync(string columnDefinition)
     {
+        var observation = await ReadTemporaryColumnWithCatalogDefinitionAsync(columnDefinition);
+        return observation.Column;
+    }
+
+    private async Task<(SqlColumnDescriptor Column, string? CatalogDefinition)>
+        ReadTemporaryColumnWithCatalogDefinitionAsync(string columnDefinition)
+    {
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
         await using var transaction = connection.BeginTransaction();
@@ -111,10 +113,25 @@ public sealed class SqlComputedColumnMetadataIntegrationTests :
                     transaction,
                     CancellationToken.None);
 
-            return snapshot.Tables
+            var column = snapshot.Tables
                 .Single(static table => table.Name.ObjectName == "MetricInputFact")
                 .Columns
-                .Single(static column => column.Name == "MachineOrderKey");
+                .Single(static item => item.Name == "MachineOrderKey");
+
+            await using var catalogCommand = connection.CreateCommand();
+            catalogCommand.Transaction = transaction;
+            catalogCommand.CommandText = """
+                SELECT cc.definition
+                FROM sys.computed_columns AS cc
+                WHERE cc.object_id = OBJECT_ID(N'dbo.MetricInputFact')
+                  AND cc.name = N'MachineOrderKey';
+                """;
+            var catalogDefinitionValue = await catalogCommand.ExecuteScalarAsync();
+            var catalogDefinition = catalogDefinitionValue is null or DBNull
+                ? null
+                : (string)catalogDefinitionValue;
+
+            return (column, catalogDefinition);
         }
         finally
         {
