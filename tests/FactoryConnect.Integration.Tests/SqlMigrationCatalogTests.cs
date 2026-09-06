@@ -234,7 +234,7 @@ public sealed class SqlMigrationCatalogTests
     [Fact]
     public void CreateWithDuplicateMigrationNameThrows()
     {
-        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(5, "DurableMetricAggregation"));
+        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(6, "DurableMetricAggregation"));
 
         Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
     }
@@ -242,9 +242,9 @@ public sealed class SqlMigrationCatalogTests
     [Fact]
     public void CreateWithDuplicateResourceThrows()
     {
-        var duplicateResource = CreateDescriptor(5, "OtherMigration") with
+        var duplicateResource = CreateDescriptor(6, "OtherMigration") with
         {
-            ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}004_ProductionContextMetricInputHandoff.sql"
+            ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}005_OperationalMetricReportingPersistence.sql"
         };
         var descriptors = CreateValidDescriptors().Add(duplicateResource);
 
