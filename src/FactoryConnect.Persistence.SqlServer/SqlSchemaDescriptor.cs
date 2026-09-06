@@ -4,16 +4,49 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 internal readonly record struct SqlObjectName(string SchemaName, string ObjectName);
 
-internal sealed record SqlSchemaDescriptor(ImmutableArray<SqlTableDescriptor> Tables);
+internal enum SqlIndexColumnDirection
+{
+    Ascending = 0,
+    Descending = 1
+}
 
-internal sealed record SqlTableDescriptor(
-    SqlObjectName Name,
-    ImmutableArray<SqlColumnDescriptor> Columns,
-    SqlPrimaryKeyDescriptor? PrimaryKey,
-    ImmutableArray<SqlUniqueConstraintDescriptor> UniqueConstraints,
-    ImmutableArray<SqlForeignKeyDescriptor> ForeignKeys,
-    ImmutableArray<SqlCheckConstraintDescriptor> CheckConstraints,
-    ImmutableArray<SqlIndexDescriptor> Indexes);
+internal enum SqlReferentialAction
+{
+    NoAction = 0,
+    Cascade = 1,
+    SetNull = 2,
+    SetDefault = 3
+}
+
+internal readonly record struct SqlLengthDescriptor
+{
+    private SqlLengthDescriptor(int? value)
+    {
+        if (value is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value, "SQL length must be positive when specified.");
+        }
+
+        Value = value;
+    }
+
+    public int? Value { get; }
+
+    public bool IsMax => Value is null;
+
+    public static SqlLengthDescriptor Bounded(int value) => new(value);
+
+    public static SqlLengthDescriptor Max { get; } = new(null);
+}
+
+internal sealed record SqlIdentityDescriptor(
+    decimal SeedValue,
+    decimal IncrementValue,
+    bool IsNotForReplication);
+
+internal sealed record SqlComputedDescriptor(
+    string Definition,
+    bool IsPersisted);
 
 internal sealed record SqlColumnDescriptor(
     string Name,
@@ -24,40 +57,39 @@ internal sealed record SqlColumnDescriptor(
     bool IsNullable,
     string? Collation,
     SqlIdentityDescriptor? Identity,
-    SqlComputedColumnDescriptor? Computed = null);
+    SqlComputedDescriptor? Computed = null);
 
-internal sealed record SqlComputedColumnDescriptor(
-    string CanonicalDefinition,
-    bool IsPersisted);
+internal sealed record SqlIndexColumnDescriptor(
+    string Name,
+    SqlIndexColumnDirection Direction,
+    int Ordinal);
 
-internal sealed record SqlLengthDescriptor(int? Value, bool IsMax)
-{
-    public static SqlLengthDescriptor Bounded(int value) => new(value, IsMax: false);
-
-    public static SqlLengthDescriptor Max { get; } = new(Value: null, IsMax: true);
-}
-
-internal sealed record SqlIdentityDescriptor(
-    decimal SeedValue,
-    decimal IncrementValue,
-    bool IsNotForReplication);
+internal sealed record SqlIndexStructureDescriptor(
+    bool IsClustered,
+    ImmutableArray<SqlIndexColumnDescriptor> KeyColumns,
+    ImmutableArray<string> IncludedColumns,
+    string? CanonicalFilterDefinition);
 
 internal sealed record SqlPrimaryKeyDescriptor(
     string Name,
     bool IsEnabled,
-    SqlIndexStructureDescriptor IndexStructure);
+    SqlIndexStructureDescriptor IndexStructure)
+{
+    public SqlPrimaryKeyDescriptor(string name, SqlIndexStructureDescriptor indexStructure)
+        : this(name, IsEnabled: true, indexStructure)
+    {
+    }
+}
 
 internal sealed record SqlUniqueConstraintDescriptor(
     string Name,
     bool IsEnabled,
-    SqlIndexStructureDescriptor IndexStructure);
-
-internal enum SqlReferentialAction
+    SqlIndexStructureDescriptor IndexStructure)
 {
-    NoAction,
-    Cascade,
-    SetNull,
-    SetDefault
+    public SqlUniqueConstraintDescriptor(string name, SqlIndexStructureDescriptor indexStructure)
+        : this(name, IsEnabled: true, indexStructure)
+    {
+    }
 }
 
 internal sealed record SqlForeignKeyDescriptor(
@@ -84,40 +116,14 @@ internal sealed record SqlIndexDescriptor(
     bool IsEnabled,
     SqlIndexStructureDescriptor IndexStructure);
 
-internal sealed record SqlIndexStructureDescriptor(
-    bool IsClustered,
-    ImmutableArray<SqlIndexColumnDescriptor> KeyColumns,
-    ImmutableArray<string> IncludedColumns,
-    string? CanonicalFilterDefinition);
+internal sealed record SqlTableDescriptor(
+    SqlObjectName Name,
+    ImmutableArray<SqlColumnDescriptor> Columns,
+    SqlPrimaryKeyDescriptor? PrimaryKey,
+    ImmutableArray<SqlUniqueConstraintDescriptor> UniqueConstraints,
+    ImmutableArray<SqlForeignKeyDescriptor> ForeignKeys,
+    ImmutableArray<SqlCheckConstraintDescriptor> CheckConstraints,
+    ImmutableArray<SqlIndexDescriptor> Indexes);
 
-internal enum SqlIndexColumnDirection
-{
-    Ascending,
-    Descending
-}
-
-internal sealed record SqlIndexColumnDescriptor(
-    string Name,
-    SqlIndexColumnDirection Direction,
-    int KeyOrdinal);
-
-internal sealed class SqlOwnedObjectRecognitionSet
-{
-    private readonly ImmutableHashSet<SqlObjectName> _lookup;
-
-    public SqlOwnedObjectRecognitionSet(IEnumerable<SqlObjectName> ownedTables)
-    {
-        ArgumentNullException.ThrowIfNull(ownedTables);
-
-        OwnedTables = ownedTables
-            .Distinct()
-            .OrderBy(static item => item.SchemaName, StringComparer.Ordinal)
-            .ThenBy(static item => item.ObjectName, StringComparer.Ordinal)
-            .ToImmutableArray();
-        _lookup = OwnedTables.ToImmutableHashSet();
-    }
-
-    public ImmutableArray<SqlObjectName> OwnedTables { get; }
-
-    public bool ContainsRepositoryIdentity(SqlObjectName objectName) => _lookup.Contains(objectName);
-}
+internal sealed record SqlSchemaDescriptor(
+    ImmutableArray<SqlTableDescriptor> Tables);
