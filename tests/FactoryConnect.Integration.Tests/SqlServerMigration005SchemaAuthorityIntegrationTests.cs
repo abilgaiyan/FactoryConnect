@@ -58,10 +58,10 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
 
         Assert.True(
             comparison.IsExactMatch,
-            string.Join(
-                Environment.NewLine,
-                comparison.Differences.Select(static difference =>
-                    $"{difference.Kind}: {difference.Table.SchemaName}.{difference.Table.ObjectName}.{difference.ArtifactName} — {difference.Detail}")));
+            DescribeDifferences(
+                SqlRepositorySchemaDescriptors.Current,
+                actual,
+                comparison));
     }
 
     [Fact]
@@ -87,6 +87,69 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.True(computed.IsPersisted);
         Assert.False(string.IsNullOrWhiteSpace(computed.Definition));
     }
+
+    private static string DescribeDifferences(
+        SqlSchemaDescriptor expected,
+        SqlSchemaDescriptor actual,
+        SqlSchemaComparisonResult comparison)
+    {
+        var expectedTables = expected.Tables.ToDictionary(static table => table.Name);
+        var actualTables = actual.Tables.ToDictionary(static table => table.Name);
+        var lines = new List<string>();
+
+        foreach (var difference in comparison.Differences)
+        {
+            lines.Add(
+                $"{difference.Kind}: {difference.Table.SchemaName}.{difference.Table.ObjectName}.{difference.ArtifactName} — {difference.Detail}");
+
+            if (!expectedTables.TryGetValue(difference.Table, out var expectedTable) ||
+                !actualTables.TryGetValue(difference.Table, out var actualTable))
+            {
+                continue;
+            }
+
+            switch (difference.Kind)
+            {
+                case SqlSchemaDifferenceKind.CheckConstraintMismatch:
+                {
+                    var expectedCheck = expectedTable.CheckConstraints.Single(
+                        item => string.Equals(item.Name, difference.ArtifactName, StringComparison.Ordinal));
+                    var actualCheck = actualTable.CheckConstraints.Single(
+                        item => string.Equals(item.Name, difference.ArtifactName, StringComparison.Ordinal));
+                    lines.Add($"  expected: {SqlFragmentCanonicalizer.Canonicalize(expectedCheck.CanonicalDefinition)}");
+                    lines.Add($"  actual:   {SqlFragmentCanonicalizer.Canonicalize(actualCheck.CanonicalDefinition)}");
+                    break;
+                }
+
+                case SqlSchemaDifferenceKind.IndexMismatch:
+                {
+                    var expectedIndex = expectedTable.Indexes.Single(
+                        item => string.Equals(item.Name, difference.ArtifactName, StringComparison.Ordinal));
+                    var actualIndex = actualTable.Indexes.Single(
+                        item => string.Equals(item.Name, difference.ArtifactName, StringComparison.Ordinal));
+                    lines.Add($"  expected filter: {CanonicalizeNullable(expectedIndex.IndexStructure.CanonicalFilterDefinition)}");
+                    lines.Add($"  actual filter:   {CanonicalizeNullable(actualIndex.IndexStructure.CanonicalFilterDefinition)}");
+                    break;
+                }
+
+                case SqlSchemaDifferenceKind.ColumnComputedMismatch:
+                {
+                    var expectedColumn = expectedTable.Columns.Single(
+                        item => string.Equals(item.Name, difference.ArtifactName, StringComparison.Ordinal));
+                    var actualColumn = actualTable.Columns.Single(
+                        item => string.Equals(item.Name, difference.ArtifactName, StringComparison.Ordinal));
+                    lines.Add($"  expected computed: {CanonicalizeNullable(expectedColumn.Computed?.Definition)} | persisted={expectedColumn.Computed?.IsPersisted}");
+                    lines.Add($"  actual computed:   {CanonicalizeNullable(actualColumn.Computed?.Definition)} | persisted={actualColumn.Computed?.IsPersisted}");
+                    break;
+                }
+            }
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string CanonicalizeNullable(string? value) =>
+        value is null ? "<null>" : SqlFragmentCanonicalizer.Canonicalize(value);
 
     private static async Task ApplyCatalogWithoutFinalValidationAsync(SqlConnection connection)
     {
