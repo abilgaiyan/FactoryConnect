@@ -115,12 +115,17 @@ internal sealed class SqlServerMigrationEngine
                 break;
 
             case UnledgeredDatabaseClassification.LegacyAdoptable:
-                LegacyPost004MigrationHistory.ValidateExactCatalog(_catalog);
+                LegacyPost004MigrationHistory.ValidateFrozenPrefix(_catalog);
                 await SqlServerMigrationLedgerCreator.CreateAsync(
                     connection,
                     transaction,
                     cancellationToken);
                 await RecordLegacyPost004HistoryAsync(connection, transaction, cancellationToken);
+                await ExecuteAndRecordAsync(
+                    connection,
+                    transaction,
+                    startIndex: LegacyPost004MigrationHistory.Entries.Length,
+                    cancellationToken);
                 break;
 
             case UnledgeredDatabaseClassification.PartialOrIncompatibleLegacy:
