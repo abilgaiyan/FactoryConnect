@@ -23,13 +23,16 @@ public sealed class SqlServerMigrationEngineIntegrationTests
     }
 
     [Fact]
-    public async Task LegacyPost004DatabaseIsAdoptedWithoutReplayingHistoricalDdl()
+    public async Task LegacyPost004DatabaseIsAdoptedAndPendingMigration005IsApplied()
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        await ApplySchemaPrefixWithoutLedgerAsync(connection, catalog, catalog.Migrations.Length);
+        await ApplySchemaPrefixWithoutLedgerAsync(
+            connection,
+            catalog,
+            LegacyPost004MigrationHistory.Entries.Length);
         await ExecuteAsync(connection, "CREATE TABLE dbo.CustomerOwnedProbe (Id int NOT NULL);");
         var engine = CreateEngine();
 
@@ -37,24 +40,31 @@ public sealed class SqlServerMigrationEngineIntegrationTests
 
         await AssertCurrentStateAsync(connection);
         Assert.True(await ObjectExistsAsync(connection, "dbo.CustomerOwnedProbe"));
+        Assert.True(await ObjectExistsAsync(connection, "dbo.OperationalMetricProjection"));
     }
 
     [Fact]
-    public async Task LegacyAdoptionRejectsCatalogBeyondFrozenPost004BaselineWithoutCreatingLedger()
+    public async Task LegacyAdoptionRejectsDriftedFrozenPost004CatalogPrefixWithoutCreatingLedger()
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var baseCatalog = SqlMigrationCatalog.Load();
-        await ApplySchemaPrefixWithoutLedgerAsync(connection, baseCatalog, baseCatalog.Migrations.Length);
-        var extendedCatalog = SqlMigrationCatalog.Create(baseCatalog.Migrations.Add(CreateSyntheticMigration005()));
-        var engine = new SqlServerMigrationEngine(extendedCatalog, new FixedUtcClock());
+        await ApplySchemaPrefixWithoutLedgerAsync(
+            connection,
+            baseCatalog,
+            LegacyPost004MigrationHistory.Entries.Length);
+        var driftedCatalog = SqlMigrationCatalog.Create(
+            baseCatalog.Migrations.SetItem(
+                0,
+                baseCatalog.Migrations[0] with { Sha256Checksum = new string('A', 64) }));
+        var engine = new SqlServerMigrationEngine(driftedCatalog, new FixedUtcClock());
 
         await Assert.ThrowsAsync<SqlMigrationHistoryException>(() =>
             engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None));
 
         Assert.False(await ObjectExistsAsync(connection, "dbo.FactoryConnectMigrationHistory"));
-        Assert.False(await ObjectExistsAsync(connection, "dbo.C3SyntheticMigration005"));
+        Assert.False(await ObjectExistsAsync(connection, "dbo.OperationalMetricProjection"));
     }
 
     [Theory]
@@ -63,6 +73,7 @@ public sealed class SqlServerMigrationEngineIntegrationTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
+    [InlineData(5)]
     public async Task ExactLedgerPrefixExecutesOnlyPendingCatalogSuffix(int prefixLength)
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
@@ -195,19 +206,6 @@ public sealed class SqlServerMigrationEngineIntegrationTests
 
     private static SqlServerMigrationEngine CreateEngine() =>
         new(SqlMigrationCatalog.Load(), new FixedUtcClock());
-
-    private static SqlMigrationDescriptor CreateSyntheticMigration005()
-    {
-        const string sql = "CREATE TABLE dbo.C3SyntheticMigration005 (Id int NOT NULL);";
-        return new SqlMigrationDescriptor(
-            5,
-            "SyntheticFutureMigration",
-            "FactoryConnect.Persistence.SqlServer.Sql.005_SyntheticFutureMigration.sql",
-            SqlMigrationTransactionPolicy.EngineOwned,
-            sql,
-            ImmutableArray.CreateRange(System.Text.Encoding.UTF8.GetBytes(sql)),
-            new string('A', 64));
-    }
 
     private static async Task CreateExactPrefixAsync(SqlConnection connection, SqlMigrationCatalog catalog, int prefixLength)
     {
