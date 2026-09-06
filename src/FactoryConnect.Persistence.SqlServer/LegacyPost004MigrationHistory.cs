@@ -29,14 +29,14 @@ internal static class LegacyPost004MigrationHistory
             "786CDD68F66E222A4E4EFB8220595E46390A0F81880D0D45A54FA22DD7A498D5")
     ];
 
-    public static void ValidateExactCatalog(SqlMigrationCatalog catalog)
+    public static void ValidateFrozenPrefix(SqlMigrationCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
 
-        if (catalog.Migrations.Length != Entries.Length)
+        if (catalog.Migrations.Length < Entries.Length)
         {
             throw new SqlMigrationHistoryException(
-                "Legacy post-004 adoption requires the repository catalog to be exactly the frozen 001-004 migration baseline.");
+                "Legacy post-004 adoption requires the repository catalog to contain the complete frozen 001-004 migration prefix.");
         }
 
         for (var index = 0; index < Entries.Length; index++)
