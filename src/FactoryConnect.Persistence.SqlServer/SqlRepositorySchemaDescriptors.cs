@@ -9,7 +9,8 @@ internal static class SqlRepositorySchemaDescriptors
     public static SqlSchemaDescriptor LegacyPost004 { get; } = CreatePost004();
 
     public static SqlSchemaDescriptor Current { get; } =
-        SqlRepositoryPost005SchemaDescriptor.Create(LegacyPost004);
+        SqlRepositoryPost005CatalogAuthority.Apply(
+            SqlRepositoryPost005SchemaDescriptor.Create(LegacyPost004));
 
     private static SqlSchemaDescriptor CreatePost004() => new(
     [
