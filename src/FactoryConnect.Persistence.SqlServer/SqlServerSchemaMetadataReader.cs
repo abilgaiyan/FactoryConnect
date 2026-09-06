@@ -110,13 +110,18 @@ internal sealed class SqlServerSchemaMetadataReader
                 c.collation_name,
                 ic.seed_value,
                 ic.increment_value,
-                ic.is_not_for_replication
+                ic.is_not_for_replication,
+                cc.definition,
+                cc.is_persisted
             FROM sys.columns AS c
             INNER JOIN sys.types AS ty
                 ON ty.user_type_id = c.user_type_id
             LEFT JOIN sys.identity_columns AS ic
                 ON ic.object_id = c.object_id
                 AND ic.column_id = c.column_id
+            LEFT JOIN sys.computed_columns AS cc
+                ON cc.object_id = c.object_id
+                AND cc.column_id = c.column_id
             WHERE c.object_id = @ObjectId
             ORDER BY c.column_id;
             """;
@@ -133,6 +138,11 @@ internal sealed class SqlServerSchemaMetadataReader
                     Convert.ToDecimal(reader.GetValue(7), CultureInfo.InvariantCulture),
                     Convert.ToDecimal(reader.GetValue(8), CultureInfo.InvariantCulture),
                     reader.GetBoolean(9));
+            var computed = reader.IsDBNull(10)
+                ? null
+                : new SqlComputedDescriptor(
+                    reader.GetString(10),
+                    reader.GetBoolean(11));
 
             columns.Add(new SqlColumnDescriptor(
                 reader.GetString(0),
@@ -142,7 +152,8 @@ internal sealed class SqlServerSchemaMetadataReader
                 NormalizeScale(sqlType, reader.GetByte(4)),
                 reader.GetBoolean(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6),
-                identity));
+                identity,
+                computed));
         }
 
         return columns.ToImmutable();
