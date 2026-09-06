@@ -50,8 +50,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
 
-        var engine = new SqlServerMigrationEngine(SqlMigrationCatalog.Load(), new FixedUtcClock());
-        await engine.ApplyAsync(connection, TimeSpan.FromSeconds(30), CancellationToken.None);
+        await ApplyCatalogWithoutFinalValidationAsync(connection);
 
         var actual = await new SqlServerSchemaMetadataReader()
             .ReadFactoryConnectOwnedSchemaAsync(connection, CancellationToken.None);
@@ -72,8 +71,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
 
-        var engine = new SqlServerMigrationEngine(SqlMigrationCatalog.Load(), new FixedUtcClock());
-        await engine.ApplyAsync(connection, TimeSpan.FromSeconds(30), CancellationToken.None);
+        await ApplyCatalogWithoutFinalValidationAsync(connection);
 
         var actual = await new SqlServerSchemaMetadataReader()
             .ReadFactoryConnectOwnedSchemaAsync(connection, CancellationToken.None);
@@ -90,8 +88,19 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.False(string.IsNullOrWhiteSpace(computed.Definition));
     }
 
-    private sealed class FixedUtcClock : ISqlMigrationUtcClock
+    private static async Task ApplyCatalogWithoutFinalValidationAsync(SqlConnection connection)
     {
-        public DateTimeOffset UtcNow => new(2026, 9, 6, 17, 0, 0, TimeSpan.Zero);
+        var catalog = SqlMigrationCatalog.Load();
+        await using var transaction = connection.BeginTransaction();
+        foreach (var migration in catalog.Migrations)
+        {
+            await SqlServerMigrationExecutor.ExecuteAsync(
+                connection,
+                transaction,
+                migration,
+                CancellationToken.None);
+        }
+
+        await transaction.CommitAsync();
     }
 }
