@@ -20,6 +20,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void ProperCatalogPrefixIsPending(int appliedCount)
     {
         var catalog = SqlMigrationCatalog.Load();
@@ -107,8 +108,8 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(5, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(6, "Synthetic-Future_006"));
+            .Add(CreateFutureRow(6, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(7, "Synthetic-Future_007"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -121,7 +122,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length).ToBuilder();
         history[0] = history[0] with { Name = "WrongName" };
-        history.Add(CreateFutureRow(5, "SyntheticFutureMigration"));
+        history.Add(CreateFutureRow(6, "SyntheticFutureMigration"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history.ToImmutable(), catalog);
 
@@ -129,12 +130,12 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     }
 
     [Theory]
-    [InlineData(4, "DuplicateSupportedId")]
-    [InlineData(3, "ReorderedFutureId")]
-    [InlineData(5, "")]
-    [InlineData(5, "Future Migration")]
-    [InlineData(5, "Future.Migration")]
-    [InlineData(5, "Future/Migration")]
+    [InlineData(5, "DuplicateSupportedId")]
+    [InlineData(4, "ReorderedFutureId")]
+    [InlineData(6, "")]
+    [InlineData(6, "Future Migration")]
+    [InlineData(6, "Future.Migration")]
+    [InlineData(6, "Future/Migration")]
     public void InvalidFutureIdentityDoesNotQualifyAsNewerThanSupported(
         int migrationId,
         string name)
@@ -153,7 +154,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(5, catalog.Migrations[0].Name));
+            .Add(CreateFutureRow(6, catalog.Migrations[0].Name));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -165,8 +166,8 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(5, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(6, "SyntheticFutureMigration"));
+            .Add(CreateFutureRow(6, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(7, "SyntheticFutureMigration"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -178,7 +179,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(5, "SyntheticFutureMigration") with
+            .Add(CreateFutureRow(6, "SyntheticFutureMigration") with
             {
                 CanonicalChecksum = new string('a', 64)
             });
