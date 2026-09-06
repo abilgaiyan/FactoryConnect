@@ -70,14 +70,16 @@ public sealed class SqlServerRuntimeCompatibilityMatrixStateConformanceIntegrati
             return;
         }
 
+        if (scenario == SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.LegacyAdoptionRequired)
+        {
+            await ApplyLegacyPost004WithoutLedgerAsync(connection);
+            return;
+        }
+
         await ApplyCurrentAsync(connection);
         switch (scenario)
         {
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.Compatible:
-                return;
-
-            case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.LegacyAdoptionRequired:
-                await ExecuteAsync(connection, "DROP TABLE dbo.FactoryConnectMigrationHistory;");
                 return;
 
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.UnledgeredSchemaIncompatible:
@@ -90,7 +92,7 @@ public sealed class SqlServerRuntimeCompatibilityMatrixStateConformanceIntegrati
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.MigrationPending:
                 await ExecuteAsync(
                     connection,
-                    "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 4;");
+                    "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 5;");
                 return;
 
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.DatabaseNewerThanSupported:
@@ -100,7 +102,7 @@ public sealed class SqlServerRuntimeCompatibilityMatrixStateConformanceIntegrati
                     INSERT INTO dbo.FactoryConnectMigrationHistory
                         (MigrationId, Name, CanonicalChecksum, AppliedAtUtc)
                     VALUES
-                        (5, N'SyntheticFutureMigration',
+                        (6, N'SyntheticFutureMigration',
                          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
                          '2026-09-04T12:00:00+00:00');
                     """);
@@ -140,10 +142,27 @@ public sealed class SqlServerRuntimeCompatibilityMatrixStateConformanceIntegrati
                     "ALTER TABLE dbo.MachineObservation ADD D5UnexpectedSchemaColumn int NULL;");
                 return;
 
+            case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.LegacyAdoptionRequired:
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.DatabaseUninitialized:
             default:
                 throw new InvalidOperationException($"Unsupported D.5 state-conformance scenario '{scenario}'.");
         }
+    }
+
+    private static async Task ApplyLegacyPost004WithoutLedgerAsync(SqlConnection connection)
+    {
+        var catalog = SqlMigrationCatalog.Load();
+        await using var transaction = connection.BeginTransaction();
+        foreach (var migration in catalog.Migrations.Take(LegacyPost004MigrationHistory.Entries.Length))
+        {
+            await SqlServerMigrationExecutor.ExecuteAsync(
+                connection,
+                transaction,
+                migration,
+                CancellationToken.None);
+        }
+
+        await transaction.CommitAsync();
     }
 
     private static async Task<SqlRuntimeCompatibilityResult> VerifyAsync(SqlConnection connection) =>
