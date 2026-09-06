@@ -182,6 +182,7 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
         Assert.Equal(SqlSchemaDifferenceKind.MissingColumn, diagnostics[0].SchemaDifferenceKind);
         Assert.Equal("dbo.Example:A", diagnostics[0].Artifact);
         Assert.Equal(SqlSchemaDifferenceKind.UnexpectedIndex, diagnostics[1].SchemaDifferenceKind);
+        Assert.Equal("dbo.Example:IX_B", diagnostics[1].Artifact);
         Assert.All(diagnostics, diagnostic =>
         {
             Assert.Equal(SqlRuntimeCompatibilityDiagnosticCode.MigrationSchemaDifference, diagnostic.Code);
