@@ -15,14 +15,14 @@ internal enum SqlSchemaDifferenceKind
     ColumnNullabilityMismatch,
     ColumnCollationMismatch,
     ColumnIdentityMismatch,
-    ColumnComputedMismatch,
     PrimaryKeyMismatch,
     UniqueConstraintMismatch,
     ForeignKeyMismatch,
     CheckConstraintMismatch,
     MissingIndex,
     UnexpectedIndex,
-    IndexMismatch
+    IndexMismatch,
+    ColumnComputedMismatch
 }
 
 internal sealed record SqlSchemaDifference(
@@ -70,9 +70,30 @@ internal static class SqlSchemaComparator
 
             CompareColumns(expectedTable!, actualTable!, differences);
             ComparePrimaryKey(expectedTable!, actualTable!, differences);
-            CompareNamedArtifacts(expectedTable!.UniqueConstraints, actualTable!.UniqueConstraints, static item => item.Name, SqlSchemaDifferenceKind.UniqueConstraintMismatch, expectedTable.Name, static (left, right) => UniqueConstraintEquals(left, right), differences);
-            CompareNamedArtifacts(expectedTable.ForeignKeys, actualTable.ForeignKeys, static item => item.Name, SqlSchemaDifferenceKind.ForeignKeyMismatch, expectedTable.Name, static (left, right) => ForeignKeyEquals(left, right), differences);
-            CompareNamedArtifacts(expectedTable.CheckConstraints, actualTable.CheckConstraints, static item => item.Name, SqlSchemaDifferenceKind.CheckConstraintMismatch, expectedTable.Name, static (left, right) => CheckConstraintEquals(left, right), differences);
+            CompareNamedArtifacts(
+                expectedTable!.UniqueConstraints,
+                actualTable!.UniqueConstraints,
+                static item => item.Name,
+                SqlSchemaDifferenceKind.UniqueConstraintMismatch,
+                expectedTable.Name,
+                static (left, right) => UniqueConstraintEquals(left, right),
+                differences);
+            CompareNamedArtifacts(
+                expectedTable.ForeignKeys,
+                actualTable.ForeignKeys,
+                static item => item.Name,
+                SqlSchemaDifferenceKind.ForeignKeyMismatch,
+                expectedTable.Name,
+                static (left, right) => ForeignKeyEquals(left, right),
+                differences);
+            CompareNamedArtifacts(
+                expectedTable.CheckConstraints,
+                actualTable.CheckConstraints,
+                static item => item.Name,
+                SqlSchemaDifferenceKind.CheckConstraintMismatch,
+                expectedTable.Name,
+                static (left, right) => CheckConstraintEquals(left, right),
+                differences);
             CompareIndexes(expectedTable, actualTable, differences);
         }
 
@@ -85,7 +106,10 @@ internal static class SqlSchemaComparator
             .ToImmutableArray());
     }
 
-    private static void CompareColumns(SqlTableDescriptor expected, SqlTableDescriptor actual, ImmutableArray<SqlSchemaDifference>.Builder differences)
+    private static void CompareColumns(
+        SqlTableDescriptor expected,
+        SqlTableDescriptor actual,
+        ImmutableArray<SqlSchemaDifference>.Builder differences)
     {
         var expectedColumns = expected.Columns.ToDictionary(static item => item.Name, StringComparer.Ordinal);
         var actualColumns = actual.Columns.ToDictionary(static item => item.Name, StringComparer.Ordinal);
@@ -119,64 +143,156 @@ internal static class SqlSchemaComparator
 
             if (!ComputedColumnEquals(expectedColumn.Computed, actualColumn.Computed))
             {
-                differences.Add(Difference(SqlSchemaDifferenceKind.ColumnComputedMismatch, expected.Name, name, "Computed-column semantics differ."));
+                differences.Add(Difference(SqlSchemaDifferenceKind.ColumnComputedMismatch, expected.Name, name, "Computed definition or persistence differs."));
             }
         }
     }
 
-    private static bool ComputedColumnEquals(SqlComputedColumnDescriptor? left, SqlComputedColumnDescriptor? right) =>
-        left is null && right is null ||
-        left is not null && right is not null &&
-        left.IsPersisted == right.IsPersisted &&
-        string.Equals(
-            SqlFragmentCanonicalizer.Canonicalize(left.CanonicalDefinition),
-            SqlFragmentCanonicalizer.Canonicalize(right.CanonicalDefinition),
-            StringComparison.Ordinal);
-
-    private static void ComparePrimaryKey(SqlTableDescriptor expected, SqlTableDescriptor actual, ImmutableArray<SqlSchemaDifference>.Builder differences)
+    private static void ComparePrimaryKey(
+        SqlTableDescriptor expected,
+        SqlTableDescriptor actual,
+        ImmutableArray<SqlSchemaDifference>.Builder differences)
     {
-        if (PrimaryKeyEquals(expected.PrimaryKey, actual.PrimaryKey)) return;
+        if (PrimaryKeyEquals(expected.PrimaryKey, actual.PrimaryKey))
+        {
+            return;
+        }
+
         var artifactName = expected.PrimaryKey?.Name ?? actual.PrimaryKey?.Name ?? "<primary-key>";
         differences.Add(Difference(SqlSchemaDifferenceKind.PrimaryKeyMismatch, expected.Name, artifactName, "Primary key semantics differ."));
     }
 
-    private static void CompareIndexes(SqlTableDescriptor expected, SqlTableDescriptor actual, ImmutableArray<SqlSchemaDifference>.Builder differences)
+    private static void CompareIndexes(
+        SqlTableDescriptor expected,
+        SqlTableDescriptor actual,
+        ImmutableArray<SqlSchemaDifference>.Builder differences)
     {
         var expectedIndexes = expected.Indexes.ToDictionary(static item => item.Name, StringComparer.Ordinal);
         var actualIndexes = actual.Indexes.ToDictionary(static item => item.Name, StringComparer.Ordinal);
+
         foreach (var name in expectedIndexes.Keys.Union(actualIndexes.Keys, StringComparer.Ordinal).OrderBy(static item => item, StringComparer.Ordinal))
         {
             var hasExpected = expectedIndexes.TryGetValue(name, out var expectedIndex);
             var hasActual = actualIndexes.TryGetValue(name, out var actualIndex);
-            if (!hasActual) differences.Add(Difference(SqlSchemaDifferenceKind.MissingIndex, expected.Name, name, "Required index is missing."));
-            else if (!hasExpected) differences.Add(Difference(SqlSchemaDifferenceKind.UnexpectedIndex, expected.Name, name, "Unexpected index is present."));
-            else if (!IndexEquals(expectedIndex!, actualIndex!)) differences.Add(Difference(SqlSchemaDifferenceKind.IndexMismatch, expected.Name, name, "Index semantics differ."));
+            if (!hasActual)
+            {
+                differences.Add(Difference(SqlSchemaDifferenceKind.MissingIndex, expected.Name, name, "Required index is missing."));
+            }
+            else if (!hasExpected)
+            {
+                differences.Add(Difference(SqlSchemaDifferenceKind.UnexpectedIndex, expected.Name, name, "Unexpected index is present."));
+            }
+            else if (!IndexEquals(expectedIndex!, actualIndex!))
+            {
+                differences.Add(Difference(SqlSchemaDifferenceKind.IndexMismatch, expected.Name, name, "Index semantics differ."));
+            }
         }
     }
 
-    private static void CompareNamedArtifacts<T>(ImmutableArray<T> expected, ImmutableArray<T> actual, Func<T, string> getName, SqlSchemaDifferenceKind mismatchKind, SqlObjectName table, Func<T, T, bool> equals, ImmutableArray<SqlSchemaDifference>.Builder differences)
+    private static void CompareNamedArtifacts<T>(
+        ImmutableArray<T> expected,
+        ImmutableArray<T> actual,
+        Func<T, string> getName,
+        SqlSchemaDifferenceKind mismatchKind,
+        SqlObjectName table,
+        Func<T, T, bool> equals,
+        ImmutableArray<SqlSchemaDifference>.Builder differences)
     {
         var expectedByName = expected.ToDictionary(getName, StringComparer.Ordinal);
         var actualByName = actual.ToDictionary(getName, StringComparer.Ordinal);
+
         foreach (var name in expectedByName.Keys.Union(actualByName.Keys, StringComparer.Ordinal).OrderBy(static item => item, StringComparer.Ordinal))
         {
-            if (!expectedByName.TryGetValue(name, out var expectedItem) || !actualByName.TryGetValue(name, out var actualItem) || !equals(expectedItem, actualItem))
+            if (!expectedByName.TryGetValue(name, out var expectedItem) ||
+                !actualByName.TryGetValue(name, out var actualItem) ||
+                !equals(expectedItem, actualItem))
+            {
                 differences.Add(Difference(mismatchKind, table, name, "Structural or operational semantics differ."));
+            }
         }
     }
 
-    private static bool PrimaryKeyEquals(SqlPrimaryKeyDescriptor? left, SqlPrimaryKeyDescriptor? right) => left is null && right is null || left is not null && right is not null && string.Equals(left.Name, right.Name, StringComparison.Ordinal) && left.IsEnabled == right.IsEnabled && IndexStructureEquals(left.IndexStructure, right.IndexStructure);
-    private static bool UniqueConstraintEquals(SqlUniqueConstraintDescriptor left, SqlUniqueConstraintDescriptor right) => string.Equals(left.Name, right.Name, StringComparison.Ordinal) && left.IsEnabled == right.IsEnabled && IndexStructureEquals(left.IndexStructure, right.IndexStructure);
-    private static bool ForeignKeyEquals(SqlForeignKeyDescriptor left, SqlForeignKeyDescriptor right) => string.Equals(left.Name, right.Name, StringComparison.Ordinal) && left.Columns.SequenceEqual(right.Columns, StringComparer.Ordinal) && left.ReferencedTable == right.ReferencedTable && left.ReferencedColumns.SequenceEqual(right.ReferencedColumns, StringComparer.Ordinal) && left.DeleteAction == right.DeleteAction && left.UpdateAction == right.UpdateAction && left.IsEnabled == right.IsEnabled && left.IsTrusted == right.IsTrusted && left.IsNotForReplication == right.IsNotForReplication;
-    private static bool CheckConstraintEquals(SqlCheckConstraintDescriptor left, SqlCheckConstraintDescriptor right) => string.Equals(left.Name, right.Name, StringComparison.Ordinal) && string.Equals(SqlFragmentCanonicalizer.Canonicalize(left.CanonicalDefinition), SqlFragmentCanonicalizer.Canonicalize(right.CanonicalDefinition), StringComparison.Ordinal) && left.IsEnabled == right.IsEnabled && left.IsTrusted == right.IsTrusted && left.IsNotForReplication == right.IsNotForReplication;
-    private static bool IndexEquals(SqlIndexDescriptor left, SqlIndexDescriptor right) => string.Equals(left.Name, right.Name, StringComparison.Ordinal) && left.IsUnique == right.IsUnique && left.IsEnabled == right.IsEnabled && IndexStructureEquals(left.IndexStructure, right.IndexStructure);
-    private static bool IndexStructureEquals(SqlIndexStructureDescriptor left, SqlIndexStructureDescriptor right) => left.IsClustered == right.IsClustered && left.KeyColumns.SequenceEqual(right.KeyColumns) && left.IncludedColumns.SequenceEqual(right.IncludedColumns, StringComparer.Ordinal) && CanonicalNullableFragmentEquals(left.CanonicalFilterDefinition, right.CanonicalFilterDefinition);
-    private static bool CanonicalNullableFragmentEquals(string? left, string? right) => left is null && right is null || left is not null && right is not null && string.Equals(SqlFragmentCanonicalizer.Canonicalize(left), SqlFragmentCanonicalizer.Canonicalize(right), StringComparison.Ordinal);
+    private static bool PrimaryKeyEquals(SqlPrimaryKeyDescriptor? left, SqlPrimaryKeyDescriptor? right) =>
+        left is null && right is null ||
+        left is not null && right is not null &&
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        left.IsEnabled == right.IsEnabled &&
+        IndexStructureEquals(left.IndexStructure, right.IndexStructure);
 
-    private static void AddMismatch<T>(SqlObjectName table, string artifactName, SqlSchemaDifferenceKind kind, T expected, T actual, ImmutableArray<SqlSchemaDifference>.Builder differences)
+    private static bool UniqueConstraintEquals(SqlUniqueConstraintDescriptor left, SqlUniqueConstraintDescriptor right) =>
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        left.IsEnabled == right.IsEnabled &&
+        IndexStructureEquals(left.IndexStructure, right.IndexStructure);
+
+    private static bool ForeignKeyEquals(SqlForeignKeyDescriptor left, SqlForeignKeyDescriptor right) =>
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        left.Columns.SequenceEqual(right.Columns, StringComparer.Ordinal) &&
+        left.ReferencedTable == right.ReferencedTable &&
+        left.ReferencedColumns.SequenceEqual(right.ReferencedColumns, StringComparer.Ordinal) &&
+        left.DeleteAction == right.DeleteAction &&
+        left.UpdateAction == right.UpdateAction &&
+        left.IsEnabled == right.IsEnabled &&
+        left.IsTrusted == right.IsTrusted &&
+        left.IsNotForReplication == right.IsNotForReplication;
+
+    private static bool CheckConstraintEquals(SqlCheckConstraintDescriptor left, SqlCheckConstraintDescriptor right) =>
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        string.Equals(
+            SqlFragmentCanonicalizer.Canonicalize(left.CanonicalDefinition),
+            SqlFragmentCanonicalizer.Canonicalize(right.CanonicalDefinition),
+            StringComparison.Ordinal) &&
+        left.IsEnabled == right.IsEnabled &&
+        left.IsTrusted == right.IsTrusted &&
+        left.IsNotForReplication == right.IsNotForReplication;
+
+    private static bool ComputedColumnEquals(SqlComputedDescriptor? left, SqlComputedDescriptor? right) =>
+        left is null && right is null ||
+        left is not null && right is not null &&
+        left.IsPersisted == right.IsPersisted &&
+        string.Equals(
+            SqlFragmentCanonicalizer.Canonicalize(left.Definition),
+            SqlFragmentCanonicalizer.Canonicalize(right.Definition),
+            StringComparison.Ordinal);
+
+    private static bool IndexEquals(SqlIndexDescriptor left, SqlIndexDescriptor right) =>
+        string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+        left.IsUnique == right.IsUnique &&
+        left.IsEnabled == right.IsEnabled &&
+        IndexStructureEquals(left.IndexStructure, right.IndexStructure);
+
+    private static bool IndexStructureEquals(SqlIndexStructureDescriptor left, SqlIndexStructureDescriptor right) =>
+        left.IsClustered == right.IsClustered &&
+        left.KeyColumns.SequenceEqual(right.KeyColumns) &&
+        left.IncludedColumns.SequenceEqual(right.IncludedColumns, StringComparer.Ordinal) &&
+        CanonicalNullableFragmentEquals(left.CanonicalFilterDefinition, right.CanonicalFilterDefinition);
+
+    private static bool CanonicalNullableFragmentEquals(string? left, string? right) =>
+        left is null && right is null ||
+        left is not null && right is not null &&
+        string.Equals(
+            SqlFragmentCanonicalizer.Canonicalize(left),
+            SqlFragmentCanonicalizer.Canonicalize(right),
+            StringComparison.Ordinal);
+
+    private static void AddMismatch<T>(
+        SqlObjectName table,
+        string artifactName,
+        SqlSchemaDifferenceKind kind,
+        T expected,
+        T actual,
+        ImmutableArray<SqlSchemaDifference>.Builder differences)
     {
-        if (!EqualityComparer<T>.Default.Equals(expected, actual)) differences.Add(Difference(kind, table, artifactName, $"Expected '{expected}'; actual '{actual}'."));
+        if (EqualityComparer<T>.Default.Equals(expected, actual))
+        {
+            return;
+        }
+
+        differences.Add(Difference(kind, table, artifactName, $"Expected '{expected}'; actual '{actual}'."));
     }
 
-    private static SqlSchemaDifference Difference(SqlSchemaDifferenceKind kind, SqlObjectName table, string artifactName, string detail) => new(kind, table, artifactName, detail);
+    private static SqlSchemaDifference Difference(
+        SqlSchemaDifferenceKind kind,
+        SqlObjectName table,
+        string artifactName,
+        string detail) => new(kind, table, artifactName, detail);
 }
