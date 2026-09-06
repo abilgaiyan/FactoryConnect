@@ -48,8 +48,8 @@ internal static class SqlRepositoryPost005SchemaDescriptor
         ],
         checks:
         [
-            Check("CK_OperationalMetricProjectionProcessor_ProcessorKey", "DATALENGTH(ProcessorKey) > 0"),
-            Check("CK_OperationalMetricProjectionProcessor_ProcessorKeyBinary", "DATALENGTH(ProcessorKeyBinary) BETWEEN 1 AND 769")
+            Check("CK_OperationalMetricProjectionProcessor_ProcessorKey", "(datalength([ProcessorKey]) > (0))"),
+            Check("CK_OperationalMetricProjectionProcessor_ProcessorKeyBinary", "(datalength([ProcessorKeyBinary]) >= (1) AND datalength([ProcessorKeyBinary]) <= (769))")
         ]);
 
     private static SqlTableDescriptor OperationalMetricProjectionCheckpoint() => Table(
@@ -70,7 +70,7 @@ internal static class SqlRepositoryPost005SchemaDescriptor
         ],
         checks:
         [
-            Check("CK_OperationalMetricProjectionCheckpoint_Position", "Position BETWEEN 1 AND 18446744073709551615")
+            Check("CK_OperationalMetricProjectionCheckpoint_Position", "([Position] >= (1) AND [Position] <= (18446744073709551615.))")
         ]);
 
     private static SqlTableDescriptor OperationalMetricProjection() => Table(
@@ -86,7 +86,7 @@ internal static class SqlRepositoryPost005SchemaDescriptor
             ComputedBinary(
                 "MachineOrderKey",
                 16,
-                "CONVERT(binary(16), REPLACE(CONVERT(char(36), MachineId), '-', ''), 2)",
+                "(CONVERT([binary](16), replace(CONVERT([char](36), [MachineId]), '-', ''), (2)))",
                 isPersisted: true,
                 isNullable: false),
             Column("PeriodKind", "tinyint"),
@@ -138,17 +138,17 @@ internal static class SqlRepositoryPost005SchemaDescriptor
         ],
         checks:
         [
-            Check("CK_OperationalMetricProjection_EvaluationKeyCodecVersion", "EvaluationKeyCodecVersion = 1"),
-            Check("CK_OperationalMetricProjection_EvaluationKeyBinaryLength", "DATALENGTH(EvaluationKeyBinary) BETWEEN 1 AND 6992"),
+            Check("CK_OperationalMetricProjection_EvaluationKeyCodecVersion", "([EvaluationKeyCodecVersion] = (1))"),
+            Check("CK_OperationalMetricProjection_EvaluationKeyBinaryLength", "(datalength([EvaluationKeyBinary]) >= (1) AND datalength([EvaluationKeyBinary]) <= (6992))"),
             Check("CK_OperationalMetricProjection_PeriodShape", PeriodShape),
             Check("CK_OperationalMetricProjection_ProductionOrderContext", ContextShape("ProductionOrder")),
             Check("CK_OperationalMetricProjection_OperationContext", ContextShape("Operation")),
             Check("CK_OperationalMetricProjection_PartContext", ContextShape("Part")),
             Check("CK_OperationalMetricProjection_OperatorContext", ContextShape("Operator")),
             Check("CK_OperationalMetricProjection_MetricIdentity", MetricIdentityShape),
-            Check("CK_OperationalMetricProjection_SourceRevisionPosition", "SourceRevisionPosition BETWEEN 1 AND 18446744073709551615"),
-            Check("CK_OperationalMetricProjection_Status", "Status IN (0,1,2)"),
-            Check("CK_OperationalMetricProjection_ReasonCode", "ReasonCode IS NULL OR ReasonCode IN (0,1,2,3,4,5)"),
+            Check("CK_OperationalMetricProjection_SourceRevisionPosition", "([SourceRevisionPosition] >= (1) AND [SourceRevisionPosition] <= (18446744073709551615.))"),
+            Check("CK_OperationalMetricProjection_Status", "([Status] = (2) OR [Status] = (1) OR [Status] = (0))"),
+            Check("CK_OperationalMetricProjection_ReasonCode", "([ReasonCode] IS NULL OR ([ReasonCode] = (5) OR [ReasonCode] = (4) OR [ReasonCode] = (3) OR [ReasonCode] = (2) OR [ReasonCode] = (1) OR [ReasonCode] = (0)))"),
             Check("CK_OperationalMetricProjection_StatusShape", StatusShape)
         ],
         indexes:
@@ -156,11 +156,11 @@ internal static class SqlRepositoryPost005SchemaDescriptor
             FilteredIndex(
                 "IX_OperationalMetricProjection_ShiftWindow",
                 ["OperationalMetricProjectionProcessorRowId", "ShiftStartsAtUtc", "MachineOrderKey", "OperationalMetricProjectionRowId"],
-                "PeriodKind = 1"),
+                "([PeriodKind] = (1))"),
             FilteredIndex(
                 "IX_OperationalMetricProjection_ProductionDayWindow",
                 ["OperationalMetricProjectionProcessorRowId", "ProductionBusinessDate", "MachineOrderKey", "OperationalMetricProjectionRowId"],
-                "PeriodKind = 2")
+                "([PeriodKind] = (2))")
         ]);
 
     private static SqlTableDescriptor OperationalMetricProjectionManifest() => Table(
@@ -228,9 +228,9 @@ internal static class SqlRepositoryPost005SchemaDescriptor
         ],
         checks:
         [
-            Check("CK_OperationalMetricProjectionEvidence_Operand", "DATALENGTH(OperandName) > 0 AND DATALENGTH(OperandNameOrderKey) BETWEEN 1 AND 769"),
-            Check("CK_OperationalMetricProjectionEvidence_Ordinal", "EvidenceOrdinal >= 0"),
-            Check("CK_OperationalMetricProjectionEvidence_Kind", "EvidenceKind IN (1,2)"),
+            Check("CK_OperationalMetricProjectionEvidence_Operand", "(datalength([OperandName]) > (0) AND (datalength([OperandNameOrderKey]) >= (1) AND datalength([OperandNameOrderKey]) <= (769)))"),
+            Check("CK_OperationalMetricProjectionEvidence_Ordinal", "([EvidenceOrdinal] >= (0))"),
+            Check("CK_OperationalMetricProjectionEvidence_Kind", "([EvidenceKind] = (2) OR [EvidenceKind] = (1))"),
             Check("CK_OperationalMetricProjectionEvidence_SubtypeShape", EvidenceSubtypeShape)
         ]);
 
@@ -253,9 +253,9 @@ internal static class SqlRepositoryPost005SchemaDescriptor
         ],
         checks:
         [
-            Check("CK_MachineShiftOccurrenceRoster_Site", "DATALENGTH(ProductionDaySiteId) > 0 AND DATALENGTH(ProductionDaySiteOrderKey) BETWEEN 1 AND 769"),
-            Check("CK_MachineShiftOccurrenceRoster_ProductionLine", "DATALENGTH(ProductionLineId) > 0"),
-            Check("CK_MachineShiftOccurrenceRoster_Revision", "Revision BETWEEN 1 AND 18446744073709551615")
+            Check("CK_MachineShiftOccurrenceRoster_Site", "(datalength([ProductionDaySiteId]) > (0) AND (datalength([ProductionDaySiteOrderKey]) >= (1) AND datalength([ProductionDaySiteOrderKey]) <= (769)))"),
+            Check("CK_MachineShiftOccurrenceRoster_ProductionLine", "(datalength([ProductionLineId]) > (0))"),
+            Check("CK_MachineShiftOccurrenceRoster_Revision", "([Revision] >= (1) AND [Revision] <= (18446744073709551615.))")
         ]);
 
     private static SqlTableDescriptor MachineShiftOccurrenceRosterOccurrence() => Table(
@@ -294,142 +294,136 @@ internal static class SqlRepositoryPost005SchemaDescriptor
 
     private const string PeriodShape = """
         (
-            PeriodKind = 1
-            AND PeriodSiteId IS NOT NULL
-            AND DATALENGTH(PeriodSiteId) > 0
-            AND PeriodSiteOrderKey IS NOT NULL
-            AND DATALENGTH(PeriodSiteOrderKey) BETWEEN 1 AND 769
-            AND ShiftScheduleAssignmentId IS NOT NULL
-            AND DATALENGTH(ShiftScheduleAssignmentId) > 0
-            AND ShiftScheduleAssignmentOrderKey IS NOT NULL
-            AND DATALENGTH(ShiftScheduleAssignmentOrderKey) BETWEEN 1 AND 769
-            AND ShiftId IS NOT NULL
-            AND DATALENGTH(ShiftId) > 0
-            AND ShiftOrderKey IS NOT NULL
-            AND DATALENGTH(ShiftOrderKey) BETWEEN 1 AND 769
-            AND ShiftStartsAtUtc IS NOT NULL
-            AND ShiftEndsAtUtc IS NOT NULL
-            AND DATEPART(TZOFFSET, ShiftStartsAtUtc) = 0
-            AND DATEPART(TZOFFSET, ShiftEndsAtUtc) = 0
-            AND ShiftEndsAtUtc > ShiftStartsAtUtc
-            AND ProductionBusinessDate IS NULL
-        )
-        OR
-        (
-            PeriodKind = 2
-            AND PeriodSiteId IS NOT NULL
-            AND DATALENGTH(PeriodSiteId) > 0
-            AND PeriodSiteOrderKey IS NOT NULL
-            AND DATALENGTH(PeriodSiteOrderKey) BETWEEN 1 AND 769
-            AND ProductionBusinessDate IS NOT NULL
-            AND ShiftScheduleAssignmentId IS NULL
-            AND ShiftScheduleAssignmentOrderKey IS NULL
-            AND ShiftId IS NULL
-            AND ShiftOrderKey IS NULL
-            AND ShiftStartsAtUtc IS NULL
-            AND ShiftEndsAtUtc IS NULL
+            [PeriodKind] = (1)
+            AND [PeriodSiteId] IS NOT NULL
+            AND datalength([PeriodSiteId]) > (0)
+            AND [PeriodSiteOrderKey] IS NOT NULL
+            AND (datalength([PeriodSiteOrderKey]) >= (1) AND datalength([PeriodSiteOrderKey]) <= (769))
+            AND [ShiftScheduleAssignmentId] IS NOT NULL
+            AND datalength([ShiftScheduleAssignmentId]) > (0)
+            AND [ShiftScheduleAssignmentOrderKey] IS NOT NULL
+            AND (datalength([ShiftScheduleAssignmentOrderKey]) >= (1) AND datalength([ShiftScheduleAssignmentOrderKey]) <= (769))
+            AND [ShiftId] IS NOT NULL
+            AND datalength([ShiftId]) > (0)
+            AND [ShiftOrderKey] IS NOT NULL
+            AND (datalength([ShiftOrderKey]) >= (1) AND datalength([ShiftOrderKey]) <= (769))
+            AND [ShiftStartsAtUtc] IS NOT NULL
+            AND [ShiftEndsAtUtc] IS NOT NULL
+            AND datepart(tzoffset,[ShiftStartsAtUtc]) = (0)
+            AND datepart(tzoffset,[ShiftEndsAtUtc]) = (0)
+            AND [ShiftEndsAtUtc] > [ShiftStartsAtUtc]
+            AND [ProductionBusinessDate] IS NULL
+            OR [PeriodKind] = (2)
+            AND [PeriodSiteId] IS NOT NULL
+            AND datalength([PeriodSiteId]) > (0)
+            AND [PeriodSiteOrderKey] IS NOT NULL
+            AND (datalength([PeriodSiteOrderKey]) >= (1) AND datalength([PeriodSiteOrderKey]) <= (769))
+            AND [ProductionBusinessDate] IS NOT NULL
+            AND [ShiftScheduleAssignmentId] IS NULL
+            AND [ShiftScheduleAssignmentOrderKey] IS NULL
+            AND [ShiftId] IS NULL
+            AND [ShiftOrderKey] IS NULL
+            AND [ShiftStartsAtUtc] IS NULL
+            AND [ShiftEndsAtUtc] IS NULL
         )
         """;
 
     private static string ContextShape(string prefix) => $"""
         (
-            {prefix}Present = 0
-            AND {prefix}Id IS NULL
-            AND {prefix}OrderKey IS NULL
-        )
-        OR
-        (
-            {prefix}Present = 1
-            AND {prefix}Id IS NOT NULL
-            AND DATALENGTH({prefix}Id) > 0
-            AND {prefix}OrderKey IS NOT NULL
-            AND DATALENGTH({prefix}OrderKey) BETWEEN 1 AND 769
+            [{prefix}Present] = (0)
+            AND [{prefix}Id] IS NULL
+            AND [{prefix}OrderKey] IS NULL
+            OR [{prefix}Present] = (1)
+            AND [{prefix}Id] IS NOT NULL
+            AND datalength([{prefix}Id]) > (0)
+            AND [{prefix}OrderKey] IS NOT NULL
+            AND (datalength([{prefix}OrderKey]) >= (1) AND datalength([{prefix}OrderKey]) <= (769))
         )
         """;
 
     private const string MetricIdentityShape = """
-        DATALENGTH(MetricKey) > 0
-        AND DATALENGTH(MetricKeyOrderKey) BETWEEN 1 AND 769
-        AND DATALENGTH(DefinitionVersion) > 0
-        AND DATALENGTH(DefinitionVersionOrderKey) BETWEEN 1 AND 769
-        AND DATALENGTH(Unit) > 0
+        (
+            datalength([MetricKey]) > (0)
+            AND (datalength([MetricKeyOrderKey]) >= (1) AND datalength([MetricKeyOrderKey]) <= (769))
+            AND datalength([DefinitionVersion]) > (0)
+            AND (datalength([DefinitionVersionOrderKey]) >= (1) AND datalength([DefinitionVersionOrderKey]) <= (769))
+            AND datalength([Unit]) > (0)
+        )
         """;
 
     private const string StatusShape = """
         (
-            Status = 0
-            AND MetricValue IS NOT NULL
-            AND DATALENGTH(MetricValue) > 0
-            AND ReasonCode IS NULL
-            AND ReasonOperandName IS NULL
-        )
-        OR
-        (
-            Status IN (1,2)
-            AND MetricValue IS NULL
-            AND ReasonCode IS NOT NULL
-            AND ReasonCode IN (0,1,2,3,4,5)
-            AND (ReasonOperandName IS NULL OR DATALENGTH(ReasonOperandName) > 0)
+            [Status] = (0)
+            AND [MetricValue] IS NOT NULL
+            AND datalength([MetricValue]) > (0)
+            AND [ReasonCode] IS NULL
+            AND [ReasonOperandName] IS NULL
+            OR ([Status] = (2) OR [Status] = (1))
+            AND [MetricValue] IS NULL
+            AND [ReasonCode] IS NOT NULL
+            AND ([ReasonCode] = (5) OR [ReasonCode] = (4) OR [ReasonCode] = (3) OR [ReasonCode] = (2) OR [ReasonCode] = (1) OR [ReasonCode] = (0))
+            AND ([ReasonOperandName] IS NULL OR datalength([ReasonOperandName]) > (0))
         )
         """;
 
     private const string EvidenceSubtypeShape = """
         (
-            EvidenceKind = 1
-            AND ComponentKey IS NOT NULL
-            AND DATALENGTH(ComponentKey) > 0
-            AND MetricDimension IS NOT NULL
-            AND MetricDimension IN (0,1,2)
-            AND ComponentValue IS NOT NULL
-            AND DATALENGTH(ComponentValue) > 0
-            AND ComponentUnit IS NOT NULL
-            AND DATALENGTH(ComponentUnit) > 0
-            AND InputCount IS NOT NULL
-            AND InputCount BETWEEN 1 AND 9223372036854775807
-            AND FirstInputTimestamp IS NOT NULL
-            AND LastInputTimestamp IS NOT NULL
-            AND DATEPART(TZOFFSET, FirstInputTimestamp) = 0
-            AND DATEPART(TZOFFSET, LastInputTimestamp) = 0
-            AND LastInputTimestamp >= FirstInputTimestamp
-            AND DependencyMetricKey IS NULL
-            AND DependencyDefinitionVersion IS NULL
-            AND DependencySnapshotCodecVersion IS NULL
-            AND DependencySnapshotHash IS NULL
-            AND DependencySnapshotBinary IS NULL
-        )
-        OR
-        (
-            EvidenceKind = 2
-            AND ComponentKey IS NULL
-            AND MetricDimension IS NULL
-            AND ComponentValue IS NULL
-            AND ComponentUnit IS NULL
-            AND InputCount IS NULL
-            AND FirstInputTimestamp IS NULL
-            AND LastInputTimestamp IS NULL
-            AND DependencyMetricKey IS NOT NULL
-            AND DATALENGTH(DependencyMetricKey) > 0
-            AND DependencyDefinitionVersion IS NOT NULL
-            AND DATALENGTH(DependencyDefinitionVersion) > 0
-            AND DependencySnapshotCodecVersion IS NOT NULL
-            AND DependencySnapshotCodecVersion = 1
-            AND DependencySnapshotHash IS NOT NULL
-            AND DependencySnapshotBinary IS NOT NULL
-            AND DATALENGTH(DependencySnapshotBinary) BETWEEN 1 AND 16777216
+            [EvidenceKind] = (1)
+            AND [ComponentKey] IS NOT NULL
+            AND datalength([ComponentKey]) > (0)
+            AND [MetricDimension] IS NOT NULL
+            AND ([MetricDimension] = (2) OR [MetricDimension] = (1) OR [MetricDimension] = (0))
+            AND [ComponentValue] IS NOT NULL
+            AND datalength([ComponentValue]) > (0)
+            AND [ComponentUnit] IS NOT NULL
+            AND datalength([ComponentUnit]) > (0)
+            AND [InputCount] IS NOT NULL
+            AND ([InputCount] >= (1) AND [InputCount] <= (9223372036854775807.))
+            AND [FirstInputTimestamp] IS NOT NULL
+            AND [LastInputTimestamp] IS NOT NULL
+            AND datepart(tzoffset,[FirstInputTimestamp]) = (0)
+            AND datepart(tzoffset,[LastInputTimestamp]) = (0)
+            AND [LastInputTimestamp] >= [FirstInputTimestamp]
+            AND [DependencyMetricKey] IS NULL
+            AND [DependencyDefinitionVersion] IS NULL
+            AND [DependencySnapshotCodecVersion] IS NULL
+            AND [DependencySnapshotHash] IS NULL
+            AND [DependencySnapshotBinary] IS NULL
+            OR [EvidenceKind] = (2)
+            AND [ComponentKey] IS NULL
+            AND [MetricDimension] IS NULL
+            AND [ComponentValue] IS NULL
+            AND [ComponentUnit] IS NULL
+            AND [InputCount] IS NULL
+            AND [FirstInputTimestamp] IS NULL
+            AND [LastInputTimestamp] IS NULL
+            AND [DependencyMetricKey] IS NOT NULL
+            AND datalength([DependencyMetricKey]) > (0)
+            AND [DependencyDefinitionVersion] IS NOT NULL
+            AND datalength([DependencyDefinitionVersion]) > (0)
+            AND [DependencySnapshotCodecVersion] IS NOT NULL
+            AND [DependencySnapshotCodecVersion] = (1)
+            AND [DependencySnapshotHash] IS NOT NULL
+            AND [DependencySnapshotBinary] IS NOT NULL
+            AND (datalength([DependencySnapshotBinary]) >= (1) AND datalength([DependencySnapshotBinary]) <= (16777216))
         )
         """;
 
     private const string ShiftIdentityShape = """
-        DATALENGTH(ShiftScheduleAssignmentId) > 0
-        AND DATALENGTH(ShiftScheduleAssignmentOrderKey) BETWEEN 1 AND 769
-        AND DATALENGTH(ShiftId) > 0
-        AND DATALENGTH(ShiftOrderKey) BETWEEN 1 AND 769
+        (
+            datalength([ShiftScheduleAssignmentId]) > (0)
+            AND (datalength([ShiftScheduleAssignmentOrderKey]) >= (1) AND datalength([ShiftScheduleAssignmentOrderKey]) <= (769))
+            AND datalength([ShiftId]) > (0)
+            AND (datalength([ShiftOrderKey]) >= (1) AND datalength([ShiftOrderKey]) <= (769))
+        )
         """;
 
     private const string OccurrenceTimeShape = """
-        DATEPART(TZOFFSET, ShiftStartsAtUtc) = 0
-        AND DATEPART(TZOFFSET, ShiftEndsAtUtc) = 0
-        AND ShiftEndsAtUtc > ShiftStartsAtUtc
+        (
+            datepart(tzoffset,[ShiftStartsAtUtc]) = (0)
+            AND datepart(tzoffset,[ShiftEndsAtUtc]) = (0)
+            AND [ShiftEndsAtUtc] > [ShiftStartsAtUtc]
+        )
         """;
 
     private static SqlTableDescriptor Table(
