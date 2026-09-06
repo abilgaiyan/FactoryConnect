@@ -63,13 +63,13 @@ public sealed class SqlServerRuntimeSchemaCompatibilityVerifierIntegrationTests
         await ApplyCurrentAsync(connection);
         await ExecuteAsync(
             connection,
-            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 4;");
+            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 5;");
 
         var result = await VerifyAsync(connection);
 
         Assert.Equal(SqlRuntimeCompatibilityClassification.MigrationPending, result.Classification);
         Assert.False(result.IsCompatible);
-        Assert.Equal(3, await CountHistoryRowsAsync(connection));
+        Assert.Equal(4, await CountHistoryRowsAsync(connection));
     }
 
     [Fact]
@@ -95,8 +95,10 @@ public sealed class SqlServerRuntimeSchemaCompatibilityVerifierIntegrationTests
         await using var database = await IsolatedRuntimeCompatibilityDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
         await connection.OpenAsync();
-        await ApplyCurrentAsync(connection);
-        await ExecuteAsync(connection, "DROP TABLE dbo.FactoryConnectMigrationHistory;");
+        await ApplySchemaPrefixWithoutLedgerAsync(
+            connection,
+            SqlMigrationCatalog.Load(),
+            LegacyPost004MigrationHistory.Entries.Length);
 
         var result = await VerifyAsync(connection);
 
@@ -104,6 +106,7 @@ public sealed class SqlServerRuntimeSchemaCompatibilityVerifierIntegrationTests
         Assert.False(result.IsCompatible);
         Assert.False(await ObjectExistsAsync(connection, "dbo.FactoryConnectMigrationHistory"));
         Assert.True(await ObjectExistsAsync(connection, "dbo.MachineObservation"));
+        Assert.False(await ObjectExistsAsync(connection, "dbo.OperationalMetricProjection"));
     }
 
     [Fact]
@@ -177,6 +180,25 @@ public sealed class SqlServerRuntimeSchemaCompatibilityVerifierIntegrationTests
             connection,
             LockTimeout,
             CancellationToken.None);
+
+    private static async Task ApplySchemaPrefixWithoutLedgerAsync(
+        SqlConnection connection,
+        SqlMigrationCatalog catalog,
+        int prefixLength)
+    {
+        Assert.InRange(prefixLength, 0, catalog.Migrations.Length);
+        await using var transaction = connection.BeginTransaction();
+        for (var index = 0; index < prefixLength; index++)
+        {
+            await SqlServerMigrationExecutor.ExecuteAsync(
+                connection,
+                transaction,
+                catalog.Migrations[index],
+                CancellationToken.None);
+        }
+
+        await transaction.CommitAsync();
+    }
 
     private static async Task<int> CountHistoryRowsAsync(SqlConnection connection)
     {
