@@ -16,8 +16,7 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
     [InlineData(InitialDatabaseState.PrefixThrough001)]
     [InlineData(InitialDatabaseState.PrefixThrough002)]
     [InlineData(InitialDatabaseState.PrefixThrough003)]
-    public async Task RealStartupConvergesSupportedStatesToExactCurrent(
-        InitialDatabaseState initialState)
+    public async Task RealStartupConvergesSupportedStatesToExactCurrent(InitialDatabaseState initialState)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await SeedAsync(database.ConnectionString, initialState);
@@ -37,19 +36,15 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
         await AssertExactCurrentStateAsync(database.ConnectionString);
     }
 
-    private static async Task SeedAsync(
-        string connectionString,
-        InitialDatabaseState initialState)
+    private static async Task SeedAsync(string connectionString, InitialDatabaseState initialState)
     {
         switch (initialState)
         {
             case InitialDatabaseState.Empty:
                 return;
-
             case InitialDatabaseState.LegacyPost004WithoutLedger:
                 await SeedLegacyPost004WithoutLedgerAsync(connectionString);
                 return;
-
             case InitialDatabaseState.CurrentWithHistory:
                 await using (var connection = new SqlConnection(connectionString))
                 {
@@ -60,34 +55,28 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
                         CancellationToken.None);
                 }
                 return;
-
             case InitialDatabaseState.PrefixThrough001:
                 await SeedPrefixAsync(connectionString, 1);
                 return;
-
             case InitialDatabaseState.PrefixThrough002:
                 await SeedPrefixAsync(connectionString, 2);
                 return;
-
             case InitialDatabaseState.PrefixThrough003:
                 await SeedPrefixAsync(connectionString, 3);
                 return;
-
             default:
-                throw new InvalidOperationException(
-                    $"Unsupported E.5 successful startup state '{initialState}'.");
+                throw new InvalidOperationException($"Unsupported E.5 successful startup state '{initialState}'.");
         }
     }
 
-    private static async Task SeedLegacyPost004WithoutLedgerAsync(
-        string connectionString)
+    private static async Task SeedLegacyPost004WithoutLedgerAsync(string connectionString)
     {
         var catalog = SqlMigrationCatalog.Load();
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
 
-        foreach (var migration in catalog.Migrations)
+        foreach (var migration in catalog.Migrations.Take(LegacyPost004MigrationHistory.Entries.Length))
         {
             await SqlServerMigrationExecutor.ExecuteAsync(
                 connection,
@@ -99,9 +88,7 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
         await transaction.CommitAsync();
     }
 
-    private static async Task SeedPrefixAsync(
-        string connectionString,
-        int prefixLength)
+    private static async Task SeedPrefixAsync(string connectionString, int prefixLength)
     {
         var catalog = SqlMigrationCatalog.Load();
         Assert.InRange(prefixLength, 1, catalog.Migrations.Length - 1);
@@ -110,27 +97,14 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
         await connection.OpenAsync();
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
 
-        await SqlServerMigrationLedgerCreator.CreateAsync(
-            connection,
-            transaction,
-            CancellationToken.None);
-
-        var historyStore = new SqlServerMigrationHistoryStore(
-            new SystemSqlMigrationUtcClock());
+        await SqlServerMigrationLedgerCreator.CreateAsync(connection, transaction, CancellationToken.None);
+        var historyStore = new SqlServerMigrationHistoryStore(new SystemSqlMigrationUtcClock());
 
         for (var index = 0; index < prefixLength; index++)
         {
             var migration = catalog.Migrations[index];
-            await SqlServerMigrationExecutor.ExecuteAsync(
-                connection,
-                transaction,
-                migration,
-                CancellationToken.None);
-            await historyStore.InsertAsync(
-                connection,
-                transaction,
-                migration,
-                CancellationToken.None);
+            await SqlServerMigrationExecutor.ExecuteAsync(connection, transaction, migration, CancellationToken.None);
+            await historyStore.InsertAsync(connection, transaction, migration, CancellationToken.None);
         }
 
         await transaction.CommitAsync();
@@ -142,8 +116,7 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
 
-        var verifier = SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault();
-        var result = await verifier.VerifyAsync(
+        var result = await SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault().VerifyAsync(
             connection,
             LockTimeout,
             CancellationToken.None);
@@ -154,8 +127,7 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
         try
         {
-            var history = await new SqlServerMigrationHistoryStore(
-                    new SystemSqlMigrationUtcClock())
+            var history = await new SqlServerMigrationHistoryStore(new SystemSqlMigrationUtcClock())
                 .ReadAsync(connection, transaction, CancellationToken.None);
 
             Assert.Equal(catalog.Migrations.Length, history.Length);
@@ -169,16 +141,9 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
             }
 
             var liveSchema = await new SqlServerSchemaMetadataReader()
-                .ReadFactoryConnectOwnedSchemaInTransactionAsync(
-                    connection,
-                    transaction,
-                    CancellationToken.None);
-            var comparison = SqlSchemaComparator.Compare(
-                SqlRepositorySchemaDescriptors.Current,
-                liveSchema);
-            Assert.True(
-                comparison.IsExactMatch,
-                string.Join(Environment.NewLine, comparison.Differences));
+                .ReadFactoryConnectOwnedSchemaInTransactionAsync(connection, transaction, CancellationToken.None);
+            var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Current, liveSchema);
+            Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
         }
         finally
         {
