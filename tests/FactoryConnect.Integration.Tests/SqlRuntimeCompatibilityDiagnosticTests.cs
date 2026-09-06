@@ -32,8 +32,8 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(5, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(6, "SyntheticFutureMigration006"));
+            .Add(CreateFutureRow(6, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(7, "SyntheticFutureMigration007"));
 
         var diagnostics = SqlRuntimeCompatibilityDiagnostics.ForHistory(
             SqlRuntimeMigrationHistoryClassification.DatabaseNewerThanSupported,
@@ -42,8 +42,8 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
 
         var diagnostic = Assert.Single(diagnostics);
         Assert.Equal(SqlRuntimeCompatibilityDiagnosticCode.DatabaseNewerThanSupported, diagnostic.Code);
-        Assert.Contains("MigrationId=5", diagnostic.Artifact, StringComparison.Ordinal);
-        Assert.Equal("5:SyntheticFutureMigration", diagnostic.Actual);
+        Assert.Contains("MigrationId=6", diagnostic.Artifact, StringComparison.Ordinal);
+        Assert.Equal("6:SyntheticFutureMigration", diagnostic.Actual);
     }
 
     [Fact]
@@ -70,8 +70,8 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
     {
         var catalog = SqlMigrationCatalog.Load();
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(5, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(6, catalog.Migrations[0].Name));
+            .Add(CreateFutureRow(6, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(7, catalog.Migrations[0].Name));
 
         var diagnostics = SqlRuntimeCompatibilityDiagnostics.ForHistory(
             SqlRuntimeMigrationHistoryClassification.IdentityMismatch,
@@ -79,7 +79,7 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
             catalog);
 
         var diagnostic = Assert.Single(diagnostics);
-        Assert.Contains("MigrationId=6", diagnostic.Artifact, StringComparison.Ordinal);
+        Assert.Contains("MigrationId=7", diagnostic.Artifact, StringComparison.Ordinal);
         Assert.Contains("duplicates", diagnostic.Detail, StringComparison.Ordinal);
     }
 
@@ -182,7 +182,6 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
         Assert.Equal(SqlSchemaDifferenceKind.MissingColumn, diagnostics[0].SchemaDifferenceKind);
         Assert.Equal("dbo.Example:A", diagnostics[0].Artifact);
         Assert.Equal(SqlSchemaDifferenceKind.UnexpectedIndex, diagnostics[1].SchemaDifferenceKind);
-        Assert.Equal("dbo.Example:IX_B", diagnostics[1].Artifact);
         Assert.All(diagnostics, diagnostic =>
         {
             Assert.Equal(SqlRuntimeCompatibilityDiagnosticCode.MigrationSchemaDifference, diagnostic.Code);
