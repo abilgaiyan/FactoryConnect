@@ -24,21 +24,17 @@ public sealed class SqlMigrationCatalogTests
     }
 
     [Fact]
-    public void LoadExistingResourcesPreservesFrozenHistoricalChecksumsAndHashes005Exactly()
+    public void LoadExistingResourcesMatchesFrozenCanonicalChecksums()
     {
         var catalog = SqlMigrationCatalog.Load();
 
         Assert.Collection(
-            catalog.Migrations.Take(4),
+            catalog.Migrations,
             migration => Assert.Equal("E1C14282B7A246BBD9D5734370498695721D3F0A78D60F74531E35D5FEDC9057", migration.Sha256Checksum),
             migration => Assert.Equal("F8DA0AFF348E3ED8964D5ED03042581A55D7C94898AAC739B81E60CA7F5E5113", migration.Sha256Checksum),
             migration => Assert.Equal("98A9635782C4D822441269ECEE8E13BBCDC5A61C07B64608F81A0107133535C6", migration.Sha256Checksum),
-            migration => Assert.Equal("786CDD68F66E222A4E4EFB8220595E46390A0F81880D0D45A54FA22DD7A498D5", migration.Sha256Checksum));
-
-        var migration005 = catalog.Migrations[4];
-        Assert.Equal(
-            Convert.ToHexString(SHA256.HashData(migration005.CanonicalBytes.AsSpan())),
-            migration005.Sha256Checksum);
+            migration => Assert.Equal("786CDD68F66E222A4E4EFB8220595E46390A0F81880D0D45A54FA22DD7A498D5", migration.Sha256Checksum),
+            migration => Assert.Equal("53F337BB5B3294D331AB6E363C7301A88D0A4CD090762151CFD1508405DEDFC7", migration.Sha256Checksum));
     }
 
     [Fact]
@@ -238,7 +234,7 @@ public sealed class SqlMigrationCatalogTests
     [Fact]
     public void CreateWithDuplicateMigrationNameThrows()
     {
-        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(6, "DurableMetricAggregation"));
+        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(5, "DurableMetricAggregation"));
 
         Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
     }
@@ -246,9 +242,9 @@ public sealed class SqlMigrationCatalogTests
     [Fact]
     public void CreateWithDuplicateResourceThrows()
     {
-        var duplicateResource = CreateDescriptor(6, "OtherMigration") with
+        var duplicateResource = CreateDescriptor(5, "OtherMigration") with
         {
-            ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}005_OperationalMetricReportingPersistence.sql"
+            ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}004_ProductionContextMetricInputHandoff.sql"
         };
         var descriptors = CreateValidDescriptors().Add(duplicateResource);
 
@@ -282,7 +278,7 @@ public sealed class SqlMigrationCatalogTests
     public void CreateWithLegacyPolicyOnNon003MigrationThrows()
     {
         var descriptors = CreateValidDescriptors()
-            .Select(static descriptor => descriptor.MigrationId == 5
+            .Select(static descriptor => descriptor.MigrationId == 4
                 ? descriptor with { TransactionPolicy = SqlMigrationTransactionPolicy.LegacyMigration003Embedded }
                 : descriptor);
 
