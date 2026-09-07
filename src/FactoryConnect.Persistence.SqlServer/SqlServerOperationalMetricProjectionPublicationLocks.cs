@@ -41,12 +41,8 @@ internal static class SqlServerOperationalMetricProjectionPublicationLocks
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(projectionProcessorRowId);
         ArgumentNullException.ThrowIfNull(projectionPlan);
-
-        if (projectionProcessorRowId <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(projectionProcessorRowId));
-        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
