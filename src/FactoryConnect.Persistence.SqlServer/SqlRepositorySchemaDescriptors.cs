@@ -8,8 +8,11 @@ internal static class SqlRepositorySchemaDescriptors
 
     public static SqlSchemaDescriptor LegacyPost004 { get; } = CreatePost004();
 
-    public static SqlSchemaDescriptor Current { get; } =
+    public static SqlSchemaDescriptor Post005 { get; } =
         SqlRepositoryPost005SchemaDescriptor.Create(LegacyPost004);
+
+    public static SqlSchemaDescriptor Current { get; } =
+        SqlRepositoryPost006SchemaDescriptor.Create(Post005);
 
     private static SqlSchemaDescriptor CreatePost004() => new(
     [
@@ -43,35 +46,39 @@ internal static class SqlRepositorySchemaDescriptors
         [
             Check("CK_ObservationStreamCheckpoint_InstanceId_UInt64", "([InstanceId]>=(0) AND [InstanceId]<=(18446744073709551615.))"),
             Check("CK_ObservationStreamCheckpoint_NextSequence_UInt64", "([NextSequence]>=(0) AND [NextSequence]<=(18446744073709551615.))")
-        ]);
+        ]),
 
     private static SqlTableDescriptor MachineObservation() => Table(
         "MachineObservation",
         columns:
         [
+            IdentityBigInt("MachineObservationRowId"),
             Column("MachineId", "uniqueidentifier"),
             Column("StreamKeyBinary", "varbinary", 512),
+            Column("StreamKey", "nvarchar", 256, collation: BinaryCollation),
             Decimal("InstanceId", 20, 0),
             Decimal("Sequence", 20, 0),
-            Column("Source", "nvarchar", 256, collation: BinaryCollation),
-            Column("Address", "nvarchar", 512, collation: BinaryCollation),
-            Column("SignalType", "tinyint"),
-            ColumnMax("ObservationValue", "nvarchar", isNullable: true, collation: BinaryCollation),
-            Column("Quality", "tinyint"),
-            DateTimeOffset("ObservedAt", 7)
+            Column("ObservedAtUtc", "datetimeoffset", precision: 7),
+            Column("ObservedAtUnixMilliseconds", "bigint"),
+            Column("DataItemId", "nvarchar", 256, collation: BinaryCollation),
+            Column("DataItemType", "nvarchar", 256, collation: BinaryCollation),
+            Column("ValueType", "tinyint"),
+            Column("ValueText", "nvarchar", 2048, isNullable: true, collation: BinaryCollation),
+            Column("ValueDecimal", "decimal", precision: 38, scale: 18, isNullable: true),
+            Column("ValueInteger", "bigint", isNullable: true),
+            Column("ValueBoolean", "bit", isNullable: true)
         ],
-        primaryKey: PrimaryKey("PK_MachineObservation", "MachineId", "StreamKeyBinary", "InstanceId", "Sequence"),
-        foreignKeys:
+        primaryKey: PrimaryKey("PK_MachineObservation", "MachineObservationRowId"),
+        uniques:
         [
-            ForeignKey("FK_MachineObservation_ObservationStreamCheckpoint", ["MachineId", "StreamKeyBinary"], "ObservationStreamCheckpoint", ["MachineId", "StreamKeyBinary"])
+            Unique("UQ_MachineObservation_StreamSequence", "MachineId", "StreamKeyBinary", "InstanceId", "Sequence")
         ],
         checks:
         [
             Check("CK_MachineObservation_InstanceId_UInt64", "([InstanceId]>=(0) AND [InstanceId]<=(18446744073709551615.))"),
             Check("CK_MachineObservation_Sequence_UInt64", "([Sequence]>=(0) AND [Sequence]<=(18446744073709551615.))"),
-            Check("CK_MachineObservation_SignalType", "([SignalType]>=(0) AND [SignalType]<=(7))"),
-            Check("CK_MachineObservation_Quality", "([Quality]>=(0) AND [Quality]<=(2))")
-        ]);
+            Check("CK_MachineObservation_ValueType", "([ValueType]>=(0) AND [ValueType]<=(3))")
+        ]),
 
     private static SqlTableDescriptor MetricInputStream() => Table(
         "MetricInputStream",
@@ -85,9 +92,8 @@ internal static class SqlRepositorySchemaDescriptors
         primaryKey: PrimaryKey("PK_MetricInputStream", "MetricInputStreamRowId"),
         uniques:
         [
-            Unique("UQ_MetricInputStream_Identity", "MachineId", "StreamKeyBinary"),
-            Unique("UQ_MetricInputStream_RowMachine", "MetricInputStreamRowId", "MachineId")
-        ]);
+            Unique("UQ_MetricInputStream_MachineStream", "MachineId", "StreamKeyBinary")
+        ]),
 
     private static SqlTableDescriptor MetricInputFact() => Table(
         "MetricInputFact",
@@ -95,84 +101,45 @@ internal static class SqlRepositorySchemaDescriptors
         [
             IdentityBigInt("MetricInputFactRowId"),
             Column("MetricInputStreamRowId", "bigint"),
-            Decimal("Position", 20, 0),
-            Column("FactIdBinary", "varbinary", 512),
-            Column("FactId", "nvarchar", 256, collation: BinaryCollation),
-            Column("MetricInputKey", "nvarchar", 256, collation: BinaryCollation),
-            Column("MetricValue", "nvarchar", 64, collation: BinaryCollation),
-            Column("Unit", "nvarchar", 128, collation: BinaryCollation),
-            DateTimeOffset("StartsAtUtc", 7),
-            DateTimeOffset("EndsAtUtc", 7),
-            Column("CompanyId", "nvarchar", 256, collation: BinaryCollation),
-            Column("SiteId", "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionLineId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
             Column("MachineId", "uniqueidentifier"),
-            Column("ShiftId", "nvarchar", 256, collation: BinaryCollation),
-            Column("ShiftScheduleAssignmentId", "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionContextAssignmentId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("ProductionOrderId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("OperationId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("PartId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("OperatorId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("IsPlannedProductionTime", "bit", isNullable: true),
-            Column("PlannedProductionScheduleAssignmentId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("SourceContextualizedActivityIntervalId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("SourceEligibilityIntervalId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("SourceQuantityEvidenceId", "nvarchar", 256, isNullable: true, collation: BinaryCollation),
-            Column("OccurrenceSiteId", "nvarchar", 256, collation: BinaryCollation),
-            Column("OccurrenceShiftScheduleAssignmentId", "nvarchar", 256, collation: BinaryCollation),
-            Column("OccurrenceShiftId", "nvarchar", 256, collation: BinaryCollation),
-            DateTimeOffset("OccurrenceStartsAtUtc", 7),
-            DateTimeOffset("OccurrenceEndsAtUtc", 7),
-            Column("ProductionDaySiteId", "nvarchar", 256, collation: BinaryCollation),
-            Column("ProductionBusinessDate", "date")
+            Column("MetricKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("ObservedAtUtc", "datetimeoffset", precision: 7),
+            Decimal("RevisionPosition", 20, 0),
+            Column("Value", "decimal", precision: 38, scale: 18),
+            Column("Unit", "nvarchar", 128, collation: BinaryCollation)
         ],
         primaryKey: PrimaryKey("PK_MetricInputFact", "MetricInputFactRowId"),
-        uniques:
-        [
-            Unique("UQ_MetricInputFact_StreamPosition", "MetricInputStreamRowId", "Position"),
-            Unique("UQ_MetricInputFact_StreamFactIdentity", "MetricInputStreamRowId", "FactIdBinary"),
-            Unique("UQ_MetricInputFact_StreamPositionRow", "MetricInputFactRowId", "MetricInputStreamRowId", "Position")
-        ],
         foreignKeys:
         [
-            ForeignKey("FK_MetricInputFact_StreamMachine", ["MetricInputStreamRowId", "MachineId"], "MetricInputStream", ["MetricInputStreamRowId", "MachineId"])
-        ],
-        checks:
-        [
-            Check("CK_MetricInputFact_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))"),
-            Check("CK_MetricInputFact_Interval", "([EndsAtUtc]>=[StartsAtUtc])"),
-            Check("CK_MetricInputFact_OccurrenceInterval", "([OccurrenceEndsAtUtc]>[OccurrenceStartsAtUtc])"),
-            Check("CK_MetricInputFact_OwnershipContainment", "([StartsAtUtc]>=[OccurrenceStartsAtUtc] AND [EndsAtUtc]<=[OccurrenceEndsAtUtc])"),
-            Check("CK_MetricInputFact_SiteOwnership", "([SiteId]=[OccurrenceSiteId] AND [SiteId]=[ProductionDaySiteId])"),
-            Check("CK_MetricInputFact_ShiftOwnership", "([ShiftId]=[OccurrenceShiftId])"),
-            Check("CK_MetricInputFact_ScheduleOwnership", "([ShiftScheduleAssignmentId]=[OccurrenceShiftScheduleAssignmentId])"),
-            Check("CK_MetricInputFact_UtcOffsets", "(datepart(tzoffset,[StartsAtUtc])=(0) AND datepart(tzoffset,[EndsAtUtc])=(0) AND datepart(tzoffset,[OccurrenceStartsAtUtc])=(0) AND datepart(tzoffset,[OccurrenceEndsAtUtc])=(0))")
-        ],
-        indexes:
-        [
-            Index("IX_MetricInputFact_OrderedRead", ["MetricInputStreamRowId", "Position"], ["MetricInputFactRowId", "FactId", "MetricInputKey", "MetricValue", "Unit"])
-        ]);
+            ForeignKey(
+                "FK_MetricInputFact_MetricInputStream",
+                ["MetricInputStreamRowId"],
+                "MetricInputStream",
+                ["MetricInputStreamRowId"])
+        ]),
 
     private static SqlTableDescriptor MetricAggregationProcessor() => Table(
         "MetricAggregationProcessor",
         columns:
         [
             IdentityBigInt("MetricAggregationProcessorRowId"),
-            Column("ProcessorKeyBinary", "varbinary", 512),
             Column("ProcessorKey", "nvarchar", 256, collation: BinaryCollation),
             Column("MetricInputStreamRowId", "bigint")
         ],
         primaryKey: PrimaryKey("PK_MetricAggregationProcessor", "MetricAggregationProcessorRowId"),
         uniques:
         [
-            Unique("UQ_MetricAggregationProcessor_Identity", "ProcessorKeyBinary"),
+            Unique("UQ_MetricAggregationProcessor_ProcessorKey", "ProcessorKey"),
             Unique("UQ_MetricAggregationProcessor_StreamBinding", "MetricAggregationProcessorRowId", "MetricInputStreamRowId")
         ],
         foreignKeys:
         [
-            ForeignKey("FK_MetricAggregationProcessor_MetricInputStream", ["MetricInputStreamRowId"], "MetricInputStream", ["MetricInputStreamRowId"])
-        ]);
+            ForeignKey(
+                "FK_MetricAggregationProcessor_MetricInputStream",
+                ["MetricInputStreamRowId"],
+                "MetricInputStream",
+                ["MetricInputStreamRowId"])
+        ]),
 
     private static SqlTableDescriptor MetricAggregationCheckpoint() => Table(
         "MetricAggregationCheckpoint",
@@ -184,36 +151,33 @@ internal static class SqlRepositorySchemaDescriptors
         primaryKey: PrimaryKey("PK_MetricAggregationCheckpoint", "MetricAggregationProcessorRowId"),
         foreignKeys:
         [
-            ForeignKey("FK_MetricAggregationCheckpoint_Processor", ["MetricAggregationProcessorRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId"])
-        ],
-        checks:
-        [
-            Check("CK_MetricAggregationCheckpoint_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))")
-        ]);
+            ForeignKey(
+                "FK_MetricAggregationCheckpoint_Processor",
+                ["MetricAggregationProcessorRowId"],
+                "MetricAggregationProcessor",
+                ["MetricAggregationProcessorRowId"])
+        ]),
 
     private static SqlTableDescriptor MetricAggregationContribution() => Table(
         "MetricAggregationContribution",
         columns:
         [
+            IdentityBigInt("MetricAggregationContributionRowId"),
             Column("MetricAggregationProcessorRowId", "bigint"),
-            Column("MetricInputStreamRowId", "bigint"),
-            Column("MetricInputFactRowId", "bigint"),
-            Decimal("Position", 20, 0)
+            Decimal("RevisionPosition", 20, 0),
+            Column("MetricKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("Value", "decimal", precision: 38, scale: 18),
+            Column("Unit", "nvarchar", 128, collation: BinaryCollation)
         ],
-        primaryKey: PrimaryKey("PK_MetricAggregationContribution", "MetricAggregationProcessorRowId", "MetricInputFactRowId"),
-        uniques:
-        [
-            Unique("UQ_MetricAggregationContribution_Position", "MetricAggregationProcessorRowId", "Position")
-        ],
+        primaryKey: PrimaryKey("PK_MetricAggregationContribution", "MetricAggregationContributionRowId"),
         foreignKeys:
         [
-            ForeignKey("FK_MetricAggregationContribution_ProcessorStream", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"]),
-            ForeignKey("FK_MetricAggregationContribution_FactStreamPosition", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"], "MetricInputFact", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"])
-        ],
-        checks:
-        [
-            Check("CK_MetricAggregationContribution_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))")
-        ]);
+            ForeignKey(
+                "FK_MetricAggregationContribution_Processor",
+                ["MetricAggregationProcessorRowId"],
+                "MetricAggregationProcessor",
+                ["MetricAggregationProcessorRowId"])
+        ]),
 
     private static SqlTableDescriptor ShiftMetricAggregate() => Table(
         "ShiftMetricAggregate",
@@ -221,41 +185,16 @@ internal static class SqlRepositorySchemaDescriptors
         [
             IdentityBigInt("ShiftMetricAggregateRowId"),
             Column("MetricAggregationProcessorRowId", "bigint"),
-            Column("AggregateKeyHash", "binary", 32),
-            ColumnMax("AggregateKeyBinary", "varbinary"),
             Column("MachineId", "uniqueidentifier"),
-            Column("SiteId", "nvarchar", 256, collation: BinaryCollation),
-            Column("ShiftScheduleAssignmentId", "nvarchar", 256, collation: BinaryCollation),
             Column("ShiftId", "nvarchar", 256, collation: BinaryCollation),
-            DateTimeOffset("ShiftStartsAtUtc", 7),
-            DateTimeOffset("ShiftEndsAtUtc", 7),
-            Column("MetricInputKey", "nvarchar", 256, collation: BinaryCollation),
-            Column("AggregateValue", "nvarchar", 64, collation: BinaryCollation),
+            Column("ShiftStartsAtUtc", "datetimeoffset", precision: 7),
+            Column("ShiftEndsAtUtc", "datetimeoffset", precision: 7),
+            Column("MetricKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("MetricValue", "decimal", precision: 38, scale: 18),
             Column("Unit", "nvarchar", 128, collation: BinaryCollation),
-            Column("InputCount", "bigint"),
-            DateTimeOffset("FirstInputTimestamp", 7),
-            DateTimeOffset("LastInputTimestamp", 7)
+            Decimal("SourceRevisionPosition", 20, 0)
         ],
-        primaryKey: PrimaryKey("PK_ShiftMetricAggregate", "ShiftMetricAggregateRowId"),
-        uniques:
-        [
-            Unique("UQ_ShiftMetricAggregate_IdentityHash", "MetricAggregationProcessorRowId", "AggregateKeyHash")
-        ],
-        foreignKeys:
-        [
-            ForeignKey("FK_ShiftMetricAggregate_Processor", ["MetricAggregationProcessorRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId"])
-        ],
-        checks:
-        [
-            Check("CK_ShiftMetricAggregate_ShiftInterval", "([ShiftEndsAtUtc]>[ShiftStartsAtUtc])"),
-            Check("CK_ShiftMetricAggregate_InputCount", "([InputCount]>(0))"),
-            Check("CK_ShiftMetricAggregate_InputInterval", "([LastInputTimestamp]>=[FirstInputTimestamp])"),
-            Check("CK_ShiftMetricAggregate_UtcOffsets", "(datepart(tzoffset,[ShiftStartsAtUtc])=(0) AND datepart(tzoffset,[ShiftEndsAtUtc])=(0) AND datepart(tzoffset,[FirstInputTimestamp])=(0) AND datepart(tzoffset,[LastInputTimestamp])=(0))")
-        ],
-        indexes:
-        [
-            Index("IX_ShiftMetricAggregate_Query", ["MachineId", "ShiftStartsAtUtc", "ShiftEndsAtUtc"], ["MetricInputKey", "AggregateValue", "Unit", "InputCount"])
-        ]);
+        primaryKey: PrimaryKey("PK_ShiftMetricAggregate", "ShiftMetricAggregateRowId")),
 
     private static SqlTableDescriptor ProductionDayMetricAggregate() => Table(
         "ProductionDayMetricAggregate",
@@ -263,56 +202,28 @@ internal static class SqlRepositorySchemaDescriptors
         [
             IdentityBigInt("ProductionDayMetricAggregateRowId"),
             Column("MetricAggregationProcessorRowId", "bigint"),
-            Column("AggregateKeyHash", "binary", 32),
-            ColumnMax("AggregateKeyBinary", "varbinary"),
             Column("MachineId", "uniqueidentifier"),
-            Column("SiteId", "nvarchar", 256, collation: BinaryCollation),
             Column("ProductionBusinessDate", "date"),
-            Column("MetricInputKey", "nvarchar", 256, collation: BinaryCollation),
-            Column("AggregateValue", "nvarchar", 64, collation: BinaryCollation),
+            Column("MetricKey", "nvarchar", 256, collation: BinaryCollation),
+            Column("MetricValue", "decimal", precision: 38, scale: 18),
             Column("Unit", "nvarchar", 128, collation: BinaryCollation),
-            Column("InputCount", "bigint"),
-            DateTimeOffset("FirstInputTimestamp", 7),
-            DateTimeOffset("LastInputTimestamp", 7)
+            Decimal("SourceRevisionPosition", 20, 0)
         ],
-        primaryKey: PrimaryKey("PK_ProductionDayMetricAggregate", "ProductionDayMetricAggregateRowId"),
-        uniques:
-        [
-            Unique("UQ_ProductionDayMetricAggregate_IdentityHash", "MetricAggregationProcessorRowId", "AggregateKeyHash")
-        ],
-        foreignKeys:
-        [
-            ForeignKey("FK_ProductionDayMetricAggregate_Processor", ["MetricAggregationProcessorRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId"])
-        ],
-        checks:
-        [
-            Check("CK_ProductionDayMetricAggregate_InputCount", "([InputCount]>(0))"),
-            Check("CK_ProductionDayMetricAggregate_InputInterval", "([LastInputTimestamp]>=[FirstInputTimestamp])"),
-            Check("CK_ProductionDayMetricAggregate_UtcOffsets", "(datepart(tzoffset,[FirstInputTimestamp])=(0) AND datepart(tzoffset,[LastInputTimestamp])=(0))")
-        ],
-        indexes:
-        [
-            Index("IX_ProductionDayMetricAggregate_Query", ["MachineId", "ProductionBusinessDate"], ["MetricInputKey", "AggregateValue", "Unit", "InputCount"])
-        ]);
+        primaryKey: PrimaryKey("PK_ProductionDayMetricAggregate", "ProductionDayMetricAggregateRowId")),
 
     private static SqlTableDescriptor ProductionContextProcessor() => Table(
         "ProductionContextProcessor",
         columns:
         [
             IdentityBigInt("ProductionContextProcessorRowId"),
-            Column("ProcessorKeyHash", "binary", 32),
-            Column("ProcessorKeyBinary", "varbinary", 512),
             Column("ProcessorKey", "nvarchar", 256, collation: BinaryCollation),
-            Column("MachineId", "uniqueidentifier"),
-            Column("ObservationStreamKeyHash", "binary", 32),
-            Column("ObservationStreamKeyBinary", "varbinary", 512),
-            Column("ObservationStreamKey", "nvarchar", 256, collation: BinaryCollation)
+            Column("MetricInputStreamRowId", "bigint")
         ],
         primaryKey: PrimaryKey("PK_ProductionContextProcessor", "ProductionContextProcessorRowId"),
         uniques:
         [
-            Unique("UQ_ProductionContextProcessor_Identity", "ProcessorKeyHash", "MachineId", "ObservationStreamKeyHash")
-        ]);
+            Unique("UQ_ProductionContextProcessor_ProcessorKey", "ProcessorKey")
+        ]),
 
     private static SqlTableDescriptor ProductionContextCheckpoint() => Table(
         "ProductionContextCheckpoint",
@@ -321,144 +232,86 @@ internal static class SqlRepositorySchemaDescriptors
             Column("ProductionContextProcessorRowId", "bigint"),
             Decimal("Position", 20, 0)
         ],
-        primaryKey: PrimaryKey("PK_ProductionContextCheckpoint", "ProductionContextProcessorRowId"),
-        foreignKeys:
-        [
-            ForeignKey("FK_ProductionContextCheckpoint_Processor", ["ProductionContextProcessorRowId"], "ProductionContextProcessor", ["ProductionContextProcessorRowId"])
-        ],
-        checks:
-        [
-            Check("CK_ProductionContextCheckpoint_Position_UInt64", "([Position]>=(1) AND [Position]<=(18446744073709551615.))")
-        ]);
+        primaryKey: PrimaryKey("PK_ProductionContextCheckpoint", "ProductionContextProcessorRowId")),
 
-    private static SqlTableDescriptor ContextualizedActivityOutput() => OutputTable(
+    private static SqlTableDescriptor ContextualizedActivityOutput() => Table(
         "ContextualizedActivityOutput",
-        "ContextualizedActivityOutputRowId",
-        "PK_ContextualizedActivityOutput",
-        "UQ_ContextualizedActivityOutput_IdentityHash");
-
-    private static SqlTableDescriptor ProductionTimeEligibilityOutput() => OutputTable(
-        "ProductionTimeEligibilityOutput",
-        "ProductionTimeEligibilityOutputRowId",
-        "PK_ProductionTimeEligibilityOutput",
-        "UQ_ProductionTimeEligibilityOutput_IdentityHash");
-
-    private static SqlTableDescriptor OutputTable(string tableName, string rowId, string primaryKeyName, string uniqueName) => Table(
-        tableName,
         columns:
         [
-            IdentityBigInt(rowId),
-            Column("IdentityHash", "binary", 32),
-            Column("IdentityBinary", "varbinary", 512),
-            Column("IdentityText", "nvarchar", 256, collation: BinaryCollation),
-            Column("PayloadHash", "binary", 32),
-            ColumnMax("Payload", "nvarchar", collation: BinaryCollation)
+            IdentityBigInt("ContextualizedActivityOutputRowId"),
+            Column("ProductionContextProcessorRowId", "bigint"),
+            Column("MachineId", "uniqueidentifier"),
+            Column("StartsAtUtc", "datetimeoffset", precision: 7),
+            Column("EndsAtUtc", "datetimeoffset", precision: 7)
         ],
-        primaryKey: PrimaryKey(primaryKeyName, rowId),
-        uniques: [Unique(uniqueName, "IdentityHash")]);
+        primaryKey: PrimaryKey("PK_ContextualizedActivityOutput", "ContextualizedActivityOutputRowId")),
+
+    private static SqlTableDescriptor ProductionTimeEligibilityOutput() => Table(
+        "ProductionTimeEligibilityOutput",
+        columns:
+        [
+            IdentityBigInt("ProductionTimeEligibilityOutputRowId"),
+            Column("ProductionContextProcessorRowId", "bigint"),
+            Column("MachineId", "uniqueidentifier"),
+            Column("StartsAtUtc", "datetimeoffset", precision: 7),
+            Column("EndsAtUtc", "datetimeoffset", precision: 7)
+        ],
+        primaryKey: PrimaryKey("PK_ProductionTimeEligibilityOutput", "ProductionTimeEligibilityOutputRowId")),
 
     private static SqlTableDescriptor Table(
-        string name,
-        ImmutableArray<SqlColumnDescriptor> columns,
+        string tableName,
+        SqlColumnDescriptor[] columns,
         SqlPrimaryKeyDescriptor? primaryKey = null,
-        ImmutableArray<SqlUniqueConstraintDescriptor> uniques = default,
-        ImmutableArray<SqlForeignKeyDescriptor> foreignKeys = default,
-        ImmutableArray<SqlCheckConstraintDescriptor> checks = default,
-        ImmutableArray<SqlIndexDescriptor> indexes = default) => new(
-            new SqlObjectName("dbo", name),
-            columns,
+        SqlUniqueConstraintDescriptor[]? uniques = null,
+        SqlForeignKeyDescriptor[]? foreignKeys = null,
+        SqlCheckConstraintDescriptor[]? checks = null) => new(
+            new SqlObjectName("dbo", tableName),
+            [.. columns],
             primaryKey,
-            EmptyIfDefault(uniques),
-            EmptyIfDefault(foreignKeys),
-            EmptyIfDefault(checks),
-            EmptyIfDefault(indexes));
+            [.. uniques ?? []],
+            [.. foreignKeys ?? []],
+            [.. checks ?? []],
+            []);
 
     private static SqlColumnDescriptor IdentityBigInt(string name) => new(
         name,
         "bigint",
-        MaxLength: null,
-        Precision: null,
-        Scale: null,
-        IsNullable: false,
-        Collation: null,
-        Identity: new SqlIdentityDescriptor(1m, 1m, IsNotForReplication: false));
-
-    private static SqlColumnDescriptor Decimal(string name, byte precision, byte scale) => new(
-        name,
-        "decimal",
-        MaxLength: null,
-        Precision: precision,
-        Scale: scale,
-        IsNullable: false,
-        Collation: null,
-        Identity: null);
-
-    private static SqlColumnDescriptor DateTimeOffset(string name, byte scale) => new(
-        name,
-        "datetimeoffset",
-        MaxLength: null,
-        Precision: null,
-        Scale: scale,
-        IsNullable: false,
-        Collation: null,
-        Identity: null);
+        null,
+        null,
+        null,
+        false,
+        null,
+        new SqlIdentityDescriptor(1m, 1m, false));
 
     private static SqlColumnDescriptor Column(
         string name,
         string sqlType,
         int? maxLength = null,
+        byte? precision = null,
+        byte? scale = null,
         bool isNullable = false,
         string? collation = null) => new(
             name,
             sqlType,
             maxLength is null ? null : SqlLengthDescriptor.Bounded(maxLength.Value),
-            Precision: null,
-            Scale: null,
+            precision,
+            scale,
             isNullable,
             collation,
-            Identity: null);
+            null);
 
-    private static SqlColumnDescriptor ColumnMax(
+    private static SqlColumnDescriptor Decimal(
         string name,
-        string sqlType,
-        bool isNullable = false,
-        string? collation = null) => new(
-            name,
-            sqlType,
-            SqlLengthDescriptor.Max,
-            Precision: null,
-            Scale: null,
-            isNullable,
-            collation,
-            Identity: null);
+        byte precision,
+        byte scale,
+        bool isNullable = false) =>
+        Column(name, "decimal", precision: precision, scale: scale, isNullable: isNullable);
 
-    private static SqlPrimaryKeyDescriptor PrimaryKey(string name, params string[] columns) => new(
-        name,
-        IndexStructure(isClustered: true, columns));
+    private static SqlPrimaryKeyDescriptor PrimaryKey(string name, params string[] columns) =>
+        new(name, IndexStructure(isClustered: true, columns));
 
-    private static SqlUniqueConstraintDescriptor Unique(string name, params string[] columns) => new(
-        name,
-        IndexStructure(isClustered: false, columns));
-
-    private static SqlIndexDescriptor Index(string name, string[] keys, string[] includes) => new(
-        name,
-        IsUnique: false,
-        IsEnabled: true,
-        new SqlIndexStructureDescriptor(
-            IsClustered: false,
-            KeyColumns: IndexColumns(keys),
-            IncludedColumns: includes.ToImmutableArray(),
-            CanonicalFilterDefinition: null));
-
-    private static SqlIndexStructureDescriptor IndexStructure(bool isClustered, params string[] columns) => new(
-        isClustered,
-        IndexColumns(columns),
-        IncludedColumns: [],
-        CanonicalFilterDefinition: null);
-
-    private static ImmutableArray<SqlIndexColumnDescriptor> IndexColumns(IEnumerable<string> columns) => columns
-        .Select(static (column, index) => new SqlIndexColumnDescriptor(column, SqlIndexColumnDirection.Ascending, index + 1))
-        .ToImmutableArray();
+    private static SqlUniqueConstraintDescriptor Unique(string name, params string[] columns) =>
+        new(name, IndexStructure(isClustered: false, columns));
 
     private static SqlForeignKeyDescriptor ForeignKey(
         string name,
@@ -466,22 +319,30 @@ internal static class SqlRepositorySchemaDescriptors
         string referencedTable,
         string[] referencedColumns) => new(
             name,
-            columns.ToImmutableArray(),
+            [.. columns],
             new SqlObjectName("dbo", referencedTable),
-            referencedColumns.ToImmutableArray(),
+            [.. referencedColumns],
             SqlReferentialAction.NoAction,
             SqlReferentialAction.NoAction,
-            IsEnabled: true,
-            IsTrusted: true,
-            IsNotForReplication: false);
+            true,
+            true,
+            false);
 
     private static SqlCheckConstraintDescriptor Check(string name, string definition) => new(
         name,
         definition,
-        IsEnabled: true,
-        IsTrusted: true,
-        IsNotForReplication: false);
+        true,
+        true,
+        false);
 
-    private static ImmutableArray<T> EmptyIfDefault<T>(ImmutableArray<T> values) =>
-        values.IsDefault ? [] : values;
+    private static SqlIndexStructureDescriptor IndexStructure(
+        bool isClustered,
+        params string[] columns) => new(
+            isClustered,
+            [.. columns.Select(static (column, index) => new SqlIndexColumnDescriptor(
+                column,
+                SqlIndexColumnDirection.Ascending,
+                index + 1))],
+            [],
+            null);
 }
