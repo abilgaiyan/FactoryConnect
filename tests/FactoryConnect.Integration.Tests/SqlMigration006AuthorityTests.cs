@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using FactoryConnect.Persistence.SqlServer;
 
 namespace FactoryConnect.Integration.Tests;
@@ -116,7 +117,7 @@ public sealed class SqlMigration006AuthorityTests
                 migration.Name,
                 migration.Sha256Checksum,
                 appliedAtUtc))
-            .ToArray();
+            .ToImmutableArray();
 
         var post006History = catalog.Migrations
             .Select(migration => new SqlMigrationHistoryRow(
@@ -124,7 +125,7 @@ public sealed class SqlMigration006AuthorityTests
                 migration.Name,
                 migration.Sha256Checksum,
                 appliedAtUtc))
-            .ToArray();
+            .ToImmutableArray();
 
         Assert.Equal(
             SqlRuntimeMigrationHistoryClassification.ExactPrefixPending,
