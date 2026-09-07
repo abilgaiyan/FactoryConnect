@@ -403,7 +403,7 @@ internal static class SqlServerOperationalMetricProjectionRows
         var reasonCode = command.Parameters.Add("@ReasonCode", SqlDbType.TinyInt);
         reasonCode.Value = projection.ReasonCode is null ? DBNull.Value : (byte)projection.ReasonCode.Value;
         AddNullableString(command, "@ReasonOperandName", 256, projection.ReasonOperandName);
-        command.Parameters.Add(SqlServerUInt64.CreateParameter("@SourceRevisionPosition", projection.SourceRevision.Position));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@SourceRevisionPosition", projection.SourceRevision.Position.Value));
     }
 
     private static void AddOptionalIdentity(SqlCommand command, string prefix, string? value, byte[]? orderKey)
