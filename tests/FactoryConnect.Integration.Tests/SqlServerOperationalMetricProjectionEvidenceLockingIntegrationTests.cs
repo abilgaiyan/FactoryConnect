@@ -648,7 +648,7 @@ public sealed class SqlServerOperationalMetricProjectionEvidenceLockingIntegrati
             System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private async Task CleanupHeldWriterAsync(HeldWriter held)
+    private static async Task CleanupHeldWriterAsync(HeldWriter held)
     {
         held.Release.TrySetResult(true);
         if (!held.WriterTask.IsCompleted)
