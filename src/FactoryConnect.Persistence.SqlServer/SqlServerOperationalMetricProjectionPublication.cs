@@ -137,7 +137,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
         return new SqlServerOperationalMetricProjectionPublicationResult(published.ToArray());
     }
 
-    private static IReadOnlyList<SqlServerOperationalMetricProjectionPublishedRow> ResolveExistingPublishedRows(
+    private static SqlServerOperationalMetricProjectionPublishedRow[] ResolveExistingPublishedRows(
         SqlServerOperationalMetricProjectionMutationPlan plan)
     {
         if (plan.ObsoleteProjectionRowIds.Count != 0 ||
@@ -598,12 +598,12 @@ internal static class SqlServerOperationalMetricProjectionPublication
 
         var expectedEvidence = BuildExpectedEvidence(expectedRows);
         var observedEvidence = await ReadEvidenceAsync(context, cancellationToken).ConfigureAwait(false);
-        if (observedEvidence.Count != expectedEvidence.Count)
+        if (observedEvidence.Count != expectedEvidence.Length)
         {
             throw new InvalidOperationException("Operational metric projection evidence count does not exactly match the proposed publication.");
         }
 
-        for (var index = 0; index < expectedEvidence.Count; index++)
+        for (var index = 0; index < expectedEvidence.Length; index++)
         {
             if (!expectedEvidence[index].ExactEquals(observedEvidence[index]))
             {
@@ -612,7 +612,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
         }
     }
 
-    private static IReadOnlyList<ExpectedEvidenceRow> BuildExpectedEvidence(
+    private static ExpectedEvidenceRow[] BuildExpectedEvidence(
         IReadOnlyList<SqlServerOperationalMetricProjectionPublishedRow> publishedRows)
     {
         var result = new List<ExpectedEvidenceRow>();
