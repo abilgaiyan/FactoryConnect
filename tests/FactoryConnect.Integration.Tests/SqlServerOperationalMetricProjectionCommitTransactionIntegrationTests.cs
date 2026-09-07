@@ -188,37 +188,133 @@ public sealed class SqlServerOperationalMetricProjectionCommitTransactionIntegra
     }
 
     [Fact]
-    public async Task ConcurrentInitialCommitForSameProcessorSerializesToAdvanceThenReconcile()
+    public async Task ConcurrentInitialCommitForSameProcessorBlocksSecondWriterUntilFirstCommits()
     {
         var source = await CreateSourceAsync();
         var processorId = new OperationalMetricProjectionProcessorId($"projection-{Guid.NewGuid():N}");
         var commit = CreateEmptyCommit(processorId, expected: null, source.FirstCheckpoint);
-        var modes = new ConcurrentBag<SqlServerOperationalMetricProjectionCommitMode>();
         var first = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
         var second = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
+        var firstBodyEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondBodyEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        SqlServerOperationalMetricProjectionCommitMode? firstMode = null;
+        SqlServerOperationalMetricProjectionCommitMode? secondMode = null;
 
-        await Task.WhenAll(
-            first.ExecuteAsync(
+        var firstTask = first.ExecuteAsync(
+            commit,
+            async (context, cancellationToken) =>
+            {
+                firstMode = context.Mode;
+                firstBodyEntered.TrySetResult(true);
+                await releaseFirst.Task.WaitAsync(cancellationToken);
+            },
+            CancellationToken.None);
+
+        await firstBodyEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var secondTask = Task.Run(async () =>
+        {
+            secondStarted.TrySetResult(true);
+            await second.ExecuteAsync(
                 commit,
                 (context, _) =>
                 {
-                    modes.Add(context.Mode);
+                    secondMode = context.Mode;
+                    secondBodyEntered.TrySetResult(true);
                     return Task.CompletedTask;
                 },
-                CancellationToken.None),
-            second.ExecuteAsync(
+                CancellationToken.None);
+        });
+
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+            Assert.False(secondBodyEntered.Task.IsCompleted);
+            Assert.False(secondTask.IsCompleted);
+        }
+        finally
+        {
+            releaseFirst.TrySetResult(true);
+        }
+
+        await Task.WhenAll(firstTask, secondTask);
+
+        Assert.Equal(SqlServerOperationalMetricProjectionCommitMode.Advance, firstMode);
+        Assert.Equal(SqlServerOperationalMetricProjectionCommitMode.ReconcileProposed, secondMode);
+        Assert.Equal(1, await CountProjectionProcessorsAsync(processorId));
+        Assert.Equal(1, await CountProjectionCheckpointsAsync(processorId));
+    }
+
+    [Fact]
+    public async Task MaximumLengthProcessorIdRoundTripsThroughRealWriter()
+    {
+        var source = await CreateSourceAsync();
+        var processorId = new OperationalMetricProjectionProcessorId(
+            new string('x', StringOrderKeyV2Codec.MaximumCodeUnits));
+        var sut = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
+
+        await sut.ExecuteAsync(
+            CreateEmptyCommit(processorId, expected: null, source.FirstCheckpoint),
+            NoOpBody,
+            CancellationToken.None);
+
+        var header = await sut.ReadCheckpointHeaderAsync(processorId, CancellationToken.None);
+        Assert.NotNull(header);
+        Assert.Equal(source.FirstCheckpoint.Position, header.Position);
+        Assert.Equal(1, await CountProjectionProcessorsAsync(processorId));
+        await AssertProcessorKeyV2Async(processorId);
+    }
+
+    [Fact]
+    public async Task OversizedProcessorIdIsRejectedBeforeSqlExecution()
+    {
+        var source = await CreateSourceAsync();
+        var processorId = new OperationalMetricProjectionProcessorId(
+            new string('x', StringOrderKeyV2Codec.MaximumCodeUnits + 1));
+        var commit = CreateEmptyCommit(processorId, expected: null, source.FirstCheckpoint);
+        var sut = new SqlServerOperationalMetricProjectionCommitTransaction("not-a-connection-string");
+        var bodyCalled = false;
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            sut.ExecuteAsync(
                 commit,
-                (context, _) =>
+                (_, _) =>
                 {
-                    modes.Add(context.Mode);
+                    bodyCalled = true;
                     return Task.CompletedTask;
                 },
                 CancellationToken.None));
 
-        Assert.Equal(2, modes.Count);
-        Assert.Contains(SqlServerOperationalMetricProjectionCommitMode.Advance, modes);
-        Assert.Contains(SqlServerOperationalMetricProjectionCommitMode.ReconcileProposed, modes);
-        Assert.Equal(1, await CountProjectionProcessorsAsync(processorId));
+        Assert.False(bodyCalled);
+    }
+
+    [Fact]
+    public async Task TerminatorLikeProcessorIdsRemainDistinctThroughRealWriter()
+    {
+        var source = await CreateSourceAsync();
+        var plainId = new OperationalMetricProjectionProcessorId("x");
+        var nulId = new OperationalMetricProjectionProcessorId("x\0");
+        var sut = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
+
+        await sut.ExecuteAsync(
+            CreateEmptyCommit(plainId, expected: null, source.FirstCheckpoint),
+            NoOpBody,
+            CancellationToken.None);
+        await sut.ExecuteAsync(
+            CreateEmptyCommit(nulId, expected: null, source.FirstCheckpoint),
+            NoOpBody,
+            CancellationToken.None);
+
+        Assert.NotNull(await sut.ReadCheckpointHeaderAsync(plainId, CancellationToken.None));
+        Assert.NotNull(await sut.ReadCheckpointHeaderAsync(nulId, CancellationToken.None));
+        Assert.Equal(1, await CountProjectionProcessorsAsync(plainId));
+        Assert.Equal(1, await CountProjectionProcessorsAsync(nulId));
+        await AssertProcessorKeyV2Async(plainId);
+        await AssertProcessorKeyV2Async(nulId);
     }
 
     [Fact]
@@ -332,6 +428,25 @@ public sealed class SqlServerOperationalMetricProjectionCommitTransactionIntegra
         command.CommandText =
             "SELECT COUNT(*) FROM dbo.OperationalMetricProjectionProcessor " +
             "WHERE ProcessorKeyBinary = @ProcessorKeyBinary;";
+        command.Parameters.Add("@ProcessorKeyBinary", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength)
+            .Value = StringOrderKeyV2Codec.Encode(processorId.Value);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(),
+            CultureInfo.InvariantCulture);
+    }
+
+    private async Task<int> CountProjectionCheckpointsAsync(
+        OperationalMetricProjectionProcessorId processorId)
+    {
+        await using var connection = new SqlConnection(_fixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) " +
+            "FROM dbo.OperationalMetricProjectionCheckpoint AS c " +
+            "INNER JOIN dbo.OperationalMetricProjectionProcessor AS p " +
+            "ON p.OperationalMetricProjectionProcessorRowId = c.OperationalMetricProjectionProcessorRowId " +
+            "WHERE p.ProcessorKeyBinary = @ProcessorKeyBinary;";
         command.Parameters.Add("@ProcessorKeyBinary", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength)
             .Value = StringOrderKeyV2Codec.Encode(processorId.Value);
         return Convert.ToInt32(
