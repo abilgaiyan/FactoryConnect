@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Data;
+using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -333,7 +334,9 @@ public sealed class SqlServerOperationalMetricProjectionCommitTransactionIntegra
             "WHERE ProcessorKeyBinary = @ProcessorKeyBinary;";
         command.Parameters.Add("@ProcessorKeyBinary", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength)
             .Value = StringOrderKeyV2Codec.Encode(processorId.Value);
-        return Convert.ToInt32(await command.ExecuteScalarAsync());
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(),
+            CultureInfo.InvariantCulture);
     }
 
     private async Task AssertProcessorKeyV2Async(
