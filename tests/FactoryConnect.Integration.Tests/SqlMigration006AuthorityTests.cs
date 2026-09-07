@@ -111,7 +111,7 @@ public sealed class SqlMigration006AuthorityTests
 
         var post005History = catalog.Migrations
             .Take(5)
-            .Select(migration => new SqlMigrationHistoryEntry(
+            .Select(migration => new SqlMigrationHistoryRow(
                 migration.MigrationId,
                 migration.Name,
                 migration.Sha256Checksum,
@@ -119,7 +119,7 @@ public sealed class SqlMigration006AuthorityTests
             .ToArray();
 
         var post006History = catalog.Migrations
-            .Select(migration => new SqlMigrationHistoryEntry(
+            .Select(migration => new SqlMigrationHistoryRow(
                 migration.MigrationId,
                 migration.Name,
                 migration.Sha256Checksum,
