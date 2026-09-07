@@ -104,10 +104,10 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
         ArgumentNullException.ThrowIfNull(commit);
         ArgumentNullException.ThrowIfNull(body);
 
+        var processorKeyBinary = StringOrderKeyV2Codec.Encode(commit.ProcessorId.Value);
         var sourceBinding = await ResolveSourceBindingAsync(
             commit.ProposedCheckpoint.SourceRevision,
             cancellationToken);
-        var processorKeyBinary = StringOrderKeyV2Codec.Encode(commit.ProcessorId.Value);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
