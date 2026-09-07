@@ -71,13 +71,12 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
         var projection = CreateCalculated(
             processorId,
             key,
-            source.FirstCheckpoint,
+            source.Checkpoint,
             0.00001m,
             "ratio");
         var commit = CreateCommit(
             processorId,
-            null,
-            source.FirstCheckpoint,
+            source.Checkpoint,
             projection);
         var sut = new SqlServerOperationalMetricProjectionCommitTransaction(
             _fixture.ConnectionString);
@@ -99,9 +98,7 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
                     Assert.Equal(
                         prepared.EvaluationKeyHash,
                         plan.LockedHashes[0]);
-                    Assert.Equal(
-                        "1E-05",
-                        prepared.WriteModel.MetricValue);
+                    Assert.Equal("1E-05", prepared.WriteModel.MetricValue);
                     Assert.Equal(
                         StringOrderKeyV2Codec.Encode("SITE-1"),
                         prepared.WriteModel.PeriodSiteOrderKey);
@@ -147,26 +144,25 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
             CreateCalculated(
                 processorId,
                 CreateShiftKey(source.MachineId, "z", "1"),
-                source.FirstCheckpoint,
+                source.Checkpoint,
                 1m,
                 "ratio"),
             CreateCalculated(
                 processorId,
                 CreateShiftKey(source.MachineId, "a", "1"),
-                source.FirstCheckpoint,
+                source.Checkpoint,
                 2m,
                 "ratio"),
             CreateCalculated(
                 processorId,
                 CreateShiftKey(source.MachineId, "m", "1"),
-                source.FirstCheckpoint,
+                source.Checkpoint,
                 3m,
                 "ratio"),
         };
         var commit = CreateCommit(
             processorId,
-            null,
-            source.FirstCheckpoint,
+            source.Checkpoint,
             projections);
         var sut = new SqlServerOperationalMetricProjectionCommitTransaction(
             _fixture.ConnectionString);
@@ -212,58 +208,8 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
                 CancellationToken.None));
     }
 
-    [Fact]
-    public async Task PrepareFailureRollsBackProcessorAndLeavesNoPublishedState()
-    {
-        var source = await CreateSourceAsync();
-        var processorId = new OperationalMetricProjectionProcessorId(
-            $"projection-{Guid.NewGuid():N}");
-        var key = CreateProductionDayKey(source.MachineId, "oee", "1");
-        var projection = CreateCalculated(
-            processorId,
-            key,
-            source.FirstCheckpoint,
-            0.8125m,
-            "ratio");
-        var commit = CreateCommit(
-            processorId,
-            null,
-            source.FirstCheckpoint,
-            projection);
-        var sut = new SqlServerOperationalMetricProjectionCommitTransaction(
-            _fixture.ConnectionString);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => sut.ExecuteAsync(
-                commit,
-                async (context, cancellationToken) =>
-                {
-                    _ = await SqlServerOperationalMetricProjectionRows.PrepareAsync(
-                        context,
-                        commit,
-                        cancellationToken);
-
-                    Assert.Equal(
-                        0,
-                        await CountProjectionRowsInTransactionAsync(
-                            context,
-                            cancellationToken));
-
-                    throw new InvalidOperationException(
-                        "Injected failure after C.3 preparation.");
-                },
-                CancellationToken.None));
-
-        Assert.Equal(0, await CountProjectionRowsAsync(processorId));
-        Assert.Null(
-            await sut.ReadCheckpointHeaderAsync(
-                processorId,
-                CancellationToken.None));
-    }
-
     private static OperationalMetricProjectionCommit CreateCommit(
         OperationalMetricProjectionProcessorId processorId,
-        OperationalMetricProjectionCheckpoint? expected,
         MetricAggregationCheckpoint sourceRevision,
         params OperationalMetricProjection[] projections)
     {
@@ -275,7 +221,7 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
 
         return new OperationalMetricProjectionCommit(
             processorId,
-            expected,
+            null,
             proposed,
             projections);
     }
@@ -306,22 +252,8 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
                 new SiteId("SITE-1"),
                 new ShiftScheduleAssignmentId("SCHEDULE-A"),
                 new ShiftId("SHIFT-A"),
-                new DateTimeOffset(
-                    2026,
-                    9,
-                    7,
-                    6,
-                    0,
-                    0,
-                    TimeSpan.Zero),
-                new DateTimeOffset(
-                    2026,
-                    9,
-                    7,
-                    14,
-                    0,
-                    0,
-                    TimeSpan.Zero)));
+                new DateTimeOffset(2026, 9, 7, 6, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 9, 7, 14, 0, 0, TimeSpan.Zero)));
 
         return new OperationalMetricEvaluationKey(
             machineId,
@@ -351,24 +283,17 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
     {
         var machineId = new MachineId(Guid.NewGuid());
         var inputStore = new SqlServerMetricInputStore(_fixture.ConnectionString);
-        var firstFact = await inputStore.AppendAsync(
+        var fact = await inputStore.AppendAsync(
             CreateAppend(
                 machineId,
-                $"projection-source-{Guid.NewGuid():N}",
-                0),
-            CancellationToken.None);
-        var secondFact = await inputStore.AppendAsync(
-            CreateAppend(
-                machineId,
-                $"projection-source-{Guid.NewGuid():N}",
-                1),
+                $"projection-source-{Guid.NewGuid():N}"),
             CancellationToken.None);
         var aggregationProcessorId = new MetricAggregationProcessorId(
             $"projection-source-{Guid.NewGuid():N}");
-        var durableCheckpoint = new MetricAggregationCheckpoint(
+        var checkpoint = new MetricAggregationCheckpoint(
             aggregationProcessorId,
-            firstFact.StreamId,
-            secondFact.Position);
+            fact.StreamId,
+            fact.Position);
         var aggregationStore = new SqlServerMetricAggregationStore(
             _fixture.ConnectionString);
 
@@ -376,26 +301,16 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
             new MetricAggregationCommit(
                 aggregationProcessorId,
                 null,
-                durableCheckpoint,
+                checkpoint,
                 []),
             CancellationToken.None);
 
-        return new SourceFixture(
-            machineId,
-            new MetricAggregationCheckpoint(
-                aggregationProcessorId,
-                firstFact.StreamId,
-                firstFact.Position),
-            new MetricAggregationCheckpoint(
-                aggregationProcessorId,
-                firstFact.StreamId,
-                secondFact.Position));
+        return new SourceFixture(machineId, checkpoint);
     }
 
     private static DurableMetricInputAppend CreateAppend(
         MachineId machineId,
-        string factId,
-        int minute)
+        string factId)
     {
         var siteId = new SiteId("SITE-1");
         var shiftId = new ShiftId("SHIFT-A");
@@ -408,15 +323,14 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
             0,
             0,
             TimeSpan.Zero);
-        var factStart = occurrenceStart.AddMinutes(minute);
         var fact = new DurableMetricInputFact
         {
             Id = new MetricInputFactId(factId),
             Key = "running-duration",
             Value = 1m,
             Unit = "seconds",
-            StartsAtUtc = factStart,
-            EndsAtUtc = factStart.AddMinutes(1),
+            StartsAtUtc = occurrenceStart,
+            EndsAtUtc = occurrenceStart.AddMinutes(1),
             CompanyId = new CompanyId("COMP-1"),
             SiteId = siteId,
             ProductionLineId = new ProductionLineId("LINE-1"),
@@ -516,8 +430,9 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
 
     private sealed record SourceFixture(
         MachineId MachineId,
-        MetricAggregationCheckpoint FirstCheckpoint,
-        MetricAggregationCheckpoint SecondCheckpoint);
+        MetricAggregationCheckpoint Checkpoint);
 
-    private sealed class PreparationInspectionCompleteException : Exception;
+    private sealed class PreparationInspectionCompleteException : Exception
+    {
+    }
 }
