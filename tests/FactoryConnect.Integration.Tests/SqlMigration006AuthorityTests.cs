@@ -83,11 +83,11 @@ public sealed class SqlMigration006AuthorityTests
                 new SqlObjectName("dbo", "OperationalMetricProjectionProcessor"),
                 newForeignKey.ReferencedTable);
             Assert.Equal(
-                ["OperationalMetricProjectionProcessorRowId"],
-                newForeignKey.Columns);
+                "OperationalMetricProjectionProcessorRowId",
+                Assert.Single(newForeignKey.Columns));
             Assert.Equal(
-                ["OperationalMetricProjectionProcessorRowId"],
-                newForeignKey.ReferencedColumns);
+                "OperationalMetricProjectionProcessorRowId",
+                Assert.Single(newForeignKey.ReferencedColumns));
             Assert.True(newForeignKey.IsEnabled);
             Assert.True(newForeignKey.IsTrusted);
             Assert.False(newForeignKey.IsNotForReplication);
