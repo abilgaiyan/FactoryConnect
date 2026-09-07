@@ -303,7 +303,7 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
                 SELECT TOP (1)
                     r.wait_type,
                     r.wait_resource,
-                    r.blocking_session_id,
+                    CAST(r.blocking_session_id AS int),
                     i.name
                 FROM sys.dm_exec_requests AS r
                 INNER JOIN sys.dm_tran_locks AS l
