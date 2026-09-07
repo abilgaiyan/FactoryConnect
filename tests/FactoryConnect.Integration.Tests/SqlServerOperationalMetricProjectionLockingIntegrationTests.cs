@@ -20,22 +20,15 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
     }
 
     [Fact]
-    public async Task SerializableProcessorPrefixAcquisitionExcludesExistingProjectionIdentity()
+    public async Task ProductionPrepareExcludesExistingProjectionIdentityUntilRollback()
     {
         var published = await CreatePublishedProcessorAsync(seedProjection: true);
-        Assert.NotNull(published.SeededEvaluationKeyHash);
+        Assert.NotNull(published.SeededProjection);
 
-        await using var ownerConnection = _fixture.CreateConnection();
-        await ownerConnection.OpenAsync();
-        await using var ownerTransaction = (SqlTransaction)await ownerConnection.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            CancellationToken.None);
-
-        await AcquireProcessorPrefixAsync(
-            ownerConnection,
-            ownerTransaction,
-            published.ProjectionProcessorRowId,
-            CancellationToken.None);
+        var held = HoldProductionPreparationAsync(
+            published,
+            [published.SeededProjection!]);
+        await held.PreparationComplete.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var contenderConnection = _fixture.CreateConnection();
         await contenderConnection.OpenAsync();
@@ -43,39 +36,31 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
             ProbeProjectionIdentityWithZeroWaitAsync(
                 contenderConnection,
                 published.ProjectionProcessorRowId,
-                published.SeededEvaluationKeyHash!,
+                published.SeededProjection!.EvaluationKeyHash,
                 CancellationToken.None));
 
         Assert.Equal(LockRequestTimeoutNumber, exception.Number);
 
-        await ownerTransaction.RollbackAsync(CancellationToken.None);
+        held.Release.TrySetResult(true);
+        await Assert.ThrowsAsync<PreparationInspectionCompleteException>(() => held.WriterTask);
 
         Assert.True(await ProbeProjectionIdentityWithZeroWaitAsync(
             contenderConnection,
             published.ProjectionProcessorRowId,
-            published.SeededEvaluationKeyHash!,
+            published.SeededProjection!.EvaluationKeyHash,
             CancellationToken.None));
     }
 
     [Fact]
-    public async Task SerializableProcessorPrefixAcquisitionExcludesMissingProjectionIdentityRange()
+    public async Task ProductionPrepareExcludesMissingIdentityInEmptyProcessorRangeUntilRollback()
     {
         var published = await CreatePublishedProcessorAsync(seedProjection: false);
-        var missingKey = CreateShiftKey(published.MachineId, "missing-range", "1");
+        var missingKey = CreateShiftKey(published.MachineId, "missing-empty-range", "1");
         var missingHash = OperationalMetricEvaluationKeyV1Codec.ComputeHash(
             OperationalMetricEvaluationKeyV1Codec.Encode(missingKey));
 
-        await using var ownerConnection = _fixture.CreateConnection();
-        await ownerConnection.OpenAsync();
-        await using var ownerTransaction = (SqlTransaction)await ownerConnection.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            CancellationToken.None);
-
-        await AcquireProcessorPrefixAsync(
-            ownerConnection,
-            ownerTransaction,
-            published.ProjectionProcessorRowId,
-            CancellationToken.None);
+        var held = HoldProductionPreparationAsync(published, []);
+        await held.PreparationComplete.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var contenderConnection = _fixture.CreateConnection();
         await contenderConnection.OpenAsync();
@@ -88,7 +73,8 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
 
         Assert.Equal(LockRequestTimeoutNumber, exception.Number);
 
-        await ownerTransaction.RollbackAsync(CancellationToken.None);
+        held.Release.TrySetResult(true);
+        await Assert.ThrowsAsync<PreparationInspectionCompleteException>(() => held.WriterTask);
 
         Assert.False(await ProbeProjectionIdentityWithZeroWaitAsync(
             contenderConnection,
@@ -98,38 +84,131 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
     }
 
     [Fact]
-    public async Task SerializableProcessorPrefixAcquisitionRejectsCompetingSameProcessorProjectionStage()
+    public async Task ProductionPrepareExcludesMissingHashInsideNonemptyProcessorRangeUntilRollback()
     {
         var published = await CreatePublishedProcessorAsync(seedProjection: true);
+        Assert.NotNull(published.SeededProjection);
+        var missingKey = CreateShiftKey(published.MachineId, "missing-nonempty-range", "1");
+        var missingHash = OperationalMetricEvaluationKeyV1Codec.ComputeHash(
+            OperationalMetricEvaluationKeyV1Codec.Encode(missingKey));
+        Assert.False(missingHash.AsSpan().SequenceEqual(published.SeededProjection!.EvaluationKeyHash));
 
-        await using var ownerConnection = _fixture.CreateConnection();
-        await ownerConnection.OpenAsync();
-        await using var ownerTransaction = (SqlTransaction)await ownerConnection.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            CancellationToken.None);
-
-        await AcquireProcessorPrefixAsync(
-            ownerConnection,
-            ownerTransaction,
-            published.ProjectionProcessorRowId,
-            CancellationToken.None);
+        var held = HoldProductionPreparationAsync(
+            published,
+            [published.SeededProjection!]);
+        await held.PreparationComplete.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         await using var contenderConnection = _fixture.CreateConnection();
         await contenderConnection.OpenAsync();
         var exception = await Assert.ThrowsAsync<SqlException>(() =>
-            AcquireProcessorPrefixWithZeroWaitAsync(
+            ProbeProjectionIdentityWithZeroWaitAsync(
                 contenderConnection,
                 published.ProjectionProcessorRowId,
+                missingHash,
                 CancellationToken.None));
 
         Assert.Equal(LockRequestTimeoutNumber, exception.Number);
 
-        await ownerTransaction.RollbackAsync(CancellationToken.None);
+        held.Release.TrySetResult(true);
+        await Assert.ThrowsAsync<PreparationInspectionCompleteException>(() => held.WriterTask);
 
-        await AcquireProcessorPrefixWithZeroWaitAsync(
+        Assert.False(await ProbeProjectionIdentityWithZeroWaitAsync(
             contenderConnection,
             published.ProjectionProcessorRowId,
+            missingHash,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DistinctProcessorsCompleteProductionPreparationIndependently()
+    {
+        var processorA = await CreatePublishedProcessorAsync(seedProjection: true);
+        var processorB = await CreatePublishedProcessorAsync(seedProjection: true);
+        Assert.NotNull(processorA.SeededProjection);
+        Assert.NotNull(processorB.SeededProjection);
+
+        var heldA = HoldProductionPreparationAsync(
+            processorA,
+            [processorA.SeededProjection!]);
+        await heldA.PreparationComplete.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var transactionB = new SqlServerOperationalMetricProjectionCommitTransaction(
+            _fixture.ConnectionString);
+        var commitB = CreateReplayCommit(
+            processorB,
+            [processorB.SeededProjection!.Projection]);
+        var preparationBCompleted = false;
+
+        var writerB = transactionB.ExecuteAsync(
+            commitB,
+            async (context, cancellationToken) =>
+            {
+                var plan = await SqlServerOperationalMetricProjectionRows.PrepareAsync(
+                    context,
+                    commitB,
+                    cancellationToken);
+                Assert.Single(plan.ProposedRows);
+                Assert.NotNull(plan.ProposedRows[0].ExistingProjectionRowId);
+                preparationBCompleted = true;
+                throw new PreparationInspectionCompleteException();
+            },
             CancellationToken.None);
+
+        await Assert.ThrowsAsync<PreparationInspectionCompleteException>(
+            () => writerB.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.True(preparationBCompleted);
+        Assert.False(heldA.Release.Task.IsCompleted);
+
+        heldA.Release.TrySetResult(true);
+        await Assert.ThrowsAsync<PreparationInspectionCompleteException>(() => heldA.WriterTask);
+    }
+
+    private HeldPreparation HoldProductionPreparationAsync(
+        PublishedProcessorFixture published,
+        IReadOnlyList<SeededProjectionFixture> proposed)
+    {
+        var preparationComplete = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var transaction = new SqlServerOperationalMetricProjectionCommitTransaction(
+            _fixture.ConnectionString);
+        var commit = CreateReplayCommit(
+            published,
+            proposed.Select(static item => item.Projection).ToArray());
+
+        var writerTask = transaction.ExecuteAsync(
+            commit,
+            async (context, cancellationToken) =>
+            {
+                var plan = await SqlServerOperationalMetricProjectionRows.PrepareAsync(
+                    context,
+                    commit,
+                    cancellationToken);
+                Assert.Equal(proposed.Count, plan.ProposedRows.Count);
+                preparationComplete.TrySetResult(true);
+                await release.Task.WaitAsync(cancellationToken);
+                throw new PreparationInspectionCompleteException();
+            },
+            CancellationToken.None);
+
+        return new HeldPreparation(preparationComplete, release, writerTask);
+    }
+
+    private static OperationalMetricProjectionCommit CreateReplayCommit(
+        PublishedProcessorFixture published,
+        IReadOnlyList<OperationalMetricProjection> projections)
+    {
+        var proposedCheckpoint = new OperationalMetricProjectionCheckpoint(
+            published.ProcessorId,
+            published.SourceCheckpoint,
+            new OperationalMetricProjectionBatchManifest(
+                projections.Select(static projection => projection.Key)));
+        return new OperationalMetricProjectionCommit(
+            published.ProcessorId,
+            expectedCheckpoint: null,
+            proposedCheckpoint,
+            projections);
     }
 
     private async Task<PublishedProcessorFixture> CreatePublishedProcessorAsync(bool seedProjection)
@@ -158,20 +237,32 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
             CancellationToken.None);
         Assert.NotNull(header);
 
-        byte[]? seededHash = null;
+        SeededProjectionFixture? seededProjection = null;
         if (seedProjection)
         {
             var key = CreateShiftKey(source.MachineId, "availability", "1");
-            seededHash = await SeedProjectionAndManifestAsync(
+            var projection = new OperationalMetricProjection(
+                processorId,
+                key,
+                OperationalMetricEvaluationStatus.Calculated,
+                0.5m,
+                "ratio",
+                reasonCode: null,
+                reasonOperandName: null,
+                source.Checkpoint);
+            var hash = await SeedProjectionAndManifestAsync(
                 header.ProjectionProcessorRowId,
                 source.Checkpoint,
                 key);
+            seededProjection = new SeededProjectionFixture(projection, hash);
         }
 
         return new PublishedProcessorFixture(
+            processorId,
             source.MachineId,
+            source.Checkpoint,
             header.ProjectionProcessorRowId,
-            seededHash);
+            seededProjection);
     }
 
     private async Task<byte[]> SeedProjectionAndManifestAsync(
@@ -316,33 +407,10 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
         return hash;
     }
 
-    private static async Task AcquireProcessorPrefixAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long projectionProcessorRowId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            SELECT EvaluationKeyHash
-            FROM dbo.OperationalMetricProjection WITH
-                (UPDLOCK, HOLDLOCK, INDEX(UQ_OperationalMetricProjection_LogicalHash))
-            WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId
-            ORDER BY EvaluationKeyHash;
-            """;
-        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value =
-            projectionProcessorRowId;
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-        }
-    }
-
-    private static async Task AcquireProcessorPrefixWithZeroWaitAsync(
+    private static async Task<bool> ProbeProjectionIdentityWithZeroWaitAsync(
         SqlConnection connection,
         long projectionProcessorRowId,
+        byte[] evaluationKeyHash,
         CancellationToken cancellationToken)
     {
         await SetZeroLockTimeoutAsync(connection, cancellationToken);
@@ -351,12 +419,23 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
             cancellationToken);
         try
         {
-            await AcquireProcessorPrefixAsync(
-                connection,
-                transaction,
-                projectionProcessorRowId,
-                cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SELECT OperationalMetricProjectionRowId
+                FROM dbo.OperationalMetricProjection WITH
+                    (UPDLOCK, HOLDLOCK, INDEX(UQ_OperationalMetricProjection_LogicalHash))
+                WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId
+                  AND EvaluationKeyHash = @Hash;
+                """;
+            command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value =
+                projectionProcessorRowId;
+            command.Parameters.Add("@Hash", SqlDbType.Binary, 32).Value =
+                evaluationKeyHash;
+
+            var result = await command.ExecuteScalarAsync(cancellationToken);
             await transaction.RollbackAsync(CancellationToken.None);
+            return result is not null;
         }
         catch
         {
@@ -370,29 +449,6 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
 
             throw;
         }
-    }
-
-    private static async Task<bool> ProbeProjectionIdentityWithZeroWaitAsync(
-        SqlConnection connection,
-        long projectionProcessorRowId,
-        byte[] evaluationKeyHash,
-        CancellationToken cancellationToken)
-    {
-        await SetZeroLockTimeoutAsync(connection, cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT OperationalMetricProjectionRowId
-            FROM dbo.OperationalMetricProjection WITH
-                (UPDLOCK, HOLDLOCK, INDEX(UQ_OperationalMetricProjection_LogicalHash))
-            WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId
-              AND EvaluationKeyHash = @Hash;
-            """;
-        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value =
-            projectionProcessorRowId;
-        command.Parameters.Add("@Hash", SqlDbType.Binary, 32).Value =
-            evaluationKeyHash;
-
-        return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
     private static async Task SetZeroLockTimeoutAsync(
@@ -506,8 +562,23 @@ public sealed class SqlServerOperationalMetricProjectionLockingIntegrationTests 
         MachineId MachineId,
         MetricAggregationCheckpoint Checkpoint);
 
+    private sealed record SeededProjectionFixture(
+        OperationalMetricProjection Projection,
+        byte[] EvaluationKeyHash);
+
     private sealed record PublishedProcessorFixture(
+        OperationalMetricProjectionProcessorId ProcessorId,
         MachineId MachineId,
+        MetricAggregationCheckpoint SourceCheckpoint,
         long ProjectionProcessorRowId,
-        byte[]? SeededEvaluationKeyHash);
+        SeededProjectionFixture? SeededProjection);
+
+    private sealed record HeldPreparation(
+        TaskCompletionSource<bool> PreparationComplete,
+        TaskCompletionSource<bool> Release,
+        Task WriterTask);
+
+    private sealed class PreparationInspectionCompleteException : Exception
+    {
+    }
 }
