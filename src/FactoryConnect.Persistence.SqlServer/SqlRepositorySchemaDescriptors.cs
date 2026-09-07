@@ -8,8 +8,11 @@ internal static class SqlRepositorySchemaDescriptors
 
     public static SqlSchemaDescriptor LegacyPost004 { get; } = CreatePost004();
 
-    public static SqlSchemaDescriptor Current { get; } =
+    public static SqlSchemaDescriptor Post005 { get; } =
         SqlRepositoryPost005SchemaDescriptor.Create(LegacyPost004);
+
+    public static SqlSchemaDescriptor Current { get; } =
+        SqlRepositoryPost006SchemaDescriptor.Create(Post005);
 
     private static SqlSchemaDescriptor CreatePost004() => new(
     [
@@ -207,7 +210,7 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         foreignKeys:
         [
-            ForeignKey("FK_MetricAggregationContribution_ProcessorStream", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"]),
+            ForeignKey("FK_MetricAggregationContribution_ProcessorStream", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId", "MetricInputStreamStreamRowId"]),
             ForeignKey("FK_MetricAggregationContribution_FactStreamPosition", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"], "MetricInputFact", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"])
         ],
         checks:
