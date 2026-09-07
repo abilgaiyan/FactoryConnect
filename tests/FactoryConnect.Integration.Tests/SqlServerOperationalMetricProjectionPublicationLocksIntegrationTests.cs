@@ -82,7 +82,11 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                     Assert.Equal(published.RowIds[0], evidence.OperationalMetricProjectionRowId);
                     Assert.Equal((byte)1, evidence.EvidenceKind);
                     Assert.Equal(0, evidence.EvidenceOrdinal);
-                    await AssertZeroPublicationMutationAsync(context, cancellationToken, expectedRows: 1, expectedEvidence: 1);
+                    await AssertZeroPublicationMutationAsync(
+                        context,
+                        cancellationToken,
+                        expectedRows: 1,
+                        expectedEvidence: 1);
                     throw new InspectionCompleteException();
                 },
                 CancellationToken.None));
@@ -111,10 +115,17 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                         commit,
                         cancellationToken);
 
-                    Assert.Equal(published.RowIds[0], Assert.Single(prepared.ProjectionPlan.ProposedRows).ExistingProjectionRowId);
-                    Assert.Equal([published.RowIds[1]], prepared.ProjectionPlan.ObsoleteProjectionRowIds);
+                    Assert.Equal(
+                        published.RowIds[0],
+                        Assert.Single(prepared.ProjectionPlan.ProposedRows).ExistingProjectionRowId);
+                    Assert.Equal(
+                        [published.RowIds[1]],
+                        prepared.ProjectionPlan.ObsoleteProjectionRowIds);
                     Assert.Equal(published.RowIds, prepared.Locks.ManifestProjectionRowIds);
-                    await AssertZeroPublicationMutationAsync(context, cancellationToken, expectedRows: 2);
+                    await AssertZeroPublicationMutationAsync(
+                        context,
+                        cancellationToken,
+                        expectedRows: 2);
                     throw new InspectionCompleteException();
                 },
                 CancellationToken.None));
@@ -139,9 +150,14 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                         cancellationToken);
 
                     Assert.Empty(prepared.ProjectionPlan.ProposedRows);
-                    Assert.Equal(published.RowIds, prepared.ProjectionPlan.ObsoleteProjectionRowIds);
+                    Assert.Equal(
+                        published.RowIds,
+                        prepared.ProjectionPlan.ObsoleteProjectionRowIds);
                     Assert.Equal(published.RowIds, prepared.Locks.ManifestProjectionRowIds);
-                    await AssertZeroPublicationMutationAsync(context, cancellationToken, expectedRows: 2);
+                    await AssertZeroPublicationMutationAsync(
+                        context,
+                        cancellationToken,
+                        expectedRows: 2);
                     throw new InspectionCompleteException();
                 },
                 CancellationToken.None));
@@ -201,26 +217,57 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
 
         var entered = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
         var sut = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
-        var writer = sut.ExecuteAsync(
-            commit,
-            async (context, cancellationToken) =>
+        Task? writer = null;
+
+        try
+        {
+            writer = sut.ExecuteAsync(
+                commit,
+                async (context, cancellationToken) =>
+                {
+                    entered.TrySetResult(await ReadSessionIdAsync(context, cancellationToken));
+                    await SqlServerOperationalMetricProjectionPublicationLocks.PrepareAsync(
+                        context,
+                        commit,
+                        cancellationToken);
+                    throw new InspectionCompleteException();
+                },
+                CancellationToken.None);
+
+            var writerSessionId = await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            var wait = await WaitForManifestLockWaitAsync(
+                writerSessionId,
+                TimeSpan.FromSeconds(10));
+
+            Assert.Equal("OperationalMetricProjectionManifest", wait.ResourceDescription);
+            Assert.False(await HasGrantedEvidenceKeyLockAsync(writerSessionId));
+
+            await blockerTransaction.RollbackAsync(CancellationToken.None);
+            await Assert.ThrowsAsync<InspectionCompleteException>(() => writer);
+        }
+        finally
+        {
+            try
             {
-                entered.TrySetResult(await ReadSessionIdAsync(context, cancellationToken));
-                await SqlServerOperationalMetricProjectionPublicationLocks.PrepareAsync(
-                    context,
-                    commit,
-                    cancellationToken);
-                throw new InspectionCompleteException();
-            },
-            CancellationToken.None);
+                await blockerTransaction.RollbackAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already rolled back by the successful proof path.
+            }
 
-        var writerSessionId = await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        var wait = await WaitForLockWaitAsync(writerSessionId, TimeSpan.FromSeconds(10));
-        Assert.Contains("OperationalMetricProjectionManifest", wait.ResourceDescription, StringComparison.Ordinal);
-        Assert.False(await HasGrantedEvidenceKeyLockAsync(writerSessionId));
-
-        await blockerTransaction.RollbackAsync(CancellationToken.None);
-        await Assert.ThrowsAsync<InspectionCompleteException>(() => writer);
+            if (writer is not null && !writer.IsCompleted)
+            {
+                try
+                {
+                    await writer.WaitAsync(TimeSpan.FromSeconds(10));
+                }
+                catch
+                {
+                    // Cleanup only; the primary assertion is preserved by xUnit.
+                }
+            }
+        }
     }
 
     [Fact]
@@ -245,12 +292,18 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                         context,
                         commit,
                         cancellationToken);
-                    await AssertZeroPublicationMutationAsync(context, cancellationToken, expectedRows: 1, expectedEvidence: 1);
+                    await AssertZeroPublicationMutationAsync(
+                        context,
+                        cancellationToken,
+                        expectedRows: 1,
+                        expectedEvidence: 1);
                     throw new InspectionCompleteException();
                 },
                 CancellationToken.None));
 
-        var header = await sut.ReadCheckpointHeaderAsync(published.ProcessorId, CancellationToken.None);
+        var header = await sut.ReadCheckpointHeaderAsync(
+            published.ProcessorId,
+            CancellationToken.None);
         Assert.NotNull(header);
         Assert.Equal(published.Source.Checkpoint.Position, header.Position);
         Assert.Equal(1, await CountProjectionRowsAsync(published.ProcessorId));
@@ -258,27 +311,47 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         Assert.Equal(1, await CountEvidenceRowsAsync(published.ProcessorId));
     }
 
-    private async Task<PublishedFixture> CreatePublishedAsync(int projectionCount, bool includeEvidence)
+    private async Task<PublishedFixture> CreatePublishedAsync(
+        int projectionCount,
+        bool includeEvidence)
     {
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId();
         var initial = CreateInitialCommit(processorId, source.Checkpoint, []);
-        var transaction = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
-        await transaction.ExecuteAsync(initial, static (_, _) => Task.CompletedTask, CancellationToken.None);
-        var header = await transaction.ReadCheckpointHeaderAsync(processorId, CancellationToken.None);
+        var transaction = new SqlServerOperationalMetricProjectionCommitTransaction(
+            _fixture.ConnectionString);
+        await transaction.ExecuteAsync(
+            initial,
+            static (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+        var header = await transaction.ReadCheckpointHeaderAsync(
+            processorId,
+            CancellationToken.None);
         Assert.NotNull(header);
 
         var keys = Enumerable.Range(0, projectionCount)
-            .Select(index => CreateShiftKey(source.MachineId, $"metric-{index:D2}", "1"))
+            .Select(index => CreateShiftKey(
+                source.MachineId,
+                $"metric-{index:D2}",
+                "1"))
             .ToArray();
         var rowIds = new List<long>();
         foreach (var key in keys)
         {
-            rowIds.Add(await SeedProjectionAsync(header.ProjectionProcessorRowId, source.Checkpoint, key, includeEvidence));
+            rowIds.Add(await SeedProjectionAsync(
+                header.ProjectionProcessorRowId,
+                source.Checkpoint,
+                key,
+                includeEvidence));
         }
 
         rowIds.Sort();
-        return new PublishedFixture(processorId, source, header.ProjectionProcessorRowId, keys, rowIds.ToArray());
+        return new PublishedFixture(
+            processorId,
+            source,
+            header.ProjectionProcessorRowId,
+            keys,
+            rowIds.ToArray());
     }
 
     private async Task<long> SeedProjectionAsync(
@@ -293,21 +366,50 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
 
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
+            IsolationLevel.Serializable);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO dbo.OperationalMetricProjection
             (
-                OperationalMetricProjectionProcessorRowId, EvaluationKeyCodecVersion, EvaluationKeyHash, EvaluationKeyBinary,
-                MachineId, PeriodKind, PeriodSiteId, PeriodSiteOrderKey,
-                ShiftScheduleAssignmentId, ShiftScheduleAssignmentOrderKey, ShiftId, ShiftOrderKey,
-                ShiftStartsAtUtc, ShiftEndsAtUtc, ProductionBusinessDate,
-                ProductionOrderPresent, ProductionOrderId, ProductionOrderOrderKey,
-                OperationPresent, OperationId, OperationOrderKey, PartPresent, PartId, PartOrderKey,
-                OperatorPresent, OperatorId, OperatorOrderKey,
-                MetricKey, MetricKeyOrderKey, DefinitionVersion, DefinitionVersionOrderKey,
-                Status, MetricValue, Unit, ReasonCode, ReasonOperandName, SourceRevisionPosition
+                OperationalMetricProjectionProcessorRowId,
+                EvaluationKeyCodecVersion,
+                EvaluationKeyHash,
+                EvaluationKeyBinary,
+                MachineId,
+                PeriodKind,
+                PeriodSiteId,
+                PeriodSiteOrderKey,
+                ShiftScheduleAssignmentId,
+                ShiftScheduleAssignmentOrderKey,
+                ShiftId,
+                ShiftOrderKey,
+                ShiftStartsAtUtc,
+                ShiftEndsAtUtc,
+                ProductionBusinessDate,
+                ProductionOrderPresent,
+                ProductionOrderId,
+                ProductionOrderOrderKey,
+                OperationPresent,
+                OperationId,
+                OperationOrderKey,
+                PartPresent,
+                PartId,
+                PartOrderKey,
+                OperatorPresent,
+                OperatorId,
+                OperatorOrderKey,
+                MetricKey,
+                MetricKeyOrderKey,
+                DefinitionVersion,
+                DefinitionVersionOrderKey,
+                Status,
+                MetricValue,
+                Unit,
+                ReasonCode,
+                ReasonOperandName,
+                SourceRevisionPosition
             )
             OUTPUT INSERTED.OperationalMetricProjectionRowId
             VALUES
@@ -316,7 +418,10 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                 @MachineId, 1, @SiteId, @SiteOrderKey,
                 @ScheduleId, @ScheduleOrderKey, @ShiftId, @ShiftOrderKey,
                 @StartsAtUtc, @EndsAtUtc, NULL,
-                0, NULL, NULL, 0, NULL, NULL, 0, NULL, NULL, 0, NULL, NULL,
+                0, NULL, NULL,
+                0, NULL, NULL,
+                0, NULL, NULL,
+                0, NULL, NULL,
                 @MetricKey, @MetricOrderKey, @Version, @VersionOrderKey,
                 0, N'0.5', N'ratio', NULL, NULL, @Position
             );
@@ -327,22 +432,37 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = key.MachineId.Value;
         AddString(command, "@SiteId", shift.ShiftOccurrenceId.SiteId.Value);
         AddOrderKey(command, "@SiteOrderKey", shift.ShiftOccurrenceId.SiteId.Value);
-        AddString(command, "@ScheduleId", shift.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value);
-        AddOrderKey(command, "@ScheduleOrderKey", shift.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value);
+        AddString(
+            command,
+            "@ScheduleId",
+            shift.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value);
+        AddOrderKey(
+            command,
+            "@ScheduleOrderKey",
+            shift.ShiftOccurrenceId.ShiftScheduleAssignmentId.Value);
         AddString(command, "@ShiftId", shift.ShiftOccurrenceId.ShiftId.Value);
         AddOrderKey(command, "@ShiftOrderKey", shift.ShiftOccurrenceId.ShiftId.Value);
-        command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value = shift.ShiftOccurrenceId.StartsAtUtc;
-        command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value = shift.ShiftOccurrenceId.EndsAtUtc;
+        command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value =
+            shift.ShiftOccurrenceId.StartsAtUtc;
+        command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value =
+            shift.ShiftOccurrenceId.EndsAtUtc;
         AddString(command, "@MetricKey", key.DefinitionId.MetricKey);
         AddOrderKey(command, "@MetricOrderKey", key.DefinitionId.MetricKey);
         AddString(command, "@Version", key.DefinitionId.Version);
         AddOrderKey(command, "@VersionOrderKey", key.DefinitionId.Version);
-        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", sourceRevision.Position.Value));
-        var rowId = Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+        command.Parameters.Add(
+            SqlServerUInt64.CreateParameter("@Position", sourceRevision.Position.Value));
+        var rowId = Convert.ToInt64(
+            await command.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture);
 
         await using var manifest = connection.CreateCommand();
         manifest.Transaction = transaction;
-        manifest.CommandText = "INSERT INTO dbo.OperationalMetricProjectionManifest (OperationalMetricProjectionProcessorRowId, OperationalMetricProjectionRowId) VALUES (@ProcessorRowId, @ProjectionRowId);";
+        manifest.CommandText = """
+            INSERT INTO dbo.OperationalMetricProjectionManifest
+                (OperationalMetricProjectionProcessorRowId, OperationalMetricProjectionRowId)
+            VALUES (@ProcessorRowId, @ProjectionRowId);
+            """;
         manifest.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = processorRowId;
         manifest.Parameters.Add("@ProjectionRowId", SqlDbType.BigInt).Value = rowId;
         await manifest.ExecuteNonQueryAsync();
@@ -354,21 +474,42 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
             evidence.CommandText = """
                 INSERT INTO dbo.OperationalMetricProjectionEvidence
                 (
-                    OperationalMetricProjectionRowId, EvidenceKind, EvidenceOrdinal,
-                    OperandName, OperandNameOrderKey, ComponentKey, MetricDimension,
-                    ComponentValue, ComponentUnit, InputCount, FirstInputTimestamp, LastInputTimestamp
+                    OperationalMetricProjectionRowId,
+                    EvidenceKind,
+                    EvidenceOrdinal,
+                    OperandName,
+                    OperandNameOrderKey,
+                    ComponentKey,
+                    MetricDimension,
+                    ComponentValue,
+                    ComponentUnit,
+                    InputCount,
+                    FirstInputTimestamp,
+                    LastInputTimestamp
                 )
                 VALUES
                 (
-                    @ProjectionRowId, 1, 0,
-                    N'component', @OperandOrderKey, N'running-duration', 0,
-                    N'1', N'seconds', 1, @First, @Last
+                    @ProjectionRowId,
+                    1,
+                    0,
+                    N'component',
+                    @OperandOrderKey,
+                    N'running-duration',
+                    0,
+                    N'1',
+                    N'seconds',
+                    1,
+                    @First,
+                    @Last
                 );
                 """;
             evidence.Parameters.Add("@ProjectionRowId", SqlDbType.BigInt).Value = rowId;
-            evidence.Parameters.Add("@OperandOrderKey", SqlDbType.VarBinary, 769).Value = StringOrderKeyV2Codec.Encode("component");
-            evidence.Parameters.Add("@First", SqlDbType.DateTimeOffset).Value = shift.ShiftOccurrenceId.StartsAtUtc;
-            evidence.Parameters.Add("@Last", SqlDbType.DateTimeOffset).Value = shift.ShiftOccurrenceId.StartsAtUtc.AddMinutes(1);
+            evidence.Parameters.Add("@OperandOrderKey", SqlDbType.VarBinary, 769).Value =
+                StringOrderKeyV2Codec.Encode("component");
+            evidence.Parameters.Add("@First", SqlDbType.DateTimeOffset).Value =
+                shift.ShiftOccurrenceId.StartsAtUtc;
+            evidence.Parameters.Add("@Last", SqlDbType.DateTimeOffset).Value =
+                shift.ShiftOccurrenceId.StartsAtUtc.AddMinutes(1);
             await evidence.ExecuteNonQueryAsync();
         }
 
@@ -381,50 +522,97 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId AND OperationalMetricProjectionRowId = @ProjectionRowId;";
+        command.CommandText = """
+            DELETE FROM dbo.OperationalMetricProjectionManifest
+            WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId
+              AND OperationalMetricProjectionRowId = @ProjectionRowId;
+            """;
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = processorRowId;
         command.Parameters.Add("@ProjectionRowId", SqlDbType.BigInt).Value = projectionRowId;
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
-    private static async Task LockManifestRowAsync(SqlConnection connection, SqlTransaction transaction, long processorRowId, long projectionRowId)
+    private static async Task LockManifestRowAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        long projectionRowId)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = "SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WITH (UPDLOCK, HOLDLOCK, INDEX(PK_OperationalMetricProjectionManifest)) WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId AND OperationalMetricProjectionRowId = @ProjectionRowId;";
+        command.CommandText = """
+            SELECT OperationalMetricProjectionRowId
+            FROM dbo.OperationalMetricProjectionManifest WITH
+                (UPDLOCK, HOLDLOCK, INDEX(PK_OperationalMetricProjectionManifest))
+            WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId
+              AND OperationalMetricProjectionRowId = @ProjectionRowId;
+            """;
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = processorRowId;
         command.Parameters.Add("@ProjectionRowId", SqlDbType.BigInt).Value = projectionRowId;
-        Assert.Equal(projectionRowId, Convert.ToInt64(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(
+            projectionRowId,
+            Convert.ToInt64(
+                await command.ExecuteScalarAsync(),
+                System.Globalization.CultureInfo.InvariantCulture));
     }
 
-    private async Task<LockWaitSnapshot> WaitForLockWaitAsync(int sessionId, TimeSpan timeout)
+    private async Task<LockWaitSnapshot> WaitForManifestLockWaitAsync(
+        int sessionId,
+        TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
+        LockWaitSnapshot? lastObserved = null;
+
         while (DateTime.UtcNow < deadline)
         {
             await using var connection = _fixture.CreateConnection();
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT TOP (1),
+                SELECT TOP (1)
                     r.wait_resource,
-                    COALESCE(OBJECT_NAME(p.object_id), N'')
+                    OBJECT_NAME(p.object_id)
                 FROM sys.dm_exec_requests AS r
-                LEFT JOIN sys.dm_tran_locks AS l
-                    ON l.request_session_id = r.session_id AND l.request_status = N'WAIT'
-                LEFT JOIN sys.partitions AS p
+                INNER JOIN sys.dm_tran_locks AS l
+                    ON l.request_session_id = r.session_id
+                   AND l.request_status = N'WAIT'
+                   AND l.resource_type = N'KEY'
+                INNER JOIN sys.partitions AS p
                     ON p.hobt_id = l.resource_associated_entity_id
-                WHERE r.session_id = @SessionId AND r.wait_type LIKE N'LCK_M[_]%';
+                WHERE r.session_id = @SessionId
+                  AND r.wait_type LIKE N'LCK_M[_]%'
+                ORDER BY
+                    CASE
+                        WHEN p.object_id = OBJECT_ID(N'dbo.OperationalMetricProjectionManifest')
+                            THEN 0
+                        ELSE 1
+                    END,
+                    p.object_id;
                 """;
             command.Parameters.Add("@SessionId", SqlDbType.Int).Value = sessionId;
             await using var reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
-                return new LockWaitSnapshot(reader.IsDBNull(0) ? string.Empty : reader.GetString(0), reader.IsDBNull(1) ? string.Empty : reader.GetString(1));
+                lastObserved = new LockWaitSnapshot(
+                    reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                    reader.IsDBNull(1) ? string.Empty : reader.GetString(1));
+
+                if (string.Equals(
+                    lastObserved.ResourceDescription,
+                    "OperationalMetricProjectionManifest",
+                    StringComparison.Ordinal))
+                {
+                    return lastObserved;
+                }
             }
+
             await Task.Delay(50);
         }
-        throw new Xunit.Sdk.XunitException($"Session {sessionId} did not expose a live SQL lock wait.");
+
+        throw new Xunit.Sdk.XunitException(
+            lastObserved is null
+                ? $"Session {sessionId} did not expose a live SQL KEY lock wait."
+                : $"Session {sessionId} exposed a KEY lock wait on '{lastObserved.ResourceDescription}', not OperationalMetricProjectionManifest.");
     }
 
     private async Task<bool> HasGrantedEvidenceKeyLockAsync(int sessionId)
@@ -435,25 +623,33 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         command.CommandText = """
             SELECT COUNT(*)
             FROM sys.dm_tran_locks AS l
-            INNER JOIN sys.partitions AS p ON p.hobt_id = l.resource_associated_entity_id
+            INNER JOIN sys.partitions AS p
+                ON p.hobt_id = l.resource_associated_entity_id
             WHERE l.request_session_id = @SessionId
               AND l.request_status = N'GRANT'
               AND l.resource_type = N'KEY'
               AND p.object_id = OBJECT_ID(N'dbo.OperationalMetricProjectionEvidence');
             """;
         command.Parameters.Add("@SessionId", SqlDbType.Int).Value = sessionId;
-        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) != 0;
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture) != 0;
     }
 
-    private static async Task<int> ReadSessionIdAsync(SqlServerOperationalMetricProjectionCommitContext context, CancellationToken cancellationToken)
+    private static async Task<int> ReadSessionIdAsync(
+        SqlServerOperationalMetricProjectionCommitContext context,
+        CancellationToken cancellationToken)
     {
         await using var command = context.Connection.CreateCommand();
         command.Transaction = context.Transaction;
         command.CommandText = "SELECT @@SPID;";
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private async Task AssertNoPublicationAsync(OperationalMetricProjectionProcessorId processorId)
+    private async Task AssertNoPublicationAsync(
+        OperationalMetricProjectionProcessorId processorId)
     {
         Assert.Equal(0, await CountProjectionRowsAsync(processorId));
         Assert.Equal(0, await CountManifestRowsAsync(processorId));
@@ -470,11 +666,20 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         command.Transaction = context.Transaction;
         command.CommandText = """
             SELECT
-                (SELECT COUNT(*) FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId),
-                (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId),
-                (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionEvidence AS e INNER JOIN dbo.OperationalMetricProjection AS p ON p.OperationalMetricProjectionRowId = e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId);
+                (SELECT COUNT(*)
+                 FROM dbo.OperationalMetricProjection
+                 WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId),
+                (SELECT COUNT(*)
+                 FROM dbo.OperationalMetricProjectionManifest
+                 WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId),
+                (SELECT COUNT(*)
+                 FROM dbo.OperationalMetricProjectionEvidence AS e
+                 INNER JOIN dbo.OperationalMetricProjection AS p
+                    ON p.OperationalMetricProjectionRowId = e.OperationalMetricProjectionRowId
+                 WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId);
             """;
-        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = context.ProjectionProcessorRowId;
+        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value =
+            context.ProjectionProcessorRowId;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         Assert.True(await reader.ReadAsync(cancellationToken));
         Assert.Equal(expectedRows, reader.GetInt32(0));
@@ -482,10 +687,16 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         Assert.Equal(expectedEvidence, reader.GetInt32(2));
     }
 
-    private async Task<int> CountProjectionRowsAsync(OperationalMetricProjectionProcessorId processorId) => await CountRowsAsync(processorId, "OperationalMetricProjection");
-    private async Task<int> CountManifestRowsAsync(OperationalMetricProjectionProcessorId processorId) => await CountRowsAsync(processorId, "OperationalMetricProjectionManifest");
+    private Task<int> CountProjectionRowsAsync(
+        OperationalMetricProjectionProcessorId processorId) =>
+        CountRowsAsync(processorId, manifest: false);
 
-    private async Task<int> CountEvidenceRowsAsync(OperationalMetricProjectionProcessorId processorId)
+    private Task<int> CountManifestRowsAsync(
+        OperationalMetricProjectionProcessorId processorId) =>
+        CountRowsAsync(processorId, manifest: true);
+
+    private async Task<int> CountEvidenceRowsAsync(
+        OperationalMetricProjectionProcessorId processorId)
     {
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
@@ -493,72 +704,177 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         command.CommandText = """
             SELECT COUNT(*)
             FROM dbo.OperationalMetricProjectionEvidence AS e
-            INNER JOIN dbo.OperationalMetricProjection AS p ON p.OperationalMetricProjectionRowId = e.OperationalMetricProjectionRowId
-            INNER JOIN dbo.OperationalMetricProjectionProcessor AS pp ON pp.OperationalMetricProjectionProcessorRowId = p.OperationalMetricProjectionProcessorRowId
+            INNER JOIN dbo.OperationalMetricProjection AS p
+                ON p.OperationalMetricProjectionRowId = e.OperationalMetricProjectionRowId
+            INNER JOIN dbo.OperationalMetricProjectionProcessor AS pp
+                ON pp.OperationalMetricProjectionProcessorRowId = p.OperationalMetricProjectionProcessorRowId
             WHERE pp.ProcessorKeyBinary = @ProcessorKeyBinary;
             """;
-        command.Parameters.Add("@ProcessorKeyBinary", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value = StringOrderKeyV2Codec.Encode(processorId.Value);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+        command.Parameters.Add(
+            "@ProcessorKeyBinary",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+            StringOrderKeyV2Codec.Encode(processorId.Value);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private async Task<int> CountRowsAsync(OperationalMetricProjectionProcessorId processorId, string tableName)
+    private async Task<int> CountRowsAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        bool manifest)
     {
         await using var connection = _fixture.CreateConnection();
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = tableName == "OperationalMetricProjection"
-            ? "SELECT COUNT(*) FROM dbo.OperationalMetricProjection AS x INNER JOIN dbo.OperationalMetricProjectionProcessor AS pp ON pp.OperationalMetricProjectionProcessorRowId = x.OperationalMetricProjectionProcessorRowId WHERE pp.ProcessorKeyBinary = @ProcessorKeyBinary;"
-            : "SELECT COUNT(*) FROM dbo.OperationalMetricProjectionManifest AS x INNER JOIN dbo.OperationalMetricProjectionProcessor AS pp ON pp.OperationalMetricProjectionProcessorRowId = x.OperationalMetricProjectionProcessorRowId WHERE pp.ProcessorKeyBinary = @ProcessorKeyBinary;";
-        command.Parameters.Add("@ProcessorKeyBinary", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value = StringOrderKeyV2Codec.Encode(processorId.Value);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
+        command.CommandText = manifest
+            ? """
+                SELECT COUNT(*)
+                FROM dbo.OperationalMetricProjectionManifest AS x
+                INNER JOIN dbo.OperationalMetricProjectionProcessor AS pp
+                    ON pp.OperationalMetricProjectionProcessorRowId = x.OperationalMetricProjectionProcessorRowId
+                WHERE pp.ProcessorKeyBinary = @ProcessorKeyBinary;
+                """
+            : """
+                SELECT COUNT(*)
+                FROM dbo.OperationalMetricProjection AS x
+                INNER JOIN dbo.OperationalMetricProjectionProcessor AS pp
+                    ON pp.OperationalMetricProjectionProcessorRowId = x.OperationalMetricProjectionProcessorRowId
+                WHERE pp.ProcessorKeyBinary = @ProcessorKeyBinary;
+                """;
+        command.Parameters.Add(
+            "@ProcessorKeyBinary",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+            StringOrderKeyV2Codec.Encode(processorId.Value);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private static OperationalMetricProjectionProcessorId NewProcessorId() => new($"publication-{Guid.NewGuid():N}");
+    private static OperationalMetricProjectionProcessorId NewProcessorId() =>
+        new($"publication-{Guid.NewGuid():N}");
 
-    private static OperationalMetricProjectionCommit CreateInitialCommit(OperationalMetricProjectionProcessorId processorId, MetricAggregationCheckpoint revision, IReadOnlyList<OperationalMetricProjection> projections)
+    private static OperationalMetricProjectionCommit CreateInitialCommit(
+        OperationalMetricProjectionProcessorId processorId,
+        MetricAggregationCheckpoint revision,
+        IReadOnlyList<OperationalMetricProjection> projections)
     {
-        var checkpoint = new OperationalMetricProjectionCheckpoint(processorId, revision, new OperationalMetricProjectionBatchManifest(projections.Select(static p => p.Key)));
-        return new OperationalMetricProjectionCommit(processorId, null, checkpoint, projections);
+        var checkpoint = new OperationalMetricProjectionCheckpoint(
+            processorId,
+            revision,
+            new OperationalMetricProjectionBatchManifest(
+                projections.Select(static projection => projection.Key)));
+        return new OperationalMetricProjectionCommit(
+            processorId,
+            null,
+            checkpoint,
+            projections);
     }
 
-    private static OperationalMetricProjectionCommit CreateReplayCommit(PublishedFixture published, IReadOnlyList<OperationalMetricProjection> projections)
+    private static OperationalMetricProjectionCommit CreateReplayCommit(
+        PublishedFixture published,
+        IReadOnlyList<OperationalMetricProjection> projections)
     {
-        var checkpoint = new OperationalMetricProjectionCheckpoint(published.ProcessorId, published.Source.Checkpoint, new OperationalMetricProjectionBatchManifest(projections.Select(static p => p.Key)));
-        return new OperationalMetricProjectionCommit(published.ProcessorId, null, checkpoint, projections);
+        var checkpoint = new OperationalMetricProjectionCheckpoint(
+            published.ProcessorId,
+            published.Source.Checkpoint,
+            new OperationalMetricProjectionBatchManifest(
+                projections.Select(static projection => projection.Key)));
+        return new OperationalMetricProjectionCommit(
+            published.ProcessorId,
+            null,
+            checkpoint,
+            projections);
     }
 
-    private static OperationalMetricProjectionCommit CreateAdvanceCommit(PublishedFixture published, MetricAggregationCheckpoint revision, IReadOnlyList<OperationalMetricProjection> projections)
+    private static OperationalMetricProjectionCommit CreateAdvanceCommit(
+        PublishedFixture published,
+        MetricAggregationCheckpoint revision,
+        IReadOnlyList<OperationalMetricProjection> projections)
     {
-        var expected = new OperationalMetricProjectionCheckpoint(published.ProcessorId, published.Source.Checkpoint, new OperationalMetricProjectionBatchManifest(published.Keys));
-        var proposed = new OperationalMetricProjectionCheckpoint(published.ProcessorId, revision, new OperationalMetricProjectionBatchManifest(projections.Select(static p => p.Key)));
-        return new OperationalMetricProjectionCommit(published.ProcessorId, expected, proposed, projections);
+        var expected = new OperationalMetricProjectionCheckpoint(
+            published.ProcessorId,
+            published.Source.Checkpoint,
+            new OperationalMetricProjectionBatchManifest(published.Keys));
+        var proposed = new OperationalMetricProjectionCheckpoint(
+            published.ProcessorId,
+            revision,
+            new OperationalMetricProjectionBatchManifest(
+                projections.Select(static projection => projection.Key)));
+        return new OperationalMetricProjectionCommit(
+            published.ProcessorId,
+            expected,
+            proposed,
+            projections);
     }
 
-    private static MetricAggregationCheckpoint Advance(MetricAggregationCheckpoint checkpoint) =>
-        new(checkpoint.ProcessorId, checkpoint.StreamId, new MetricInputPosition(checkpoint.Position.Value + 1));
+    private static MetricAggregationCheckpoint Advance(
+        MetricAggregationCheckpoint checkpoint) =>
+        new(
+            checkpoint.ProcessorId,
+            checkpoint.StreamId,
+            new MetricInputPosition(checkpoint.Position.Value + 1));
 
-    private static OperationalMetricProjection CreateCalculated(OperationalMetricProjectionProcessorId processorId, OperationalMetricEvaluationKey key, MetricAggregationCheckpoint revision, decimal value) =>
-        new(processorId, key, OperationalMetricEvaluationStatus.Calculated, value, "ratio", null, null, revision);
+    private static OperationalMetricProjection CreateCalculated(
+        OperationalMetricProjectionProcessorId processorId,
+        OperationalMetricEvaluationKey key,
+        MetricAggregationCheckpoint revision,
+        decimal value) =>
+        new(
+            processorId,
+            key,
+            OperationalMetricEvaluationStatus.Calculated,
+            value,
+            "ratio",
+            null,
+            null,
+            revision);
 
-    private static OperationalMetricEvaluationKey CreateShiftKey(MachineId machineId, string metricKey, string version)
+    private static OperationalMetricEvaluationKey CreateShiftKey(
+        MachineId machineId,
+        string metricKey,
+        string version)
     {
-        var occurrence = new ShiftOccurrenceId(new SiteId("SITE-1"), new ShiftScheduleAssignmentId("SCHEDULE-A"), new ShiftId("SHIFT-A"), new DateTimeOffset(2026, 9, 7, 6, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 7, 14, 0, 0, TimeSpan.Zero));
-        return new OperationalMetricEvaluationKey(machineId, new OperationalMetricPeriodId.Shift(occurrence), new OperationalMetricDefinitionId(metricKey, version), OperationalMetricEvaluationContextKey.Unpartitioned);
+        var occurrence = new ShiftOccurrenceId(
+            new SiteId("SITE-1"),
+            new ShiftScheduleAssignmentId("SCHEDULE-A"),
+            new ShiftId("SHIFT-A"),
+            new DateTimeOffset(2026, 9, 7, 6, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 9, 7, 14, 0, 0, TimeSpan.Zero));
+        return new OperationalMetricEvaluationKey(
+            machineId,
+            new OperationalMetricPeriodId.Shift(occurrence),
+            new OperationalMetricDefinitionId(metricKey, version),
+            OperationalMetricEvaluationContextKey.Unpartitioned);
     }
 
     private async Task<SourceFixture> CreateSourceAsync()
     {
         var machineId = new MachineId(Guid.NewGuid());
         var inputStore = new SqlServerMetricInputStore(_fixture.ConnectionString);
-        var fact = await inputStore.AppendAsync(CreateAppend(machineId, $"publication-source-{Guid.NewGuid():N}"), CancellationToken.None);
-        var processorId = new MetricAggregationProcessorId($"publication-source-{Guid.NewGuid():N}");
-        var checkpoint = new MetricAggregationCheckpoint(processorId, fact.StreamId, fact.Position);
-        var aggregationStore = new SqlServerMetricAggregationStore(_fixture.ConnectionString);
-        await aggregationStore.CommitAsync(new MetricAggregationCommit(processorId, null, checkpoint, []), CancellationToken.None);
+        var fact = await inputStore.AppendAsync(
+            CreateAppend(
+                machineId,
+                $"publication-source-{Guid.NewGuid():N}"),
+            CancellationToken.None);
+        var processorId = new MetricAggregationProcessorId(
+            $"publication-source-{Guid.NewGuid():N}");
+        var checkpoint = new MetricAggregationCheckpoint(
+            processorId,
+            fact.StreamId,
+            fact.Position);
+        var aggregationStore = new SqlServerMetricAggregationStore(
+            _fixture.ConnectionString);
+        await aggregationStore.CommitAsync(
+            new MetricAggregationCommit(processorId, null, checkpoint, []),
+            CancellationToken.None);
         return new SourceFixture(machineId, checkpoint);
     }
 
-    private static DurableMetricInputAppend CreateAppend(MachineId machineId, string factId)
+    private static DurableMetricInputAppend CreateAppend(
+        MachineId machineId,
+        string factId)
     {
         var siteId = new SiteId("SITE-1");
         var shiftId = new ShiftId("SHIFT-A");
@@ -566,20 +882,60 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
         var start = new DateTimeOffset(2026, 9, 7, 6, 0, 0, TimeSpan.Zero);
         var fact = new DurableMetricInputFact
         {
-            Id = new MetricInputFactId(factId), Key = "running-duration", Value = 1m, Unit = "seconds",
-            StartsAtUtc = start, EndsAtUtc = start.AddMinutes(1), CompanyId = new CompanyId("COMP-1"), SiteId = siteId,
-            ProductionLineId = new ProductionLineId("LINE-1"), MachineId = machineId, ShiftId = shiftId, ShiftScheduleAssignmentId = scheduleId,
+            Id = new MetricInputFactId(factId),
+            Key = "running-duration",
+            Value = 1m,
+            Unit = "seconds",
+            StartsAtUtc = start,
+            EndsAtUtc = start.AddMinutes(1),
+            CompanyId = new CompanyId("COMP-1"),
+            SiteId = siteId,
+            ProductionLineId = new ProductionLineId("LINE-1"),
+            MachineId = machineId,
+            ShiftId = shiftId,
+            ShiftScheduleAssignmentId = scheduleId,
         };
-        return new DurableMetricInputAppend(MetricInputStreamId.ForMachine(machineId), fact,
-            new ShiftOccurrenceId(siteId, scheduleId, shiftId, start, start.AddHours(8)),
-            new ProductionDayId(siteId, DateOnly.FromDateTime(start.UtcDateTime)));
+        return new DurableMetricInputAppend(
+            MetricInputStreamId.ForMachine(machineId),
+            fact,
+            new ShiftOccurrenceId(
+                siteId,
+                scheduleId,
+                shiftId,
+                start,
+                start.AddHours(8)),
+            new ProductionDayId(
+                siteId,
+                DateOnly.FromDateTime(start.UtcDateTime)));
     }
 
-    private static void AddString(SqlCommand command, string name, string value) => command.Parameters.Add(name, SqlDbType.NVarChar, 256).Value = value;
-    private static void AddOrderKey(SqlCommand command, string name, string value) => command.Parameters.Add(name, SqlDbType.VarBinary, 769).Value = StringOrderKeyV2Codec.Encode(value);
+    private static void AddString(
+        SqlCommand command,
+        string name,
+        string value) =>
+        command.Parameters.Add(name, SqlDbType.NVarChar, 256).Value = value;
 
-    private sealed record SourceFixture(MachineId MachineId, MetricAggregationCheckpoint Checkpoint);
-    private sealed record PublishedFixture(OperationalMetricProjectionProcessorId ProcessorId, SourceFixture Source, long ProcessorRowId, IReadOnlyList<OperationalMetricEvaluationKey> Keys, IReadOnlyList<long> RowIds);
-    private sealed record LockWaitSnapshot(string WaitResource, string ResourceDescription);
+    private static void AddOrderKey(
+        SqlCommand command,
+        string name,
+        string value) =>
+        command.Parameters.Add(name, SqlDbType.VarBinary, 769).Value =
+            StringOrderKeyV2Codec.Encode(value);
+
+    private sealed record SourceFixture(
+        MachineId MachineId,
+        MetricAggregationCheckpoint Checkpoint);
+
+    private sealed record PublishedFixture(
+        OperationalMetricProjectionProcessorId ProcessorId,
+        SourceFixture Source,
+        long ProcessorRowId,
+        IReadOnlyList<OperationalMetricEvaluationKey> Keys,
+        IReadOnlyList<long> RowIds);
+
+    private sealed record LockWaitSnapshot(
+        string WaitResource,
+        string ResourceDescription);
+
     private sealed class InspectionCompleteException : Exception;
 }
