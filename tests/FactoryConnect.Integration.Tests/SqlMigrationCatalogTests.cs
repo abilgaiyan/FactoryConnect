@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 
 public sealed class SqlMigrationCatalogTests
 {
-    private static readonly int[] ExpectedMigrationIds = [1, 2, 3, 4, 5];
+    private static readonly int[] ExpectedMigrationIds = [1, 2, 3, 4, 5, 6];
 
     [Fact]
     public void LoadExistingResourcesReturnsDeterministicCurrentCatalog()
@@ -20,7 +20,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 2, "DurableMetricAggregation", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 3, "BindMetricInputFactMachine", SqlMigrationTransactionPolicy.LegacyMigration003Embedded),
             migration => AssertMigration(migration, 4, "ProductionContextMetricInputHandoff", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 5, "OperationalMetricReportingPersistence", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 5, "OperationalMetricReportingPersistence", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 6, "CorrectOperationalMetricProjectionManifestParent", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
@@ -34,7 +35,8 @@ public sealed class SqlMigrationCatalogTests
             migration => Assert.Equal("F8DA0AFF348E3ED8964D5ED03042581A55D7C94898AAC739B81E60CA7F5E5113", migration.Sha256Checksum),
             migration => Assert.Equal("98A9635782C4D822441269ECEE8E13BBCDC5A61C07B64608F81A0107133535C6", migration.Sha256Checksum),
             migration => Assert.Equal("786CDD68F66E222A4E4EFB8220595E46390A0F81880D0D45A54FA22DD7A498D5", migration.Sha256Checksum),
-            migration => Assert.Equal("53F337BB5B3294D331AB6E363C7301A88D0A4CD090762151CFD1508405DEDFC7", migration.Sha256Checksum));
+            migration => Assert.Equal("53F337BB5B3294D331AB6E363C7301A88D0A4CD090762151CFD1508405DEDFC7", migration.Sha256Checksum),
+            migration => Assert.Equal("DDFD8C6CC1FADE9D7486EB5D3D915881A2538E2724A6B57EDA7E6D7C16EB6EEE", migration.Sha256Checksum));
     }
 
     [Fact]
@@ -234,7 +236,7 @@ public sealed class SqlMigrationCatalogTests
     [Fact]
     public void CreateWithDuplicateMigrationNameThrows()
     {
-        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(6, "DurableMetricAggregation"));
+        var descriptors = CreateValidDescriptors().Add(CreateDescriptor(7, "DurableMetricAggregation"));
 
         Assert.Throws<InvalidOperationException>(() => SqlMigrationCatalog.Create(descriptors));
     }
@@ -242,7 +244,7 @@ public sealed class SqlMigrationCatalogTests
     [Fact]
     public void CreateWithDuplicateResourceThrows()
     {
-        var duplicateResource = CreateDescriptor(6, "OtherMigration") with
+        var duplicateResource = CreateDescriptor(7, "OtherMigration") with
         {
             ResourceName = $"{SqlMigrationCatalog.ResourcePrefix}005_OperationalMetricReportingPersistence.sql"
         };
@@ -289,7 +291,7 @@ public sealed class SqlMigrationCatalogTests
     public void CreateOrdersShuffledDescriptorsDeterministically()
     {
         var valid = CreateValidDescriptors();
-        var shuffled = new[] { valid[4], valid[3], valid[1], valid[2], valid[0] };
+        var shuffled = new[] { valid[5], valid[4], valid[3], valid[1], valid[2], valid[0] };
 
         var catalog = SqlMigrationCatalog.Create(shuffled);
 
@@ -302,7 +304,8 @@ public sealed class SqlMigrationCatalogTests
             CreateDescriptor(2, "DurableMetricAggregation"),
             CreateDescriptor(3, "BindMetricInputFactMachine", SqlMigrationTransactionPolicy.LegacyMigration003Embedded),
             CreateDescriptor(4, "ProductionContextMetricInputHandoff"),
-            CreateDescriptor(5, "OperationalMetricReportingPersistence"));
+            CreateDescriptor(5, "OperationalMetricReportingPersistence"),
+            CreateDescriptor(6, "CorrectOperationalMetricProjectionManifestParent"));
 
     private static SqlMigrationDescriptor CreateDescriptor(
         int id,
