@@ -1,13 +1,37 @@
+using FactoryConnect.Abstractions;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
 /// <summary>
 /// Acquires the manifest and evidence portions of the FC-030.2C publication
-/// lock boundary after C.3 projection acquisition has completed.
+/// lock boundary immediately after C.3 projection acquisition has completed.
 /// </summary>
 internal static class SqlServerOperationalMetricProjectionPublicationLocks
 {
+    internal static async Task<PublicationPreparation> PrepareAsync(
+        SqlServerOperationalMetricProjectionCommitContext context,
+        OperationalMetricProjectionCommit commit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(commit);
+
+        var projectionPlan = await SqlServerOperationalMetricProjectionRows.PrepareAsync(
+            context,
+            commit,
+            cancellationToken).ConfigureAwait(false);
+
+        var locks = await AcquireAsync(
+            context.Connection,
+            context.Transaction,
+            context.ProjectionProcessorRowId,
+            projectionPlan,
+            cancellationToken).ConfigureAwait(false);
+
+        return new PublicationPreparation(projectionPlan, locks);
+    }
+
     internal static async Task<PublicationLockSnapshot> AcquireAsync(
         SqlConnection connection,
         SqlTransaction transaction,
@@ -146,6 +170,10 @@ internal static class SqlServerOperationalMetricProjectionPublicationLocks
 
         return rows;
     }
+
+    internal sealed record PublicationPreparation(
+        SqlServerOperationalMetricProjectionMutationPlan ProjectionPlan,
+        PublicationLockSnapshot Locks);
 
     internal sealed record PublicationLockSnapshot(
         IReadOnlyList<long> ManifestProjectionRowIds,
