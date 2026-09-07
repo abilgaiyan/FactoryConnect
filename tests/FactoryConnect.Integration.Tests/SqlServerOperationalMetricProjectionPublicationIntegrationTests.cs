@@ -240,7 +240,31 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
             CancellationToken.None);
 
         var after = await ReadStateAsync(processorId);
-        Assert.Equal(before, after);
+        Assert.Equal(before.CheckpointPosition, after.CheckpointPosition);
+        Assert.Equal(before.ProjectionRows, after.ProjectionRows);
+        Assert.Equal(before.ManifestRowIds, after.ManifestRowIds);
+
+        Assert.Equal(before.EvidenceRows.Count, after.EvidenceRows.Count);
+        for (var index = 0; index < before.EvidenceRows.Count; index++)
+        {
+            var expected = before.EvidenceRows[index];
+            var actual = after.EvidenceRows[index];
+
+            Assert.Equal(expected.ProjectionRowId, actual.ProjectionRowId);
+            Assert.Equal(expected.Kind, actual.Kind);
+            Assert.Equal(expected.Ordinal, actual.Ordinal);
+            Assert.Equal(expected.OperandName, actual.OperandName);
+            Assert.Equal(expected.DependencyMetricKey, actual.DependencyMetricKey);
+            Assert.Equal(
+                expected.DependencySnapshotCodecVersion,
+                actual.DependencySnapshotCodecVersion);
+            Assert.Equal(
+                expected.DependencySnapshotHash,
+                actual.DependencySnapshotHash);
+            Assert.Equal(
+                expected.DependencySnapshotBinary,
+                actual.DependencySnapshotBinary);
+        }
     }
 
     private async Task ExecutePublicationAsync(OperationalMetricProjectionCommit commit)
