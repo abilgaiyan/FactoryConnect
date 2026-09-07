@@ -210,7 +210,7 @@ internal static class SqlRepositorySchemaDescriptors
         ],
         foreignKeys:
         [
-            ForeignKey("FK_MetricAggregationContribution_ProcessorStream", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId", "MetricInputStreamStreamRowId"]),
+            ForeignKey("FK_MetricAggregationContribution_ProcessorStream", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId", "MetricInputStreamRowId"]),
             ForeignKey("FK_MetricAggregationContribution_FactStreamPosition", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"], "MetricInputFact", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"])
         ],
         checks:
