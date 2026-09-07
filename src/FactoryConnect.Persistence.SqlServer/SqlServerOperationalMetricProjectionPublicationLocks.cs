@@ -37,8 +37,13 @@ internal static class SqlServerOperationalMetricProjectionPublicationLocks
             projectionProcessorRowId,
             cancellationToken).ConfigureAwait(false);
 
-        var expectedCurrentProjectionRowIds = projectionPlan.CurrentRows
-            .Select(static row => row.OperationalMetricProjectionRowId)
+        // C.3 classifies the complete current durable projection set into rows that
+        // survive the proposed publication plus rows that become obsolete. Rebuild
+        // that set here without performing another projection-table acquisition.
+        var expectedCurrentProjectionRowIds = projectionPlan.ProposedRows
+            .Where(static row => row.ExistingProjectionRowId.HasValue)
+            .Select(static row => row.ExistingProjectionRowId!.Value)
+            .Concat(projectionPlan.ObsoleteProjectionRowIds)
             .Order()
             .ToArray();
 
