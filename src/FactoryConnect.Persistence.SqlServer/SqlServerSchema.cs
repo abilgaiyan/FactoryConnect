@@ -12,6 +12,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.004_ProductionContextMetricInputHandoff.sql";
     private const string OperationalMetricReportingPersistenceSchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.005_OperationalMetricReportingPersistence.sql";
+    private const string CorrectOperationalMetricProjectionManifestParentSchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.006_CorrectOperationalMetricProjectionManifestParent.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -27,6 +29,9 @@ internal static class SqlServerSchema
 
     public static string ReadOperationalMetricReportingPersistenceSchema() =>
         ReadSchema(OperationalMetricReportingPersistenceSchemaResourceName);
+
+    public static string ReadCorrectOperationalMetricProjectionManifestParentSchema() =>
+        ReadSchema(CorrectOperationalMetricProjectionManifestParentSchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
