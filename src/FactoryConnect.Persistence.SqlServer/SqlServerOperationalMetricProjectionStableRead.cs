@@ -48,7 +48,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                 projectionProcessorRowId,
                 cancellationToken);
 
-            await ValidateManifestRevisionCoherenceAsync(
+            var revisionCoherent = await IsManifestRevisionCoherentAsync(
                 connection,
                 projectionProcessorRowId,
                 checkpointBefore,
@@ -63,10 +63,18 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                 projectionProcessorRowId,
                 cancellationToken);
 
-            if (checkpointBefore == checkpointAfter)
+            if (checkpointBefore != checkpointAfter)
             {
-                return result;
+                continue;
             }
+
+            if (!revisionCoherent)
+            {
+                throw new InvalidOperationException(
+                    "Persisted operational metric projection source revision is corrupt or inconsistent with the current publication checkpoint.");
+            }
+
+            return result;
         }
 
         throw new InvalidOperationException(
@@ -96,7 +104,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
         return new MetricInputPosition(materialized);
     }
 
-    private static async Task ValidateManifestRevisionCoherenceAsync(
+    private static async Task<bool> IsManifestRevisionCoherentAsync(
         SqlConnection connection,
         long projectionProcessorRowId,
         MetricInputPosition? checkpointPosition,
@@ -131,10 +139,6 @@ internal static class SqlServerOperationalMetricProjectionStableRead
         var mismatchCount = Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken),
             System.Globalization.CultureInfo.InvariantCulture);
-        if (mismatchCount != 0)
-        {
-            throw new InvalidOperationException(
-                "Persisted operational metric projection source revision is corrupt or inconsistent with the current publication checkpoint.");
-        }
+        return mismatchCount == 0;
     }
 }
