@@ -7,7 +7,6 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration003HardeningIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough002 = [1, 2];
-    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5];
 
     [Fact]
     public async Task SuccessfulMigration003LeavesCallerTransactionActive()
@@ -85,7 +84,10 @@ public sealed class SqlServerMigration003HardeningIntegrationTests
         await ExecuteAsync(connection, "DROP TABLE dbo.C4ConstraintConflict;");
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
+        var migrationIdsThroughCurrent = catalog.Migrations
+            .Select(static migration => migration.MigrationId)
+            .ToArray();
+        Assert.Equal(migrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.False(await ForeignKeyExistsAsync(connection, "FK_MetricInputFact_MetricInputStream"));
         Assert.True(await ConstraintExistsOnTableAsync(
             connection,
