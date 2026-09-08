@@ -167,7 +167,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
                 firstRetry,
                 secondRetry);
 
-            await barrierCommitAsync(retryBarrier);
+            await retryBarrier.CommitAsync(CancellationToken.None);
             await Task.WhenAll(firstRetry, secondRetry);
         }
 
@@ -181,9 +181,6 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         Assert.All(history, row => Assert.Equal(winningTimestamp, row.AppliedAtUtc));
         await AssertCurrentStateAsync(setupConnection, catalog);
     }
-
-    private static Task barrierCommitAsync(SqlServerMigrationTransactionScope scope) =>
-        scope.CommitAsync(CancellationToken.None);
 
     private static async Task<MigrationExecutionException> CaptureMigration003FailureAsync(
         SqlServerMigrationEngine engine,
