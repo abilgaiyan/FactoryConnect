@@ -49,6 +49,7 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
             TaskCreationOptions.RunContinuationsAsynchronously);
         var secondEnteredBody = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        SqlServerOperationalMetricProjectionCommitMode? secondMode = null;
 
         var firstTransaction = new SqlServerOperationalMetricProjectionCommitTransaction(
             _fixture.ConnectionString);
@@ -79,6 +80,7 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
             secondCommit,
             async (context, cancellationToken) =>
             {
+                secondMode = context.Mode;
                 secondEnteredBody.TrySetResult(true);
                 await SqlServerOperationalMetricProjectionPublication.ExecuteAsync(
                     context,
@@ -100,7 +102,10 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
 
         await firstTask;
         await Assert.ThrowsAsync<InvalidOperationException>(() => secondTask);
-        Assert.False(secondEnteredBody.Task.IsCompleted);
+        Assert.True(secondEnteredBody.Task.IsCompleted);
+        Assert.Equal(
+            SqlServerOperationalMetricProjectionCommitMode.ReconcileProposed,
+            secondMode);
 
         var finalState = await ReadDurableStateAsync(processorId);
         Assert.Equal(nextRevision.Position.Value, finalState.CheckpointPosition);
