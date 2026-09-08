@@ -43,7 +43,7 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
             return Array.Empty<OperationalMetricProjectionSummary>();
         }
 
-        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(
+        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<IReadOnlyList<OperationalMetricProjectionSummary>>(
             connection,
             source.ProjectionProcessorRowId,
             async (stableConnection, token) =>
@@ -359,7 +359,7 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         bool present,
         string? value,
         Func<string, T> factory)
-        where T : class
+        where T : struct
     {
         if (present != (value is not null))
         {
@@ -392,7 +392,7 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
             row.ProductionOrderId,
             row.ProductionOrderOrderKey);
         ValidateOptionalOrderKey(row.OperationPresent, row.OperationId, row.OperationOrderKey);
-        ValidateOptionalOrderKey(row.PartPresent, row.PartId, row.PartOrderOrderKey);
+        ValidateOptionalOrderKey(row.PartPresent, row.PartId, row.PartOrderKey);
         ValidateOptionalOrderKey(row.OperatorPresent, row.OperatorId, row.OperatorOrderKey);
         ValidateOrderKey(row.MetricKey, row.MetricKeyOrderKey);
         ValidateOrderKey(row.DefinitionVersion, row.DefinitionVersionOrderKey);
@@ -517,7 +517,7 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         byte[]? OperationOrderKey,
         bool PartPresent,
         string? PartId,
-        byte[]? PartOrderOrderKey,
+        byte[]? PartOrderKey,
         bool OperatorPresent,
         string? OperatorId,
         byte[]? OperatorOrderKey,
