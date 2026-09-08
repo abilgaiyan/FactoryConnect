@@ -34,6 +34,29 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         contextKey.Validate();
         cancellationToken.ThrowIfCancellationRequested();
 
+        var currentPublication = await ReadCurrentPublicationSummariesAsync(
+            processorId,
+            cancellationToken);
+
+        var ordered = currentPublication
+            .Where(summary =>
+                summary.Key.MachineId == machineId &&
+                summary.Key.PeriodId == periodId &&
+                summary.Key.ContextKey == contextKey)
+            .OrderBy(static summary => summary.Key.DefinitionId.MetricKey, StringComparer.Ordinal)
+            .ThenBy(static summary => summary.Key.DefinitionId.Version, StringComparer.Ordinal)
+            .ToArray();
+
+        return new ReadOnlyCollection<OperationalMetricProjectionSummary>(ordered);
+    }
+
+    internal async ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadCurrentPublicationSummariesAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(processorId);
+        cancellationToken.ThrowIfCancellationRequested();
+
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -65,24 +88,11 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
 
                 ValidateManifestCoverage(manifestRowIds, rows);
 
-                var summaries = new List<OperationalMetricProjectionSummary>(rows.Count);
-                foreach (var row in rows)
-                {
-                    var summary = MaterializeSummary(processorId, source, row);
-                    if (summary.Key.MachineId == machineId &&
-                        summary.Key.PeriodId == periodId &&
-                        summary.Key.ContextKey == contextKey)
-                    {
-                        summaries.Add(summary);
-                    }
-                }
-
-                var ordered = summaries
-                    .OrderBy(static summary => summary.Key.DefinitionId.MetricKey, StringComparer.Ordinal)
-                    .ThenBy(static summary => summary.Key.DefinitionId.Version, StringComparer.Ordinal)
+                var summaries = rows
+                    .Select(row => MaterializeSummary(processorId, source, row))
                     .ToArray();
 
-                return new ReadOnlyCollection<OperationalMetricProjectionSummary>(ordered);
+                return new ReadOnlyCollection<OperationalMetricProjectionSummary>(summaries);
             },
             cancellationToken);
     }
