@@ -71,6 +71,39 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
     }
 
     [Fact]
+    public void SqlServerReaderOnlyFinalizationDoesNotActivateUnsupportedOperationalMetricServices()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildConfiguration();
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery);
+
+        Assert.DoesNotContain(
+            services,
+            static descriptor =>
+                descriptor.ServiceType == typeof(IMetricAggregationRevisionReader));
+        Assert.DoesNotContain(
+            services,
+            static descriptor =>
+                descriptor.ServiceType == typeof(IRevisionedOperationalMetricComponentSnapshotReader));
+        Assert.DoesNotContain(
+            services,
+            static descriptor =>
+                descriptor.ServiceType == typeof(IOperationalMetricProjectionStore));
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Null(provider.GetService<IMetricAggregationRevisionReader>());
+        Assert.Null(provider.GetService<IRevisionedOperationalMetricComponentSnapshotReader>());
+        Assert.Null(provider.GetService<IOperationalMetricProjectionStore>());
+    }
+
+    [Fact]
     public void SqlServerProviderComposesExistingPublicReportingReaders()
     {
         var services = new ServiceCollection();
