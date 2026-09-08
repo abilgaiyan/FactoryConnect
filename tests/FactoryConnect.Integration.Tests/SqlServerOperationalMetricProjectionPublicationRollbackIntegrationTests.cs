@@ -19,17 +19,20 @@ public sealed class SqlServerOperationalMetricProjectionPublicationRollbackInteg
     }
 
     [Theory]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.EvidenceDeleted)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.ManifestDeleted)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.ObsoleteProjectionDeleted)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.RetainedProjectionUpdated)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.NewProjectionInserted)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.ManifestInserted)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.EvidenceInserted)]
-    [InlineData(SqlServerOperationalMetricProjectionPublicationStage.ExactStateRevalidated)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
     public async Task FailureAfterMutationStageRollsBackCompletePublicationAndCheckpoint(
-        SqlServerOperationalMetricProjectionPublicationStage failureStage)
+        int failureStageValue)
     {
+        Assert.True(Enum.IsDefined(typeof(SqlServerOperationalMetricProjectionPublicationStage), failureStageValue));
+        var failureStage = (SqlServerOperationalMetricProjectionPublicationStage)failureStageValue;
+
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId();
         var retainedKey = CreateShiftKey(source.MachineId, "availability");
