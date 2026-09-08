@@ -76,7 +76,8 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
     [Fact]
     public async Task ReaderProjectsAllPost004OwnedTablesInDeterministicOrder()
     {
-        await using var connection = _fixture.CreateConnection();
+        await using var database = await SqlServerHistoricalDatabase.CreateLegacyPost004Async();
+        await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var reader = new SqlServerSchemaMetadataReader();
 
@@ -84,7 +85,7 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
             connection,
             CancellationToken.None);
 
-        Assert.Equal(13, snapshot.Tables.Length);
+        Assert.Equal(SqlRepositorySchemaDescriptors.LegacyPost004.Tables.Length, snapshot.Tables.Length);
         var names = snapshot.Tables.Select(static table => table.Name).ToArray();
         Assert.Equal(
             names.OrderBy(static name => name.SchemaName, StringComparer.Ordinal)
@@ -101,7 +102,8 @@ public sealed class SqlServerSchemaMetadataReaderIntegrationTests :
     [Fact]
     public async Task MigratedPost004DatabaseExactlyMatchesLegacyRepositoryDescriptor()
     {
-        await using var connection = _fixture.CreateConnection();
+        await using var database = await SqlServerHistoricalDatabase.CreateLegacyPost004Async();
+        await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         var actual = await new SqlServerSchemaMetadataReader()
             .ReadFactoryConnectOwnedSchemaAsync(connection, CancellationToken.None);
