@@ -42,6 +42,13 @@ public sealed class InMemoryMachineShiftOccurrenceRosterStore :
             var key = (proposed.MachineId, proposed.ProductionDayId);
             _rosters.TryGetValue(key, out var current);
 
+            if (current is not null &&
+                current.ProductionLineId != proposed.ProductionLineId)
+            {
+                throw new InvalidOperationException(
+                    "Persisted machine-shift occurrence roster production line does not match the proposed roster identity state.");
+            }
+
             if (current?.Revision != commit.ExpectedRevision)
             {
                 throw new InvalidOperationException(
