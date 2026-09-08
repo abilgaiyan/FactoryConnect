@@ -18,7 +18,8 @@ public sealed class SqlServerMigrationExecutionIntegrationTests :
     [Fact]
     public async Task TransactionAwareSchemaReaderMatchesLegacyPost004Descriptor()
     {
-        await using var connection = _fixture.CreateConnection();
+        await using var database = await SqlServerHistoricalDatabase.CreateLegacyPost004Async();
+        await using var connection = database.CreateConnection();
         await connection.OpenAsync();
         await using var transaction = connection.BeginTransaction();
         var reader = new SqlServerSchemaMetadataReader();
