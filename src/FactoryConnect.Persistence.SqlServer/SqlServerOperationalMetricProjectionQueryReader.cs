@@ -50,7 +50,7 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
             return null;
         }
 
-        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(
+        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<OperationalMetricProjection?>(
             connection,
             source.ProjectionProcessorRowId,
             async (stableConnection, token) =>
@@ -757,7 +757,7 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
         byte[]? OperationOrderKey,
         bool PartPresent,
         string? PartId,
-        byte[]? PartOrderOrderKey,
+        byte[]? PartOrderKey,
         bool OperatorPresent,
         string? OperatorId,
         byte[]? OperatorOrderKey,
