@@ -29,151 +29,165 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         ArgumentNullException.ThrowIfNull(productionDayId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var expectedSiteOrderKey = StringOrderKeyV2Codec.Encode(productionDayId.SiteId.Value);
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT
-                r.MachineShiftOccurrenceRosterRowId,
-                r.MachineId,
-                r.ProductionDaySiteId,
-                r.ProductionDaySiteOrderKey,
-                r.ProductionBusinessDate,
-                r.ProductionLineId,
-                r.Revision,
-                o.ShiftScheduleAssignmentId,
-                o.ShiftScheduleAssignmentOrderKey,
-                o.ShiftId,
-                o.ShiftOrderKey,
-                o.ShiftStartsAtUtc,
-                o.ShiftEndsAtUtc,
-                CASE
-                    WHEN o.MachineShiftOccurrenceRosterRowId IS NULL THEN CAST(0 AS bit)
-                    WHEN EXISTS
-                    (
-                        SELECT 1
-                        FROM dbo.MachineShiftOccurrenceRosterOccurrence AS otherOccurrence
-                        INNER JOIN dbo.MachineShiftOccurrenceRoster AS otherRoster
-                            ON otherRoster.MachineShiftOccurrenceRosterRowId = otherOccurrence.MachineShiftOccurrenceRosterRowId
-                        WHERE otherOccurrence.ShiftScheduleAssignmentOrderKey = o.ShiftScheduleAssignmentOrderKey
-                          AND otherOccurrence.ShiftOrderKey = o.ShiftOrderKey
-                          AND otherOccurrence.ShiftStartsAtUtc = o.ShiftStartsAtUtc
-                          AND otherOccurrence.ShiftEndsAtUtc = o.ShiftEndsAtUtc
-                          AND
-                          (
-                              otherRoster.ProductionDaySiteOrderKey <> r.ProductionDaySiteOrderKey
-                              OR otherRoster.ProductionBusinessDate <> r.ProductionBusinessDate
-                          )
-                    ) THEN CAST(1 AS bit)
-                    ELSE CAST(0 AS bit)
-                END AS HasConflictingOwnership
-            FROM dbo.MachineShiftOccurrenceRoster AS r
-            LEFT JOIN dbo.MachineShiftOccurrenceRosterOccurrence AS o
-                ON o.MachineShiftOccurrenceRosterRowId = r.MachineShiftOccurrenceRosterRowId
-            WHERE r.MachineId = @MachineId
-              AND r.ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
-              AND r.ProductionBusinessDate = @ProductionBusinessDate
-            ORDER BY
-                o.ShiftStartsAtUtc,
-                o.ShiftEndsAtUtc,
-                o.ShiftScheduleAssignmentOrderKey,
-                o.ShiftOrderKey;
-            """;
-        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = machineId.Value;
-        command.Parameters.Add("@ProductionDaySiteOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value = expectedSiteOrderKey;
-        command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value = productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
         try
         {
-            var persistedMachineId = new MachineId(reader.GetGuid(1));
-            var persistedSiteId = reader.GetString(2);
-            var persistedSiteOrderKey = (byte[])reader[3];
-            var persistedBusinessDate = DateOnly.FromDateTime(reader.GetDateTime(4));
-            var productionLineId = new ProductionLineId(reader.GetString(5));
-            var revision = new MachineShiftOccurrenceRosterRevision(
-                SqlServerUInt64.Materialize(reader.GetDecimal(6)));
+            var expectedSiteOrderKey = StringOrderKeyV2Codec.Encode(productionDayId.SiteId.Value);
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                    r.MachineShiftOccurrenceRosterRowId,
+                    r.MachineId,
+                    r.ProductionDaySiteId,
+                    r.ProductionDaySiteOrderKey,
+                    r.ProductionBusinessDate,
+                    r.ProductionLineId,
+                    r.Revision,
+                    o.ShiftScheduleAssignmentId,
+                    o.ShiftScheduleAssignmentOrderKey,
+                    o.ShiftId,
+                    o.ShiftOrderKey,
+                    o.ShiftStartsAtUtc,
+                    o.ShiftEndsAtUtc,
+                    CASE
+                        WHEN o.MachineShiftOccurrenceRosterRowId IS NULL THEN CAST(0 AS bit)
+                        WHEN EXISTS
+                        (
+                            SELECT 1
+                            FROM dbo.MachineShiftOccurrenceRosterOccurrence AS otherOccurrence
+                            INNER JOIN dbo.MachineShiftOccurrenceRoster AS otherRoster
+                                ON otherRoster.MachineShiftOccurrenceRosterRowId = otherOccurrence.MachineShiftOccurrenceRosterRowId
+                            WHERE otherOccurrence.ShiftScheduleAssignmentOrderKey = o.ShiftScheduleAssignmentOrderKey
+                              AND otherOccurrence.ShiftOrderKey = o.ShiftOrderKey
+                              AND otherOccurrence.ShiftStartsAtUtc = o.ShiftStartsAtUtc
+                              AND otherOccurrence.ShiftEndsAtUtc = o.ShiftEndsAtUtc
+                              AND otherRoster.ProductionDaySiteOrderKey = r.ProductionDaySiteOrderKey
+                              AND otherRoster.ProductionBusinessDate <> r.ProductionBusinessDate
+                        ) THEN CAST(1 AS bit)
+                        ELSE CAST(0 AS bit)
+                    END AS HasConflictingOwnership
+                FROM dbo.MachineShiftOccurrenceRoster AS r
+                LEFT JOIN dbo.MachineShiftOccurrenceRosterOccurrence AS o
+                    ON o.MachineShiftOccurrenceRosterRowId = r.MachineShiftOccurrenceRosterRowId
+                WHERE r.MachineId = @MachineId
+                  AND r.ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
+                  AND r.ProductionBusinessDate = @ProductionBusinessDate
+                ORDER BY
+                    o.ShiftStartsAtUtc,
+                    o.ShiftEndsAtUtc,
+                    o.ShiftScheduleAssignmentOrderKey,
+                    o.ShiftOrderKey;
+                """;
+            command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = machineId.Value;
+            command.Parameters.Add(
+                "@ProductionDaySiteOrderKey",
+                SqlDbType.VarBinary,
+                StringOrderKeyV2Codec.MaximumEncodedLength).Value = expectedSiteOrderKey;
+            command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
+                productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
-            ValidateParentIdentity(
-                machineId,
-                productionDayId,
-                expectedSiteOrderKey,
-                persistedMachineId,
-                persistedSiteId,
-                persistedSiteOrderKey,
-                persistedBusinessDate,
-                productionLineId);
-
-            var occurrences = new List<MachineShiftOccurrenceOwnership>();
-            do
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
             {
-                if (reader.IsDBNull(7))
+                return null;
+            }
+
+            try
+            {
+                var persistedMachineId = new MachineId(reader.GetGuid(1));
+                var persistedSiteId = reader.GetString(2);
+                var persistedSiteOrderKey = (byte[])reader[3];
+                var persistedBusinessDate = DateOnly.FromDateTime(reader.GetDateTime(4));
+                var productionLineId = new ProductionLineId(reader.GetString(5));
+                var revision = new MachineShiftOccurrenceRosterRevision(
+                    SqlServerUInt64.Materialize(reader.GetDecimal(6)));
+
+                ValidateParentIdentity(
+                    machineId,
+                    productionDayId,
+                    expectedSiteOrderKey,
+                    persistedMachineId,
+                    persistedSiteId,
+                    persistedSiteOrderKey,
+                    persistedBusinessDate,
+                    productionLineId);
+
+                var occurrences = new List<MachineShiftOccurrenceOwnership>();
+                do
                 {
-                    if (!reader.IsDBNull(8) ||
-                        !reader.IsDBNull(9) ||
-                        !reader.IsDBNull(10) ||
-                        !reader.IsDBNull(11) ||
-                        !reader.IsDBNull(12))
+                    if (reader.IsDBNull(7))
                     {
-                        throw Corruption("Persisted roster occurrence has an incomplete identity.");
+                        if (!reader.IsDBNull(8) ||
+                            !reader.IsDBNull(9) ||
+                            !reader.IsDBNull(10) ||
+                            !reader.IsDBNull(11) ||
+                            !reader.IsDBNull(12))
+                        {
+                            throw Corruption(
+                                "Persisted roster occurrence has an incomplete identity.");
+                        }
+
+                        continue;
                     }
 
-                    continue;
+                    var assignmentIdText = reader.GetString(7);
+                    var assignmentOrderKey = (byte[])reader[8];
+                    var shiftIdText = reader.GetString(9);
+                    var shiftOrderKey = (byte[])reader[10];
+                    ValidateOrderKey(
+                        assignmentIdText,
+                        assignmentOrderKey,
+                        "shift schedule assignment");
+                    ValidateOrderKey(shiftIdText, shiftOrderKey, "shift");
+
+                    if (reader.GetBoolean(13))
+                    {
+                        throw Corruption(
+                            "Persisted shift occurrence is owned by conflicting production days.");
+                    }
+
+                    var occurrenceId = new ShiftOccurrenceId(
+                        productionDayId.SiteId,
+                        new ShiftScheduleAssignmentId(assignmentIdText),
+                        new ShiftId(shiftIdText),
+                        reader.GetFieldValue<DateTimeOffset>(11),
+                        reader.GetFieldValue<DateTimeOffset>(12));
+                    occurrences.Add(new MachineShiftOccurrenceOwnership(
+                        machineId,
+                        productionLineId,
+                        occurrenceId,
+                        productionDayId));
                 }
+                while (await reader.ReadAsync(cancellationToken));
 
-                var assignmentIdText = reader.GetString(7);
-                var assignmentOrderKey = (byte[])reader[8];
-                var shiftIdText = reader.GetString(9);
-                var shiftOrderKey = (byte[])reader[10];
-                ValidateOrderKey(
-                    assignmentIdText,
-                    assignmentOrderKey,
-                    "shift schedule assignment");
-                ValidateOrderKey(shiftIdText, shiftOrderKey, "shift");
-
-                if (reader.GetBoolean(13))
-                {
-                    throw Corruption(
-                        "Persisted shift occurrence is owned by conflicting production days.");
-                }
-
-                var occurrenceId = new ShiftOccurrenceId(
-                    productionDayId.SiteId,
-                    new ShiftScheduleAssignmentId(assignmentIdText),
-                    new ShiftId(shiftIdText),
-                    reader.GetFieldValue<DateTimeOffset>(11),
-                    reader.GetFieldValue<DateTimeOffset>(12));
-                occurrences.Add(new MachineShiftOccurrenceOwnership(
+                return new MachineShiftOccurrenceRoster(
                     machineId,
                     productionLineId,
-                    occurrenceId,
-                    productionDayId));
+                    productionDayId,
+                    revision,
+                    occurrences);
             }
-            while (await reader.ReadAsync(cancellationToken));
-
-            return new MachineShiftOccurrenceRoster(
-                machineId,
-                productionLineId,
-                productionDayId,
-                revision,
-                occurrences);
+            catch (InvalidOperationException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or
+                OverflowException or
+                InvalidCastException)
+            {
+                throw Corruption(
+                    "Persisted machine-shift occurrence roster is invalid.",
+                    exception);
+            }
         }
-        catch (InvalidOperationException)
+        catch (SqlException exception) when (cancellationToken.IsCancellationRequested)
         {
-            throw;
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or
-            OverflowException or
-            InvalidCastException)
-        {
-            throw Corruption("Persisted machine-shift occurrence roster is invalid.", exception);
+            throw new OperationCanceledException(
+                "Machine-shift occurrence roster read was cancelled.",
+                exception,
+                cancellationToken);
         }
     }
 
@@ -187,72 +201,83 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         var proposed = commit.ProposedRoster;
         var siteOrderKey = StringOrderKeyV2Codec.Encode(proposed.ProductionDayId.SiteId.Value);
 
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-        var sqlTransaction = (SqlTransaction)transaction;
-
         try
         {
-            var current = await ReadCurrentForUpdateAsync(
-                connection,
-                sqlTransaction,
-                proposed.MachineId,
-                proposed.ProductionDayId,
-                siteOrderKey,
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(
+                IsolationLevel.Serializable,
                 cancellationToken);
+            var sqlTransaction = (SqlTransaction)transaction;
 
-            ValidateCommitAgainstCurrent(commit, current);
-            await ValidateNoConflictingOwnershipAsync(
-                connection,
-                sqlTransaction,
-                proposed,
-                cancellationToken);
-
-            long rosterRowId;
-            if (current is null)
+            try
             {
-                rosterRowId = await InsertRosterAsync(
+                var current = await ReadCurrentForUpdateAsync(
+                    connection,
+                    sqlTransaction,
+                    proposed.MachineId,
+                    proposed.ProductionDayId,
+                    siteOrderKey,
+                    cancellationToken);
+
+                ValidateCommitAgainstCurrent(commit, current);
+                await ValidateNoConflictingOwnershipAsync(
                     connection,
                     sqlTransaction,
                     proposed,
                     siteOrderKey,
                     cancellationToken);
-            }
-            else
-            {
-                rosterRowId = current.RowId;
-                await AdvanceRevisionAsync(
-                    connection,
-                    sqlTransaction,
-                    current,
-                    proposed.Revision.Value,
-                    cancellationToken);
-                await DeleteOccurrencesAsync(
-                    connection,
-                    sqlTransaction,
-                    rosterRowId,
-                    cancellationToken);
-            }
 
-            foreach (var ownership in proposed.Occurrences)
-            {
-                await InsertOccurrenceAsync(
-                    connection,
-                    sqlTransaction,
-                    rosterRowId,
-                    ownership,
-                    cancellationToken);
-            }
+                long rosterRowId;
+                if (current is null)
+                {
+                    rosterRowId = await InsertRosterAsync(
+                        connection,
+                        sqlTransaction,
+                        proposed,
+                        siteOrderKey,
+                        cancellationToken);
+                }
+                else
+                {
+                    rosterRowId = current.RowId;
+                    await AdvanceRevisionAsync(
+                        connection,
+                        sqlTransaction,
+                        current,
+                        proposed.Revision.Value,
+                        cancellationToken);
+                    await DeleteOccurrencesAsync(
+                        connection,
+                        sqlTransaction,
+                        rosterRowId,
+                        cancellationToken);
+                }
 
-            await transaction.CommitAsync(cancellationToken);
+                foreach (var ownership in proposed.Occurrences)
+                {
+                    await InsertOccurrenceAsync(
+                        connection,
+                        sqlTransaction,
+                        rosterRowId,
+                        ownership,
+                        cancellationToken);
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
         }
-        catch
+        catch (SqlException exception) when (cancellationToken.IsCancellationRequested)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
-            throw;
+            throw new OperationCanceledException(
+                "Machine-shift occurrence roster commit was cancelled.",
+                exception,
+                cancellationToken);
         }
     }
 
@@ -281,8 +306,12 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
               AND ProductionBusinessDate = @ProductionBusinessDate;
             """;
         command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = machineId.Value;
-        command.Parameters.Add("@ProductionDaySiteOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value = expectedSiteOrderKey;
-        command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value = productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        command.Parameters.Add(
+            "@ProductionDaySiteOrderKey",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value = expectedSiteOrderKey;
+        command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
+            productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -316,6 +345,13 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         PersistedRoster? current)
     {
         var proposed = commit.ProposedRoster;
+        if (current is not null &&
+            current.ProductionLineId != proposed.ProductionLineId)
+        {
+            throw Corruption(
+                "Persisted machine-shift occurrence roster production line does not match the proposed roster identity state.");
+        }
+
         var expectedRevision = commit.ExpectedRevision?.Value;
         if (current?.Revision != expectedRevision)
         {
@@ -334,12 +370,6 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             return;
         }
 
-        if (current.ProductionLineId != proposed.ProductionLineId)
-        {
-            throw Corruption(
-                "Persisted machine-shift occurrence roster production line does not match the proposed roster identity state.");
-        }
-
         if (current.Revision == ulong.MaxValue ||
             proposed.Revision.Value != current.Revision + 1)
         {
@@ -352,6 +382,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         SqlConnection connection,
         SqlTransaction transaction,
         MachineShiftOccurrenceRoster proposed,
+        byte[] proposedSiteOrderKey,
         CancellationToken cancellationToken)
     {
         foreach (var ownership in proposed.Occurrences)
@@ -362,8 +393,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             command.CommandText = """
                 SELECT TOP (1)
                     r.ProductionDaySiteId,
-                    r.ProductionDaySiteOrderKey,
-                    r.ProductionBusinessDate
+                    r.ProductionDaySiteOrderKey
                 FROM dbo.MachineShiftOccurrenceRosterOccurrence AS o WITH (UPDLOCK, HOLDLOCK)
                 INNER JOIN dbo.MachineShiftOccurrenceRoster AS r WITH (UPDLOCK, HOLDLOCK)
                     ON r.MachineShiftOccurrenceRosterRowId = o.MachineShiftOccurrenceRosterRowId
@@ -371,15 +401,29 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                   AND o.ShiftOrderKey = @ShiftOrderKey
                   AND o.ShiftStartsAtUtc = @StartsAtUtc
                   AND o.ShiftEndsAtUtc = @EndsAtUtc
-                  AND r.MachineShiftOccurrenceRosterRowId <> COALESCE(@CurrentRosterRowId, -1);
+                  AND r.ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
+                  AND r.ProductionBusinessDate <> @ProductionBusinessDate;
                 """;
-            command.Parameters.Add("@AssignmentOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+            command.Parameters.Add(
+                "@AssignmentOrderKey",
+                SqlDbType.VarBinary,
+                StringOrderKeyV2Codec.MaximumEncodedLength).Value =
                 StringOrderKeyV2Codec.Encode(occurrence.ShiftScheduleAssignmentId.Value);
-            command.Parameters.Add("@ShiftOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+            command.Parameters.Add(
+                "@ShiftOrderKey",
+                SqlDbType.VarBinary,
+                StringOrderKeyV2Codec.MaximumEncodedLength).Value =
                 StringOrderKeyV2Codec.Encode(occurrence.ShiftId.Value);
-            command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.StartsAtUtc;
-            command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.EndsAtUtc;
-            command.Parameters.Add("@CurrentRosterRowId", SqlDbType.BigInt).Value = DBNull.Value;
+            command.Parameters.Add("@StartsAtUtc", SqlDbType.DateTimeOffset).Value =
+                occurrence.StartsAtUtc;
+            command.Parameters.Add("@EndsAtUtc", SqlDbType.DateTimeOffset).Value =
+                occurrence.EndsAtUtc;
+            command.Parameters.Add(
+                "@ProductionDaySiteOrderKey",
+                SqlDbType.VarBinary,
+                StringOrderKeyV2Codec.MaximumEncodedLength).Value = proposedSiteOrderKey;
+            command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
+                proposed.ProductionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
@@ -387,17 +431,12 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                 continue;
             }
 
-            var otherSiteId = reader.GetString(0);
-            var otherSiteOrderKey = (byte[])reader[1];
-            ValidateOrderKey(otherSiteId, otherSiteOrderKey, "production-day site");
-            var otherDay = new ProductionDayId(
-                new SiteId(otherSiteId),
-                DateOnly.FromDateTime(reader.GetDateTime(2)));
-            if (otherDay != proposed.ProductionDayId)
-            {
-                throw new InvalidOperationException(
-                    "A shift occurrence cannot belong to conflicting production days.");
-            }
+            ValidateOrderKey(
+                reader.GetString(0),
+                (byte[])reader[1],
+                "production-day site");
+            throw new InvalidOperationException(
+                "A shift occurrence cannot belong to conflicting production days.");
         }
     }
 
@@ -421,8 +460,12 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             """;
         command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = roster.MachineId.Value;
         AddString(command, "@ProductionDaySiteId", roster.ProductionDayId.SiteId.Value);
-        command.Parameters.Add("@ProductionDaySiteOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value = siteOrderKey;
-        command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value = roster.ProductionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        command.Parameters.Add(
+            "@ProductionDaySiteOrderKey",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value = siteOrderKey;
+        command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
+            roster.ProductionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
         AddString(command, "@ProductionLineId", roster.ProductionLineId.Value);
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", roster.Revision.Value));
         return Convert.ToInt64(
@@ -492,14 +535,25 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                  @ShiftId, @ShiftOrderKey, @ShiftStartsAtUtc, @ShiftEndsAtUtc);
             """;
         command.Parameters.Add("@RosterRowId", SqlDbType.BigInt).Value = rosterRowId;
-        AddString(command, "@ShiftScheduleAssignmentId", occurrence.ShiftScheduleAssignmentId.Value);
-        command.Parameters.Add("@ShiftScheduleAssignmentOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+        AddString(
+            command,
+            "@ShiftScheduleAssignmentId",
+            occurrence.ShiftScheduleAssignmentId.Value);
+        command.Parameters.Add(
+            "@ShiftScheduleAssignmentOrderKey",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value =
             StringOrderKeyV2Codec.Encode(occurrence.ShiftScheduleAssignmentId.Value);
         AddString(command, "@ShiftId", occurrence.ShiftId.Value);
-        command.Parameters.Add("@ShiftOrderKey", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+        command.Parameters.Add(
+            "@ShiftOrderKey",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value =
             StringOrderKeyV2Codec.Encode(occurrence.ShiftId.Value);
-        command.Parameters.Add("@ShiftStartsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.StartsAtUtc;
-        command.Parameters.Add("@ShiftEndsAtUtc", SqlDbType.DateTimeOffset).Value = occurrence.EndsAtUtc;
+        command.Parameters.Add("@ShiftStartsAtUtc", SqlDbType.DateTimeOffset).Value =
+            occurrence.StartsAtUtc;
+        command.Parameters.Add("@ShiftEndsAtUtc", SqlDbType.DateTimeOffset).Value =
+            occurrence.EndsAtUtc;
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -519,11 +573,13 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                 expectedProductionDayId.SiteId.Value,
                 StringComparison.Ordinal) ||
             !persistedSiteOrderKey.AsSpan().SequenceEqual(expectedSiteOrderKey) ||
-            !persistedSiteOrderKey.AsSpan().SequenceEqual(StringOrderKeyV2Codec.Encode(persistedSiteId)) ||
+            !persistedSiteOrderKey.AsSpan().SequenceEqual(
+                StringOrderKeyV2Codec.Encode(persistedSiteId)) ||
             persistedBusinessDate != expectedProductionDayId.BusinessDate ||
             persistedProductionLineId.IsEmpty)
         {
-            throw Corruption("Persisted machine-shift occurrence roster identity is inconsistent.");
+            throw Corruption(
+                "Persisted machine-shift occurrence roster identity is inconsistent.");
         }
     }
 
