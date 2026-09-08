@@ -24,16 +24,10 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId("same-processor");
         var key = CreateShiftKey(source.MachineId, "availability");
-        var initialProjection = CreateComponentProjection(
-            processorId,
-            key,
-            source.Checkpoint,
-            0.50m,
-            "initial");
         await ExecutePublicationAsync(CreateInitialCommit(
             processorId,
             source.Checkpoint,
-            [initialProjection]));
+            [CreateComponentProjection(processorId, key, source.Checkpoint, 0.50m, "initial")]));
 
         var nextRevision = Advance(source.Checkpoint);
         var firstCommit = CreateAdvanceCommit(
@@ -41,23 +35,13 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
             source.Checkpoint,
             [key],
             nextRevision,
-            [CreateComponentProjection(
-                processorId,
-                key,
-                nextRevision,
-                0.70m,
-                "winner")]);
+            [CreateComponentProjection(processorId, key, nextRevision, 0.70m, "winner")]);
         var secondCommit = CreateAdvanceCommit(
             processorId,
             source.Checkpoint,
             [key],
             nextRevision,
-            [CreateComponentProjection(
-                processorId,
-                key,
-                nextRevision,
-                0.90m,
-                "loser")]);
+            [CreateComponentProjection(processorId, key, nextRevision, 0.90m, "loser")]);
 
         var firstReachedMutation = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -178,16 +162,10 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId("retry-replay");
         var key = CreateShiftKey(source.MachineId, "availability");
-        var initialProjection = CreateComponentProjection(
-            processorId,
-            key,
-            source.Checkpoint,
-            0.50m,
-            "before");
         await ExecutePublicationAsync(CreateInitialCommit(
             processorId,
             source.Checkpoint,
-            [initialProjection]));
+            [CreateComponentProjection(processorId, key, source.Checkpoint, 0.50m, "before")]));
         var before = await ReadDurableStateAsync(processorId);
 
         var nextRevision = Advance(source.Checkpoint);
@@ -229,11 +207,10 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         Assert.Contains("0.75", afterRetry.ProjectionsJson, StringComparison.Ordinal);
         Assert.Contains("after", afterRetry.EvidenceJson, StringComparison.Ordinal);
 
-        var replay = CreateReplayCommit(
+        await ExecutePublicationAsync(CreateReplayCommit(
             processorId,
             nextRevision,
-            [proposedProjection]);
-        await ExecutePublicationAsync(replay);
+            [proposedProjection]));
 
         Assert.Equal(afterRetry, await ReadDurableStateAsync(processorId));
     }
@@ -327,7 +304,6 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         {
             await using var connection = _fixture.CreateConnection();
             await connection.OpenAsync(cancellationToken);
-
             var processorRowId = await ReadProcessorRowIdAsync(
                 connection,
                 processorId,
@@ -350,7 +326,6 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
                 connection,
                 processorRowId,
                 cancellationToken);
-
             if (checkpoint1 == checkpoint2)
             {
                 return new CheckpointStableReadResult(
@@ -531,11 +506,11 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
             OperationalMetricEvaluationStatus.Calculated,
             value,
             "ratio",
-            reasonCode: null,
-            reasonOperandName: null,
+            null,
+            null,
             revision,
             [evidence],
-            dependencyEvidence: null);
+            null);
     }
 
     private static OperationalMetricProjectionCommit CreateInitialCommit(
@@ -544,7 +519,7 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         IReadOnlyList<OperationalMetricProjection> projections) =>
         new(
             processorId,
-            expectedCheckpoint: null,
+            null,
             new OperationalMetricProjectionCheckpoint(
                 processorId,
                 revision,
@@ -577,7 +552,7 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         IReadOnlyList<OperationalMetricProjection> projections) =>
         new(
             processorId,
-            expectedCheckpoint: null,
+            null,
             new OperationalMetricProjectionCheckpoint(
                 processorId,
                 revision,
@@ -652,15 +627,8 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         return new DurableMetricInputAppend(
             MetricInputStreamId.ForMachine(machineId),
             fact,
-            new ShiftOccurrenceId(
-                siteId,
-                scheduleId,
-                shiftId,
-                start,
-                start.AddHours(8)),
-            new ProductionDayId(
-                siteId,
-                DateOnly.FromDateTime(start.UtcDateTime)));
+            new ShiftOccurrenceId(siteId, scheduleId, shiftId, start, start.AddHours(8)),
+            new ProductionDayId(siteId, DateOnly.FromDateTime(start.UtcDateTime)));
     }
 
     private static OperationalMetricProjectionProcessorId NewProcessorId(string suffix) =>
@@ -680,5 +648,7 @@ public sealed class SqlServerOperationalMetricProjectionJointPublicationConforma
         DurablePublicationState State,
         int RetryCount);
 
-    private sealed class InjectedPublicationFailureException : Exception;
+    private sealed class InjectedPublicationFailureException : Exception
+    {
+    }
 }
