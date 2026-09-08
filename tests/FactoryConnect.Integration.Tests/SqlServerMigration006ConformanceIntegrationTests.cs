@@ -402,7 +402,7 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
             SELECT COUNT(*)
             FROM dbo.FactoryConnectMigrationHistory
             WHERE MigrationId = 6
-              AND MigrationName = N'CorrectOperationalMetricProjectionManifestParent'
+              AND Name = N'CorrectOperationalMetricProjectionManifestParent'
               AND CanonicalChecksum = N'DDFD8C6CC1FADE9D7486EB5D3D915881A2538E2724A6B57EDA7E6D7C16EB6EEE';
             """;
         return Convert.ToInt32(
