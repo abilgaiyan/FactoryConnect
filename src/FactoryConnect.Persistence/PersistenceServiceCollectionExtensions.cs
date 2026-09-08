@@ -116,23 +116,35 @@ public static class PersistenceServiceCollectionExtensions
                 .GetRequiredService<PersistenceProviderServices>()
                 .MetricAggregationStore);
 
-        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetrics) != 0)
+        if ((requiredCapabilities & PersistenceProviderCapabilities.MetricAggregationRevisionReading) != 0)
         {
             services.AddSingleton<IMetricAggregationRevisionReader>(
                 static serviceProvider => serviceProvider
                     .GetRequiredService<PersistenceProviderServices>()
                     .MetricAggregationRevisionReader
                     ?? throw MissingProviderService(nameof(IMetricAggregationRevisionReader)));
+        }
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.RevisionedOperationalMetricSnapshotReading) != 0)
+        {
             services.AddSingleton<IRevisionedOperationalMetricComponentSnapshotReader>(
                 static serviceProvider => serviceProvider
                     .GetRequiredService<PersistenceProviderServices>()
                     .RevisionedOperationalMetricComponentSnapshotReader
                     ?? throw MissingProviderService(nameof(IRevisionedOperationalMetricComponentSnapshotReader)));
+        }
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetricProjectionStorage) != 0)
+        {
             services.AddSingleton<IOperationalMetricProjectionStore>(
                 static serviceProvider => serviceProvider
                     .GetRequiredService<PersistenceProviderServices>()
                     .OperationalMetricProjectionStore
                     ?? throw MissingProviderService(nameof(IOperationalMetricProjectionStore)));
+        }
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetricProjectionQuery) != 0)
+        {
             services.AddSingleton<IOperationalMetricProjectionQueryReader>(
                 static serviceProvider => serviceProvider
                     .GetRequiredService<PersistenceProviderServices>()
