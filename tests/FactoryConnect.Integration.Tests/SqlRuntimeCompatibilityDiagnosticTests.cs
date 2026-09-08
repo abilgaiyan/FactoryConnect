@@ -31,9 +31,11 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
     public void NewerHistoryIdentifiesFirstUnsupportedMigration()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
+        var secondFutureId = firstFutureId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(6, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(7, "SyntheticFutureMigration007"));
+            .Add(CreateFutureRow(firstFutureId, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(secondFutureId, "SyntheticFutureMigrationNext"));
 
         var diagnostics = SqlRuntimeCompatibilityDiagnostics.ForHistory(
             SqlRuntimeMigrationHistoryClassification.DatabaseNewerThanSupported,
@@ -42,8 +44,8 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
 
         var diagnostic = Assert.Single(diagnostics);
         Assert.Equal(SqlRuntimeCompatibilityDiagnosticCode.DatabaseNewerThanSupported, diagnostic.Code);
-        Assert.Contains("MigrationId=6", diagnostic.Artifact, StringComparison.Ordinal);
-        Assert.Equal("6:SyntheticFutureMigration", diagnostic.Actual);
+        Assert.Contains($"MigrationId={firstFutureId}", diagnostic.Artifact, StringComparison.Ordinal);
+        Assert.Equal($"{firstFutureId}:SyntheticFutureMigration", diagnostic.Actual);
     }
 
     [Fact]
@@ -69,9 +71,11 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
     public void FutureIdentityMismatchReportsFirstInvalidFutureRow()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
+        var secondFutureId = firstFutureId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(6, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(7, catalog.Migrations[0].Name));
+            .Add(CreateFutureRow(firstFutureId, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(secondFutureId, catalog.Migrations[0].Name));
 
         var diagnostics = SqlRuntimeCompatibilityDiagnostics.ForHistory(
             SqlRuntimeMigrationHistoryClassification.IdentityMismatch,
@@ -79,7 +83,7 @@ public sealed class SqlRuntimeCompatibilityDiagnosticTests
             catalog);
 
         var diagnostic = Assert.Single(diagnostics);
-        Assert.Contains("MigrationId=7", diagnostic.Artifact, StringComparison.Ordinal);
+        Assert.Contains($"MigrationId={secondFutureId}", diagnostic.Artifact, StringComparison.Ordinal);
         Assert.Contains("duplicates", diagnostic.Detail, StringComparison.Ordinal);
     }
 
