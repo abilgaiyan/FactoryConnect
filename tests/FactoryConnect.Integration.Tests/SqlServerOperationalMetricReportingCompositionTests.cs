@@ -1,4 +1,6 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Api.Reporting;
+using FactoryConnect.Core.Metrics;
 using FactoryConnect.Persistence;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
@@ -66,6 +68,28 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
         Assert.Same(
             reportingProvider,
             provider.GetRequiredService<IOperationalMetricReportingQueryProvider>());
+    }
+
+    [Fact]
+    public void SqlServerProviderComposesExistingPublicReportingReaders()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildConfiguration();
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery);
+        services.AddFactoryConnectOperationalMetricReporting();
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<OperationalMetricReportingQueryReader>(
+            provider.GetRequiredService<IOperationalMetricReportingQueryReader>());
+        Assert.IsType<OperationalMetricReportReader>(
+            provider.GetRequiredService<IOperationalMetricReportReader>());
     }
 
     private static IConfiguration BuildConfiguration() =>
