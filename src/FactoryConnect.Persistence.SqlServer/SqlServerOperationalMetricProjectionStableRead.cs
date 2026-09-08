@@ -39,42 +39,52 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                 "Operational metric projection stable reads require an open SQL connection.");
         }
 
-        for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var checkpointBefore = await ReadCheckpointPositionAsync(
-                connection,
-                projectionProcessorRowId,
-                cancellationToken);
-
-            var revisionCoherent = await IsManifestRevisionCoherentAsync(
-                connection,
-                projectionProcessorRowId,
-                checkpointBefore,
-                cancellationToken);
-
-            var result = await readPublication(connection, checkpointBefore, cancellationToken);
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var checkpointAfter = await ReadCheckpointPositionAsync(
-                connection,
-                projectionProcessorRowId,
-                cancellationToken);
-
-            if (checkpointBefore != checkpointAfter)
+            for (var attempt = 1; attempt <= MaximumAttempts; attempt++)
             {
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            if (!revisionCoherent)
-            {
-                throw new InvalidOperationException(
-                    "Persisted operational metric projection source revision is corrupt or inconsistent with the current publication checkpoint.");
-            }
+                var checkpointBefore = await ReadCheckpointPositionAsync(
+                    connection,
+                    projectionProcessorRowId,
+                    cancellationToken);
 
-            return result;
+                var revisionCoherent = await IsManifestRevisionCoherentAsync(
+                    connection,
+                    projectionProcessorRowId,
+                    checkpointBefore,
+                    cancellationToken);
+
+                var result = await readPublication(connection, checkpointBefore, cancellationToken);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var checkpointAfter = await ReadCheckpointPositionAsync(
+                    connection,
+                    projectionProcessorRowId,
+                    cancellationToken);
+
+                if (checkpointBefore != checkpointAfter)
+                {
+                    continue;
+                }
+
+                if (!revisionCoherent)
+                {
+                    throw new InvalidOperationException(
+                        "Persisted operational metric projection source revision is corrupt or inconsistent with the current publication checkpoint.");
+                }
+
+                return result;
+            }
+        }
+        catch (SqlException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(
+                "Operational metric projection read was cancelled.",
+                exception,
+                cancellationToken);
         }
 
         throw new InvalidOperationException(
