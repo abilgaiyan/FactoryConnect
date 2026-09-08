@@ -6,7 +6,7 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 {
-    private static readonly int[] MigrationIdsThrough005 = [1, 2, 3, 4, 5];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6];
     private static readonly TimeSpan MigratorLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BarrierLockTimeout = TimeSpan.FromSeconds(10);
 
@@ -74,8 +74,8 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         }
 
         var history = await ReadHistoryAsync(firstConnection);
-        Assert.Equal(5, history.Length);
-        Assert.Equal(MigrationIdsThrough005, history.Select(static row => row.MigrationId).ToArray());
+        Assert.Equal(6, history.Length);
+        Assert.Equal(MigrationIdsThroughCurrent, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
             winningTimestamp == firstClock.UtcNow || winningTimestamp == secondClock.UtcNow,
@@ -167,13 +167,13 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
                 firstRetry,
                 secondRetry);
 
-            await retryBarrier.CommitAsync(CancellationToken.None);
+            await barrierCommitAsync(retryBarrier);
             await Task.WhenAll(firstRetry, secondRetry);
         }
 
         var history = await ReadHistoryAsync(setupConnection);
-        Assert.Equal(5, history.Length);
-        Assert.Equal(MigrationIdsThrough005, history.Select(static row => row.MigrationId).ToArray());
+        Assert.Equal(6, history.Length);
+        Assert.Equal(MigrationIdsThroughCurrent, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
             winningTimestamp == firstClock.UtcNow || winningTimestamp == secondClock.UtcNow,
@@ -181,6 +181,9 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         Assert.All(history, row => Assert.Equal(winningTimestamp, row.AppliedAtUtc));
         await AssertCurrentStateAsync(setupConnection, catalog);
     }
+
+    private static Task barrierCommitAsync(SqlServerMigrationTransactionScope scope) =>
+        scope.CommitAsync(CancellationToken.None);
 
     private static async Task<MigrationExecutionException> CaptureMigration003FailureAsync(
         SqlServerMigrationEngine engine,
