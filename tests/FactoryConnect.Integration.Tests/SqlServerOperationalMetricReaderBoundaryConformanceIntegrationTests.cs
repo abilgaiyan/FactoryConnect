@@ -186,7 +186,7 @@ public sealed class SqlServerOperationalMetricReaderBoundaryConformanceIntegrati
             WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId;
             """;
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = processorRowId;
-        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", position));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", position.Value));
         command.Parameters.Add("@MetricValue", SqlDbType.NVarChar, 128).Value = metricValue;
         Assert.Equal(2, await command.ExecuteNonQueryAsync(CancellationToken.None));
     }
