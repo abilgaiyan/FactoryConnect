@@ -1,4 +1,5 @@
 using System.Data;
+using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -134,7 +135,11 @@ public sealed class SqlServerOperationalMetricProjectionSummaryReaderIntegration
                 AND MetricKey = N'performance';
             """;
         verification.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = header.ProjectionProcessorRowId;
-        Assert.Equal(1L, Convert.ToInt64(await verification.ExecuteScalarAsync()));
+        Assert.Equal(
+            1L,
+            Convert.ToInt64(
+                await verification.ExecuteScalarAsync(),
+                CultureInfo.InvariantCulture));
     }
 
     [Fact]
@@ -254,8 +259,8 @@ public sealed class SqlServerOperationalMetricProjectionSummaryReaderIntegration
             new ProductionDayId(siteId, DateOnly.FromDateTime(start.UtcDateTime)));
     }
 
-    private static OperationalMetricPeriodId CreateShiftPeriod() =>
-        new OperationalMetricPeriodId.Shift(
+    private static OperationalMetricPeriodId.Shift CreateShiftPeriod() =>
+        new(
             new ShiftOccurrenceId(
                 new SiteId("SITE-1"),
                 new ShiftScheduleAssignmentId("SCHEDULE-A"),
