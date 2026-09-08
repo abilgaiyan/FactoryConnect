@@ -71,9 +71,14 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                 LEFT JOIN dbo.MachineShiftOccurrenceRosterOccurrence AS o
                     ON o.MachineShiftOccurrenceRosterRowId = r.MachineShiftOccurrenceRosterRowId
                 WHERE r.MachineId = @MachineId
-                  AND r.ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
                   AND r.ProductionBusinessDate = @ProductionBusinessDate
+                  AND
+                  (
+                      r.ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
+                      OR r.ProductionDaySiteId = @ProductionDaySiteId
+                  )
                 ORDER BY
+                    r.MachineShiftOccurrenceRosterRowId,
                     o.ShiftStartsAtUtc,
                     o.ShiftEndsAtUtc,
                     o.ShiftScheduleAssignmentOrderKey,
@@ -84,6 +89,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                 "@ProductionDaySiteOrderKey",
                 SqlDbType.VarBinary,
                 StringOrderKeyV2Codec.MaximumEncodedLength).Value = expectedSiteOrderKey;
+            AddString(command, "@ProductionDaySiteId", productionDayId.SiteId.Value);
             command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
                 productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
@@ -95,6 +101,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
 
             try
             {
+                var rosterRowId = reader.GetInt64(0);
                 var persistedMachineId = new MachineId(reader.GetGuid(1));
                 var persistedSiteId = reader.GetString(2);
                 var persistedSiteOrderKey = (byte[])reader[3];
@@ -116,6 +123,12 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                 var occurrences = new List<MachineShiftOccurrenceOwnership>();
                 do
                 {
+                    if (reader.GetInt64(0) != rosterRowId)
+                    {
+                        throw Corruption(
+                            "Persisted machine-shift occurrence roster has conflicting rows for one semantic identity.");
+                    }
+
                     if (reader.IsDBNull(7))
                     {
                         if (!reader.IsDBNull(8) ||
@@ -302,14 +315,20 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                 Revision
             FROM dbo.MachineShiftOccurrenceRoster WITH (UPDLOCK, HOLDLOCK)
             WHERE MachineId = @MachineId
-              AND ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
-              AND ProductionBusinessDate = @ProductionBusinessDate;
+              AND ProductionBusinessDate = @ProductionBusinessDate
+              AND
+              (
+                  ProductionDaySiteOrderKey = @ProductionDaySiteOrderKey
+                  OR ProductionDaySiteId = @ProductionDaySiteId
+              )
+            ORDER BY MachineShiftOccurrenceRosterRowId;
             """;
         command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = machineId.Value;
         command.Parameters.Add(
             "@ProductionDaySiteOrderKey",
             SqlDbType.VarBinary,
             StringOrderKeyV2Codec.MaximumEncodedLength).Value = expectedSiteOrderKey;
+        AddString(command, "@ProductionDaySiteId", productionDayId.SiteId.Value);
         command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
             productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
@@ -337,6 +356,13 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             persisted.SiteOrderKey,
             persisted.BusinessDate,
             persisted.ProductionLineId);
+
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            throw Corruption(
+                "Persisted machine-shift occurrence roster has conflicting rows for one semantic identity.");
+        }
+
         return persisted;
     }
 
