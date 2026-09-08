@@ -22,7 +22,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
-                PersistenceProviderCapabilities.Core,
+                PersistenceProviderCapabilities.Core |
+                PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
+                PersistenceProviderCapabilities.OperationalMetricReportingQuery,
                 _ =>
                 {
                     var snapshot = configurationSnapshot.Value;
@@ -32,7 +34,11 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         new SqlServerObservationIngestionStore(connectionString),
                         new SqlServerProductionContextProcessingStore(connectionString),
                         new SqlServerMetricInputStore(connectionString),
-                        new SqlServerMetricAggregationStore(connectionString));
+                        new SqlServerMetricAggregationStore(connectionString),
+                        operationalMetricProjectionQueryReader:
+                            new SqlServerOperationalMetricProjectionQueryReader(connectionString),
+                        operationalMetricReportingQueryProvider:
+                            new SqlServerOperationalMetricReportingQueryProvider(connectionString));
                 },
                 _ =>
                 {
