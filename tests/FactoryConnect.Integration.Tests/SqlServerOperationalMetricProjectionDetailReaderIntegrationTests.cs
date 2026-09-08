@@ -87,7 +87,7 @@ public sealed class SqlServerOperationalMetricProjectionDetailReaderIntegrationT
         var actualDependency = Assert.Single(projection.DependencyEvidence);
         Assert.Equal(dependencyEvidence.OperandName, actualDependency.OperandName);
         Assert.Equal(dependencyEvidence.DefinitionId, actualDependency.DefinitionId);
-        Assert.Equal(dependency, actualDependency.Projection);
+        AssertProjectionSemanticsEqual(dependency, actualDependency.Projection);
     }
 
     [Fact]
@@ -222,6 +222,31 @@ public sealed class SqlServerOperationalMetricProjectionDetailReaderIntegrationT
                 CancellationToken.None));
 
         Assert.Contains("corrupt", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void AssertProjectionSemanticsEqual(
+        OperationalMetricProjection expected,
+        OperationalMetricProjection actual)
+    {
+        Assert.Equal(expected.ProcessorId, actual.ProcessorId);
+        Assert.Equal(expected.Key, actual.Key);
+        Assert.Equal(expected.Status, actual.Status);
+        Assert.Equal(expected.Value, actual.Value);
+        Assert.Equal(expected.Unit, actual.Unit);
+        Assert.Equal(expected.ReasonCode, actual.ReasonCode);
+        Assert.Equal(expected.ReasonOperandName, actual.ReasonOperandName);
+        Assert.Equal(expected.SourceRevision, actual.SourceRevision);
+        Assert.Equal(expected.OperandEvidence, actual.OperandEvidence);
+        Assert.Equal(expected.DependencyEvidence.Count, actual.DependencyEvidence.Count);
+
+        for (var index = 0; index < expected.DependencyEvidence.Count; index++)
+        {
+            var expectedDependency = expected.DependencyEvidence[index];
+            var actualDependency = actual.DependencyEvidence[index];
+            Assert.Equal(expectedDependency.OperandName, actualDependency.OperandName);
+            Assert.Equal(expectedDependency.DefinitionId, actualDependency.DefinitionId);
+            AssertProjectionSemanticsEqual(expectedDependency.Projection, actualDependency.Projection);
+        }
     }
 
     private async Task PublishAsync(OperationalMetricProjectionCommit commit)
