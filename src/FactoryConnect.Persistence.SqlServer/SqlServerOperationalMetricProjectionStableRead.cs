@@ -125,7 +125,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
             command.Parameters.Add(
                 SqlServerUInt64.CreateParameter(
                     "@CheckpointPosition",
-                    checkpointPosition.Value.Value));
+                    checkpointPosition.Value));
         }
 
         var mismatchCount = Convert.ToInt64(
