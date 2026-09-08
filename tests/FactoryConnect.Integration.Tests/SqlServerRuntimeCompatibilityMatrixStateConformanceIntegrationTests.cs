@@ -77,6 +77,10 @@ public sealed class SqlServerRuntimeCompatibilityMatrixStateConformanceIntegrati
         }
 
         await ApplyCurrentAsync(connection);
+        var catalog = SqlMigrationCatalog.Load();
+        var currentMigrationId = catalog.Migrations[^1].MigrationId;
+        var futureMigrationId = currentMigrationId + 1;
+
         switch (scenario)
         {
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.Compatible:
@@ -92,17 +96,17 @@ public sealed class SqlServerRuntimeCompatibilityMatrixStateConformanceIntegrati
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.MigrationPending:
                 await ExecuteAsync(
                     connection,
-                    "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 5;");
+                    $"DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = {currentMigrationId};");
                 return;
 
             case SqlServerRuntimeCompatibilityMatrixIntegrationTests.D5Scenario.DatabaseNewerThanSupported:
                 await ExecuteAsync(
                     connection,
-                    """
+                    $"""
                     INSERT INTO dbo.FactoryConnectMigrationHistory
                         (MigrationId, Name, CanonicalChecksum, AppliedAtUtc)
                     VALUES
-                        (6, N'SyntheticFutureMigration',
+                        ({futureMigrationId}, N'SyntheticFutureMigration',
                          'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
                          '2026-09-04T12:00:00+00:00');
                     """);
