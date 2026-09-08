@@ -207,7 +207,7 @@ public sealed class OperationalMetricReportingCompositionTests
     }
 
     [Fact]
-    public void SqlServerReportingSelectionFailsForMissingCapability()
+    public void SqlServerReportingSelectionStillRejectsMissingRosterCapability()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -224,11 +224,13 @@ public sealed class OperationalMetricReportingCompositionTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             services.AddFactoryConnectPersistence(
                 configuration,
-                PersistenceProviderCapabilities.OperationalMetricReportingQuery));
+                PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+                PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
+                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster));
 
         Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
         Assert.Contains(
-            nameof(PersistenceProviderCapabilities.OperationalMetricReportingQuery),
+            nameof(PersistenceProviderCapabilities.MachineShiftOccurrenceRoster),
             exception.Message,
             StringComparison.Ordinal);
     }
