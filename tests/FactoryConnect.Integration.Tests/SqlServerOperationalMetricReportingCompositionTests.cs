@@ -11,7 +11,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerOperationalMetricReportingCompositionTests
 {
     [Fact]
-    public void SqlServerProviderDeclaresOnlyImplementedReportingReaderCapabilities()
+    public void SqlServerProviderDeclaresOnlyImplementedReportingCapabilities()
     {
         var services = new ServiceCollection();
         var configuration = BuildConfiguration();
@@ -30,18 +30,18 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
         var expected =
             PersistenceProviderCapabilities.Core |
             PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-            PersistenceProviderCapabilities.OperationalMetricReportingQuery;
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster;
 
         Assert.Equal(expected, registration.Capabilities);
         Assert.Equal(
             PersistenceProviderCapabilities.None,
             registration.Capabilities &
-            (PersistenceProviderCapabilities.OperationalMetricProjectionStorage |
-             PersistenceProviderCapabilities.MachineShiftOccurrenceRoster));
+            PersistenceProviderCapabilities.OperationalMetricProjectionStorage);
     }
 
     [Fact]
-    public void SqlServerProviderActivatesProjectionAndReportingReadersThroughPersistenceFinalization()
+    public void SqlServerProviderActivatesProjectionReportingAndRosterThroughPersistenceFinalization()
     {
         var services = new ServiceCollection();
         var configuration = BuildConfiguration();
@@ -51,7 +51,8 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
         services.AddFactoryConnectPersistence(
             configuration,
             PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-            PersistenceProviderCapabilities.OperationalMetricReportingQuery);
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
 
         using var provider = services.BuildServiceProvider();
 
@@ -59,19 +60,25 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
             provider.GetRequiredService<IOperationalMetricProjectionQueryReader>();
         var reportingProvider =
             provider.GetRequiredService<IOperationalMetricReportingQueryProvider>();
+        var rosterStore =
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>();
 
         Assert.IsType<SqlServerOperationalMetricProjectionQueryReader>(projectionReader);
         Assert.IsType<SqlServerOperationalMetricReportingQueryProvider>(reportingProvider);
+        Assert.IsType<SqlServerMachineShiftOccurrenceRosterStore>(rosterStore);
         Assert.Same(
             projectionReader,
             provider.GetRequiredService<IOperationalMetricProjectionQueryReader>());
         Assert.Same(
             reportingProvider,
             provider.GetRequiredService<IOperationalMetricReportingQueryProvider>());
+        Assert.Same(
+            rosterStore,
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
     }
 
     [Fact]
-    public void SqlServerReaderOnlyFinalizationDoesNotActivateUnsupportedOperationalMetricServices()
+    public void SqlServerReportingFinalizationDoesNotActivateUnsupportedOperationalMetricServices()
     {
         var services = new ServiceCollection();
         var configuration = BuildConfiguration();
@@ -81,7 +88,8 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
         services.AddFactoryConnectPersistence(
             configuration,
             PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-            PersistenceProviderCapabilities.OperationalMetricReportingQuery);
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
 
         Assert.DoesNotContain(
             services,
@@ -104,7 +112,7 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
     }
 
     [Fact]
-    public void SqlServerProviderComposesExistingPublicReportingReaders()
+    public void SqlServerProviderComposesExistingPublicReportingReadersWithRosterRequirement()
     {
         var services = new ServiceCollection();
         var configuration = BuildConfiguration();
@@ -114,15 +122,47 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
         services.AddFactoryConnectPersistence(
             configuration,
             PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-            PersistenceProviderCapabilities.OperationalMetricReportingQuery);
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
         services.AddFactoryConnectOperationalMetricReporting();
 
         using var provider = services.BuildServiceProvider();
 
+        Assert.IsType<SqlServerMachineShiftOccurrenceRosterStore>(
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
         Assert.IsType<OperationalMetricReportingQueryReader>(
             provider.GetRequiredService<IOperationalMetricReportingQueryReader>());
         Assert.IsType<OperationalMetricReportReader>(
             provider.GetRequiredService<IOperationalMetricReportReader>());
+    }
+
+    [Fact]
+    public void SqlServerRosterOnlyAdditionalCapabilityDoesNotActivateReportingReaders()
+    {
+        var services = new ServiceCollection();
+        var configuration = BuildConfiguration();
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetSection(SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
+
+        Assert.DoesNotContain(
+            services,
+            static descriptor =>
+                descriptor.ServiceType == typeof(IOperationalMetricProjectionQueryReader));
+        Assert.DoesNotContain(
+            services,
+            static descriptor =>
+                descriptor.ServiceType == typeof(IOperationalMetricReportingQueryProvider));
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.IsType<SqlServerMachineShiftOccurrenceRosterStore>(
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
+        Assert.Null(provider.GetService<IOperationalMetricProjectionQueryReader>());
+        Assert.Null(provider.GetService<IOperationalMetricReportingQueryProvider>());
     }
 
     private static IConfiguration BuildConfiguration() =>
