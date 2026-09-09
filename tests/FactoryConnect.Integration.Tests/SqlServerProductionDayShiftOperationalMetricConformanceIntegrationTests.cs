@@ -70,8 +70,7 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
                         [rosteredProjection.Key, offRosterProjection.Key])),
                 [rosteredProjection, offRosterProjection]));
 
-        IMachineShiftOccurrenceRosterStore rosterStore =
-            new SqlServerMachineShiftOccurrenceRosterStore(_fixture.ConnectionString);
+        var rosterStore = new SqlServerMachineShiftOccurrenceRosterStore(_fixture.ConnectionString);
         await rosterStore.CommitAsync(
             new MachineShiftOccurrenceRosterCommit(
                 null,
@@ -95,8 +94,7 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
             new OperationalMetricReportReader(projectionReader);
         IProductionDayShiftOperationalMetricReader productionDayReader =
             new ProductionDayShiftOperationalMetricReader(rosterStore, metricReader);
-        IProductionDayShiftOperationalMetricQueryReader pagingReader =
-            new ProductionDayShiftOperationalMetricQueryReader(productionDayReader);
+        var pagingReader = new ProductionDayShiftOperationalMetricQueryReader(productionDayReader);
 
         var reportingSource = new OperationalMetricReportingSource(
             source.MachineId,
