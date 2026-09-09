@@ -5,6 +5,10 @@ import type {
   DailyReportModel,
   DailyReportShift,
 } from "./daily-report-model.ts";
+import {
+  canPrintDailyReportState,
+  visibleDailyReportModel,
+} from "./daily-report-page-policy.ts";
 
 export interface DailyReportPageProps {
   readonly productionDay: string;
@@ -47,26 +51,6 @@ export function DailyReportPage({
         : <DailyReportDocument model={visibleModel} productionDay={productionDay} />}
     </div>
   );
-}
-
-export function canPrintDailyReportState(state: DailyReportLifecycleState): boolean {
-  return state.kind === "success" && state.canPrint;
-}
-
-export function visibleDailyReportModel(state: DailyReportLifecycleState): DailyReportModel | null {
-  switch (state.kind) {
-    case "success":
-      return state.model;
-    case "refreshing":
-      return state.previous;
-    case "roster-prerequisite-failure":
-    case "reporting-failure":
-    case "presentation-contract-failure":
-    case "invalid-request":
-      return state.previous ?? null;
-    default:
-      return null;
-  }
 }
 
 function DailyReportLifecycleMessage({ state }: { readonly state: DailyReportLifecycleState }) {
