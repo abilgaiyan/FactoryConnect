@@ -96,7 +96,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationReaderConform
             source.Checkpoint,
             [initialAvailability, initialPerformance]));
 
-        var nextRevision = Advance(source.Checkpoint);
+        var nextRevision = await AdvanceSourceAsync(source);
         var qualityKey = CreateKey(source.MachineId, period, "quality", context);
         var replacementAvailability = CreateComponentProjection(
             processorId,
@@ -201,6 +201,27 @@ public sealed class SqlServerOperationalMetricProjectionPublicationReaderConform
             new MetricAggregationCommit(aggregationProcessorId, null, checkpoint, []),
             CancellationToken.None);
         return new SourceFixture(machineId, checkpoint);
+    }
+
+    private async Task<MetricAggregationCheckpoint> AdvanceSourceAsync(SourceFixture source)
+    {
+        var inputStore = new SqlServerMetricInputStore(_fixture.ConnectionString);
+        var fact = await inputStore.AppendAsync(
+            CreateAppend(source.MachineId, $"publication-reader-source-{Guid.NewGuid():N}"),
+            CancellationToken.None);
+        var checkpoint = new MetricAggregationCheckpoint(
+            source.Checkpoint.ProcessorId,
+            fact.StreamId,
+            fact.Position);
+        var aggregationStore = new SqlServerMetricAggregationStore(_fixture.ConnectionString);
+        await aggregationStore.CommitAsync(
+            new MetricAggregationCommit(
+                source.Checkpoint.ProcessorId,
+                source.Checkpoint,
+                checkpoint,
+                []),
+            CancellationToken.None);
+        return checkpoint;
     }
 
     private static DurableMetricInputAppend CreateAppend(MachineId machineId, string factId)
@@ -335,12 +356,6 @@ public sealed class SqlServerOperationalMetricProjectionPublicationReaderConform
                 new OperationalMetricProjectionBatchManifest(
                     projections.Select(static projection => projection.Key))),
             projections);
-
-    private static MetricAggregationCheckpoint Advance(MetricAggregationCheckpoint checkpoint) =>
-        new(
-            checkpoint.ProcessorId,
-            checkpoint.StreamId,
-            new MetricInputPosition(checkpoint.Position.Value + 1));
 
     private static void AssertProjectionSemanticsEqual(
         OperationalMetricProjection expected,
