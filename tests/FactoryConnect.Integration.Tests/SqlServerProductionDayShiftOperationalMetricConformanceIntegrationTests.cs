@@ -18,7 +18,7 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
     }
 
     [Fact]
-    public async Task RosterOwnedShift_ExposesItsPublishedOperationalMetrics()
+    public async Task RosterOwnedShiftExposesItsPublishedOperationalMetrics()
     {
         var scenario = await CreateScenarioAsync();
         var page = await ReadPageAsync(scenario);
@@ -43,7 +43,7 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
     }
 
     [Fact]
-    public async Task OffRosterPublishedShift_DoesNotLeakIntoProductionDayShiftReporting()
+    public async Task OffRosterPublishedShiftDoesNotLeakIntoProductionDayShiftReporting()
     {
         var scenario = await CreateScenarioAsync();
         var page = await ReadPageAsync(scenario);
