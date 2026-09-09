@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App.tsx";
 import { createDashboardApplicationRuntime } from "./application/application-runtime.ts";
+import "./presentation/daily-report.css";
 
 const rootElement = document.getElementById("root");
 if (rootElement === null) {
