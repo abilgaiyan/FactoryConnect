@@ -207,7 +207,7 @@ public sealed class OperationalMetricReportingCompositionTests
     }
 
     [Fact]
-    public void SqlServerReportingSelectionStillRejectsMissingRosterCapability()
+    public void SqlServerReportingSelectionComposesRequiredRosterCapability()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -220,19 +220,25 @@ public sealed class OperationalMetricReportingCompositionTests
             .Build();
         var services = new ServiceCollection();
         services.AddFactoryConnectPersistenceProviders(configuration);
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+            PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster);
+        services.AddFactoryConnectOperationalMetricReporting();
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            services.AddFactoryConnectPersistence(
-                configuration,
-                PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-                PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster));
+        using var provider = services.BuildServiceProvider();
 
-        Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
-        Assert.Contains(
-            nameof(PersistenceProviderCapabilities.MachineShiftOccurrenceRoster),
-            exception.Message,
-            StringComparison.Ordinal);
+        Assert.IsType<SqlServerOperationalMetricProjectionQueryReader>(
+            provider.GetRequiredService<IOperationalMetricProjectionQueryReader>());
+        Assert.IsType<SqlServerOperationalMetricReportingQueryProvider>(
+            provider.GetRequiredService<IOperationalMetricReportingQueryProvider>());
+        Assert.IsType<SqlServerMachineShiftOccurrenceRosterStore>(
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
+        Assert.IsType<OperationalMetricReportingQueryReader>(
+            provider.GetRequiredService<IOperationalMetricReportingQueryReader>());
+        Assert.IsType<ProductionDayShiftOperationalMetricReader>(
+            provider.GetRequiredService<IProductionDayShiftOperationalMetricReader>());
     }
 
     private static async Task<OperationalMetricPageResponse> QueryProductionDaysAsync(
