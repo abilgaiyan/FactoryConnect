@@ -145,6 +145,30 @@ test("calculated, unavailable, insufficient-evidence, and missing production-day
   assert.equal(cells[4].value, "0.37");
 });
 
+test("retains supplied production-day and roster-owned shift lineage", () => {
+  const configured = source(1);
+  const productionDay = productionDayItem(configured, "Availability");
+  const shiftRevision = {
+    processorId: configured.processorId,
+    machineId: configured.machineId,
+    streamKey: "shift-stream",
+    position: 73,
+  };
+  const occurrence = shiftReport(
+    configured,
+    "Shift A",
+    "2026-09-09T00:00:00Z",
+    [],
+    { sourceRevision: shiftRevision },
+  );
+
+  const model = compose([configured], [productionDay], [occurrence]);
+  const machine = model.groups[0].machines[0];
+
+  assert.equal(machine.productionDayCells[0].sourceRevision, productionDay.sourceRevision);
+  assert.equal(machine.shifts[0].sourceRevision, shiftRevision);
+});
+
 test("covered zero occurrences remains distinct from a roster-owned occurrence with five missing shift cells", () => {
   const first = source(1, { groupName: null });
   const second = source(2, { groupName: null });
