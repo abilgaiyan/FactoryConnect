@@ -64,14 +64,14 @@ export type DailyReportLifecycleState =
       readonly kind: "roster-prerequisite-failure";
       readonly productionDay: string;
       readonly details: ProductionDayShiftRosterCoverageDetails;
-      readonly previous?: DailyReportModel;
+      readonly previous: DailyReportModel | undefined;
       readonly canPrint: false;
     }
   | {
       readonly kind: "reporting-failure";
       readonly productionDay: string;
       readonly failure: ReportingClientFailure;
-      readonly previous?: DailyReportModel;
+      readonly previous: DailyReportModel | undefined;
       readonly canPrint: false;
     }
   | {
@@ -81,14 +81,14 @@ export type DailyReportLifecycleState =
         | ProductionDayPresentationFailure
         | ShiftPresentationContractFailure
         | DailyReportCompositionFailure;
-      readonly previous?: DailyReportModel;
+      readonly previous: DailyReportModel | undefined;
       readonly canPrint: false;
     }
   | {
       readonly kind: "invalid-request";
       readonly productionDay: string;
       readonly details: ReportingProblemDetails;
-      readonly previous?: DailyReportModel;
+      readonly previous: DailyReportModel | undefined;
       readonly canPrint: false;
     };
 
