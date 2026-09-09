@@ -18,7 +18,44 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
     }
 
     [Fact]
-    public async Task PublicProductionDayPagingReturnsOnlyRosteredShiftWithCommittedRevision()
+    public async Task RosterOwnedShift_ExposesItsPublishedOperationalMetrics()
+    {
+        var scenario = await CreateScenarioAsync();
+        var page = await ReadPageAsync(scenario);
+
+        var item = Assert.Single(page.Items);
+        Assert.Null(page.ContinuationToken);
+        Assert.Equal(scenario.Source.MachineId, item.Source.MachineId);
+        Assert.Equal(scenario.ProcessorId, item.Source.ProcessorId);
+        Assert.Equal(scenario.ProductionDayId, item.ProductionDayId);
+        Assert.Equal(scenario.LineId, item.ProductionLineId);
+        Assert.Equal(scenario.RosteredOccurrence, item.ShiftOccurrenceId);
+        Assert.Equal(scenario.Context, item.ContextKey);
+        Assert.NotNull(item.SourceRevision);
+        Assert.Equal(scenario.Source.Checkpoint, item.SourceRevision);
+
+        var metric = Assert.Single(item.Metrics);
+        Assert.Equal(
+            new OperationalMetricDefinitionId("availability", "1"),
+            metric.DefinitionId);
+        Assert.Equal(OperationalMetricEvaluationStatus.Calculated, metric.Status);
+        Assert.Equal(0.8m, metric.Value);
+    }
+
+    [Fact]
+    public async Task OffRosterPublishedShift_DoesNotLeakIntoProductionDayShiftReporting()
+    {
+        var scenario = await CreateScenarioAsync();
+        var page = await ReadPageAsync(scenario);
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(scenario.RosteredOccurrence, item.ShiftOccurrenceId);
+        Assert.DoesNotContain(
+            page.Items,
+            report => report.ShiftOccurrenceId == scenario.OffRosterOccurrence);
+    }
+
+    private async Task<ScenarioFixture> CreateScenarioAsync()
     {
         var source = await CreateSourceAsync();
         var processorId = new OperationalMetricProjectionProcessorId(
@@ -96,37 +133,32 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
             new ProductionDayShiftOperationalMetricReader(rosterStore, metricReader);
         var pagingReader = new ProductionDayShiftOperationalMetricQueryReader(productionDayReader);
 
+        return new ScenarioFixture(
+            source,
+            processorId,
+            lineId,
+            productionDayId,
+            rosteredOccurrence,
+            offRosterOccurrence,
+            context,
+            pagingReader);
+    }
+
+    private static async Task<ReportingPage<ProductionDayShiftOperationalMetricReport>> ReadPageAsync(
+        ScenarioFixture scenario)
+    {
         var reportingSource = new OperationalMetricReportingSource(
-            source.MachineId,
-            processorId);
+            scenario.Source.MachineId,
+            scenario.ProcessorId);
         var selection = new ProductionDayShiftOperationalMetricQuery(
-            [new ProductionDayShiftReportingSource(reportingSource, productionDayId)],
-            context);
-        var page = await pagingReader.ReadAsync(
+            [new ProductionDayShiftReportingSource(reportingSource, scenario.ProductionDayId)],
+            scenario.Context);
+
+        return await scenario.PagingReader.ReadAsync(
             new ProductionDayShiftOperationalMetricPageQuery(
                 selection,
                 new ReportingPageRequest(10)),
             CancellationToken.None);
-
-        var item = Assert.Single(page.Items);
-        Assert.Null(page.ContinuationToken);
-        Assert.Equal(source.MachineId, item.Source.MachineId);
-        Assert.Equal(processorId, item.Source.ProcessorId);
-        Assert.Equal(productionDayId, item.ProductionDayId);
-        Assert.Equal(lineId, item.ProductionLineId);
-        Assert.Equal(rosteredOccurrence, item.ShiftOccurrenceId);
-        Assert.Equal(context, item.ContextKey);
-        Assert.NotNull(item.SourceRevision);
-        Assert.Equal(source.Checkpoint, item.SourceRevision);
-
-        var metric = Assert.Single(item.Metrics);
-        Assert.Equal(new OperationalMetricDefinitionId("availability", "1"), metric.DefinitionId);
-        Assert.Equal(OperationalMetricEvaluationStatus.Calculated, metric.Status);
-        Assert.Equal(0.8m, metric.Value);
-
-        Assert.DoesNotContain(
-            page.Items,
-            report => report.ShiftOccurrenceId == offRosterOccurrence);
     }
 
     private async Task PublishAsync(OperationalMetricProjectionCommit commit)
@@ -206,6 +238,16 @@ public sealed class SqlServerProductionDayShiftOperationalMetricConformanceInteg
             null,
             null,
             revision);
+
+    private sealed record ScenarioFixture(
+        SourceFixture Source,
+        OperationalMetricProjectionProcessorId ProcessorId,
+        ProductionLineId LineId,
+        ProductionDayId ProductionDayId,
+        ShiftOccurrenceId RosteredOccurrence,
+        ShiftOccurrenceId OffRosterOccurrence,
+        OperationalMetricEvaluationContextKey Context,
+        ProductionDayShiftOperationalMetricQueryReader PagingReader);
 
     private sealed record SourceFixture(
         MachineId MachineId,
