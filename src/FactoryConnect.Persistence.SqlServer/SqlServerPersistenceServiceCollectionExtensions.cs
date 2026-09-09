@@ -24,7 +24,8 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                 ProviderKey,
                 PersistenceProviderCapabilities.Core |
                 PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-                PersistenceProviderCapabilities.OperationalMetricReportingQuery,
+                PersistenceProviderCapabilities.OperationalMetricReportingQuery |
+                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster,
                 _ =>
                 {
                     var snapshot = configurationSnapshot.Value;
@@ -38,7 +39,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         operationalMetricProjectionQueryReader:
                             new SqlServerOperationalMetricProjectionQueryReader(connectionString),
                         operationalMetricReportingQueryProvider:
-                            new SqlServerOperationalMetricReportingQueryProvider(connectionString));
+                            new SqlServerOperationalMetricReportingQueryProvider(connectionString),
+                        machineShiftOccurrenceRosterStore:
+                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString));
                 },
                 _ =>
                 {
