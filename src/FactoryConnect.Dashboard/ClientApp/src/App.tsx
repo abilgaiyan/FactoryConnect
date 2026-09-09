@@ -6,6 +6,7 @@ import {
 } from "react";
 
 import type { DashboardApplicationRuntime } from "./application/application-runtime.ts";
+import { dailyReportPath } from "./application/daily-report-navigation.ts";
 import { productionDayPath } from "./application/production-day-navigation.ts";
 import { ProductionDayOverviewSurface } from "./application/ProductionDayOverviewSurface.ts";
 import { isProductionDaySelection } from "./application/production-day-reporting.ts";
@@ -13,8 +14,10 @@ import {
   isShiftPerformanceProductionDaySelection,
   shiftPerformancePath,
 } from "./application/shift-performance-navigation.ts";
+import { useDailyReport } from "./application/use-daily-report.ts";
 import { useProductionDayOverview } from "./application/use-production-day-overview.ts";
 import { useShiftPerformanceOverview } from "./application/use-shift-performance-overview.ts";
+import { DailyReportPage } from "./presentation/DailyReportPage.tsx";
 import { ShiftPerformancePage } from "./presentation/ShiftPerformancePage.tsx";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
@@ -86,7 +89,7 @@ function RouteView({ route, navigate, runtime }: RouteViewProps) {
     case "machineDetail":
       return <section aria-labelledby="route-title"><RouteContext current="Machine" navigate={navigate} /><h1 id="route-title">Machine</h1><p>{route.machineId}</p><p>Machine detail placeholder.</p></section>;
     case "dailyReport":
-      return <section aria-labelledby="route-title"><RouteContext current="Daily report" navigate={navigate} /><h1 id="route-title">Daily report</h1><p>{route.productionDay}</p><p>Daily-report placeholder.</p></section>;
+      return <DailyReportSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "notFound":
       return <section aria-labelledby="route-title"><RouteContext current="Not found" navigate={navigate} /><h1 id="route-title">Page not found</h1><p>The dashboard has no route for this path.</p><code>{route.path}</code></section>;
   }
@@ -136,6 +139,9 @@ function ProductionDayDetail({ productionDay, navigate, runtime }: ProductionDay
             <nav aria-label="Production-day views">
               <ApplicationLink href={shiftPerformancePath(productionDay)} navigate={navigate}>
                 Shift performance
+              </ApplicationLink>{" "}
+              <ApplicationLink href={dailyReportPath(productionDay)} navigate={navigate}>
+                Daily report
               </ApplicationLink>
             </nav>
             <ProductionDayOverviewVertical
@@ -173,7 +179,16 @@ function ShiftPerformanceSelection({ productionDay, navigate, runtime }: ShiftPe
       <RouteContext current="Shift performance" navigate={navigate} />
       <h1 id="route-title">Shift performance</h1>
       {validSelection
-        ? <p>Selected production day: <time dateTime={productionDay}>{productionDay}</time></p>
+        ? (
+          <>
+            <p>Selected production day: <time dateTime={productionDay}>{productionDay}</time></p>
+            <nav aria-label="Production-day views">
+              <ApplicationLink href={dailyReportPath(productionDay)} navigate={navigate}>
+                Daily report
+              </ApplicationLink>
+            </nav>
+          </>
+        )
         : <p role="alert">The selected production day is not a valid calendar date.</p>}
       <form onSubmit={handleSubmit}>
         <label htmlFor="shift-production-day">Production day</label>
@@ -190,6 +205,36 @@ function ShiftPerformanceSelection({ productionDay, navigate, runtime }: ShiftPe
       {validSelection
         ? <ShiftPerformanceVertical productionDay={productionDay} runtime={runtime} />
         : null}
+    </section>
+  );
+}
+
+interface DailyReportSelectionProps {
+  readonly productionDay: string;
+  readonly navigate: (href: string) => void;
+  readonly runtime: DashboardApplicationRuntime;
+}
+
+function DailyReportSelection({ productionDay, navigate, runtime }: DailyReportSelectionProps) {
+  const report = useDailyReport(productionDay, runtime);
+
+  return (
+    <section aria-labelledby="route-title">
+      <RouteContext current="Daily report" navigate={navigate} />
+      <h1 id="route-title">Daily report</h1>
+      <nav aria-label="Production-day views" className="daily-report-controls">
+        <ApplicationLink href={productionDayPath(productionDay)} navigate={navigate}>
+          Production day
+        </ApplicationLink>{" "}
+        <ApplicationLink href={shiftPerformancePath(productionDay)} navigate={navigate}>
+          Shift performance
+        </ApplicationLink>
+      </nav>
+      <DailyReportPage
+        productionDay={productionDay}
+        state={report.state}
+        refresh={report.refresh}
+      />
     </section>
   );
 }
