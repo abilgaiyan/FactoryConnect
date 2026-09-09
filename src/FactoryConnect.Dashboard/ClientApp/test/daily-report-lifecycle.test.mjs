@@ -279,3 +279,55 @@ test("roster coverage failure is classified as a prerequisite failure and publis
   assert.equal(state.previous, undefined);
   assert.equal(state.canPrint, false);
 });
+
+test("same-day presentation-contract failure retains only the stale previous model and cannot print", async () => {
+  const configured = source();
+  let violatePresentationContract = false;
+  const controller = createDailyReportLifecycleController({
+    reportingClient: {
+      async queryProductionDayMetrics() {
+        if (!violatePresentationContract) {
+          return page();
+        }
+
+        return page([{
+          scope: "production-day",
+          processorId: "unexpected-processor",
+          machineId: "unexpected-machine",
+          shift: null,
+          productionDay: { siteId: configured.siteId, businessDate: day },
+          context: {
+            productionOrderId: null,
+            operationId: null,
+            partId: null,
+            operatorId: null,
+          },
+          metricKey: "Availability",
+          definitionVersion: "1.0",
+          status: "calculated",
+          value: "0.80",
+          unit: "Ratio",
+          reasonCode: null,
+          reasonOperandName: null,
+          sourceRevision: null,
+        }]);
+      },
+      async queryProductionDayShiftMetrics() {
+        return page();
+      },
+    },
+  });
+
+  const initial = await controller.execute(day, [configured]);
+  assert.equal(initial.kind, "success");
+  assert.equal(initial.canPrint, true);
+
+  violatePresentationContract = true;
+  const failed = await controller.execute(day, [configured]);
+
+  assert.equal(failed.kind, "presentation-contract-failure");
+  assert.equal(failed.previous, initial.model);
+  assert.equal(failed.canPrint, false);
+  assert.equal("model" in failed, false);
+  assert.equal(controller.current(), failed);
+});
