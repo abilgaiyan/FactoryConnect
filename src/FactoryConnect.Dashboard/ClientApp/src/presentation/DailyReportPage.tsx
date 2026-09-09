@@ -5,7 +5,6 @@ import type {
   DailyReportModel,
   DailyReportShift,
 } from "./daily-report-model.ts";
-import "./daily-report.css";
 
 export interface DailyReportPageProps {
   readonly productionDay: string;
