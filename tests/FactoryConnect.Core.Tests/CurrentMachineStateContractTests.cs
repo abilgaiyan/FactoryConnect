@@ -168,13 +168,13 @@ public sealed class CurrentMachineStateContractTests
             StateContinuityMode.Preserve);
 
         CurrentStatePolicyResolution<CurrentStateContinuityPolicy> missing =
-            CurrentStateMissingPolicy<CurrentStateContinuityPolicy>.Instance;
+            new CurrentStateMissingPolicy<CurrentStateContinuityPolicy>();
         CurrentStatePolicyResolution<CurrentStateContinuityPolicy> one =
             new CurrentStateExactlyOnePolicy<CurrentStateContinuityPolicy>(policy);
         CurrentStatePolicyResolution<CurrentStateContinuityPolicy> ambiguous =
-            CurrentStateAmbiguousPolicy<CurrentStateContinuityPolicy>.Instance;
+            new CurrentStateAmbiguousPolicy<CurrentStateContinuityPolicy>();
         CurrentStatePolicyResolution<CurrentStateContinuityPolicy> unsupported =
-            CurrentStateUnsupportedPolicy<CurrentStateContinuityPolicy>.Instance;
+            new CurrentStateUnsupportedPolicy<CurrentStateContinuityPolicy>();
 
         Assert.IsType<CurrentStateMissingPolicy<CurrentStateContinuityPolicy>>(missing);
         Assert.Same(
