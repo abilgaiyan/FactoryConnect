@@ -51,7 +51,9 @@ public sealed class CurrentMachineStateContractTests
     public void StableCutUnavailableCarriesNoPartialCutOrReason()
     {
         var result = StableCurrentStateAuthorityCutUnavailable.Instance;
-        var properties = result.GetType().GetProperties();
+        var properties = result.GetType().GetProperties(
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.Instance);
 
         Assert.Empty(properties);
         Assert.IsAssignableFrom<CurrentStateAuthorityCutReadResult>(result);
