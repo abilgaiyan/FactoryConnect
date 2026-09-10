@@ -11,7 +11,6 @@ const dom = new JSDOM("<!doctype html><html><body><div id=\"root\"></div></body>
 
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
-globalThis.navigator = dom.window.navigator;
 globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.Node = dom.window.Node;
 globalThis.Event = dom.window.Event;
