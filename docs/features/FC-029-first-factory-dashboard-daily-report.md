@@ -22,16 +22,23 @@
   - **FC-029.2C — Production-Day Presentation Model:** complete
   - **FC-029.2D — Production-Day Overview UI:** complete
   - **FC-029.2E — Production-Day Overview Contract & Behavior Conformance:** complete
-- **FC-029.3 — Shift Performance Overview:** next
-  - **FC-029.3A — Shift Reporting Query Boundary:** not started
-    - **FC-029.3A.1 — authoritative production-day-to-shift selection:** unresolved architectural gate
-    - **FC-029.3A.2 — shift query orchestration:** blocked by 3A.1
-    - **FC-029.3A.3 — pagination/lifecycle conformance:** blocked by 3A.1
-  - **FC-029.3B — Shift Presentation Model:** blocked by 3A.1
-  - **FC-029.3C — Shift Performance UI:** blocked by 3A.1
-  - **FC-029.3D — Shift Detail Interaction:** optional, deferred until the matrix is usable
-  - **FC-029.3E — Whole-Feature Conformance:** blocked by 3A.1
-- **FC-029.4 — Daily Report / Print Surface:** follows FC-029.3
+- **FC-029.3 — Shift Performance Overview:** complete
+  - **FC-029.3A — Shift Reporting Query Boundary:** complete
+    - **FC-029.3A.1 — authoritative production-day-to-shift selection:** complete
+    - **FC-029.3A.2 — shift query orchestration:** complete
+    - **FC-029.3A.3 — pagination/lifecycle conformance:** complete
+  - **FC-029.3B — Shift Presentation Model:** complete
+  - **FC-029.3C — Shift Performance UI:** complete
+  - **FC-029.3D — Shift Detail Interaction:** deferred / optional
+  - **FC-029.3E — Whole-Feature Conformance:** complete
+- **FC-029.4 — Daily Report / Print Surface:** complete / frozen
+  - **FC-029.4A — Contract / Repository Inventory:** complete / frozen
+  - **FC-029.4B — Daily Report Implementation:** complete / frozen
+    - **FC-029.4B.1 — Composition / Presentation Model:** complete / frozen
+    - **FC-029.4B.2 — Lifecycle / Query Orchestration:** complete / frozen
+    - **FC-029.4B.3 — Surface / Navigation / Print:** complete / frozen
+  - **FC-029.4C — Whole-Feature Conformance:** complete / frozen
+  - **FC-029.4D — Final Closure / Documentation:** complete / frozen
 
 Machine Status remains deferred until an authoritative server-side current-state reader/API exists.
 
@@ -706,6 +713,97 @@ ProductionProcessing:RosterMaterialization
 When the selected persistence provider exposes the roster capability, the startup worker materializes every configured machine for every business date in that half-open range before the production metric-input background worker starts. It never reads the clock, guesses today, or expands the range. A failure for any requested machine/day escapes startup and remains visible; incomplete coverage is not silently accepted. Existing CAS conflicts are not weakened or hidden. FC-025/026-only compositions whose provider does not expose roster persistence retain their existing processing lifecycle and do not advertise roster coverage.
 
 The bounded startup command may be rerun safely because equivalent complete snapshots are idempotent. 3A.1B introduces no perpetual scheduler and no reporting-triggered writes; FC-028 remains read-only.
+
+## FC-029.4 — Daily Report / Print Surface
+
+FC-029.4 is a presentation-only composition over the authoritative Production-Day Overview and Shift Performance result surfaces. It introduces no new reporting truth, metric calculation authority, schedule/calendar reconstruction, current-state inference, acquisition dependency, or write-side persistence behavior.
+
+### Final decomposition
+
+```text
+FC-029.4A    Contract / Repository Inventory          CLOSED / FROZEN
+
+FC-029.4B    Daily Report Implementation              CLOSED / FROZEN
+  4B.1       Composition / Presentation Model         CLOSED / FROZEN
+  4B.2       Lifecycle / Query Orchestration          CLOSED / FROZEN
+  4B.3       Surface / Navigation / Print             CLOSED / FROZEN
+
+FC-029.4C    Whole-Feature Conformance                CLOSED / FROZEN
+FC-029.4D    Final Closure / Documentation            CLOSED / FROZEN
+```
+
+### Closure invariants
+
+The Daily Report composes the same selected production day and the same snapshotted configured reporting-source population through the existing authoritative production-day and roster-authoritative shift projection paths. Cross-input day/population disagreement is therefore not a public input-contract branch; defensive composer guards remain present against future projector drift.
+
+The production-day and shift reporting reads are independent and are not claimed to share an atomic database snapshot. Publication is nevertheless all-or-nothing at the Daily Report model boundary: both authoritative traversals must complete before composition, a successful sibling result is never published independently after the other read fails, and a superseded generation cannot publish after its successor owns the lifecycle.
+
+The presentation model preserves authoritative metric states and lineage without arithmetic:
+
+```text
+calculated
+unavailable
+insufficient-evidence
+missing
+```
+
+Calculated zero remains calculated zero. OEE and the other metric values are projected as supplied rather than recomputed, normalized, averaged, ranked, or inferred from other cells. Production-day source revisions and roster-authoritative shift occurrence identity/source revision remain visible in the composed model where supplied.
+
+Lifecycle publication and print authority are closed:
+
+```text
+current successful generation   → model visible and printable
+same-day refresh                → previous model may remain visible, stale, non-printable
+same-day expected failure       → previous model may remain visible, stale, non-printable
+changed production day          → prior-day model is not carried into the new selection
+loading/failure without prior   → no report model is exposed
+superseded generation           → cannot publish
+```
+
+The canonical route remains:
+
+```text
+/production-days/{productionDay}/report
+```
+
+Print authority belongs only to the current successful generation. The print surface consumes the already-published Daily Report model; it does not perform a second reporting read or recalculate report content.
+
+### Whole-feature dependency boundary
+
+The executable Daily Report production boundary is frozen over:
+
+```text
+src/application/daily-report-lifecycle.ts
+src/application/use-daily-report.ts
+src/presentation/daily-report-composer.ts
+src/presentation/daily-report-page-policy.ts
+src/presentation/DailyReportPage.tsx
+src/application/daily-report-navigation.ts
+```
+
+Whole-feature conformance compares the exact imports for each module, including normal imports, type-only imports, side-effect imports, and re-exports. The closed dependency direction excludes acquisition, current-state, persistence/SQL, schedule/calendar reconstruction, write-side processing, and metric-calculation authority.
+
+### Final closure evidence
+
+The final independently verified FC-029.4 evidence is:
+
+```text
+daily-report-composer.test.mjs                     9 / 9 PASS
+daily-report-lifecycle.test.mjs                    9 / 9 PASS
+daily-report-surface.test.mjs                      4 / 4 PASS
+daily-report-react-surface.test.mjs                7 / 7 PASS
+daily-report-whole-feature-conformance.test.mjs    1 / 1 PASS
+
+npm run typecheck                                  PASS
+npm test                                           348 / 348 PASS
+npm run build                                      PASS
+npm run contracts:check                            PASS
+git diff --check                                   CLEAN
+```
+
+The earlier Medium dependency-proof finding is closed: the original global union allowlist was replaced by exact per-module dependency assertions using the established FC-029.3 import-extraction pattern. No production code change was required by that correction.
+
+FC-029.4A through FC-029.4D are closed and frozen. Future work must not reopen Daily Report semantics implicitly; any new calculation authority, current-state behavior, schedule reconstruction, persistence coupling, or write-side interaction requires a separately authorized feature boundary.
 
 ## Deferred boundaries
 
