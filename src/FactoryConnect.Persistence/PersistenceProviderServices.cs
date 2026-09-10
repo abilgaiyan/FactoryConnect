@@ -14,7 +14,8 @@ public sealed record PersistenceProviderServices
         IOperationalMetricProjectionStore? operationalMetricProjectionStore = null,
         IOperationalMetricProjectionQueryReader? operationalMetricProjectionQueryReader = null,
         IOperationalMetricReportingQueryProvider? operationalMetricReportingQueryProvider = null,
-        IMachineShiftOccurrenceRosterStore? machineShiftOccurrenceRosterStore = null)
+        IMachineShiftOccurrenceRosterStore? machineShiftOccurrenceRosterStore = null,
+        ICurrentStateAuthorityCutProvider? currentStateAuthorityCutProvider = null)
     {
         ArgumentNullException.ThrowIfNull(observationIngestionStore);
         ArgumentNullException.ThrowIfNull(productionContextProcessingStore);
@@ -31,6 +32,7 @@ public sealed record PersistenceProviderServices
         OperationalMetricProjectionQueryReader = operationalMetricProjectionQueryReader;
         OperationalMetricReportingQueryProvider = operationalMetricReportingQueryProvider;
         MachineShiftOccurrenceRosterStore = machineShiftOccurrenceRosterStore;
+        CurrentStateAuthorityCutProvider = currentStateAuthorityCutProvider;
     }
 
     public IObservationIngestionStore ObservationIngestionStore { get; }
@@ -52,4 +54,6 @@ public sealed record PersistenceProviderServices
     public IOperationalMetricReportingQueryProvider? OperationalMetricReportingQueryProvider { get; }
 
     public IMachineShiftOccurrenceRosterStore? MachineShiftOccurrenceRosterStore { get; }
+
+    public ICurrentStateAuthorityCutProvider? CurrentStateAuthorityCutProvider { get; }
 }
