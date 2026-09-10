@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { transformWithEsbuild } from "vite";
+import { transformWithOxc } from "vite";
 
 export async function load(url, context, nextLoad) {
   if (!url.endsWith(".tsx")) {
@@ -10,11 +10,11 @@ export async function load(url, context, nextLoad) {
 
   const filename = fileURLToPath(url);
   const source = await readFile(filename, "utf8");
-  const transformed = await transformWithEsbuild(source, filename, {
-    loader: "tsx",
-    jsx: "automatic",
-    target: "es2022",
-    format: "esm",
+  const transformed = await transformWithOxc(source, filename, {
+    lang: "tsx",
+    jsx: {
+      runtime: "automatic",
+    },
   });
 
   return {
