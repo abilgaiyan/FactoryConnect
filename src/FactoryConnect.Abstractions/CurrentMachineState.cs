@@ -39,54 +39,18 @@ public sealed record CurrentStateAuthorityBinding
     public ObservationProcessorId StateProcessorId { get; }
 }
 
-public sealed record AcquisitionAuthorityRevision
+public sealed record AcquisitionAuthorityRevision(ulong Value)
 {
-    public AcquisitionAuthorityRevision(ulong value)
-    {
-        if (value == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(value), "Authority revision must be greater than zero.");
-        }
-
-        Value = value;
-    }
-
-    public ulong Value { get; }
-
     public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
 
-public sealed record MappingAuthorityRevision
+public sealed record MappingAuthorityRevision(ulong Value)
 {
-    public MappingAuthorityRevision(ulong value)
-    {
-        if (value == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(value), "Authority revision must be greater than zero.");
-        }
-
-        Value = value;
-    }
-
-    public ulong Value { get; }
-
     public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
 
-public sealed record StateProjectionAuthorityRevision
+public sealed record StateProjectionAuthorityRevision(ulong Value)
 {
-    public StateProjectionAuthorityRevision(ulong value)
-    {
-        if (value == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(value), "Authority revision must be greater than zero.");
-        }
-
-        Value = value;
-    }
-
-    public ulong Value { get; }
-
     public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }
 
