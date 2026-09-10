@@ -33,11 +33,11 @@ public sealed class CurrentMachineStateContractTests
     }
 
     [Fact]
-    public void AuthorityRevisionDomainsAreDistinctAndRejectZero()
+    public void AuthorityRevisionDomainsAreDistinctWithoutReservingZero()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new AcquisitionAuthorityRevision(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new MappingAuthorityRevision(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new StateProjectionAuthorityRevision(0));
+        Assert.Equal(0UL, new AcquisitionAuthorityRevision(0).Value);
+        Assert.Equal(0UL, new MappingAuthorityRevision(0).Value);
+        Assert.Equal(0UL, new StateProjectionAuthorityRevision(0).Value);
 
         Assert.NotEqual(
             typeof(AcquisitionAuthorityRevision),
