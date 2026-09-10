@@ -397,6 +397,13 @@ public sealed record CurrentMachineStateEvidence : CurrentMachineStateReadResult
             throw new ArgumentOutOfRangeException(nameof(machineState));
         }
 
+        if (machineState == MachineState.Offline)
+        {
+            throw new ArgumentException(
+                "Offline has no authorized current-state evidence producer.",
+                nameof(machineState));
+        }
+
         if (!Enum.IsDefined(coverage))
         {
             throw new ArgumentOutOfRangeException(nameof(coverage));
