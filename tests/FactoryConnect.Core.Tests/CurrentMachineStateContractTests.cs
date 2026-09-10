@@ -95,6 +95,19 @@ public sealed class CurrentMachineStateContractTests
         Assert.Equal(MachineState.Offline, evaluation.MachineState);
     }
 
+    [Fact]
+    public void EvidenceRejectsOfflineBecauseItHasNoAuthorizedProducer()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new CurrentMachineStateEvidence(
+                MachineId.New(),
+                MachineState.Offline,
+                CurrentStateCoverage.Complete,
+                CurrentStateFreshness.Current,
+                CurrentStateUsability.Current,
+                DateTimeOffset.UtcNow));
+    }
+
     [Theory]
     [InlineData(CurrentStateCoverage.Behind, CurrentStateFreshness.Current, CurrentStateUsability.Behind)]
     [InlineData(CurrentStateCoverage.Behind, CurrentStateFreshness.Stale, CurrentStateUsability.Behind)]
