@@ -330,14 +330,7 @@ public abstract record CurrentStatePolicyResolution<TPolicy>
     where TPolicy : class;
 
 public sealed record CurrentStateMissingPolicy<TPolicy> : CurrentStatePolicyResolution<TPolicy>
-    where TPolicy : class
-{
-    public static CurrentStateMissingPolicy<TPolicy> Instance { get; } = new();
-
-    private CurrentStateMissingPolicy()
-    {
-    }
-}
+    where TPolicy : class;
 
 public sealed record CurrentStateExactlyOnePolicy<TPolicy> : CurrentStatePolicyResolution<TPolicy>
     where TPolicy : class
@@ -352,24 +345,10 @@ public sealed record CurrentStateExactlyOnePolicy<TPolicy> : CurrentStatePolicyR
 }
 
 public sealed record CurrentStateAmbiguousPolicy<TPolicy> : CurrentStatePolicyResolution<TPolicy>
-    where TPolicy : class
-{
-    public static CurrentStateAmbiguousPolicy<TPolicy> Instance { get; } = new();
-
-    private CurrentStateAmbiguousPolicy()
-    {
-    }
-}
+    where TPolicy : class;
 
 public sealed record CurrentStateUnsupportedPolicy<TPolicy> : CurrentStatePolicyResolution<TPolicy>
-    where TPolicy : class
-{
-    public static CurrentStateUnsupportedPolicy<TPolicy> Instance { get; } = new();
-
-    private CurrentStateUnsupportedPolicy()
-    {
-    }
-}
+    where TPolicy : class;
 
 public enum CurrentStateCoverage
 {
