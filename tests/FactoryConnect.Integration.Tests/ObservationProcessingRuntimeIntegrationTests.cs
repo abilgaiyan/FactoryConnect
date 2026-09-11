@@ -27,7 +27,8 @@ public sealed class ObservationProcessingRuntimeIntegrationTests
                     new SequencedMachineObservation(
                         102,
                         Observation(streamId.MachineId, "load")),
-                ]));
+                ],
+                DateTimeOffset.UnixEpoch));
 
         var firstRuntime = Runtime(store, processor, streamId);
 

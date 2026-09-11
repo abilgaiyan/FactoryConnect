@@ -23,6 +23,7 @@ public sealed class MtConnectDurableObservationSink :
     public ValueTask WriteAsync(
         MtConnectSampleResult result,
         ObservationCheckpoint? expectedCheckpoint,
+        DateTimeOffset successfulContactTime,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -42,7 +43,8 @@ public sealed class MtConnectDurableObservationSink :
             new ObservationIngestionBatch(
                 expectedCheckpoint,
                 checkpoint,
-                observations),
+                observations,
+                successfulContactTime),
             cancellationToken);
     }
 }

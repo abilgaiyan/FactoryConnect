@@ -15,6 +15,7 @@ public sealed class MtConnectAcquisitionRuntime :
     private readonly MtConnectTransientRetryPolicy _retryPolicy;
     private readonly MtConnectContinuityRecoveryPolicy _recoveryPolicy;
     private readonly IMtConnectObservationSink _sink;
+    private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _pollingInterval;
     private ObservationCheckpoint? _checkpoint;
     private PendingAcquisition? _pending;
@@ -27,6 +28,7 @@ public sealed class MtConnectAcquisitionRuntime :
         MtConnectTransientRetryPolicy retryPolicy,
         MtConnectContinuityRecoveryPolicy recoveryPolicy,
         IMtConnectObservationSink sink,
+        TimeProvider timeProvider,
         TimeSpan pollingInterval,
         ObservationCheckpoint? initialCheckpoint = null)
     {
@@ -36,6 +38,7 @@ public sealed class MtConnectAcquisitionRuntime :
         ArgumentNullException.ThrowIfNull(retryPolicy);
         ArgumentNullException.ThrowIfNull(recoveryPolicy);
         ArgumentNullException.ThrowIfNull(sink);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         if (machineId.IsEmpty)
         {
@@ -71,6 +74,7 @@ public sealed class MtConnectAcquisitionRuntime :
         _retryPolicy = retryPolicy;
         _recoveryPolicy = recoveryPolicy;
         _sink = sink;
+        _timeProvider = timeProvider;
         _pollingInterval = pollingInterval;
         _checkpoint = initialCheckpoint;
     }
@@ -132,8 +136,10 @@ public sealed class MtConnectAcquisitionRuntime :
             {
                 var result = await AcquireWithRecoveryAsync(
                     cancellationToken);
+                var successfulContactTime = _timeProvider.GetUtcNow();
                 _pending = new PendingAcquisition(
                     result,
+                    successfulContactTime,
                     _checkpoint);
             }
 
@@ -144,6 +150,7 @@ public sealed class MtConnectAcquisitionRuntime :
                 await _sink.WriteAsync(
                     pending.Result,
                     pending.ExpectedCheckpoint,
+                    pending.SuccessfulContactTime,
                     cancellationToken);
             }
             catch (OperationCanceledException)
@@ -244,6 +251,7 @@ public sealed class MtConnectAcquisitionRuntime :
 
     private sealed record PendingAcquisition(
         MtConnectSampleResult Result,
+        DateTimeOffset SuccessfulContactTime,
         ObservationCheckpoint? ExpectedCheckpoint);
 
     private sealed record CycleOutcome(

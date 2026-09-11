@@ -68,9 +68,22 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         using var httpClient = new HttpClient(handler);
         using var cancellation = new CancellationTokenSource();
+        var contactTime = new DateTimeOffset(
+            2026,
+            9,
+            11,
+            7,
+            0,
+            0,
+            TimeSpan.Zero);
+        var timeProvider = new CountingTimeProvider(contactTime);
         var sink = new FailOnceSink(
             onSuccessfulRetry: cancellation.Cancel);
-        var runtime = CreateRuntime(httpClient, sink, 101);
+        var runtime = CreateRuntime(
+            httpClient,
+            sink,
+            101,
+            timeProvider: timeProvider);
 
         await runtime.RunAsync(cancellation.Token);
 
@@ -78,12 +91,14 @@ public sealed class MtConnectAcquisitionRuntimeTests
         Assert.Equal(
             "http://localhost:5000/sample?from=101",
             handler.RequestUris[0].AbsoluteUri);
+        Assert.Equal(1, timeProvider.ReadCount);
         Assert.Equal(2, sink.WriteCount);
         Assert.Equal(2, sink.Results.Count);
         Assert.Same(sink.Results[0], sink.Results[1]);
         Assert.Equal(2, sink.ExpectedCheckpoints.Count);
         Assert.Null(sink.ExpectedCheckpoints[0]);
         Assert.Null(sink.ExpectedCheckpoints[1]);
+        Assert.Equal([contactTime, contactTime], sink.SuccessfulContactTimes);
     }
 
     [Fact]
@@ -115,12 +130,18 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         using var httpClient = new HttpClient(handler);
         var sink = new RecordingSink();
-        var runtime = CreateRuntime(httpClient, sink, 101);
+        var timeProvider = new CountingTimeProvider(DateTimeOffset.UnixEpoch);
+        var runtime = CreateRuntime(
+            httpClient,
+            sink,
+            101,
+            timeProvider: timeProvider);
 
         await Assert.ThrowsAsync<HttpRequestException>(
             () => runtime.RunCycleAsync());
 
         Assert.Empty(sink.Results);
+        Assert.Equal(0, timeProvider.ReadCount);
     }
 
     [Fact]
@@ -191,6 +212,9 @@ public sealed class MtConnectAcquisitionRuntimeTests
         Assert.Equal(2, sink.WriteCount);
         Assert.Same(sink.Results[0], sink.Results[1]);
         Assert.Equal(sink.ExpectedCheckpoints[0], sink.ExpectedCheckpoints[1]);
+        Assert.Equal(
+            sink.SuccessfulContactTimes[0],
+            sink.SuccessfulContactTimes[1]);
     }
 
     [Fact]
@@ -272,7 +296,8 @@ public sealed class MtConnectAcquisitionRuntimeTests
         ulong fromSequence,
         TimeSpan? pollingInterval = null,
         int maxAttempts = 1,
-        MachineId? machineId = null)
+        MachineId? machineId = null,
+        TimeProvider? timeProvider = null)
     {
         var runtimeMachineId = machineId ?? MachineId.New();
 
@@ -308,6 +333,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
                     NullLogger<MtConnectTransientRetryPolicy>.Instance),
                 new IgnoringContinuityReporter()),
             sink,
+            timeProvider ?? TimeProvider.System,
             pollingInterval ?? TimeSpan.FromMilliseconds(1));
     }
 
@@ -350,6 +376,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
             ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -398,6 +425,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
             ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
             CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException(
@@ -414,15 +442,19 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         public List<ObservationCheckpoint?> ExpectedCheckpoints { get; } = [];
 
+        public List<DateTimeOffset> SuccessfulContactTimes { get; } = [];
+
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
             ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             WriteCount++;
             Results.Add(result);
             ExpectedCheckpoints.Add(expectedCheckpoint);
+            SuccessfulContactTimes.Add(successfulContactTime);
 
             if (WriteCount == 1)
             {
@@ -469,6 +501,18 @@ public sealed class MtConnectAcquisitionRuntimeTests
             return Inner.CommitAsync(
                 batch,
                 cancellationToken);
+        }
+    }
+
+    private sealed class CountingTimeProvider(
+        DateTimeOffset utcNow) : TimeProvider
+    {
+        public int ReadCount { get; private set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            ReadCount++;
+            return utcNow;
         }
     }
 

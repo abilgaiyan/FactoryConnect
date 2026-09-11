@@ -18,6 +18,7 @@ public sealed class LoggingMtConnectObservationSink(
     public ValueTask WriteAsync(
         MtConnectSampleResult result,
         ObservationCheckpoint? expectedCheckpoint,
+        DateTimeOffset successfulContactTime,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(result);

@@ -30,6 +30,7 @@ public sealed class MtConnectAcquisitionRuntimeFactory(
             retryPolicy,
             recoveryPolicy,
             sink,
+            TimeProvider.System,
             options.PollingInterval,
             startupState.Checkpoint);
     }

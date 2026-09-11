@@ -5,7 +5,8 @@ public sealed record ObservationIngestionBatch
     public ObservationIngestionBatch(
         ObservationCheckpoint? expectedCheckpoint,
         ObservationCheckpoint checkpoint,
-        IReadOnlyList<SequencedMachineObservation> observations)
+        IReadOnlyList<SequencedMachineObservation> observations,
+        DateTimeOffset successfulContactTime)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
         ArgumentNullException.ThrowIfNull(observations);
@@ -21,6 +22,7 @@ public sealed record ObservationIngestionBatch
         ExpectedCheckpoint = expectedCheckpoint;
         Checkpoint = checkpoint;
         Observations = observations.ToArray();
+        SuccessfulContactTime = successfulContactTime;
     }
 
     public ObservationCheckpoint? ExpectedCheckpoint { get; }
@@ -28,4 +30,6 @@ public sealed record ObservationIngestionBatch
     public ObservationCheckpoint Checkpoint { get; }
 
     public IReadOnlyList<SequencedMachineObservation> Observations { get; }
+
+    public DateTimeOffset SuccessfulContactTime { get; }
 }
