@@ -10,6 +10,7 @@ public sealed class SqlServerMigration007BackfillIntegrationTests
     private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7];
     private static readonly ulong[] FirstStreamPositions = [1UL, 2UL, 3UL];
     private static readonly ulong[] SecondStreamPositions = [1UL, 2UL];
+    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
 
     [Fact]
     public async Task ExactPost006BackfillsDeterministicPerStreamPositionsWithoutFabricatingAuthority()
@@ -27,7 +28,7 @@ public sealed class SqlServerMigration007BackfillIntegrationTests
         Assert.False(await TableExistsAsync(connection, "dbo", "AcquisitionContactAuthority"));
 
         var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
-        await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
+        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
 
         Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.Equal(
@@ -38,9 +39,13 @@ public sealed class SqlServerMigration007BackfillIntegrationTests
             await ReadPositionsAsync(connection, 0x02));
         Assert.Equal(0, await ReadAuthorityCountAsync(connection));
 
-        var verifier = new SqlServerRuntimeSchemaCompatibilityVerifier(catalog);
-        var outcome = await verifier.VerifyAsync(connection, CancellationToken.None);
-        Assert.Equal(SqlRuntimeSchemaCompatibilityStatus.Compatible, outcome.Status);
+        var verifier = SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault();
+        var outcome = await verifier.VerifyAsync(
+            connection,
+            LockTimeout,
+            CancellationToken.None);
+        Assert.Equal(SqlRuntimeCompatibilityClassification.Compatible, outcome.Classification);
+        Assert.True(outcome.IsCompatible);
     }
 
     private static async Task CreateExactPrefixAsync(
@@ -209,7 +214,7 @@ public sealed class SqlServerMigration007BackfillIntegrationTests
 
     private sealed class FixedUtcClock : ISqlMigrationUtcClock
     {
-        public DateTimeOffset GetUtcNow() =>
+        public DateTimeOffset UtcNow { get; } =
             new(2026, 9, 12, 0, 0, 0, TimeSpan.Zero);
     }
 }
