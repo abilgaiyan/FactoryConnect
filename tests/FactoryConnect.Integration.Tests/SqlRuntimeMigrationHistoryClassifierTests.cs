@@ -22,6 +22,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(5)]
+    [InlineData(6)]
     public void ProperCatalogPrefixIsPending(int appliedCount)
     {
         var catalog = SqlMigrationCatalog.Load();
@@ -108,9 +109,10 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     public void ExactSupportedHistoryFollowedByWellFormedFutureRowsIsNewerThanSupported()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(7, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(8, "Synthetic-Future_008"));
+            .Add(CreateFutureRow(firstFutureId, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(firstFutureId + 1, "Synthetic-Future_008"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -121,9 +123,10 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     public void LongerHistoryDoesNotHideSupportedPrefixIdentityMismatch()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length).ToBuilder();
         history[0] = history[0] with { Name = "WrongName" };
-        history.Add(CreateFutureRow(7, "SyntheticFutureMigration"));
+        history.Add(CreateFutureRow(firstFutureId, "SyntheticFutureMigration"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history.ToImmutable(), catalog);
 
@@ -133,11 +136,7 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     [Theory]
     [InlineData(6, "DuplicateSupportedId")]
     [InlineData(5, "ReorderedFutureId")]
-    [InlineData(7, "")]
-    [InlineData(7, "Future Migration")]
-    [InlineData(7, "Future.Migration")]
-    [InlineData(7, "Future/Migration")]
-    public void InvalidFutureIdentityDoesNotQualifyAsNewerThanSupported(
+    public void SupportedIdsAppendedAfterExactHistoryDoNotQualifyAsFuture(
         int migrationId,
         string name)
     {
@@ -150,12 +149,30 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
         Assert.Equal(SqlRuntimeMigrationHistoryClassification.IdentityMismatch, result);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("Future Migration")]
+    [InlineData("Future.Migration")]
+    [InlineData("Future/Migration")]
+    public void InvalidFutureNameDoesNotQualifyAsNewerThanSupported(string name)
+    {
+        var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
+        var history = CreateExactHistory(catalog, catalog.Migrations.Length)
+            .Add(CreateFutureRow(firstFutureId, name));
+
+        var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
+
+        Assert.Equal(SqlRuntimeMigrationHistoryClassification.IdentityMismatch, result);
+    }
+
     [Fact]
     public void FutureRowCannotDuplicateSupportedMigrationName()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(7, catalog.Migrations[0].Name));
+            .Add(CreateFutureRow(firstFutureId, catalog.Migrations[0].Name));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -166,9 +183,10 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     public void FutureRowsCannotDuplicateEachOtherByName()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(7, "SyntheticFutureMigration"))
-            .Add(CreateFutureRow(8, "SyntheticFutureMigration"));
+            .Add(CreateFutureRow(firstFutureId, "SyntheticFutureMigration"))
+            .Add(CreateFutureRow(firstFutureId + 1, "SyntheticFutureMigration"));
 
         var result = SqlRuntimeMigrationHistoryClassifier.Classify(history, catalog);
 
@@ -179,8 +197,9 @@ public sealed class SqlRuntimeMigrationHistoryClassifierTests
     public void FutureRowMalformedChecksumStillPrecedesNewerClassification()
     {
         var catalog = SqlMigrationCatalog.Load();
+        var firstFutureId = catalog.Migrations[^1].MigrationId + 1;
         var history = CreateExactHistory(catalog, catalog.Migrations.Length)
-            .Add(CreateFutureRow(7, "SyntheticFutureMigration") with
+            .Add(CreateFutureRow(firstFutureId, "SyntheticFutureMigration") with
             {
                 CanonicalChecksum = new string('a', 64)
             });
