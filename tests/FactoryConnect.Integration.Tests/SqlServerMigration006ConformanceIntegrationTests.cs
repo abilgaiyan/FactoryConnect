@@ -12,10 +12,10 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         "FK_OperationalMetricProjectionManifest_Processor";
 
     private static readonly int[] MigrationIdsThrough005 = [1, 2, 3, 4, 5];
-    private static readonly int[] MigrationIdsThrough006 = [1, 2, 3, 4, 5, 6];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7];
 
     [Fact]
-    public async Task ExactPost005Applies006WithTrustedParentFkAndPreservesExistingPublicationData()
+    public async Task ExactPost005Applies006ThenCurrentAndPreservesExistingPublicationData()
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
@@ -31,14 +31,14 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough006, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.Equal(before, await ReadPublicationSnapshotAsync(connection));
         await AssertPost006ForeignKeyStateAsync(connection);
         await AssertCurrentStateAsync(connection, catalog);
     }
 
     [Fact]
-    public async Task FailureAfterOldFkDropRollsBackExactlyAndRetryRecords006Once()
+    public async Task FailureAfterOldFkDropRollsBackExactlyAndRetryRecords006OnceThenReachesCurrent()
     {
         await using var database = await IsolatedMigrationDatabase.CreateAsync();
         await using var connection = database.CreateConnection();
@@ -72,7 +72,7 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         await ExecuteAsync(connection, "DROP TABLE dbo.C006ConstraintConflict;");
         await engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough006, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountMigration006RowsAsync(connection));
         Assert.Equal(before, await ReadPublicationSnapshotAsync(connection));
         await AssertPost006ForeignKeyStateAsync(connection);
