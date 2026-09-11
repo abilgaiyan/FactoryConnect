@@ -6,7 +6,7 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
 {
-    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7];
     private static readonly TimeSpan MigratorLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan BarrierLockTimeout = TimeSpan.FromSeconds(10);
 
@@ -14,6 +14,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
     [
         "dbo.ObservationStreamCheckpoint",
         "dbo.MachineObservation",
+        "dbo.AcquisitionContactAuthority",
         "dbo.MetricInputStream",
         "dbo.MetricInputFact",
         "dbo.MetricAggregationProcessor",
@@ -74,7 +75,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         }
 
         var history = await ReadHistoryAsync(firstConnection);
-        Assert.Equal(6, history.Length);
+        Assert.Equal(7, history.Length);
         Assert.Equal(MigrationIdsThroughCurrent, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
@@ -172,7 +173,7 @@ public sealed class SqlServerMigrationConcurrencyConformanceIntegrationTests
         }
 
         var history = await ReadHistoryAsync(setupConnection);
-        Assert.Equal(6, history.Length);
+        Assert.Equal(7, history.Length);
         Assert.Equal(MigrationIdsThroughCurrent, history.Select(static row => row.MigrationId).ToArray());
         var winningTimestamp = history[0].AppliedAtUtc;
         Assert.True(
