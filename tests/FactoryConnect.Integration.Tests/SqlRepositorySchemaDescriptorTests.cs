@@ -5,14 +5,16 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlRepositorySchemaDescriptorTests
 {
     [Fact]
-    public void CurrentExtendsLegacyPost004WithMigration005Tables()
+    public void CurrentExtendsLegacyPost004ThroughPost007()
     {
         var legacy = SqlRepositorySchemaDescriptors.LegacyPost004;
+        var post005 = SqlRepositorySchemaDescriptors.Post005;
         var current = SqlRepositorySchemaDescriptors.Current;
 
         Assert.NotSame(legacy, current);
         Assert.Equal(13, legacy.Tables.Length);
-        Assert.Equal(20, current.Tables.Length);
+        Assert.Equal(20, post005.Tables.Length);
+        Assert.Equal(21, current.Tables.Length);
         Assert.Equal(
             legacy.Tables.Select(static table => table.Name),
             current.Tables.Take(legacy.Tables.Length).Select(static table => table.Name));
@@ -24,7 +26,8 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "OperationalMetricProjectionManifest",
                 "OperationalMetricProjectionEvidence",
                 "MachineShiftOccurrenceRoster",
-                "MachineShiftOccurrenceRosterOccurrence"
+                "MachineShiftOccurrenceRosterOccurrence",
+                "AcquisitionContactAuthority"
             ],
             current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }
