@@ -97,7 +97,6 @@ public sealed class MtConnectAcquisitionRuntimeTests
         Assert.Empty(sink.Results);
     }
 
-
     [Fact]
     public async Task RunCycleAsyncRetriesSameCursorBeforePublishing()
     {
@@ -126,7 +125,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
-    public async Task RunCycleAsyncDoesNotRetrySinkFailure()
+    public async Task RunCycleAsyncDoesNotRetrySinkFailureWithinSingleCall()
     {
         var handler = new SequenceHandler(
             SampleResponse(42, 110, 111));
@@ -145,10 +144,9 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
-    public async Task RunCycleAsyncRetriesSameCursorAfterSinkFailure()
+    public async Task RunCycleAsyncRetriesExactPendingResultAfterSinkFailure()
     {
         var handler = new SequenceHandler(
-            SampleResponse(42, 110, 111),
             SampleResponse(42, 110, 111));
 
         using var httpClient = new HttpClient(handler);
@@ -160,20 +158,17 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         await runtime.RunCycleAsync();
 
-        Assert.Equal(2, handler.RequestUris.Count);
-        Assert.All(
-            handler.RequestUris,
-            uri => Assert.Equal(
-                "http://localhost:5000/sample?from=101",
-                uri.AbsoluteUri));
+        Assert.Single(handler.RequestUris);
+        Assert.Equal(
+            "http://localhost:5000/sample?from=101",
+            handler.RequestUris[0].AbsoluteUri);
         Assert.Equal(2, sink.WriteCount);
     }
 
     [Fact]
-    public async Task RunCycleAsyncReacquiresAndCommitsAfterStoreFailure()
+    public async Task RunCycleAsyncRetriesExactPendingResultAfterStoreFailure()
     {
         var handler = new SequenceHandler(
-            SampleResponse(42, 110, 111),
             SampleResponse(42, 110, 111));
 
         using var httpClient = new HttpClient(handler);
@@ -196,12 +191,10 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
         await runtime.RunCycleAsync();
 
-        Assert.Equal(2, handler.RequestUris.Count);
-        Assert.All(
-            handler.RequestUris,
-            uri => Assert.Equal(
-                "http://localhost:5000/sample?from=101",
-                uri.AbsoluteUri));
+        Assert.Single(handler.RequestUris);
+        Assert.Equal(
+            "http://localhost:5000/sample?from=101",
+            handler.RequestUris[0].AbsoluteUri);
 
         var checkpoint =
             await store.Inner.ReadCheckpointAsync(streamId);
@@ -338,7 +331,6 @@ public sealed class MtConnectAcquisitionRuntimeTests
             return ValueTask.CompletedTask;
         }
     }
-
 
     private sealed class IgnoringContinuityReporter :
         IMtConnectContinuityReporter
