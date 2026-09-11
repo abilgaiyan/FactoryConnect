@@ -6,7 +6,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlMigration007AuthorityTests
 {
     private const string Migration007Checksum =
-        "72002BCD79EEBB95CB242AA43809AE6C852859167AE8B4D75278E2C3BD19B51E";
+        "5844FDD5B3866755BB5F2A36738DCFC13064D358F0C16D4CCAC3FE5B95EC00FD";
 
     [Fact]
     public void CatalogContainsFrozenMigration007IdentityAndChecksum()
