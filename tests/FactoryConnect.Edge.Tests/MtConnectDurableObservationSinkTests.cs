@@ -37,7 +37,8 @@ public sealed class MtConnectDurableObservationSinkTests
 
         await sink.WriteAsync(
             Result(machineId, 42, 103, 101, 102),
-            null);
+            null,
+            DateTimeOffset.UnixEpoch);
 
         var checkpoint = await store.ReadCheckpointAsync(streamId);
 
@@ -60,13 +61,15 @@ public sealed class MtConnectDurableObservationSinkTests
 
         await sink.WriteAsync(
             Result(machineId, 42, 103, 101, 102),
-            null);
+            null,
+            DateTimeOffset.UnixEpoch);
 
         var current = await store.ReadCheckpointAsync(streamId);
 
         await sink.WriteAsync(
             Result(machineId, 42, 111),
-            current);
+            current,
+            DateTimeOffset.UnixEpoch);
 
         Assert.Equal(
             111UL,
@@ -88,7 +91,8 @@ public sealed class MtConnectDurableObservationSinkTests
 
         await sink.WriteAsync(
             Result(machineId, 42, 103, 101, 102),
-            null);
+            null,
+            DateTimeOffset.UnixEpoch);
 
         var stale = new ObservationCheckpoint(
             streamId,
@@ -98,7 +102,8 @@ public sealed class MtConnectDurableObservationSinkTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => sink.WriteAsync(
                 Result(machineId, 43, 2, 1),
-                stale).AsTask());
+                stale,
+                DateTimeOffset.UnixEpoch).AsTask());
 
         var checkpoint = await store.ReadCheckpointAsync(streamId);
 
