@@ -45,7 +45,6 @@ ADD CONSTRAINT CK_MachineObservation_Position_UInt64Positive
 ALTER TABLE dbo.MachineObservation
 ADD CONSTRAINT UQ_MachineObservation_StreamPosition
     UNIQUE NONCLUSTERED (MachineId, StreamKeyBinary, Position);
-';
 
 CREATE TABLE dbo.AcquisitionContactAuthority
 (
@@ -82,3 +81,4 @@ CREATE TABLE dbo.AcquisitionContactAuthority
             AcquisitionRevision BETWEEN 0 AND 18446744073709551615
         )
 );
+';
