@@ -20,6 +20,8 @@
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.005_OperationalMetricReportingPersistence.sql" />
     <EmbeddedResource Include="Sql\006_CorrectOperationalMetricProjectionManifestParent.sql"
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.006_CorrectOperationalMetricProjectionManifestParent.sql" />
+    <EmbeddedResource Include="Sql\007_AcquisitionContactAuthority.sql"
+                      LogicalName="FactoryConnect.Persistence.SqlServer.Sql.007_AcquisitionContactAuthority.sql" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
