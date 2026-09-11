@@ -7,12 +7,12 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigration006ConcurrencyIntegrationTests
 {
-    private static readonly int[] MigrationIdsThrough006 = [1, 2, 3, 4, 5, 6];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7];
     private static readonly TimeSpan MigrationLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(15);
 
     [Fact]
-    public async Task TwoCallersFromExactPost005SerializeAndBothObserveExactPost006()
+    public async Task TwoCallersFromExactPost005SerializeAndBothObserveExactCurrent()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var setupConnection = new SqlConnection(database.ConnectionString);
@@ -63,8 +63,8 @@ public sealed class SqlServerMigration006ConcurrencyIntegrationTests
         Assert.All(outcomes, static outcome => Assert.True(outcome.CompletedSuccessfully));
         Assert.Equal(firstSessionId, outcomes[0].SessionId);
         Assert.Equal(secondSessionId, outcomes[1].SessionId);
-        Assert.Equal(MigrationIdsThrough006, outcomes[0].ObservedMigrationIds);
-        Assert.Equal(MigrationIdsThrough006, outcomes[1].ObservedMigrationIds);
+        Assert.Equal(MigrationIdsThroughCurrent, outcomes[0].ObservedMigrationIds);
+        Assert.Equal(MigrationIdsThroughCurrent, outcomes[1].ObservedMigrationIds);
 
         var migration006Rows = await ReadMigration006RowsAsync(setupConnection);
         var migration006 = Assert.Single(migration006Rows);
