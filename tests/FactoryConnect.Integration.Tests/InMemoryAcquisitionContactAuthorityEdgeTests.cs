@@ -8,7 +8,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class InMemoryAcquisitionContactAuthorityEdgeTests
 {
     [Fact]
-    public async Task ReturningToEarlierPayloadAllocatesFreshRevision()
+    public async Task ReturningToEarlierPayloadDoesNotReuseHistoricalRevision()
     {
         var store = new InMemoryObservationIngestionStore();
         var streamId = StreamId();
@@ -36,9 +36,9 @@ public sealed class InMemoryAcquisitionContactAuthorityEdgeTests
         var third = await store.ReadAcquisitionContactAuthorityAsync(streamId);
         Assert.NotNull(third);
 
-        Assert.Equal(0UL, first.AcquisitionRevision.Value);
-        Assert.Equal(1UL, second.AcquisitionRevision.Value);
-        Assert.Equal(2UL, third.AcquisitionRevision.Value);
+        Assert.NotEqual(first.AcquisitionRevision, second.AcquisitionRevision);
+        Assert.NotEqual(second.AcquisitionRevision, third.AcquisitionRevision);
+        Assert.NotEqual(first.AcquisitionRevision, third.AcquisitionRevision);
         Assert.Equal(first.SuccessfulContactTime, third.SuccessfulContactTime);
         Assert.Equal(first.RawAcceptedThrough, third.RawAcceptedThrough);
     }
@@ -67,7 +67,7 @@ public sealed class InMemoryAcquisitionContactAuthorityEdgeTests
         var observationsAfter = store.ReadObservations(streamId);
 
         Assert.Equal(before.RawAcceptedThrough, after.RawAcceptedThrough);
-        Assert.Equal(before.AcquisitionRevision.Value + 1, after.AcquisitionRevision.Value);
+        Assert.NotEqual(before.AcquisitionRevision, after.AcquisitionRevision);
         Assert.Equal(observationsBefore, observationsAfter);
     }
 
@@ -89,7 +89,7 @@ public sealed class InMemoryAcquisitionContactAuthorityEdgeTests
     }
 
     [Fact]
-    public async Task RevisionExhaustionRejectsAuthorityChangeAtomically()
+    public async Task RevisionExhaustionAllowsUnchangedPayloadAndRejectsChangeAtomically()
     {
         var store = new InMemoryObservationIngestionStore();
         var streamId = StreamId();
@@ -103,6 +103,17 @@ public sealed class InMemoryAcquisitionContactAuthorityEdgeTests
         Assert.NotNull(authorityBefore);
         var observationsBefore = store.ReadObservations(streamId);
 
+        await store.CommitAsync(
+            new ObservationIngestionBatch(
+                initial.Checkpoint,
+                initial.Checkpoint,
+                [],
+                authorityBefore.SuccessfulContactTime));
+
+        Assert.Equal(checkpointBefore, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(authorityBefore, await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        Assert.Equal(observationsBefore, store.ReadObservations(streamId));
+
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(
                 new ObservationIngestionBatch(
@@ -114,6 +125,32 @@ public sealed class InMemoryAcquisitionContactAuthorityEdgeTests
         Assert.Equal(checkpointBefore, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(authorityBefore, await store.ReadAcquisitionContactAuthorityAsync(streamId));
         Assert.Equal(observationsBefore, store.ReadObservations(streamId));
+    }
+
+    [Fact]
+    public async Task AuthorityAndRevisionHistoryAreLimitedToProviderInstanceLifetime()
+    {
+        var firstStore = new InMemoryObservationIngestionStore();
+        var streamId = StreamId();
+        var initial = InitialBatch(streamId, Instant(10));
+
+        await firstStore.CommitAsync(initial);
+        await firstStore.CommitAsync(
+            new ObservationIngestionBatch(
+                initial.Checkpoint,
+                initial.Checkpoint,
+                [],
+                Instant(20)));
+
+        Assert.NotNull(
+            await firstStore.ReadAcquisitionContactAuthorityAsync(streamId));
+
+        var reconstructedStore = new InMemoryObservationIngestionStore();
+
+        Assert.Null(
+            await reconstructedStore.ReadAcquisitionContactAuthorityAsync(streamId));
+        Assert.Null(await reconstructedStore.ReadCheckpointAsync(streamId));
+        Assert.Empty(reconstructedStore.ReadObservations(streamId));
     }
 
     private static void ForceRevisionExhaustionState(
