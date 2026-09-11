@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Protocols.MTConnect;
 
@@ -6,7 +7,7 @@ namespace FactoryConnect.Edge;
 public sealed class MtConnectAcquisitionRuntime :
     IMtConnectAcquisitionRuntime
 {
-    private readonly SemaphoreSlim _cycleGate = new(1, 1);
+    private readonly Channel<bool> _cycleGate = CreateCycleGate();
     private MtConnectAcquisitionSession _session;
     private readonly MtConnectEndpoint _endpoint;
     private readonly MachineId _machineId;
@@ -124,7 +125,7 @@ public sealed class MtConnectAcquisitionRuntime :
         bool containDurableWriteFailure,
         CancellationToken cancellationToken)
     {
-        await _cycleGate.WaitAsync(cancellationToken);
+        await _cycleGate.Reader.ReadAsync(cancellationToken);
         try
         {
             if (_pending is null)
@@ -168,7 +169,11 @@ public sealed class MtConnectAcquisitionRuntime :
         }
         finally
         {
-            _cycleGate.Release();
+            if (!_cycleGate.Writer.TryWrite(true))
+            {
+                throw new InvalidOperationException(
+                    "The acquisition cycle gate could not be released.");
+            }
         }
     }
 
@@ -222,6 +227,25 @@ public sealed class MtConnectAcquisitionRuntime :
         }
     }
 
+    private static Channel<bool> CreateCycleGate()
+    {
+        var channel = Channel.CreateBounded<bool>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = false,
+                SingleWriter = false,
+            });
+
+        if (!channel.Writer.TryWrite(true))
+        {
+            throw new InvalidOperationException(
+                "The acquisition cycle gate could not be initialized.");
+        }
+
+        return channel;
+    }
+
     private sealed record PendingAcquisition(
         MtConnectSampleResult Result,
         ObservationCheckpoint? ExpectedCheckpoint);
@@ -234,6 +258,6 @@ public sealed class MtConnectAcquisitionRuntime :
             new(result);
 
         public static CycleOutcome DurableWriteFailed() =>
-            new(null);
+            new((MtConnectSampleResult?)null);
     }
 }
