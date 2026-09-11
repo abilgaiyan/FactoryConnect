@@ -740,7 +740,7 @@ internal sealed class SqlServerObservationIngestionStore :
                 Scale = 0,
                 Value = authority.RawAcceptedThrough is null
                     ? DBNull.Value
-                    : (decimal)authority.RawAcceptedThrough.Value.Value,
+                    : (decimal)authority.RawAcceptedThrough.Value,
             });
         command.Parameters.Add(
             SqlServerUInt64.CreateParameter(
