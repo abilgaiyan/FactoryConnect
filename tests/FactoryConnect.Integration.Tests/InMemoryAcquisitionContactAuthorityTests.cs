@@ -21,8 +21,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
                 [],
                 contactTime));
 
-        var authority = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var authority = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(authority);
 
         Assert.Equal(streamId, authority.ObservationStreamId);
         Assert.Equal(contactTime, authority.SuccessfulContactTime);
@@ -38,10 +38,11 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
 
         await store.CommitAsync(InitialBatch(streamId, Instant(10)));
 
-        var authority = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var authority = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(authority);
+        Assert.NotNull(authority.RawAcceptedThrough);
 
-        Assert.Equal(2UL, Assert.NotNull(authority.RawAcceptedThrough).Value);
+        Assert.Equal(2UL, authority.RawAcceptedThrough.Value);
     }
 
     [Fact]
@@ -52,8 +53,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
         var initial = InitialBatch(streamId, Instant(10));
 
         await store.CommitAsync(initial);
-        var before = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var before = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(before);
 
         var earlierClockValue = Instant(5);
         await store.CommitAsync(
@@ -63,8 +64,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
                 [],
                 earlierClockValue));
 
-        var after = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var after = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(after);
 
         Assert.Equal(earlierClockValue, after.SuccessfulContactTime);
         Assert.Equal(before.RawAcceptedThrough, after.RawAcceptedThrough);
@@ -83,8 +84,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
         var initial = InitialBatch(streamId, instant);
 
         await store.CommitAsync(initial);
-        var before = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var before = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(before);
 
         await store.CommitAsync(
             new ObservationIngestionBatch(
@@ -93,8 +94,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
                 [],
                 equivalent));
 
-        var after = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var after = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(after);
 
         Assert.Equal(before.AcquisitionRevision, after.AcquisitionRevision);
         Assert.Equal(
@@ -124,13 +125,13 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
 
         await store.CommitAsync(initial);
         await store.CommitAsync(continuation);
-        var before = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var before = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(before);
 
         await store.CommitAsync(continuation);
 
-        var after = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var after = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(after);
 
         Assert.Equal(before, after);
         Assert.Equal(4, store.ReadObservations(streamId).Length);
@@ -150,8 +151,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
                 initial.Checkpoint,
                 [],
                 Instant(20)));
-        var before = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var before = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(before);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(initial).AsTask());
@@ -171,8 +172,8 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
         var initial = InitialBatch(streamId, Instant(10));
 
         await store.CommitAsync(initial);
-        var before = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        var before = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(before);
 
         var augmented = new ObservationIngestionBatch(
             initial.Checkpoint,
@@ -204,10 +205,10 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
         await store.CommitAsync(InitialBatch(first, Instant(10)));
         await store.CommitAsync(InitialBatch(second, Instant(20)));
 
-        var firstAuthority = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(first));
-        var secondAuthority = Assert.NotNull(
-            await store.ReadAcquisitionContactAuthorityAsync(second));
+        var firstAuthority = await store.ReadAcquisitionContactAuthorityAsync(first);
+        Assert.NotNull(firstAuthority);
+        var secondAuthority = await store.ReadAcquisitionContactAuthorityAsync(second);
+        Assert.NotNull(secondAuthority);
 
         Assert.Equal(Instant(10), firstAuthority.SuccessfulContactTime);
         Assert.Equal(Instant(20), secondAuthority.SuccessfulContactTime);
