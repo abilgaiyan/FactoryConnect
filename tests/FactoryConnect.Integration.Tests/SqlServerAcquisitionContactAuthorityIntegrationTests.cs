@@ -9,6 +9,9 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
     IClassFixture<SqlServerTestDatabaseFixture>
 {
+    private static readonly ulong[] TwoPositions = [1UL, 2UL];
+    private static readonly ulong[] FourPositions = [1UL, 2UL, 3UL, 4UL];
+
     private readonly SqlServerTestDatabaseFixture _fixture;
 
     public SqlServerAcquisitionContactAuthorityIntegrationTests(
@@ -57,7 +60,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
         Assert.NotNull(first);
         Assert.NotNull(first.RawAcceptedThrough);
         Assert.Equal(2UL, first.RawAcceptedThrough.Value);
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(streamId));
 
         await store.CommitAsync(
             new ObservationIngestionBatch(
@@ -69,7 +72,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
         Assert.NotNull(afterEmpty);
         Assert.Equal(first.RawAcceptedThrough, afterEmpty.RawAcceptedThrough);
         Assert.NotEqual(first.AcquisitionRevision, afterEmpty.AcquisitionRevision);
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(streamId));
 
         await store.CommitAsync(
             new ObservationIngestionBatch(
@@ -81,7 +84,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
         Assert.NotNull(afterDuplicates);
         Assert.Equal(first.RawAcceptedThrough, afterDuplicates.RawAcceptedThrough);
         Assert.NotEqual(afterEmpty.AcquisitionRevision, afterDuplicates.AcquisitionRevision);
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(streamId));
     }
 
     [Fact]
@@ -122,7 +125,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
         Assert.Equal(second.AcquisitionRevision, third.AcquisitionRevision);
         Assert.Equal(second.RawAcceptedThrough, third.RawAcceptedThrough);
         Assert.Equal(earlier.UtcDateTime.Ticks, third.SuccessfulContactTime.UtcDateTime.Ticks);
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(streamId));
     }
 
     [Fact]
@@ -149,7 +152,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
         await store.CommitAsync(continuation);
         var beforeReplay = await store.ReadAcquisitionContactAuthorityAsync(streamId);
         Assert.NotNull(beforeReplay);
-        Assert.Equal(new ulong[] { 1UL, 2UL, 3UL, 4UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(FourPositions, await ReadPositionsAsync(streamId));
 
         var recreated = CreateStore();
         await recreated.CommitAsync(continuation);
@@ -158,7 +161,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
             beforeReplay,
             await recreated.ReadAcquisitionContactAuthorityAsync(streamId));
         Assert.Equal(nextCheckpoint, await recreated.ReadCheckpointAsync(streamId));
-        Assert.Equal(new ulong[] { 1UL, 2UL, 3UL, 4UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(FourPositions, await ReadPositionsAsync(streamId));
 
         await recreated.CommitAsync(
             new ObservationIngestionBatch(
@@ -176,7 +179,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
             supersedingAuthority,
             await recreated.ReadAcquisitionContactAuthorityAsync(streamId));
         Assert.Equal(nextCheckpoint, await recreated.ReadCheckpointAsync(streamId));
-        Assert.Equal(new ulong[] { 1UL, 2UL, 3UL, 4UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(FourPositions, await ReadPositionsAsync(streamId));
     }
 
     [Fact]
@@ -212,7 +215,7 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
 
         Assert.Equal(authorityBefore, await store.ReadAcquisitionContactAuthorityAsync(streamId));
         Assert.Equal(initial.Checkpoint, await store.ReadCheckpointAsync(streamId));
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(streamId));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(streamId));
     }
 
     [Fact]
@@ -233,8 +236,8 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
 
         Assert.Equal(Instant(10).UtcDateTime.Ticks, first.SuccessfulContactTime.UtcDateTime.Ticks);
         Assert.Equal(Instant(20).UtcDateTime.Ticks, second.SuccessfulContactTime.UtcDateTime.Ticks);
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(firstStream));
-        Assert.Equal(new ulong[] { 1UL, 2UL }, await ReadPositionsAsync(secondStream));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(firstStream));
+        Assert.Equal(TwoPositions, await ReadPositionsAsync(secondStream));
     }
 
     [Fact]
