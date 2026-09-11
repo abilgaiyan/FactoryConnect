@@ -61,6 +61,32 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsyncRetainsExactPendingWriteAfterSinkFailure()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(42, 110, 111));
+
+        using var httpClient = new HttpClient(handler);
+        using var cancellation = new CancellationTokenSource();
+        var sink = new FailOnceSink(
+            onSuccessfulRetry: cancellation.Cancel);
+        var runtime = CreateRuntime(httpClient, sink, 101);
+
+        await runtime.RunAsync(cancellation.Token);
+
+        Assert.Single(handler.RequestUris);
+        Assert.Equal(
+            "http://localhost:5000/sample?from=101",
+            handler.RequestUris[0].AbsoluteUri);
+        Assert.Equal(2, sink.WriteCount);
+        Assert.Equal(2, sink.Results.Count);
+        Assert.Same(sink.Results[0], sink.Results[1]);
+        Assert.Equal(2, sink.ExpectedCheckpoints.Count);
+        Assert.Null(sink.ExpectedCheckpoints[0]);
+        Assert.Null(sink.ExpectedCheckpoints[1]);
+    }
+
+    [Fact]
     public async Task RunAsyncStopsWhenPollingDelayIsCancelled()
     {
         var handler = new SequenceHandler(
@@ -163,6 +189,8 @@ public sealed class MtConnectAcquisitionRuntimeTests
             "http://localhost:5000/sample?from=101",
             handler.RequestUris[0].AbsoluteUri);
         Assert.Equal(2, sink.WriteCount);
+        Assert.Same(sink.Results[0], sink.Results[1]);
+        Assert.Equal(sink.ExpectedCheckpoints[0], sink.ExpectedCheckpoints[1]);
     }
 
     [Fact]
@@ -377,10 +405,14 @@ public sealed class MtConnectAcquisitionRuntimeTests
         }
     }
 
-    private sealed class FailOnceSink :
-        IMtConnectObservationSink
+    private sealed class FailOnceSink(
+        Action? onSuccessfulRetry = null) : IMtConnectObservationSink
     {
         public int WriteCount { get; private set; }
+
+        public List<MtConnectSampleResult> Results { get; } = [];
+
+        public List<ObservationCheckpoint?> ExpectedCheckpoints { get; } = [];
 
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
@@ -389,6 +421,8 @@ public sealed class MtConnectAcquisitionRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             WriteCount++;
+            Results.Add(result);
+            ExpectedCheckpoints.Add(expectedCheckpoint);
 
             if (WriteCount == 1)
             {
@@ -396,7 +430,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
                     "Sink failed.");
             }
 
-            Assert.Null(expectedCheckpoint);
+            onSuccessfulRetry?.Invoke();
 
             return ValueTask.CompletedTask;
         }

@@ -77,40 +77,11 @@ public sealed class MtConnectAcquisitionRuntime :
     public async Task<MtConnectSampleResult> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
-        await _cycleGate.WaitAsync(cancellationToken);
-        try
-        {
-            if (_pending is null)
-            {
-                var result = await AcquireWithRecoveryAsync(
-                    cancellationToken);
-                _pending = new PendingAcquisition(
-                    result,
-                    _checkpoint);
-            }
+        var outcome = await RunCycleCoreAsync(
+            containDurableWriteFailure: false,
+            cancellationToken);
 
-            var pending = _pending;
-
-            await _sink.WriteAsync(
-                pending.Result,
-                pending.ExpectedCheckpoint,
-                cancellationToken);
-
-            _session.Advance(pending.Result);
-            _checkpoint = new ObservationCheckpoint(
-                MtConnectObservationStreamId.Create(
-                    _machineId,
-                    _deviceKey),
-                pending.Result.InstanceId,
-                pending.Result.NextSequence);
-            _pending = null;
-
-            return pending.Result;
-        }
-        finally
-        {
-            _cycleGate.Release();
-        }
+        return outcome.Result!;
     }
 
     public async Task RunAsync(
@@ -120,19 +91,14 @@ public sealed class MtConnectAcquisitionRuntime :
         {
             try
             {
-                await RunCycleAsync(cancellationToken);
+                await RunCycleCoreAsync(
+                    containDurableWriteFailure: true,
+                    cancellationToken);
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
             {
                 break;
-            }
-            catch when (_pending is not null)
-            {
-                // The logical acquisition has already succeeded. Retain the
-                // pending write inside this runtime and retry that exact
-                // command instead of allowing the worker to reconstruct the
-                // runtime and reacquire /sample.
             }
 
             if (cancellationToken.IsCancellationRequested)
@@ -151,6 +117,58 @@ public sealed class MtConnectAcquisitionRuntime :
             {
                 break;
             }
+        }
+    }
+
+    private async Task<CycleOutcome> RunCycleCoreAsync(
+        bool containDurableWriteFailure,
+        CancellationToken cancellationToken)
+    {
+        await _cycleGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_pending is null)
+            {
+                var result = await AcquireWithRecoveryAsync(
+                    cancellationToken);
+                _pending = new PendingAcquisition(
+                    result,
+                    _checkpoint);
+            }
+
+            var pending = _pending;
+
+            try
+            {
+                await _sink.WriteAsync(
+                    pending.Result,
+                    pending.ExpectedCheckpoint,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch when (containDurableWriteFailure)
+            {
+                return CycleOutcome.DurableWriteFailed();
+            }
+
+            _session.Advance(pending.Result);
+            _checkpoint = new ObservationCheckpoint(
+                MtConnectObservationStreamId.Create(
+                    _machineId,
+                    _deviceKey),
+                pending.Result.InstanceId,
+                pending.Result.NextSequence);
+            _pending = null;
+
+            return CycleOutcome.Succeeded(pending.Result);
+        }
+        finally
+        {
+            _cycleGate.Release();
         }
     }
 
@@ -207,4 +225,15 @@ public sealed class MtConnectAcquisitionRuntime :
     private sealed record PendingAcquisition(
         MtConnectSampleResult Result,
         ObservationCheckpoint? ExpectedCheckpoint);
+
+    private sealed record CycleOutcome(
+        MtConnectSampleResult? Result)
+    {
+        public static CycleOutcome Succeeded(
+            MtConnectSampleResult result) =>
+            new(result);
+
+        public static CycleOutcome DurableWriteFailed() =>
+            new(null);
+    }
 }
