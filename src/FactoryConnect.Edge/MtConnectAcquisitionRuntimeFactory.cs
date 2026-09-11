@@ -6,7 +6,8 @@ public sealed class MtConnectAcquisitionRuntimeFactory(
     IMtConnectAcquisitionSessionFactory sessionFactory,
     MtConnectTransientRetryPolicy retryPolicy,
     MtConnectContinuityRecoveryPolicy recoveryPolicy,
-    IMtConnectObservationSink sink)
+    IMtConnectObservationSink sink,
+    TimeProvider timeProvider)
     : IMtConnectAcquisitionRuntimeFactory
 {
     public async ValueTask<IMtConnectAcquisitionRuntime> CreateAsync(
@@ -30,7 +31,7 @@ public sealed class MtConnectAcquisitionRuntimeFactory(
             retryPolicy,
             recoveryPolicy,
             sink,
-            TimeProvider.System,
+            timeProvider,
             options.PollingInterval,
             startupState.Checkpoint);
     }

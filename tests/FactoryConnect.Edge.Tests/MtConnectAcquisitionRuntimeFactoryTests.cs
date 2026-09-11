@@ -40,6 +40,43 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
     }
 
     [Fact]
+    public async Task CreateAsyncUsesInjectedTimeProviderForSuccessfulContact()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(instanceId: 42, nextSequence: 111));
+        var successfulContactTime = new DateTimeOffset(
+            2026,
+            9,
+            11,
+            8,
+            30,
+            0,
+            TimeSpan.Zero);
+
+        using var httpClient = new HttpClient(handler);
+        var store = new InMemoryObservationIngestionStore();
+        var sink = new RecordingSink();
+        var sessionFactory = new RecordingSessionFactory(
+            new MtConnectSampleClient(httpClient));
+        var factory = CreateFactory(
+            httpClient,
+            store,
+            sessionFactory,
+            sink,
+            fromSequence: 101,
+            timeProvider: new FixedTimeProvider(successfulContactTime));
+
+        var runtime = Assert.IsType<MtConnectAcquisitionRuntime>(
+            await factory.CreateAsync());
+
+        await runtime.RunCycleAsync();
+
+        Assert.Equal(
+            successfulContactTime,
+            Assert.Single(sink.SuccessfulContactTimes));
+    }
+
+    [Fact]
     public async Task CreateAsyncRestoresSessionAndContinuesSameInstance()
     {
         var handler = new SequenceHandler(
@@ -165,14 +202,16 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
         IObservationIngestionStore store,
         IMtConnectAcquisitionSessionFactory sessionFactory,
         IMtConnectObservationSink sink,
-        ulong fromSequence)
+        ulong fromSequence,
+        TimeProvider? timeProvider = null)
     {
         return CreateFactory(
             httpClient,
             store,
             sessionFactory,
             sink,
-            Options(MachineId.New(), fromSequence));
+            Options(MachineId.New(), fromSequence),
+            timeProvider: timeProvider);
     }
 
     private static MtConnectAcquisitionRuntimeFactory CreateFactory(
@@ -181,7 +220,8 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
         IMtConnectAcquisitionSessionFactory sessionFactory,
         IMtConnectObservationSink sink,
         MtConnectAcquisitionOptions options,
-        IMtConnectContinuityReporter? reporter = null)
+        IMtConnectContinuityReporter? reporter = null,
+        TimeProvider? timeProvider = null)
     {
         var retryPolicy = new MtConnectTransientRetryPolicy(
             new MtConnectRetryOptions(
@@ -203,7 +243,8 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
                 new MtConnectCurrentClient(httpClient),
                 retryPolicy,
                 reporter ?? new RecordingContinuityReporter()),
-            sink);
+            sink,
+            timeProvider ?? TimeProvider.System);
     }
 
     private static MtConnectAcquisitionOptions Options(
@@ -274,6 +315,8 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
     {
         public List<ObservationCheckpoint?> ExpectedCheckpoints { get; } = [];
 
+        public List<DateTimeOffset> SuccessfulContactTimes { get; } = [];
+
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
             ObservationCheckpoint? expectedCheckpoint,
@@ -282,6 +325,7 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             ExpectedCheckpoints.Add(expectedCheckpoint);
+            SuccessfulContactTimes.Add(successfulContactTime);
 
             return ValueTask.CompletedTask;
         }
@@ -318,6 +362,11 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
     private sealed class FixedJitterSource : IMtConnectJitterSource
     {
         public double NextDouble() => 0.5;
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
     private sealed class SequenceHandler(

@@ -3,6 +3,7 @@ using FactoryConnect.Abstractions;
 using FactoryConnect.Protocols.MTConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace FactoryConnect.Edge;
 
@@ -35,6 +36,7 @@ public static class EdgeMtConnectAcquisitionServiceCollectionExtensions
 
         services.AddSingleton(inventory);
         services.AddSingleton(retryOptions);
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton<HttpClient>();
         services.AddSingleton<MtConnectSampleClient>();
         services.AddSingleton<MtConnectCurrentClient>();
@@ -65,7 +67,8 @@ public static class EdgeMtConnectAcquisitionServiceCollectionExtensions
                     provider.GetRequiredService<IMtConnectAcquisitionSessionFactory>(),
                     provider.GetRequiredService<MtConnectTransientRetryPolicy>(),
                     provider.GetRequiredService<MtConnectContinuityRecoveryPolicy>(),
-                    sink);
+                    sink,
+                    provider.GetRequiredService<TimeProvider>());
             });
         }
 
