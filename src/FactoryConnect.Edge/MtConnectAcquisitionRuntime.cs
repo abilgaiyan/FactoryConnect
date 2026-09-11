@@ -169,11 +169,7 @@ public sealed class MtConnectAcquisitionRuntime :
         }
         finally
         {
-            if (!_cycleGate.Writer.TryWrite(true))
-            {
-                throw new InvalidOperationException(
-                    "The acquisition cycle gate could not be released.");
-            }
+            _cycleGate.Writer.TryWrite(true);
         }
     }
 
