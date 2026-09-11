@@ -359,7 +359,7 @@ public sealed class InMemoryObservationIngestionStore :
         return ordered.ToArray();
     }
 
-    private void ValidateCheckpointTransition(
+    private static void ValidateCheckpointTransition(
         ObservationIngestionBatch batch,
         ObservationCheckpoint? current)
     {
