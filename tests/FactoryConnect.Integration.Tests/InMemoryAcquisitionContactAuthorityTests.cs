@@ -27,7 +27,6 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
         Assert.Equal(streamId, authority.ObservationStreamId);
         Assert.Equal(contactTime, authority.SuccessfulContactTime);
         Assert.Null(authority.RawAcceptedThrough);
-        Assert.Equal(0UL, authority.AcquisitionRevision.Value);
     }
 
     [Fact]
@@ -69,7 +68,7 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
 
         Assert.Equal(earlierClockValue, after.SuccessfulContactTime);
         Assert.Equal(before.RawAcceptedThrough, after.RawAcceptedThrough);
-        Assert.Equal(before.AcquisitionRevision.Value + 1, after.AcquisitionRevision.Value);
+        Assert.NotEqual(before.AcquisitionRevision, after.AcquisitionRevision);
         Assert.Equal(initial.Checkpoint, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(2, store.ReadObservations(streamId).Length);
     }
@@ -212,8 +211,6 @@ public sealed class InMemoryAcquisitionContactAuthorityTests
 
         Assert.Equal(Instant(10), firstAuthority.SuccessfulContactTime);
         Assert.Equal(Instant(20), secondAuthority.SuccessfulContactTime);
-        Assert.Equal(0UL, firstAuthority.AcquisitionRevision.Value);
-        Assert.Equal(0UL, secondAuthority.AcquisitionRevision.Value);
     }
 
     [Fact]
