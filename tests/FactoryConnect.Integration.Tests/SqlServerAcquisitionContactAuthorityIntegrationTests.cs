@@ -353,9 +353,10 @@ public sealed class SqlServerAcquisitionContactAuthorityIntegrationTests :
               AND StreamKeyBinary = @StreamKeyBinary;
             """;
         AddStreamParameters(command, streamId);
-        command.Parameters.AddWithValue(
-            "@AcquisitionRevision",
-            SqlServerUInt64.Persist(revision));
+        command.Parameters.Add(
+            SqlServerUInt64.CreateParameter(
+                "@AcquisitionRevision",
+                revision));
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
