@@ -21,7 +21,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 3, "BindMetricInputFactMachine", SqlMigrationTransactionPolicy.LegacyMigration003Embedded),
             migration => AssertMigration(migration, 4, "ProductionContextMetricInputHandoff", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 5, "OperationalMetricReportingPersistence", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 6, "CorrectOperationalMetricProjectionManifestParent", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 6, "CorrectOperationalMetricProjectionManifestParent", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 7, "AcquisitionContactAuthority", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
@@ -36,7 +37,8 @@ public sealed class SqlMigrationCatalogTests
             migration => Assert.Equal("98A9635782C4D822441269ECEE8E13BBCDC5A61C07B64608F81A0107133535C6", migration.Sha256Checksum),
             migration => Assert.Equal("786CDD68F66E222A4E4EFB8220595E46390A0F81880D0D45A54FA22DD7A498D5", migration.Sha256Checksum),
             migration => Assert.Equal("53F337BB5B3294D331AB6E363C7301A88D0A4CD090762151CFD1508405DEDFC7", migration.Sha256Checksum),
-            migration => Assert.Equal("DDFD8C6CC1FADE9D7486EB5D3D915881A2538E2724A6B57EDA7E6D7C16EB6EEE", migration.Sha256Checksum));
+            migration => Assert.Equal("DDFD8C6CC1FADE9D7486EB5D3D915881A2538E2724A6B57EDA7E6D7C16EB6EEE", migration.Sha256Checksum),
+            migration => Assert.Equal("17A98E7606F7C1A89832492A81553DF7350E9A5E79EF1FFCC571B5430CD210C6", migration.Sha256Checksum));
     }
 
     [Fact]
