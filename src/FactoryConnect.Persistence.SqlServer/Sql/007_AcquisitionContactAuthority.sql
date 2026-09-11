@@ -1,6 +1,7 @@
 ALTER TABLE dbo.MachineObservation
 ADD Position decimal(20,0) NULL;
 
+EXEC sys.sp_executesql N'
 WITH RankedObservation AS
 (
     SELECT
@@ -23,7 +24,7 @@ IF EXISTS
        OR Position < 1
        OR Position > 18446744073709551615
 )
-    THROW 51000, 'Migration 007 could not establish valid observation positions.', 1;
+    THROW 51000, ''Migration 007 could not establish valid observation positions.'', 1;
 
 IF EXISTS
 (
@@ -32,7 +33,7 @@ IF EXISTS
     GROUP BY MachineId, StreamKeyBinary, Position
     HAVING COUNT_BIG(*) > 1
 )
-    THROW 51001, 'Migration 007 produced duplicate observation positions.', 1;
+    THROW 51001, ''Migration 007 produced duplicate observation positions.'', 1;
 
 ALTER TABLE dbo.MachineObservation
 ALTER COLUMN Position decimal(20,0) NOT NULL;
@@ -44,6 +45,7 @@ ADD CONSTRAINT CK_MachineObservation_Position_UInt64Positive
 ALTER TABLE dbo.MachineObservation
 ADD CONSTRAINT UQ_MachineObservation_StreamPosition
     UNIQUE NONCLUSTERED (MachineId, StreamKeyBinary, Position);
+';
 
 CREATE TABLE dbo.AcquisitionContactAuthority
 (
