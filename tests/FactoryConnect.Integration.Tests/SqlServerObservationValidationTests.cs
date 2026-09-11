@@ -37,7 +37,8 @@ public sealed class SqlServerObservationValidationTests
                 new ObservationIngestionBatch(
                     null,
                     checkpoint,
-                    [observation])));
+                    [observation],
+                    DateTimeOffset.UnixEpoch)));
 
         Assert.Contains(
             "Observation quality",
@@ -76,7 +77,8 @@ public sealed class SqlServerObservationValidationTests
                 new ObservationIngestionBatch(
                     null,
                     checkpoint,
-                    [observation])));
+                    [observation],
+                    DateTimeOffset.UnixEpoch)));
 
         Assert.Contains(
             "Observation signal type",

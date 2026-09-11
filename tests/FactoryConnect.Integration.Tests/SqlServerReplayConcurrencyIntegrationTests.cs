@@ -33,7 +33,8 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
         var batch = new ObservationIngestionBatch(
             null,
             checkpoint,
-            [observation]);
+            [observation],
+            DateTimeOffset.UnixEpoch);
         var store = CreateStore();
 
         await store.CommitAsync(batch);
@@ -58,7 +59,8 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
                     streamId.MachineId,
                     1,
                     "load",
-                    10m)]));
+                    10m)],
+                DateTimeOffset.UnixEpoch));
 
         var replay = new ObservationIngestionBatch(
             null,
@@ -74,7 +76,8 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
                     2,
                     "execution",
                     20m),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(replay).AsTask());
@@ -99,7 +102,8 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
                     streamId.MachineId,
                     1,
                     "load",
-                    10m)]));
+                    10m)],
+                DateTimeOffset.UnixEpoch));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(
@@ -110,7 +114,8 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
                         streamId.MachineId,
                         1,
                         "load",
-                        99m)])).AsTask());
+                        99m)],
+                    DateTimeOffset.UnixEpoch)).AsTask());
 
         Assert.Equal(initial, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(1, await CountObservationsAsync(streamId));
@@ -132,7 +137,8 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
             new ObservationIngestionBatch(
                 null,
                 checkpoint,
-                [observation, observation]));
+                [observation, observation],
+                DateTimeOffset.UnixEpoch));
 
         Assert.Equal(checkpoint, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(1, await CountObservationsAsync(streamId));
@@ -146,11 +152,13 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
         var first = new ObservationIngestionBatch(
             null,
             new ObservationCheckpoint(streamId, 42, 2),
-            [CreateObservation(streamId.MachineId, 1, "first", 1m)]);
+            [CreateObservation(streamId.MachineId, 1, "first", 1m)],
+            DateTimeOffset.UnixEpoch);
         var second = new ObservationIngestionBatch(
             null,
             new ObservationCheckpoint(streamId, 42, 3),
-            [CreateObservation(streamId.MachineId, 2, "second", 2m)]);
+            [CreateObservation(streamId.MachineId, 2, "second", 2m)],
+            DateTimeOffset.UnixEpoch);
 
         await AddDelayTriggerAsync();
 
@@ -188,16 +196,19 @@ public sealed class SqlServerReplayConcurrencyIntegrationTests :
             new ObservationIngestionBatch(
                 null,
                 initial,
-                [CreateObservation(streamId.MachineId, 1, "initial", 1m)]));
+                [CreateObservation(streamId.MachineId, 1, "initial", 1m)],
+                DateTimeOffset.UnixEpoch));
 
         var first = new ObservationIngestionBatch(
             initial,
             new ObservationCheckpoint(streamId, 42, 3),
-            [CreateObservation(streamId.MachineId, 2, "first", 2m)]);
+            [CreateObservation(streamId.MachineId, 2, "first", 2m)],
+            DateTimeOffset.UnixEpoch);
         var second = new ObservationIngestionBatch(
             initial,
             new ObservationCheckpoint(streamId, 42, 4),
-            [CreateObservation(streamId.MachineId, 3, "second", 3m)]);
+            [CreateObservation(streamId.MachineId, 3, "second", 3m)],
+            DateTimeOffset.UnixEpoch);
 
         await AddDelayTriggerAsync();
 

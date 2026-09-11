@@ -133,6 +133,7 @@ public sealed class MtConnectAcquisitionRuntimeContinuityTests
                 retryPolicy,
                 reporter),
             sink,
+            TimeProvider.System,
             TimeSpan.FromSeconds(1));
     }
 
@@ -227,6 +228,7 @@ public sealed class MtConnectAcquisitionRuntimeContinuityTests
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
             ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();

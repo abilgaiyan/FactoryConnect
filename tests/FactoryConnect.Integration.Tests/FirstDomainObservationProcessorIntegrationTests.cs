@@ -28,7 +28,8 @@ public sealed class FirstDomainObservationProcessorIntegrationTests
                     new SequencedMachineObservation(
                         2,
                         Observation(machineId, "DI2", false)),
-                ]));
+                ],
+                DateTimeOffset.UnixEpoch));
 
         var runtime = Runtime(store, processor, streamId);
         await runtime.RunCycleAsync();

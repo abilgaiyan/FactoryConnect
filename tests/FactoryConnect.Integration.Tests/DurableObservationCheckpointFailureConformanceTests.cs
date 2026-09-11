@@ -24,7 +24,8 @@ public sealed class DurableObservationCheckpointFailureConformanceTests
             new ObservationIngestionBatch(
                 null,
                 new ObservationCheckpoint(streamId, 7, 2),
-                [Sequenced(streamId.MachineId)]));
+                [Sequenced(streamId.MachineId)],
+                DateTimeOffset.UnixEpoch));
 
         var pipeline = Pipeline(
             rawStore,

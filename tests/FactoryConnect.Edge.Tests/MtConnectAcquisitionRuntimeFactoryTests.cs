@@ -61,7 +61,8 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
             new ObservationIngestionBatch(
                 null,
                 checkpoint,
-                []));
+                [],
+                DateTimeOffset.UnixEpoch));
 
         var sink = new RecordingSink();
         var sessionFactory = new RecordingSessionFactory(
@@ -112,7 +113,8 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
             new ObservationIngestionBatch(
                 null,
                 checkpoint,
-                []));
+                [],
+                DateTimeOffset.UnixEpoch));
 
         var sink = new RecordingSink();
         var reporter = new RecordingContinuityReporter();
@@ -275,6 +277,7 @@ public sealed class MtConnectAcquisitionRuntimeFactoryTests
         public ValueTask WriteAsync(
             MtConnectSampleResult result,
             ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
