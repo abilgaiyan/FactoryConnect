@@ -484,6 +484,16 @@ public sealed class MtConnectAcquisitionRuntimeTests
                 cancellationToken);
         }
 
+        public ValueTask<AcquisitionContactAuthority?>
+            ReadAcquisitionContactAuthorityAsync(
+                ObservationStreamId streamId,
+                CancellationToken cancellationToken = default)
+        {
+            return Inner.ReadAcquisitionContactAuthorityAsync(
+                streamId,
+                cancellationToken);
+        }
+
         public ValueTask CommitAsync(
             ObservationIngestionBatch batch,
             CancellationToken cancellationToken = default)
