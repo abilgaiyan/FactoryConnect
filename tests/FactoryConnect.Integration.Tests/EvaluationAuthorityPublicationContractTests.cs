@@ -218,6 +218,206 @@ public sealed class EvaluationAuthorityPublicationContractTests
                 (EvaluationAuthorityPublicationDisposition)int.MaxValue));
     }
 
+    [Fact]
+    public void ExactReplayPrecedesCompareAndSwapValidation()
+    {
+        var identity = Identity();
+        var policy = Policy("continuity/default", "1.0");
+        var current = Authority(
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy,
+            revision: 5);
+        var proposal = Publication(
+            new StateProjectionAuthorityRevision(4),
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy);
+
+        Assert.Equal(
+            ContractClassification.ExactReplay,
+            Classify(current, proposal));
+    }
+
+    [Fact]
+    public void ExactReplayPrecedesRevisionExhaustionValidation()
+    {
+        var identity = Identity();
+        var policy = Policy("continuity/default", "1.0");
+        var current = Authority(
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy,
+            revision: ulong.MaxValue);
+        var proposal = Publication(
+            new StateProjectionAuthorityRevision(ulong.MaxValue),
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy);
+
+        Assert.Equal(
+            ContractClassification.ExactReplay,
+            Classify(current, proposal));
+    }
+
+    [Fact]
+    public void MatchingCasBackwardProgressIsConflict()
+    {
+        var identity = Identity();
+        var policy = Policy("continuity/default", "1.0");
+        var current = Authority(
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy,
+            revision: 5);
+        var proposal = Publication(
+            new StateProjectionAuthorityRevision(5),
+            identity,
+            evaluatedThrough: 19,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy);
+
+        Assert.Equal(
+            ContractClassification.Conflict,
+            Classify(current, proposal));
+    }
+
+    [Fact]
+    public void MatchingCasSamePositionChangedMachineStateIsConflict()
+    {
+        var identity = Identity();
+        var policy = Policy("continuity/default", "1.0");
+        var current = Authority(
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy,
+            revision: 5);
+        var proposal = Publication(
+            new StateProjectionAuthorityRevision(5),
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Fault,
+            instanceId: 42,
+            policy);
+
+        Assert.Equal(
+            ContractClassification.Conflict,
+            Classify(current, proposal));
+    }
+
+    [Fact]
+    public void MatchingCasSamePositionChangedInstanceIsConflict()
+    {
+        var identity = Identity();
+        var policy = Policy("continuity/default", "1.0");
+        var current = Authority(
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            policy,
+            revision: 5);
+        var proposal = Publication(
+            new StateProjectionAuthorityRevision(5),
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 43,
+            policy);
+
+        Assert.Equal(
+            ContractClassification.Conflict,
+            Classify(current, proposal));
+    }
+
+    [Fact]
+    public void MatchingCasSamePositionChangedPolicyIsConflict()
+    {
+        var identity = Identity();
+        var currentPolicy = Policy("continuity/default", "1.0");
+        var current = Authority(
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            currentPolicy,
+            revision: 5);
+        var proposal = Publication(
+            new StateProjectionAuthorityRevision(5),
+            identity,
+            evaluatedThrough: 20,
+            machineState: MachineState.Running,
+            instanceId: 42,
+            Policy("continuity/reset", "1.0"));
+
+        Assert.Equal(
+            ContractClassification.Conflict,
+            Classify(current, proposal));
+    }
+
+    private static ContractClassification Classify(
+        EvaluationAuthority current,
+        EvaluationAuthorityPublication proposal)
+    {
+        // Executable reference for the FC-031.2D.1 ordered publication algebra.
+        // Provider behavior is proved against this contract in later slices.
+        var currentReplayIdentity = new EvaluationAuthorityReplayIdentity(
+            current.StateProcessorId,
+            current.ObservationStreamId,
+            current.EvaluatedThrough,
+            current.MachineState,
+            current.LastConsumedInstanceId,
+            current.AppliedContinuityPolicy);
+
+        if (proposal.ReplayIdentity == currentReplayIdentity)
+        {
+            return ContractClassification.ExactReplay;
+        }
+
+        if (proposal.ExpectedRevision != current.ProjectionRevision)
+        {
+            return ContractClassification.Conflict;
+        }
+
+        if (proposal.EvaluatedThrough <= current.EvaluatedThrough)
+        {
+            return ContractClassification.Conflict;
+        }
+
+        return current.ProjectionRevision.Value == ulong.MaxValue
+            ? ContractClassification.RevisionExhausted
+            : ContractClassification.NewPublication;
+    }
+
+    private static EvaluationAuthority Authority(
+        (ObservationProcessorId ProcessorId, ObservationStreamId StreamId) identity,
+        ulong evaluatedThrough,
+        MachineState machineState,
+        ulong instanceId,
+        CurrentStatePolicyReference policy,
+        ulong revision) =>
+        new(
+            identity.ProcessorId,
+            identity.StreamId,
+            new ObservationPosition(evaluatedThrough),
+            machineState,
+            instanceId,
+            policy,
+            new StateProjectionAuthorityRevision(revision));
+
     private static EvaluationAuthorityPublication Publication(
         StateProjectionAuthorityRevision? expectedRevision,
         (ObservationProcessorId ProcessorId, ObservationStreamId StreamId) identity,
@@ -244,5 +444,13 @@ public sealed class EvaluationAuthorityPublicationContractTests
         return (
             new ObservationProcessorId("machine-state"),
             new ObservationStreamId(machineId, "MTConnect:CNC-01"));
+    }
+
+    private enum ContractClassification
+    {
+        ExactReplay = 0,
+        Conflict = 1,
+        RevisionExhausted = 2,
+        NewPublication = 3
     }
 }
