@@ -113,7 +113,7 @@ public sealed class InMemoryMappingCoverageAuthorityEdgeTests
         start.Set();
         var outcomes = await Task.WhenAll(firstAttempt, secondAttempt);
 
-        Assert.Single(outcomes.Where(static succeeded => succeeded));
+        Assert.Single(outcomes, static succeeded => succeeded);
         var current = await RequiredAuthority(store, processorId, streamId);
         Assert.Equal(new MappingAuthorityRevision(1), current.MappingRevision);
 
