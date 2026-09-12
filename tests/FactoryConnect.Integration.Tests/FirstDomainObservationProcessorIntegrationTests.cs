@@ -116,7 +116,8 @@ public sealed class FirstDomainObservationProcessorIntegrationTests
                     },
                 ],
             },
-            sink);
+            sink,
+            new InMemoryMappingCoverageAuthorityStore());
 
     private static ObservationProcessingRuntime Runtime(
         InMemoryObservationIngestionStore store,

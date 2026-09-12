@@ -70,6 +70,11 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             static provider =>
                 provider.GetRequiredService<
                     InMemoryMappedMachineObservationSink>());
+        services.AddSingleton<InMemoryMappingCoverageAuthorityStore>();
+        services.AddSingleton<IMappingCoverageAuthorityStore>(
+            static provider =>
+                provider.GetRequiredService<
+                    InMemoryMappingCoverageAuthorityStore>());
         services.AddSingleton<
             InMemoryMachineStateActivityProjectionStore>();
         services.AddSingleton<IMachineStateActivityProjectionStore>(
@@ -94,6 +99,8 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     IObservationProcessingCheckpointStore>();
                 var mappedSink = provider.GetRequiredService<
                     IMappedMachineObservationSink>();
+                var mappingAuthority = provider.GetRequiredService<
+                    IMappingCoverageAuthorityStore>();
                 var mappedReader = provider.GetRequiredService<
                     IDurableMappedObservationReader>();
                 var projectionStore = provider.GetRequiredService<
@@ -105,7 +112,8 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     var mappingProcessor = new MachineSignalMappingProcessor(
                         new ObservationProcessorId("canonical-mapping"),
                         mappings[streamId],
-                        mappedSink);
+                        mappedSink,
+                        mappingAuthority);
                     var stateActivityProcessor =
                         new MachineStateActivityProcessor(
                             new ObservationProcessorId(

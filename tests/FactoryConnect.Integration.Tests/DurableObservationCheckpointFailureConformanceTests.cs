@@ -88,7 +88,8 @@ public sealed class DurableObservationCheckpointFailureConformanceTests
                     },
                 ],
             },
-            mappedStore);
+            mappedStore,
+            new InMemoryMappingCoverageAuthorityStore());
         var stateActivity = new MachineStateActivityProcessor(
             new ObservationProcessorId("machine-state-activity"),
             projectionStore);
