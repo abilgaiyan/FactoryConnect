@@ -85,7 +85,41 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
     }
 
     [Fact]
-    public async Task ReferencedCheckpointAndRawObservationCannotBeDeleted()
+    public async Task AuthorityPreventsDeletingItsCheckpointWithoutRawRows()
+    {
+        var streamId = StreamId();
+        var store = new SqlServerObservationIngestionStore(_fixture.ConnectionString);
+        var checkpoint = new ObservationCheckpoint(streamId, 42, 101);
+
+        await store.CommitAsync(
+            new ObservationIngestionBatch(
+                null,
+                checkpoint,
+                [],
+                new DateTimeOffset(2026, 9, 12, 7, 15, 0, TimeSpan.Zero)));
+
+        var authorityBefore = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(authorityBefore);
+        Assert.Null(authorityBefore.RawAcceptedThrough);
+        Assert.Equal(0L, await CountRawObservationsAsync(streamId));
+
+        await AssertSqlRejectedAsync(
+            """
+            DELETE FROM dbo.ObservationStreamCheckpoint
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary;
+            """,
+            streamId);
+
+        Assert.Equal(checkpoint, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(
+            authorityBefore,
+            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        Assert.Equal(0L, await CountRawObservationsAsync(streamId));
+    }
+
+    [Fact]
+    public async Task AuthorityPreventsDeletingReferencedRawObservation()
     {
         var streamId = StreamId();
         var store = new SqlServerObservationIngestionStore(_fixture.ConnectionString);
@@ -106,20 +140,13 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
                         Timestamp = DateTimeOffset.UnixEpoch,
                     }),
             ],
-            new DateTimeOffset(2026, 9, 12, 7, 15, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 9, 12, 7, 16, 0, TimeSpan.Zero));
 
         await store.CommitAsync(batch);
         var authorityBefore = await store.ReadAcquisitionContactAuthorityAsync(streamId);
         Assert.NotNull(authorityBefore);
-        Assert.NotNull(authorityBefore.RawAcceptedThrough);
-
-        await AssertSqlRejectedAsync(
-            """
-            DELETE FROM dbo.ObservationStreamCheckpoint
-            WHERE MachineId = @MachineId
-              AND StreamKeyBinary = @StreamKeyBinary;
-            """,
-            streamId);
+        Assert.Equal(1UL, authorityBefore.RawAcceptedThrough?.Value);
+        Assert.Equal(1L, await CountRawObservationsAsync(streamId));
 
         await AssertSqlRejectedAsync(
             """
@@ -134,6 +161,7 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
         Assert.Equal(
             authorityBefore,
             await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        Assert.Equal(1L, await CountRawObservationsAsync(streamId));
     }
 
     [Fact]
@@ -170,13 +198,36 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = commandText;
+        AddStreamParameters(command, streamId);
+
+        await Assert.ThrowsAsync<SqlException>(
+            () => command.ExecuteNonQueryAsync());
+    }
+
+    private async Task<long> CountRawObservationsAsync(
+        ObservationStreamId streamId)
+    {
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM dbo.MachineObservation
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary;
+            """;
+        AddStreamParameters(command, streamId);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static void AddStreamParameters(
+        SqlCommand command,
+        ObservationStreamId streamId)
+    {
         command.Parameters.AddWithValue("@MachineId", streamId.MachineId.Value);
         command.Parameters.AddWithValue(
             "@StreamKeyBinary",
             OrdinalStringKeyCodec.Encode(streamId.StreamKey));
-
-        await Assert.ThrowsAsync<SqlException>(
-            () => command.ExecuteNonQueryAsync());
     }
 
     private static ObservationStreamId StreamId() =>
