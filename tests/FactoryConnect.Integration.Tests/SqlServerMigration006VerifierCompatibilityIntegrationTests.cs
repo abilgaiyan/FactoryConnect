@@ -9,7 +9,7 @@ public sealed class SqlServerMigration006VerifierCompatibilityIntegrationTests
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
 
     [Fact]
-    public async Task ExactPost005IsPendingThenMigration006BecomesVerifierCompatibleAndExactCurrent()
+    public async Task ExactPost005IsPendingThenCurrentEngineApplies006And007AndBecomesVerifierCompatible()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
@@ -43,7 +43,7 @@ public sealed class SqlServerMigration006VerifierCompatibilityIntegrationTests
 
         Assert.Equal(SqlRuntimeCompatibilityClassification.Compatible, after.Classification);
         Assert.True(after.IsCompatible);
-        Assert.Equal(6, await CountHistoryRowsAsync(connection));
+        Assert.Equal(catalog.Migrations.Length, await CountHistoryRowsAsync(connection));
         Assert.Equal(
             SqlRuntimeMigrationHistoryClassification.ExactCurrent,
             await ReadHistoryClassificationAsync(connection, catalog));

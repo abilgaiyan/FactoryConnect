@@ -146,6 +146,15 @@ public sealed class MtConnectStartupCheckpointResolverTests
             return ValueTask.FromResult(checkpoint);
         }
 
+        public ValueTask<AcquisitionContactAuthority?>
+            ReadAcquisitionContactAuthorityAsync(
+                ObservationStreamId streamId,
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<AcquisitionContactAuthority?>(null);
+        }
+
         public ValueTask CommitAsync(
             ObservationIngestionBatch batch,
             CancellationToken cancellationToken = default)

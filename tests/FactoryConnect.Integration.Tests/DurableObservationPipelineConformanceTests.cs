@@ -27,7 +27,8 @@ public sealed class DurableObservationPipelineConformanceTests
                     Sequenced(machineId, 2, "UNMAPPED", true),
                     Sequenced(machineId, 3, "DI1", true),
                     Sequenced(machineId, 4, "DI1", false),
-                ]));
+                ],
+                DateTimeOffset.UnixEpoch));
 
         var first = Pipeline(
             rawStore,
@@ -97,7 +98,8 @@ public sealed class DurableObservationPipelineConformanceTests
             new ObservationIngestionBatch(
                 null,
                 new ObservationCheckpoint(streamId, 7, 2),
-                [Sequenced(streamId.MachineId, 1, "DI1", true)]));
+                [Sequenced(streamId.MachineId, 1, "DI1", true)],
+                DateTimeOffset.UnixEpoch));
 
         var pipeline = Pipeline(
             rawStore,
@@ -141,7 +143,8 @@ public sealed class DurableObservationPipelineConformanceTests
             new ObservationIngestionBatch(
                 null,
                 new ObservationCheckpoint(streamId, 7, 2),
-                [Sequenced(streamId.MachineId, 1, "DI1", true)]));
+                [Sequenced(streamId.MachineId, 1, "DI1", true)],
+                DateTimeOffset.UnixEpoch));
 
         var pipeline = Pipeline(
             rawStore,
@@ -198,12 +201,14 @@ public sealed class DurableObservationPipelineConformanceTests
             new ObservationIngestionBatch(
                 null,
                 new ObservationCheckpoint(firstStream, 1, 2),
-                [Sequenced(firstStream.MachineId, 1, "DI1", true)]));
+                [Sequenced(firstStream.MachineId, 1, "DI1", true)],
+                DateTimeOffset.UnixEpoch));
         await rawStore.CommitAsync(
             new ObservationIngestionBatch(
                 null,
                 new ObservationCheckpoint(secondStream, 1, 2),
-                [Sequenced(secondStream.MachineId, 1, "X1", true)]));
+                [Sequenced(secondStream.MachineId, 1, "X1", true)],
+                DateTimeOffset.UnixEpoch));
 
         var first = PipelineSet(
             rawStore,

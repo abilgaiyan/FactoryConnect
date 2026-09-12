@@ -7,12 +7,16 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
 {
     [Fact]
-    public void RepositoryAuthoritySeparatesLegacyPost004FromCurrentPost005()
+    public void RepositoryAuthoritySeparatesHistoricalPost005FromCurrentPost007()
     {
         Assert.Equal(13, SqlRepositorySchemaDescriptors.LegacyPost004.Tables.Length);
-        Assert.Equal(20, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(20, SqlRepositorySchemaDescriptors.Post005.Tables.Length);
+        Assert.Equal(21, SqlRepositorySchemaDescriptors.Current.Tables.Length);
 
         var legacyNames = SqlRepositorySchemaDescriptors.LegacyPost004.Tables
+            .Select(static table => table.Name.ObjectName)
+            .ToHashSet(StringComparer.Ordinal);
+        var post005Names = SqlRepositorySchemaDescriptors.Post005.Tables
             .Select(static table => table.Name.ObjectName)
             .ToHashSet(StringComparer.Ordinal);
         var currentNames = SqlRepositorySchemaDescriptors.Current.Tables
@@ -20,13 +24,15 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.DoesNotContain("OperationalMetricProjection", legacyNames);
-        Assert.Contains("OperationalMetricProjection", currentNames);
-        Assert.Contains("OperationalMetricProjectionProcessor", currentNames);
-        Assert.Contains("OperationalMetricProjectionCheckpoint", currentNames);
-        Assert.Contains("OperationalMetricProjectionManifest", currentNames);
-        Assert.Contains("OperationalMetricProjectionEvidence", currentNames);
-        Assert.Contains("MachineShiftOccurrenceRoster", currentNames);
-        Assert.Contains("MachineShiftOccurrenceRosterOccurrence", currentNames);
+        Assert.Contains("OperationalMetricProjection", post005Names);
+        Assert.Contains("OperationalMetricProjectionProcessor", post005Names);
+        Assert.Contains("OperationalMetricProjectionCheckpoint", post005Names);
+        Assert.Contains("OperationalMetricProjectionManifest", post005Names);
+        Assert.Contains("OperationalMetricProjectionEvidence", post005Names);
+        Assert.Contains("MachineShiftOccurrenceRoster", post005Names);
+        Assert.Contains("MachineShiftOccurrenceRosterOccurrence", post005Names);
+        Assert.DoesNotContain("AcquisitionContactAuthority", post005Names);
+        Assert.Contains("AcquisitionContactAuthority", currentNames);
     }
 
     [Fact]

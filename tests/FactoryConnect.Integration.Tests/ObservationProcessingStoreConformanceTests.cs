@@ -115,7 +115,8 @@ public abstract class ObservationProcessingStoreConformanceTests
                     new SequencedMachineObservation(
                         2,
                         Observation(streamId.MachineId, "execution")),
-                ]));
+                ],
+                DateTimeOffset.UnixEpoch));
 
         var batch = await Reader(store).ReadAsync(
             new ObservationReadRequest(streamId, null, 10));
@@ -164,6 +165,7 @@ public abstract class ObservationProcessingStoreConformanceTests
     public async Task ReadAsyncHonorsPreCanceledToken()
     {
         var store = CreateStore();
+        var streamId = StreamId();
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -470,7 +472,8 @@ public abstract class ObservationProcessingStoreConformanceTests
                 new SequencedMachineObservation(
                     102,
                     Observation(streamId.MachineId, "load")),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
 
     private static ObservationCheckpoint InitialCheckpoint(
         ObservationStreamId streamId) =>

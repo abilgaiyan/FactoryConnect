@@ -22,8 +22,6 @@ public sealed class SqlMigration006AuthorityTests
             migration.ResourceName);
         Assert.Equal(SqlMigrationTransactionPolicy.EngineOwned, migration.TransactionPolicy);
         Assert.Equal(Migration006Checksum, migration.Sha256Checksum);
-
-        Assert.Equal([1, 2, 3, 4, 5, 6], catalog.Migrations.Select(static value => value.MigrationId));
     }
 
     [Fact]
@@ -105,7 +103,7 @@ public sealed class SqlMigration006AuthorityTests
     }
 
     [Fact]
-    public void ExactPost005HistoryIsPendingAndExactPost006HistoryIsCurrent()
+    public void ExactPost005AndPost006HistoryRemainPendingAfterMigration007()
     {
         var catalog = SqlMigrationCatalog.Load();
         var appliedAtUtc = new DateTimeOffset(2026, 9, 8, 0, 0, 0, TimeSpan.Zero);
@@ -120,6 +118,7 @@ public sealed class SqlMigration006AuthorityTests
             .ToImmutableArray();
 
         var post006History = catalog.Migrations
+            .Take(6)
             .Select(migration => new SqlMigrationHistoryRow(
                 migration.MigrationId,
                 migration.Name,
@@ -131,7 +130,7 @@ public sealed class SqlMigration006AuthorityTests
             SqlRuntimeMigrationHistoryClassification.ExactPrefixPending,
             SqlRuntimeMigrationHistoryClassifier.Classify(post005History, catalog));
         Assert.Equal(
-            SqlRuntimeMigrationHistoryClassification.ExactCurrent,
+            SqlRuntimeMigrationHistoryClassification.ExactPrefixPending,
             SqlRuntimeMigrationHistoryClassifier.Classify(post006History, catalog));
     }
 }

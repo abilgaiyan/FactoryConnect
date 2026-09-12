@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Protocols.MTConnect;
 
@@ -6,6 +7,7 @@ namespace FactoryConnect.Edge;
 public sealed class MtConnectAcquisitionRuntime :
     IMtConnectAcquisitionRuntime
 {
+    private readonly Channel<bool> _cycleGate = CreateCycleGate();
     private MtConnectAcquisitionSession _session;
     private readonly MtConnectEndpoint _endpoint;
     private readonly MachineId _machineId;
@@ -13,8 +15,10 @@ public sealed class MtConnectAcquisitionRuntime :
     private readonly MtConnectTransientRetryPolicy _retryPolicy;
     private readonly MtConnectContinuityRecoveryPolicy _recoveryPolicy;
     private readonly IMtConnectObservationSink _sink;
+    private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _pollingInterval;
     private ObservationCheckpoint? _checkpoint;
+    private PendingAcquisition? _pending;
 
     public MtConnectAcquisitionRuntime(
         MtConnectAcquisitionSession session,
@@ -24,6 +28,7 @@ public sealed class MtConnectAcquisitionRuntime :
         MtConnectTransientRetryPolicy retryPolicy,
         MtConnectContinuityRecoveryPolicy recoveryPolicy,
         IMtConnectObservationSink sink,
+        TimeProvider timeProvider,
         TimeSpan pollingInterval,
         ObservationCheckpoint? initialCheckpoint = null)
     {
@@ -33,6 +38,7 @@ public sealed class MtConnectAcquisitionRuntime :
         ArgumentNullException.ThrowIfNull(retryPolicy);
         ArgumentNullException.ThrowIfNull(recoveryPolicy);
         ArgumentNullException.ThrowIfNull(sink);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         if (machineId.IsEmpty)
         {
@@ -68,6 +74,7 @@ public sealed class MtConnectAcquisitionRuntime :
         _retryPolicy = retryPolicy;
         _recoveryPolicy = recoveryPolicy;
         _sink = sink;
+        _timeProvider = timeProvider;
         _pollingInterval = pollingInterval;
         _checkpoint = initialCheckpoint;
     }
@@ -75,23 +82,11 @@ public sealed class MtConnectAcquisitionRuntime :
     public async Task<MtConnectSampleResult> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await AcquireWithRecoveryAsync(
+        var outcome = await RunCycleCoreAsync(
+            containDurableWriteFailure: false,
             cancellationToken);
 
-        await _sink.WriteAsync(
-            result,
-            _checkpoint,
-            cancellationToken);
-
-        _session.Advance(result);
-        _checkpoint = new ObservationCheckpoint(
-            MtConnectObservationStreamId.Create(
-                _machineId,
-                _deviceKey),
-            result.InstanceId,
-            result.NextSequence);
-
-        return result;
+        return outcome.Result!;
     }
 
     public async Task RunAsync(
@@ -99,7 +94,17 @@ public sealed class MtConnectAcquisitionRuntime :
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            await RunCycleAsync(cancellationToken);
+            try
+            {
+                await RunCycleCoreAsync(
+                    containDurableWriteFailure: true,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
 
             if (cancellationToken.IsCancellationRequested)
             {
@@ -117,6 +122,61 @@ public sealed class MtConnectAcquisitionRuntime :
             {
                 break;
             }
+        }
+    }
+
+    private async Task<CycleOutcome> RunCycleCoreAsync(
+        bool containDurableWriteFailure,
+        CancellationToken cancellationToken)
+    {
+        await _cycleGate.Reader.ReadAsync(cancellationToken);
+        try
+        {
+            if (_pending is null)
+            {
+                var result = await AcquireWithRecoveryAsync(
+                    cancellationToken);
+                var successfulContactTime = _timeProvider.GetUtcNow();
+                _pending = new PendingAcquisition(
+                    result,
+                    successfulContactTime,
+                    _checkpoint);
+            }
+
+            var pending = _pending;
+
+            try
+            {
+                await _sink.WriteAsync(
+                    pending.Result,
+                    pending.ExpectedCheckpoint,
+                    pending.SuccessfulContactTime,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch when (containDurableWriteFailure)
+            {
+                return CycleOutcome.DurableWriteFailed();
+            }
+
+            _session.Advance(pending.Result);
+            _checkpoint = new ObservationCheckpoint(
+                MtConnectObservationStreamId.Create(
+                    _machineId,
+                    _deviceKey),
+                pending.Result.InstanceId,
+                pending.Result.NextSequence);
+            _pending = null;
+
+            return CycleOutcome.Succeeded(pending.Result);
+        }
+        finally
+        {
+            _cycleGate.Writer.TryWrite(true);
         }
     }
 
@@ -168,5 +228,40 @@ public sealed class MtConnectAcquisitionRuntime :
                 recoveryAttempted = true;
             }
         }
+    }
+
+    private static Channel<bool> CreateCycleGate()
+    {
+        var channel = Channel.CreateBounded<bool>(
+            new BoundedChannelOptions(1)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = false,
+                SingleWriter = false,
+            });
+
+        if (!channel.Writer.TryWrite(true))
+        {
+            throw new InvalidOperationException(
+                "The acquisition cycle gate could not be initialized.");
+        }
+
+        return channel;
+    }
+
+    private sealed record PendingAcquisition(
+        MtConnectSampleResult Result,
+        DateTimeOffset SuccessfulContactTime,
+        ObservationCheckpoint? ExpectedCheckpoint);
+
+    private sealed record CycleOutcome(
+        MtConnectSampleResult? Result)
+    {
+        public static CycleOutcome Succeeded(
+            MtConnectSampleResult result) =>
+            new(result);
+
+        public static CycleOutcome DurableWriteFailed() =>
+            new((MtConnectSampleResult?)null);
     }
 }

@@ -6,6 +6,10 @@ public interface IObservationIngestionStore
         ObservationStreamId streamId,
         CancellationToken cancellationToken = default);
 
+    ValueTask<AcquisitionContactAuthority?> ReadAcquisitionContactAuthorityAsync(
+        ObservationStreamId streamId,
+        CancellationToken cancellationToken = default);
+
     ValueTask CommitAsync(
         ObservationIngestionBatch batch,
         CancellationToken cancellationToken = default);

@@ -28,7 +28,8 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
         var batch = new ObservationIngestionBatch(
             null,
             checkpoint,
-            [CreateObservation(streamId.MachineId, 1, 42.5m)]);
+            [CreateObservation(streamId.MachineId, 1, 42.5m)],
+            DateTimeOffset.UnixEpoch);
 
         await store.CommitAsync(batch);
 
@@ -50,13 +51,15 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
             new ObservationIngestionBatch(
                 null,
                 initial,
-                [CreateObservation(streamId.MachineId, 1, 10m)]));
+                [CreateObservation(streamId.MachineId, 1, 10m)],
+                DateTimeOffset.UnixEpoch));
 
         await store.CommitAsync(
             new ObservationIngestionBatch(
                 initial,
                 next,
-                [CreateObservation(streamId.MachineId, 2, 20m)]));
+                [CreateObservation(streamId.MachineId, 2, 20m)],
+                DateTimeOffset.UnixEpoch));
 
         Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(2, await CountObservationsAsync(streamId));
@@ -74,10 +77,15 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
             new ObservationIngestionBatch(
                 null,
                 initial,
-                [CreateObservation(streamId.MachineId, 1, 10m)]));
+                [CreateObservation(streamId.MachineId, 1, 10m)],
+                DateTimeOffset.UnixEpoch));
 
         await store.CommitAsync(
-            new ObservationIngestionBatch(initial, next, []));
+            new ObservationIngestionBatch(
+                initial,
+                next,
+                [],
+                DateTimeOffset.UnixEpoch));
 
         Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(1, await CountObservationsAsync(streamId));
@@ -102,7 +110,8 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
                             streamId.MachineId,
                             1,
                             42.5m,
-                            address: FailureAddress)])));
+                            address: FailureAddress)],
+                        DateTimeOffset.UnixEpoch)));
         }
         finally
         {
@@ -125,7 +134,8 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
             new ObservationIngestionBatch(
                 null,
                 initial,
-                [CreateObservation(streamId.MachineId, 1, 10m)]));
+                [CreateObservation(streamId.MachineId, 1, 10m)],
+                DateTimeOffset.UnixEpoch));
 
         await AddFailureConstraintAsync();
         try
@@ -145,7 +155,8 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
                                 3,
                                 30m,
                                 address: FailureAddress),
-                        ])));
+                        ],
+                        DateTimeOffset.UnixEpoch)));
         }
         finally
         {
@@ -169,14 +180,16 @@ public sealed class SqlServerAtomicCommitIntegrationTests :
             new ObservationIngestionBatch(
                 null,
                 initial,
-                [CreateObservation(streamId.MachineId, 1, 10m)]));
+                [CreateObservation(streamId.MachineId, 1, 10m)],
+                DateTimeOffset.UnixEpoch));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             async () => await store.CommitAsync(
                 new ObservationIngestionBatch(
                     stale,
                     proposed,
-                    [CreateObservation(streamId.MachineId, 2, 20m)])));
+                    [CreateObservation(streamId.MachineId, 2, 20m)],
+                    DateTimeOffset.UnixEpoch)));
 
         Assert.Equal(initial, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(1, await CountObservationsAsync(streamId));

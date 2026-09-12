@@ -79,6 +79,9 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
             await ExecuteSchemaAsync(
                 databaseConnection,
                 SqlServerSchema.ReadCorrectOperationalMetricProjectionManifestParentSchema());
+            await ExecuteSchemaAsync(
+                databaseConnection,
+                SqlServerSchema.ReadAcquisitionContactAuthoritySchema());
         }
         catch
         {

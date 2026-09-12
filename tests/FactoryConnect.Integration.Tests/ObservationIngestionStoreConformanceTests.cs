@@ -36,7 +36,8 @@ public abstract class ObservationIngestionStoreConformanceTests
         var batch = new ObservationIngestionBatch(
             expected,
             checkpoint,
-            []);
+            [],
+            DateTimeOffset.UnixEpoch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(batch).AsTask());
@@ -62,7 +63,8 @@ public abstract class ObservationIngestionStoreConformanceTests
                 new SequencedMachineObservation(
                     104,
                     Observation(streamId.MachineId, "load")),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
 
         await store.CommitAsync(InitialBatch(streamId));
         await store.CommitAsync(continuation);
@@ -98,7 +100,8 @@ public abstract class ObservationIngestionStoreConformanceTests
             current,
             [new SequencedMachineObservation(
                 100,
-                Observation(streamId.MachineId, "availability"))]);
+                Observation(streamId.MachineId, "availability"))],
+            DateTimeOffset.UnixEpoch);
 
         await store.CommitAsync(InitialBatch(streamId));
 
@@ -123,7 +126,8 @@ public abstract class ObservationIngestionStoreConformanceTests
         var regressingBatch = new ObservationIngestionBatch(
             current,
             new ObservationCheckpoint(streamId, 42, 102),
-            []);
+            [],
+            DateTimeOffset.UnixEpoch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(regressingBatch).AsTask());
@@ -145,7 +149,8 @@ public abstract class ObservationIngestionStoreConformanceTests
         var batch = new ObservationIngestionBatch(
             null,
             new ObservationCheckpoint(streamId, 42, 102),
-            [new SequencedMachineObservation(101, otherMachineObservation)]);
+            [new SequencedMachineObservation(101, otherMachineObservation)],
+            DateTimeOffset.UnixEpoch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(batch).AsTask());
@@ -164,7 +169,11 @@ public abstract class ObservationIngestionStoreConformanceTests
 
         await store.CommitAsync(InitialBatch(streamId));
         await store.CommitAsync(
-            new ObservationIngestionBatch(current, next, []));
+            new ObservationIngestionBatch(
+                current,
+                next,
+                [],
+                DateTimeOffset.UnixEpoch));
 
         Assert.Equal(next, await store.ReadCheckpointAsync(streamId));
         Assert.Equal(2, ReadObservationCount(store, streamId));
@@ -183,7 +192,8 @@ public abstract class ObservationIngestionStoreConformanceTests
             [
                 new SequencedMachineObservation(101, observation),
                 new SequencedMachineObservation(101, observation),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
 
         await store.CommitAsync(batch);
 
@@ -207,7 +217,8 @@ public abstract class ObservationIngestionStoreConformanceTests
                 new SequencedMachineObservation(
                     101,
                     Observation(streamId.MachineId, "load")),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(batch).AsTask());
@@ -266,7 +277,8 @@ public abstract class ObservationIngestionStoreConformanceTests
             checkpoint,
             [new SequencedMachineObservation(
                 102,
-                Observation(streamId.MachineId, "execution"))]);
+                Observation(streamId.MachineId, "execution"))],
+            DateTimeOffset.UnixEpoch);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => store.CommitAsync(batch).AsTask());
@@ -288,7 +300,8 @@ public abstract class ObservationIngestionStoreConformanceTests
             replacement,
             [new SequencedMachineObservation(
                 1,
-                Observation(streamId.MachineId, "availability"))]);
+                Observation(streamId.MachineId, "availability"))],
+            DateTimeOffset.UnixEpoch);
 
         await store.CommitAsync(InitialBatch(streamId));
 
@@ -316,7 +329,8 @@ public abstract class ObservationIngestionStoreConformanceTests
                 replacement,
                 [new SequencedMachineObservation(
                     1,
-                    Observation(streamId.MachineId, "availability"))]));
+                    Observation(streamId.MachineId, "availability"))],
+                DateTimeOffset.UnixEpoch));
 
         Assert.Equal(
             replacement,
@@ -337,7 +351,8 @@ public abstract class ObservationIngestionStoreConformanceTests
                 new SequencedMachineObservation(
                     102,
                     Observation(streamId.MachineId, "load")),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
     }
 
     private static ObservationCheckpoint InitialCheckpoint(

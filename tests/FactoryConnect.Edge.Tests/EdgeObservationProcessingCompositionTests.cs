@@ -193,7 +193,8 @@ public sealed class EdgeObservationProcessingCompositionTests
                         Value = value,
                         Timestamp = DateTimeOffset.UnixEpoch,
                     }),
-            ]);
+            ],
+            DateTimeOffset.UnixEpoch);
 
     private static IConfiguration Configuration(
         string provider,
