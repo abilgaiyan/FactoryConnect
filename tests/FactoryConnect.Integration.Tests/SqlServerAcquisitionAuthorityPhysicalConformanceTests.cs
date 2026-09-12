@@ -143,37 +143,15 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
         var initial = InitialBatch(streamId, Instant(10));
         await store.CommitAsync(initial);
 
-        await ExecuteAsync(
-            """
-            UPDATE dbo.AcquisitionContactAuthority
-            SET RawAcceptedThrough = NULL
-            WHERE MachineId = @MachineId
-              AND StreamKeyBinary = @StreamKeyBinary;
-            """,
-            streamId);
+        var initialAuthority = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(initialAuthority);
 
-        await ExecuteAsync(
-            $"""
-            UPDATE dbo.MachineObservation
-            SET Position = {UInt64MaxLiteral}
-            WHERE MachineId = @MachineId
-              AND StreamKeyBinary = @StreamKeyBinary
-              AND Position = 2;
-            """,
-            streamId);
-
-        await ExecuteAsync(
-            $"""
-            UPDATE dbo.AcquisitionContactAuthority
-            SET RawAcceptedThrough = {UInt64MaxLiteral}
-            WHERE MachineId = @MachineId
-              AND StreamKeyBinary = @StreamKeyBinary;
-            """,
-            streamId);
+        await SeedNearExhaustionStateAsync(streamId);
 
         var beforeDuplicateOnly = await store.ReadAcquisitionContactAuthorityAsync(streamId);
         Assert.NotNull(beforeDuplicateOnly);
         Assert.Equal(ulong.MaxValue, beforeDuplicateOnly.RawAcceptedThrough?.Value);
+        Assert.NotEqual(initialAuthority.AcquisitionRevision, beforeDuplicateOnly.AcquisitionRevision);
 
         await store.CommitAsync(
             new ObservationIngestionBatch(
@@ -216,6 +194,65 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
 
     private SqlServerObservationIngestionStore CreateStore() =>
         new(_fixture.ConnectionString);
+
+    private async Task SeedNearExhaustionStateAsync(ObservationStreamId streamId)
+    {
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var transaction =
+            (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using (var clearAuthority = connection.CreateCommand())
+            {
+                clearAuthority.Transaction = transaction;
+                clearAuthority.CommandText = """
+                    UPDATE dbo.AcquisitionContactAuthority
+                    SET RawAcceptedThrough = NULL
+                    WHERE MachineId = @MachineId
+                      AND StreamKeyBinary = @StreamKeyBinary;
+                    """;
+                AddStreamParameters(clearAuthority, streamId);
+                await clearAuthority.ExecuteNonQueryAsync();
+            }
+
+            await using (var movePosition = connection.CreateCommand())
+            {
+                movePosition.Transaction = transaction;
+                movePosition.CommandText = $"""
+                    UPDATE dbo.MachineObservation
+                    SET Position = {UInt64MaxLiteral}
+                    WHERE MachineId = @MachineId
+                      AND StreamKeyBinary = @StreamKeyBinary
+                      AND Position = 2;
+                    """;
+                AddStreamParameters(movePosition, streamId);
+                await movePosition.ExecuteNonQueryAsync();
+            }
+
+            await using (var restoreAuthority = connection.CreateCommand())
+            {
+                restoreAuthority.Transaction = transaction;
+                restoreAuthority.CommandText = $"""
+                    UPDATE dbo.AcquisitionContactAuthority
+                    SET RawAcceptedThrough = {UInt64MaxLiteral},
+                        AcquisitionRevision = AcquisitionRevision + 1
+                    WHERE MachineId = @MachineId
+                      AND StreamKeyBinary = @StreamKeyBinary;
+                    """;
+                AddStreamParameters(restoreAuthority, streamId);
+                await restoreAuthority.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
 
     private async Task AssertSqlRejectedAsync(
         string commandText,
