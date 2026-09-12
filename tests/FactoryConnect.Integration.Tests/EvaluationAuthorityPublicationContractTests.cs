@@ -77,7 +77,7 @@ public sealed class EvaluationAuthorityPublicationContractTests
                 null,
                 identity,
                 10,
-                MachineState.Faulted,
+                MachineState.Fault,
                 42,
                 policy).ReplayIdentity);
         Assert.NotEqual(
