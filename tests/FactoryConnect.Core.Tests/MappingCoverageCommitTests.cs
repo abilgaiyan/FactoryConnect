@@ -103,22 +103,27 @@ public sealed class MappingCoverageCommitTests
     }
 
     [Fact]
-    public void CommitAllowsExactCoverageReplayForAtLeastOnceRecovery()
+    public void CommitRetainsEarlierExpectedAuthorityForStaleExactReplay()
     {
         var (processorId, streamId) = Identity();
-        var expected = Authority(processorId, streamId, raw: 8, mapped: 6);
+        var expectedBeforeFirstAttempt = Authority(
+            processorId,
+            streamId,
+            raw: 5,
+            mapped: 3);
 
-        var commit = new MappingCoverageCommit(
-            expected,
+        var retry = new MappingCoverageCommit(
+            expectedBeforeFirstAttempt,
             processorId,
             streamId,
             new ObservationPosition(8),
             new ObservationPosition(6));
 
-        Assert.Equal(expected.RawConsumedThrough, commit.RawConsumedThrough);
+        Assert.Same(expectedBeforeFirstAttempt, retry.ExpectedAuthority);
+        Assert.Equal(new ObservationPosition(8), retry.RawConsumedThrough);
         Assert.Equal(
-            expected.MappedEvaluationInputHighWater,
-            commit.MappedEvaluationInputHighWater);
+            new ObservationPosition(6),
+            retry.MappedEvaluationInputHighWater);
     }
 
     private static MappingCoverageAuthority Authority(
