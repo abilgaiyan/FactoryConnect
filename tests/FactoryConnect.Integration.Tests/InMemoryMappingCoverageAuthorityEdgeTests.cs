@@ -85,7 +85,7 @@ public sealed class InMemoryMappingCoverageAuthorityEdgeTests
 
         var value = field.GetValue(store);
         var dictionary = Assert.IsAssignableFrom<IDictionary>(value);
-        Assert.Equal(1, dictionary.Count);
+        Assert.Single(dictionary.Keys.Cast<object>());
 
         object? key = null;
         MappingCoverageAuthority? authority = null;
@@ -121,7 +121,7 @@ public sealed class InMemoryMappingCoverageAuthorityEdgeTests
             mapped is null ? null : new ObservationPosition(mapped.Value));
 
     private static async Task<MappingCoverageAuthority> RequiredAuthority(
-        IMappingCoverageAuthorityStore store,
+        InMemoryMappingCoverageAuthorityStore store,
         ObservationProcessorId processorId,
         ObservationStreamId streamId)
     {
