@@ -11,6 +11,7 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
 {
     private const string UInt64MaxLiteral = "18446744073709551615";
     private const string BeyondUInt64Literal = "18446744073709551616";
+    private static readonly ulong[] InitialPositions = [1UL, 2UL];
 
     private readonly SqlServerTestDatabaseFixture _fixture;
 
@@ -68,7 +69,7 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
             streamId);
 
         var positions = await ReadPositionsAsync(streamId);
-        Assert.Equal(new ulong[] { 1UL, 2UL }, positions);
+        Assert.Equal(InitialPositions, positions);
     }
 
     [Fact]
