@@ -54,6 +54,10 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
                 [],
                 new DateTimeOffset(2026, 9, 12, 7, 10, 0, TimeSpan.Zero)));
 
+        var authority = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(authority);
+        Assert.Equal(0UL, authority.AcquisitionRevision.Value);
+
         await AssertSqlRejectedAsync(
             """
             INSERT INTO dbo.AcquisitionContactAuthority
@@ -75,7 +79,61 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
             """,
             streamId);
 
-        Assert.NotNull(await store.ReadAcquisitionContactAuthorityAsync(streamId));
+        Assert.Equal(
+            authority,
+            await store.ReadAcquisitionContactAuthorityAsync(streamId));
+    }
+
+    [Fact]
+    public async Task ReferencedCheckpointAndRawObservationCannotBeDeleted()
+    {
+        var streamId = StreamId();
+        var store = new SqlServerObservationIngestionStore(_fixture.ConnectionString);
+        var checkpoint = new ObservationCheckpoint(streamId, 42, 102);
+        var batch = new ObservationIngestionBatch(
+            null,
+            checkpoint,
+            [
+                new SequencedMachineObservation(
+                    101,
+                    new MachineObservation
+                    {
+                        MachineId = streamId.MachineId,
+                        Source = "MTConnect",
+                        Address = "execution",
+                        Type = SignalType.Text,
+                        Value = "ACTIVE",
+                        Timestamp = DateTimeOffset.UnixEpoch,
+                    }),
+            ],
+            new DateTimeOffset(2026, 9, 12, 7, 15, 0, TimeSpan.Zero));
+
+        await store.CommitAsync(batch);
+        var authorityBefore = await store.ReadAcquisitionContactAuthorityAsync(streamId);
+        Assert.NotNull(authorityBefore);
+        Assert.NotNull(authorityBefore.RawAcceptedThrough);
+
+        await AssertSqlRejectedAsync(
+            """
+            DELETE FROM dbo.ObservationStreamCheckpoint
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary;
+            """,
+            streamId);
+
+        await AssertSqlRejectedAsync(
+            """
+            DELETE FROM dbo.MachineObservation
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND Position = 1;
+            """,
+            streamId);
+
+        Assert.Equal(checkpoint, await store.ReadCheckpointAsync(streamId));
+        Assert.Equal(
+            authorityBefore,
+            await store.ReadAcquisitionContactAuthorityAsync(streamId));
     }
 
     [Fact]
