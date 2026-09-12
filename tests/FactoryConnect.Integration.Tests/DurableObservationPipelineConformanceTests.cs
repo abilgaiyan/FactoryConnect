@@ -323,7 +323,8 @@ public sealed class DurableObservationPipelineConformanceTests
                     },
                 ],
             },
-            mappedSink);
+            mappedSink,
+            new InMemoryMappingCoverageAuthorityStore());
         var stateActivity = new MachineStateActivityProcessor(
             new ObservationProcessorId("machine-state-activity"),
             projectionStore);
