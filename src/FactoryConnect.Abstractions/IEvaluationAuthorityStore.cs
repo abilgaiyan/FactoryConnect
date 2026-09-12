@@ -29,28 +29,44 @@ public interface IEvaluationAuthorityStore
     /// evaluation.
     /// </summary>
     /// <remarks>
-    /// A successful changed publication allocates exactly one provider-owned
-    /// <see cref="StateProjectionAuthorityRevision"/>. The initial changed
-    /// publication allocates revision zero; later changed publications advance
-    /// monotonically by one.
+    /// Publication classification is ordered.
     ///
-    /// Exact replay is determined by
+    /// First, exact replay is determined by
     /// <see cref="EvaluationAuthorityPublication.ReplayIdentity"/>. When the
-    /// currently published authority represents that same logical publication,
-    /// replay succeeds even when the supplied expected revision is stale and
-    /// returns the previously committed authority/revision without allocating a
-    /// new revision. A publication superseded by later evaluation is not an
-    /// exact replay of current authority and is conflicting.
+    /// currently published authority represents the same logical publication,
+    /// replay succeeds before compare-and-swap validation and before revision-
+    /// exhaustion validation. The supplied expected revision may therefore be
+    /// stale. Exact replay returns the previously committed authority/revision,
+    /// allocates no revision, performs no mutation, and remains legal when the
+    /// current revision is <see cref="ulong.MaxValue"/>.
     ///
-    /// A stale or contradictory publication returns
+    /// Second, when the proposal is not exact replay and its expected revision
+    /// does not identify current authority, publication returns
     /// <see cref="EvaluationAuthorityPublicationConflict"/> without mutation.
-    /// Revision exhaustion returns
-    /// <see cref="EvaluationAuthorityRevisionExhausted"/> without mutation;
-    /// exact replay remains legal at the exhausted revision.
     ///
-    /// No invocation that represents no new evaluation may create revision
-    /// churn. A recovery retry may publish only an already-determined logical
-    /// publication represented by the same deterministic replay identity.
+    /// Third, when the expected revision identifies current authority but the
+    /// proposal is not strictly forward, publication also returns
+    /// <see cref="EvaluationAuthorityPublicationConflict"/> without mutation.
+    /// This includes a lower
+    /// <see cref="EvaluationAuthorityPublication.EvaluatedThrough"/> and a
+    /// same-position proposal whose machine state, last-consumed instance, or
+    /// applied continuity policy differs from current authority.
+    ///
+    /// Fourth, a changed strictly-forward proposal that would require advancing
+    /// beyond <see cref="ulong.MaxValue"/> returns
+    /// <see cref="EvaluationAuthorityRevisionExhausted"/> without mutation.
+    ///
+    /// Otherwise the changed strictly-forward publication is accepted. It
+    /// allocates exactly one provider-owned
+    /// <see cref="StateProjectionAuthorityRevision"/>. The initial changed
+    /// publication allocates revision zero; later accepted changed publications
+    /// advance monotonically by one.
+    ///
+    /// A publication superseded by later evaluation is not an exact replay of
+    /// current authority and is conflicting. No invocation that represents no
+    /// new evaluation may create revision churn. A recovery retry may publish
+    /// only an already-determined logical publication represented by the same
+    /// deterministic replay identity.
     /// </remarks>
     ValueTask<EvaluationAuthorityPublicationResult> PublishAsync(
         EvaluationAuthorityPublication publication,
