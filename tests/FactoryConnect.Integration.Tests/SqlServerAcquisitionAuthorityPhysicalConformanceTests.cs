@@ -67,7 +67,8 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
             """,
             streamId);
 
-        Assert.Equal([1UL, 2UL], await ReadPositionsAsync(streamId));
+        var positions = await ReadPositionsAsync(streamId);
+        Assert.Equal(new ulong[] { 1UL, 2UL }, positions);
     }
 
     [Fact]
