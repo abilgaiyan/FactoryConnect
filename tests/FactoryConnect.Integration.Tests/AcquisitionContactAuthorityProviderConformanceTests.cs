@@ -94,7 +94,9 @@ public abstract class AcquisitionContactAuthorityProviderConformanceTests
         Assert.NotNull(after);
         Assert.NotNull(after.RawAcceptedThrough);
 
-        Assert.NotEqual(before.RawAcceptedThrough, after.RawAcceptedThrough);
+        Assert.True(
+            after.RawAcceptedThrough.Value >
+            before.RawAcceptedThrough.Value);
         Assert.NotEqual(before.AcquisitionRevision, after.AcquisitionRevision);
         Assert.Equal(continuation.Checkpoint, await store.ReadCheckpointAsync(streamId));
     }
