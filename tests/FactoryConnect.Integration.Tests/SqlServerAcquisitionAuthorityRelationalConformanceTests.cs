@@ -1,3 +1,4 @@
+using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -217,7 +218,9 @@ public sealed class SqlServerAcquisitionAuthorityRelationalConformanceTests :
               AND StreamKeyBinary = @StreamKeyBinary;
             """;
         AddStreamParameters(command, streamId);
-        return Convert.ToInt64(await command.ExecuteScalarAsync());
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(),
+            CultureInfo.InvariantCulture);
     }
 
     private static void AddStreamParameters(
