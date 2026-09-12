@@ -225,7 +225,7 @@ public sealed class MappingCoverageRecoveryConformanceTests
         new(MachineId.New(), "modbus:line-1");
 
     private static async Task<MappingCoverageAuthority> RequiredAuthority(
-        IMappingCoverageAuthorityStore store,
+        InMemoryMappingCoverageAuthorityStore store,
         ObservationProcessorId processorId,
         ObservationStreamId streamId)
     {
