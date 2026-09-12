@@ -38,6 +38,11 @@ public sealed class EdgeObservationProcessingCompositionTests
                 IDurableMappedObservationReader>());
         Assert.Same(
             provider.GetRequiredService<
+                InMemoryMappingCoverageAuthorityStore>(),
+            provider.GetRequiredService<
+                IMappingCoverageAuthorityStore>());
+        Assert.Same(
+            provider.GetRequiredService<
                 InMemoryMachineStateActivityProjectionStore>(),
             provider.GetRequiredService<
                 IMachineStateActivityProjectionStore>());
@@ -66,6 +71,9 @@ public sealed class EdgeObservationProcessingCompositionTests
             DurableObservationProcessingPipelineSet>();
         var mappedStore = provider.GetRequiredService<
             InMemoryMappedMachineObservationSink>();
+        var mappingAuthority = provider.GetRequiredService<
+            IMappingCoverageAuthorityStore>();
+        var processorId = new ObservationProcessorId("canonical-mapping");
 
         await rawStore.CommitAsync(
             Batch(firstStream, "DI1", true));
@@ -83,6 +91,25 @@ public sealed class EdgeObservationProcessingCompositionTests
             CanonicalSignalKeys.PowerOn,
             Assert.Single(mappedStore.ReadObservations(secondStream))
                 .Observation.SignalKey);
+
+        var firstAuthority = await mappingAuthority.ReadAsync(
+            processorId,
+            firstStream);
+        var secondAuthority = await mappingAuthority.ReadAsync(
+            processorId,
+            secondStream);
+        Assert.NotNull(firstAuthority);
+        Assert.NotNull(secondAuthority);
+        Assert.Equal(firstStream, firstAuthority.ObservationStreamId);
+        Assert.Equal(secondStream, secondAuthority.ObservationStreamId);
+        Assert.Equal(new ObservationPosition(1), firstAuthority.RawConsumedThrough);
+        Assert.Equal(new ObservationPosition(1), secondAuthority.RawConsumedThrough);
+        Assert.Equal(
+            new ObservationPosition(1),
+            firstAuthority.MappedEvaluationInputHighWater);
+        Assert.Equal(
+            new ObservationPosition(1),
+            secondAuthority.MappedEvaluationInputHighWater);
     }
 
     [Fact]
