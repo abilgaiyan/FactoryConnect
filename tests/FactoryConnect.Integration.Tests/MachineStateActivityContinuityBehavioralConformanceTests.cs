@@ -60,9 +60,9 @@ public sealed class MachineStateActivityContinuityBehavioralConformanceTests
         Assert.Equal(MachineState.Running, change.StateChanged.PreviousState);
         Assert.Equal(MachineState.Stopped, change.StateChanged.CurrentState);
         var period = Assert.Single(result.ActivityPeriods);
-        Assert.Equal(MachineState.Running, period.ActivityPeriod.State);
-        Assert.Equal(Stamp, period.ActivityPeriod.StartedAt);
-        Assert.Equal(Stamp.AddSeconds(1), period.ActivityPeriod.EndedAt);
+        Assert.Equal(MachineState.Running, period.Period.State);
+        Assert.Equal(Stamp, period.Period.StartedAt);
+        Assert.Equal(Stamp.AddSeconds(1), period.Period.EndedAt);
     }
 
     [Fact]
