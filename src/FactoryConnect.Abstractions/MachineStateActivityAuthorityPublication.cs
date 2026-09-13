@@ -43,11 +43,7 @@ public sealed record MachineStateActivityAuthorityPublication
         ArgumentNullException.ThrowIfNull(activityPeriods);
         ArgumentNullException.ThrowIfNull(evaluationIdentity);
 
-        ValidateIntrinsic(
-            projection,
-            stateChanges,
-            activityPeriods,
-            evaluationIdentity);
+        ValidateIntrinsic(projection, stateChanges, activityPeriods, evaluationIdentity);
 
         ExpectedProjectionPosition = expectedProjectionPosition;
         ExpectedAuthorityRevision = expectedAuthorityRevision;
@@ -85,8 +81,29 @@ public sealed record MachineStateActivityAuthorityPublication
                 nameof(evaluationIdentity));
         }
 
+        ValidateSignals(projection.Signals);
         ValidateStateChanges(projection, stateChanges);
         ValidateActivityPeriods(projection, activityPeriods);
+    }
+
+    private static void ValidateSignals(IReadOnlyList<MachineSignalValue> signals)
+    {
+        string? previous = null;
+        foreach (var signal in signals)
+        {
+            ArgumentNullException.ThrowIfNull(signal);
+            ArgumentException.ThrowIfNullOrWhiteSpace(signal.Key);
+
+            if (previous is not null &&
+                StringComparer.OrdinalIgnoreCase.Compare(previous, signal.Key) >= 0)
+            {
+                throw new ArgumentException(
+                    "Projection signals must be uniquely ordered by signal key.",
+                    nameof(signals));
+            }
+
+            previous = signal.Key;
+        }
     }
 
     private static void ValidateStateChanges(
