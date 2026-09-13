@@ -163,8 +163,8 @@ public sealed class MachineStateActivityContinuityBoundaryConformanceTests
         Assert.Empty(oneStore.ReadActivityPeriods(context.ProcessorId, context.StreamId));
         Assert.Empty(splitStore.ReadActivityPeriods(context.ProcessorId, context.StreamId));
 
-        var stateChanges = oneStore.ReadStateChanges(context.ProcessorId, context.StreamId);
-        Assert.Equal(2, stateChanges.Count);
+        var stateChanges = oneStore.ReadStateChanges(context.ProcessorId, context.StreamId).ToArray();
+        Assert.Equal(2, stateChanges.Length);
         Assert.Equal(MachineState.Unknown, stateChanges[0].StateChanged.PreviousState);
         Assert.Equal(MachineState.Running, stateChanges[0].StateChanged.CurrentState);
         Assert.Equal(MachineState.Unknown, stateChanges[1].StateChanged.PreviousState);
