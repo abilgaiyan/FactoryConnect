@@ -123,7 +123,7 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreConformanceTests
     }
 
     [Fact]
-    public void IntrinsicValidationRejectsCrossComponentMismatchAndDuplicateOrdering()
+    public void IntrinsicValidationRejectsCrossComponentMismatchAndUnorderedOrDuplicateCollections()
     {
         var id = Identity();
         var projection = Projection(id, 20, MachineState.Running);
@@ -139,34 +139,197 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreConformanceTests
             new MachineStateActivityAuthorityPublication(
                 null, null, projection, [], [], wrongIdentity));
 
-        var duplicate = StateChange(id, 20, MachineState.Unknown, MachineState.Running);
+        var duplicateStateChange = StateChange(id, 20, MachineState.Unknown, MachineState.Running);
         Assert.Throws<ArgumentException>(() =>
-            Proposal(id, null, null, 20, MachineState.Running, 7, [duplicate, duplicate]));
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                [duplicateStateChange, duplicateStateChange]));
+
+        var laterStateChange = StateChange(id, 20, MachineState.Idle, MachineState.Running);
+        var earlierStateChange = StateChange(id, 19, MachineState.Unknown, MachineState.Idle);
+        Assert.Throws<ArgumentException>(() =>
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                [laterStateChange, earlierStateChange]));
+
+        var duplicateActivity = Activity(id, 20, MachineState.Running);
+        Assert.Throws<ArgumentException>(() =>
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                activityPeriods: [duplicateActivity, duplicateActivity]));
+
+        var laterActivity = Activity(id, 20, MachineState.Running);
+        var earlierActivity = Activity(id, 19, MachineState.Idle);
+        Assert.Throws<ArgumentException>(() =>
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                activityPeriods: [laterActivity, earlierActivity]));
+
+        var signalA = Signal("a", true);
+        var signalB = Signal("b", false);
+        Assert.Throws<ArgumentException>(() =>
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                signals: [signalB, signalA]));
+        Assert.Throws<ArgumentException>(() =>
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                signals: [signalA, Signal("A", false)]));
     }
 
     [Fact]
-    public async Task StructuralDifferencesAcrossProjectionStateOutputsActivityAndAuthorityAreNotReplay()
+    public async Task ProjectionSignalAndActiveContextDifferencesAreNotReplay()
+    {
+        var id = Identity();
+        var signal = Signal("spindle", true);
+        var changedSignal = Signal("spindle", false);
+
+        await AssertNotReplay(
+            Proposal(id, null, null, 20, MachineState.Running, 7, signals: [signal]),
+            Proposal(id, null, null, 20, MachineState.Running, 7, signals: [changedSignal]));
+
+        await AssertNotReplay(
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                activeState: MachineState.Running,
+                activeStartedAt: Stamp),
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                activeState: MachineState.Idle,
+                activeStartedAt: Stamp));
+
+        await AssertNotReplay(
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                activeState: MachineState.Running,
+                activeStartedAt: Stamp),
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                activeState: MachineState.Running,
+                activeStartedAt: Stamp.AddSeconds(1)));
+    }
+
+    [Fact]
+    public async Task StateChangePayloadDifferencesIncludingAdditionalOutputAreNotReplay()
+    {
+        var id = Identity();
+        var first = StateChange(id, 19, MachineState.Unknown, MachineState.Idle);
+        var second = StateChange(id, 20, MachineState.Idle, MachineState.Running);
+        var changedSecond = StateChange(id, 20, MachineState.Idle, MachineState.Fault);
+
+        await AssertNotReplay(
+            Proposal(id, null, null, 20, MachineState.Running, 7, [first, second]),
+            Proposal(id, null, null, 20, MachineState.Running, 7, [first, changedSecond]));
+
+        await AssertNotReplay(
+            Proposal(id, null, null, 20, MachineState.Running, 7, [first]),
+            Proposal(id, null, null, 20, MachineState.Running, 7, [first, second]));
+    }
+
+    [Fact]
+    public async Task ActivityPayloadDifferencesIncludingAdditionalOutputAreNotReplay()
+    {
+        var id = Identity();
+        var first = Activity(id, 19, MachineState.Idle);
+        var second = Activity(id, 20, MachineState.Running);
+        var changedSecond = Activity(id, 20, MachineState.Fault);
+
+        await AssertNotReplay(
+            Proposal(id, null, null, 20, MachineState.Running, 7, activityPeriods: [first, second]),
+            Proposal(id, null, null, 20, MachineState.Running, 7, activityPeriods: [first, changedSecond]));
+
+        await AssertNotReplay(
+            Proposal(id, null, null, 20, MachineState.Running, 7, activityPeriods: [first]),
+            Proposal(id, null, null, 20, MachineState.Running, 7, activityPeriods: [first, second]));
+    }
+
+    [Fact]
+    public async Task MissingOutputsAndAuthorityIdentityDifferencesAreNotReplay()
     {
         var id = Identity();
         var stateChange = StateChange(id, 20, MachineState.Unknown, MachineState.Running);
         var activity = Activity(id, 20, MachineState.Running);
+        var baseline = Proposal(
+            id,
+            null,
+            null,
+            20,
+            MachineState.Running,
+            7,
+            [stateChange],
+            [activity]);
 
         await AssertNotReplay(
-            id,
-            Proposal(id, null, null, 20, MachineState.Running, 7, [stateChange], [activity]),
-            Proposal(id, null, null, 20, MachineState.Running, 7, [stateChange], [activity], activeStartedAt: Stamp.AddSeconds(1)));
-        await AssertNotReplay(
-            id,
-            Proposal(id, null, null, 20, MachineState.Running, 7, [stateChange], [activity]),
+            baseline,
             Proposal(id, null, null, 20, MachineState.Running, 7, [], [activity]));
         await AssertNotReplay(
-            id,
-            Proposal(id, null, null, 20, MachineState.Running, 7, [stateChange], [activity]),
+            baseline,
             Proposal(id, null, null, 20, MachineState.Running, 7, [stateChange], []));
         await AssertNotReplay(
-            id,
-            Proposal(id, null, null, 20, MachineState.Running, 7, [stateChange], [activity]),
+            baseline,
             Proposal(id, null, null, 20, MachineState.Running, 8, [stateChange], [activity]));
+        await AssertNotReplay(
+            baseline,
+            Proposal(
+                id,
+                null,
+                null,
+                20,
+                MachineState.Running,
+                7,
+                [stateChange],
+                [activity],
+                policy: new CurrentStatePolicyReference("continuity/reset", "1.0")));
     }
 
     [Fact]
@@ -248,7 +411,6 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreConformanceTests
     }
 
     private static async Task AssertNotReplay(
-        (ObservationProcessorId ProcessorId, ObservationStreamId StreamId) id,
         MachineStateActivityAuthorityPublication baseline,
         MachineStateActivityAuthorityPublication changed)
     {
@@ -268,11 +430,14 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreConformanceTests
         ulong instance,
         IReadOnlyList<DurableMachineStateChangedEvent>? stateChanges = null,
         IReadOnlyList<DurableMachineActivityPeriod>? activityPeriods = null,
-        DateTimeOffset? activeStartedAt = null) =>
+        IReadOnlyList<MachineSignalValue>? signals = null,
+        MachineState? activeState = null,
+        DateTimeOffset? activeStartedAt = null,
+        CurrentStatePolicyReference? policy = null) =>
         new(
             expectedPosition,
             expectedRevision,
-            Projection(id, position, state, activeStartedAt),
+            Projection(id, position, state, signals, activeState, activeStartedAt),
             stateChanges ?? [],
             activityPeriods ?? [],
             new EvaluationAuthorityReplayIdentity(
@@ -281,20 +446,22 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreConformanceTests
                 new ObservationPosition(position),
                 state,
                 instance,
-                Policy()));
+                policy ?? Policy()));
 
     private static MachineStateActivityProjection Projection(
         (ObservationProcessorId ProcessorId, ObservationStreamId StreamId) id,
         ulong position,
         MachineState state,
+        IReadOnlyList<MachineSignalValue>? signals = null,
+        MachineState? activeState = null,
         DateTimeOffset? activeStartedAt = null) =>
         new(
             id.ProcessorId,
             id.StreamId,
             new ObservationPosition(position),
-            [],
+            signals ?? [],
             state,
-            activeStartedAt.HasValue ? state : null,
+            activeState,
             activeStartedAt);
 
     private static DurableMachineStateChangedEvent StateChange(
@@ -321,6 +488,17 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreConformanceTests
             7,
             position,
             new MachineActivityPeriod(id.StreamId.MachineId, state, Stamp.AddMinutes(-1), Stamp));
+
+    private static MachineSignalValue Signal(string key, bool value) =>
+        new()
+        {
+            Key = key,
+            Type = SignalType.Digital,
+            Value = value,
+            Source = "test",
+            Quality = ObservationQuality.Good,
+            Timestamp = Stamp,
+        };
 
     private static CurrentStatePolicyReference Policy() =>
         new("continuity/default", "1.0");
