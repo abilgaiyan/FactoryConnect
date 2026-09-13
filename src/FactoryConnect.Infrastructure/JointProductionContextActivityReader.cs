@@ -6,11 +6,22 @@ namespace FactoryConnect.Infrastructure;
 /// Read-only production-context activity reader over cumulative activity history
 /// owned by the FC-031 in-memory joint authority provider.
 /// </summary>
-public sealed class JointProductionContextActivityReader(
-    InMemoryMachineStateActivityAuthorityStore authorityStore,
-    ObservationProcessorId stateProcessorId)
-    : IProductionContextActivityReader
+public sealed class JointProductionContextActivityReader :
+    IProductionContextActivityReader
 {
+    private readonly InMemoryMachineStateActivityAuthorityStore _authorityStore;
+    private readonly ObservationProcessorId _stateProcessorId;
+
+    public JointProductionContextActivityReader(
+        InMemoryMachineStateActivityAuthorityStore authorityStore,
+        ObservationProcessorId stateProcessorId)
+    {
+        ArgumentNullException.ThrowIfNull(authorityStore);
+        ArgumentNullException.ThrowIfNull(stateProcessorId);
+        _authorityStore = authorityStore;
+        _stateProcessorId = stateProcessorId;
+    }
+
     public Task<IReadOnlyList<DurableMachineActivityPeriod>> ReadAsync(
         ObservationStreamId streamId,
         ObservationPosition? afterPosition,
@@ -21,8 +32,8 @@ public sealed class JointProductionContextActivityReader(
         ArgumentOutOfRangeException.ThrowIfLessThan(batchSize, 1);
         cancellationToken.ThrowIfCancellationRequested();
 
-        IReadOnlyList<DurableMachineActivityPeriod> result = authorityStore
-            .ReadActivityPeriods(stateProcessorId, streamId)
+        IReadOnlyList<DurableMachineActivityPeriod> result = _authorityStore
+            .ReadActivityPeriods(_stateProcessorId, streamId)
             .Where(item => afterPosition is null || item.Position > afterPosition)
             .OrderBy(static item => item.Position)
             .Take(batchSize)
