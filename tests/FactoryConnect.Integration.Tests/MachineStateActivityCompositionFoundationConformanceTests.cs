@@ -17,8 +17,8 @@ public sealed class MachineStateActivityCompositionFoundationConformanceTests
     public async Task CursorReadsJointProjectionPositionAndReturnsNullWithoutAuthority()
     {
         var store = new InMemoryMachineStateActivityAuthorityStore();
-        IMachineStateActivityCursorReader reader =
-            new JointMachineStateActivityCursorReader(store);
+        var reader = new JointMachineStateActivityCursorReader(store);
+        Assert.IsAssignableFrom<IMachineStateActivityCursorReader>(reader);
         var stream = Stream("CNC-01");
 
         Assert.Null(await reader.ReadAsync(ProcessorId, stream));
@@ -40,9 +40,8 @@ public sealed class MachineStateActivityCompositionFoundationConformanceTests
     [Fact]
     public async Task CursorReadValidatesArgumentsAndHonorsCancellation()
     {
-        IMachineStateActivityCursorReader reader =
-            new JointMachineStateActivityCursorReader(
-                new InMemoryMachineStateActivityAuthorityStore());
+        var reader = new JointMachineStateActivityCursorReader(
+            new InMemoryMachineStateActivityAuthorityStore());
         var stream = Stream("CNC-01");
 
         await Assert.ThrowsAsync<ArgumentNullException>(
@@ -60,8 +59,8 @@ public sealed class MachineStateActivityCompositionFoundationConformanceTests
     public async Task ActivityReaderUsesJointHistoryWithStrictPagingAndStreamIsolation()
     {
         var store = new InMemoryMachineStateActivityAuthorityStore();
-        IProductionContextActivityReader reader =
-            new JointProductionContextActivityReader(store, ProcessorId);
+        var reader = new JointProductionContextActivityReader(store, ProcessorId);
+        Assert.IsAssignableFrom<IProductionContextActivityReader>(reader);
         var target = Stream("CNC-01");
         var other = new ObservationStreamId(target.MachineId, "MTConnect:CNC-02");
 
@@ -98,10 +97,9 @@ public sealed class MachineStateActivityCompositionFoundationConformanceTests
     [Fact]
     public async Task ActivityReaderValidatesArgumentsAndHonorsCancellation()
     {
-        IProductionContextActivityReader reader =
-            new JointProductionContextActivityReader(
-                new InMemoryMachineStateActivityAuthorityStore(),
-                ProcessorId);
+        var reader = new JointProductionContextActivityReader(
+            new InMemoryMachineStateActivityAuthorityStore(),
+            ProcessorId);
         var stream = Stream("CNC-01");
 
         await Assert.ThrowsAsync<ArgumentNullException>(
