@@ -11,6 +11,18 @@ public sealed class InMemoryMachineStateActivityAuthorityStore :
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<AuthorityKey, Entry> _entries = [];
+    private readonly Action<MachineStateActivityAuthorityFaultPoint>? _fault;
+
+    public InMemoryMachineStateActivityAuthorityStore()
+    {
+    }
+
+    internal InMemoryMachineStateActivityAuthorityStore(
+        Action<MachineStateActivityAuthorityFaultPoint> fault)
+    {
+        ArgumentNullException.ThrowIfNull(fault);
+        _fault = fault;
+    }
 
     public ValueTask<MachineStateActivityAuthoritySnapshot?> ReadAsync(
         ObservationProcessorId stateProcessorId,
@@ -75,6 +87,8 @@ public sealed class InMemoryMachineStateActivityAuthorityStore :
                         CreateSnapshot(current)));
             }
 
+            InvokeFault(MachineStateActivityAuthorityFaultPoint.BeforeNewPublicationMaterialization);
+
             var revision = current is null
                 ? 0UL
                 : current.Authority.ProjectionRevision.Value + 1UL;
@@ -88,13 +102,28 @@ public sealed class InMemoryMachineStateActivityAuthorityStore :
                 identity.AppliedContinuityPolicy,
                 new StateProjectionAuthorityRevision(revision));
 
+            InvokeFault(MachineStateActivityAuthorityFaultPoint.AfterAuthorityConstruction);
+
+            var stateChanges = publication.StateChanges.ToArray();
+            var activityPeriods = publication.ActivityPeriods.ToArray();
+
+            InvokeFault(MachineStateActivityAuthorityFaultPoint.AfterPublicationOutputCopies);
+
+            var stateChangeHistory = Append(current?.StateChangeHistory, stateChanges);
+            var activityPeriodHistory = Append(current?.ActivityPeriodHistory, activityPeriods);
+
+            InvokeFault(MachineStateActivityAuthorityFaultPoint.AfterCumulativeHistoryConstruction);
+
             var next = new Entry(
                 publication.Projection,
                 authority,
-                publication.StateChanges.ToArray(),
-                publication.ActivityPeriods.ToArray(),
-                Append(current?.StateChangeHistory, publication.StateChanges),
-                Append(current?.ActivityPeriodHistory, publication.ActivityPeriods));
+                stateChanges,
+                activityPeriods,
+                stateChangeHistory,
+                activityPeriodHistory);
+
+            InvokeFault(MachineStateActivityAuthorityFaultPoint.ImmediatelyBeforeDictionaryAssignment);
+
             _entries[key] = next;
 
             return ValueTask.FromResult<MachineStateActivityAuthorityPublicationResult>(
@@ -131,6 +160,9 @@ public sealed class InMemoryMachineStateActivityAuthorityStore :
                 : [];
         }
     }
+
+    private void InvokeFault(MachineStateActivityAuthorityFaultPoint point) =>
+        _fault?.Invoke(point);
 
     private static bool MatchesExpected(
         Entry? current,
@@ -251,4 +283,13 @@ public sealed class InMemoryMachineStateActivityAuthorityStore :
 
         public DurableMachineActivityPeriod[] ActivityPeriodHistory { get; }
     }
+}
+
+internal enum MachineStateActivityAuthorityFaultPoint
+{
+    BeforeNewPublicationMaterialization = 0,
+    AfterAuthorityConstruction = 1,
+    AfterPublicationOutputCopies = 2,
+    AfterCumulativeHistoryConstruction = 3,
+    ImmediatelyBeforeDictionaryAssignment = 4,
 }
