@@ -29,8 +29,10 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
             MachineState.Running,
             Stamp);
 
-        await Assert.ThrowsAsync<LostAcknowledgementException>(
-            async () => await wrapper.PublishAsync(proposal));
+        await Assert.ThrowsAsync<LostAcknowledgementException>(async () =>
+        {
+            await wrapper.PublishAsync(proposal);
+        });
 
         var committed = await CaptureAsync(inner, id);
         Assert.Equal(0UL, committed.Snapshot.EvaluationAuthority.ProjectionRevision.Value);
@@ -77,8 +79,10 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
             MachineState.Fault,
             Stamp.AddMinutes(1));
 
-        await Assert.ThrowsAsync<LostAcknowledgementException>(
-            async () => await wrapper.PublishAsync(forward));
+        await Assert.ThrowsAsync<LostAcknowledgementException>(async () =>
+        {
+            await wrapper.PublishAsync(forward);
+        });
 
         var committed = await CaptureAsync(inner, id);
         Assert.Equal(1UL, committed.Snapshot.EvaluationAuthority.ProjectionRevision.Value);
@@ -111,8 +115,10 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
             [stateChange],
             [activity]);
 
-        await Assert.ThrowsAsync<LostAcknowledgementException>(
-            async () => await wrapper.PublishAsync(proposal));
+        await Assert.ThrowsAsync<LostAcknowledgementException>(async () =>
+        {
+            await wrapper.PublishAsync(proposal);
+        });
         var committed = await CaptureAsync(inner, id);
 
         for (var attempt = 0; attempt < 3; attempt++)
@@ -120,28 +126,42 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
             var replay = Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
                 await inner.PublishAsync(proposal));
             Assert.Equal(EvaluationAuthorityPublicationDisposition.ExactReplay, replay.Disposition);
-            Assert.Equal(committed.Snapshot.EvaluationAuthority.ProjectionRevision, replay.Snapshot.EvaluationAuthority.ProjectionRevision);
+            Assert.Equal(
+                committed.Snapshot.EvaluationAuthority.ProjectionRevision,
+                replay.Snapshot.EvaluationAuthority.ProjectionRevision);
             await AssertUnchangedAsync(inner, id, committed);
         }
     }
 
     [Fact]
-    public async Task C04_LostAcknowledgementReplayAtMaximumRevisionRemainsExactReplay()
+    public async Task C04_LostAcknowledgementAtMaximumRevisionReplaysExactly()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var id = Identity();
-        var proposal = Proposal(id, null, null, 10, MachineState.Running, 7);
-        await inner.PublishAsync(proposal);
-        ForceRevision(inner, ulong.MaxValue);
-        var committed = await CaptureAsync(inner, id);
+        await inner.PublishAsync(Proposal(id, null, null, 10, MachineState.Running, 7));
+        ForceRevision(inner, ulong.MaxValue - 1UL);
 
+        var wrapper = new LoseNextNewPublicationAcknowledgementStore(inner);
+        var stateChange = StateChange(id, 20, MachineState.Running, MachineState.Fault);
+        var activity = Activity(id, 20, MachineState.Fault);
         var retained = Proposal(
             id,
-            new ObservationPosition(999),
-            new StateProjectionAuthorityRevision(123),
-            10,
-            MachineState.Running,
-            7);
+            new ObservationPosition(10),
+            new StateProjectionAuthorityRevision(ulong.MaxValue - 1UL),
+            20,
+            MachineState.Fault,
+            8,
+            [stateChange],
+            [activity]);
+
+        await Assert.ThrowsAsync<LostAcknowledgementException>(async () =>
+        {
+            await wrapper.PublishAsync(retained);
+        });
+
+        var committed = await CaptureAsync(inner, id);
+        Assert.Equal(ulong.MaxValue, committed.Snapshot.EvaluationAuthority.ProjectionRevision.Value);
+
         var replay = Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
             await inner.PublishAsync(retained));
 
@@ -216,8 +236,10 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
             [StateChange(target, 10, MachineState.Unknown, MachineState.Running)],
             [Activity(target, 10, MachineState.Running)]);
 
-        await Assert.ThrowsAsync<LostAcknowledgementException>(
-            async () => await wrapper.PublishAsync(targetProposal));
+        await Assert.ThrowsAsync<LostAcknowledgementException>(async () =>
+        {
+            await wrapper.PublishAsync(targetProposal);
+        });
         var targetCommitted = await CaptureAsync(inner, target);
 
         var replay = Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
@@ -391,7 +413,9 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
         }
     }
 
-    private sealed class LostAcknowledgementException : Exception;
+    private sealed class LostAcknowledgementException : Exception
+    {
+    }
 
     private sealed record AuthorityState(
         MachineStateActivityAuthoritySnapshot Snapshot,
