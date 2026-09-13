@@ -9,7 +9,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgementConformanceTests
 {
     [Fact]
-    public async Task C01_FreshCommittedPublicationLostAcknowledgementReplaysExactly()
+    public async Task C01FreshCommittedPublicationLostAcknowledgementReplaysExactly()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var wrapper = new LoseNextNewPublicationAcknowledgementStore(inner);
@@ -46,7 +46,7 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
     }
 
     [Fact]
-    public async Task C02_ForwardCommittedPublicationLostAcknowledgementReplaysExactly()
+    public async Task C02ForwardCommittedPublicationLostAcknowledgementReplaysExactly()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var id = Identity();
@@ -98,22 +98,14 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
     }
 
     [Fact]
-    public async Task C03_RepeatedRetainedProposalReplayKeepsCompleteAuthorityStable()
+    public async Task C03RepeatedRetainedProposalReplayKeepsCompleteAuthorityStable()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var wrapper = new LoseNextNewPublicationAcknowledgementStore(inner);
         var id = Identity();
         var stateChange = StateChange(id, 10, MachineState.Unknown, MachineState.Running);
         var activity = Activity(id, 10, MachineState.Running);
-        var proposal = Proposal(
-            id,
-            null,
-            null,
-            10,
-            MachineState.Running,
-            7,
-            [stateChange],
-            [activity]);
+        var proposal = Proposal(id, null, null, 10, MachineState.Running, 7, [stateChange], [activity]);
 
         await Assert.ThrowsAsync<LostAcknowledgementException>(async () =>
         {
@@ -134,7 +126,7 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
     }
 
     [Fact]
-    public async Task C04_LostAcknowledgementAtMaximumRevisionReplaysExactly()
+    public async Task C04LostAcknowledgementAtMaximumRevisionReplaysExactly()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var id = Identity();
@@ -171,20 +163,14 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
     }
 
     [Fact]
-    public async Task C05_ChangedPayloadIsNotReplayAndThenUsesInheritedClassification()
+    public async Task C05ChangedPayloadIsNotReplayAndThenUsesInheritedClassification()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var id = Identity();
         var baseline = Proposal(id, null, null, 10, MachineState.Running, 7);
         await inner.PublishAsync(baseline);
 
-        var samePositionChangedPayload = Proposal(
-            id,
-            null,
-            null,
-            10,
-            MachineState.Fault,
-            8);
+        var samePositionChangedPayload = Proposal(id, null, null, 10, MachineState.Fault, 8);
         var conflict = await inner.PublishAsync(samePositionChangedPayload);
         Assert.IsType<MachineStateActivityAuthorityPublicationConflict>(conflict);
         Assert.IsNotType<MachineStateActivityAuthorityPublicationAccepted>(conflict);
@@ -206,19 +192,15 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
     }
 
     [Fact]
-    public async Task C06_LostAcknowledgementReplayIsIsolatedByProcessorAndStreamLineage()
+    public async Task C06LostAcknowledgementReplayIsIsolatedByProcessorAndStreamLineage()
     {
         var inner = new InMemoryMachineStateActivityAuthorityStore();
         var machine = MachineId.New();
         var target = (
             new ObservationProcessorId("state-a"),
             new ObservationStreamId(machine, "MTConnect:CNC-01"));
-        var otherStream = (
-            target.Item1,
-            new ObservationStreamId(machine, "MTConnect:CNC-02"));
-        var otherProcessor = (
-            new ObservationProcessorId("state-b"),
-            target.Item2);
+        var otherStream = (target.Item1, new ObservationStreamId(machine, "MTConnect:CNC-02"));
+        var otherProcessor = (new ObservationProcessorId("state-b"), target.Item2);
 
         await inner.PublishAsync(Proposal(otherStream, null, null, 20, MachineState.Fault, 2));
         await inner.PublishAsync(Proposal(otherProcessor, null, null, 30, MachineState.Idle, 3));
@@ -355,9 +337,7 @@ public sealed class InMemoryMachineStateActivityAuthorityStoreLostAcknowledgemen
             new ObservationStreamId(machine, "MTConnect:CNC-01"));
     }
 
-    private static void ForceRevision(
-        InMemoryMachineStateActivityAuthorityStore store,
-        ulong revision)
+    private static void ForceRevision(InMemoryMachineStateActivityAuthorityStore store, ulong revision)
     {
         var entriesField = typeof(InMemoryMachineStateActivityAuthorityStore)
             .GetField("_entries", BindingFlags.Instance | BindingFlags.NonPublic)!;
