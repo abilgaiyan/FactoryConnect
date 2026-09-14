@@ -79,22 +79,33 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             static provider =>
                 provider.GetRequiredService<
                     InMemoryMappingCoverageAuthorityStore>());
-        services.TryAddSingleton<InMemoryMachineStateActivityAuthorityStore>();
-        services.TryAddSingleton<IMachineStateActivityAuthorityStore>(
+
+        services.RemoveAll<InMemoryMachineStateActivityAuthorityStore>();
+        services.RemoveAll<IMachineStateActivityAuthorityStore>();
+        services.RemoveAll<IMachineStateActivityCursorReader>();
+        services.RemoveAll<CurrentStateContinuityPolicy>();
+        services.RemoveAll<JointAuthorityMachineStateActivityProcessor>();
+        services.RemoveAll<IMappedMachineObservationProcessor>();
+
+        services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>();
+        services.AddSingleton<IMachineStateActivityAuthorityStore>(
             static provider =>
                 provider.GetRequiredService<
                     InMemoryMachineStateActivityAuthorityStore>());
-        services.TryAddSingleton<IMachineStateActivityCursorReader>(
+        services.AddSingleton<IMachineStateActivityCursorReader>(
             static provider => new JointMachineStateActivityCursorReader(
                 provider.GetRequiredService<
-                    IMachineStateActivityAuthorityStore>()));
-        services.TryAddSingleton<JointAuthorityMachineStateActivityProcessor>(
+                    InMemoryMachineStateActivityAuthorityStore>()));
+        services.AddSingleton(
+            CanonicalCurrentStateContinuityPolicies.Preserve);
+        services.AddSingleton<JointAuthorityMachineStateActivityProcessor>(
             static provider => new JointAuthorityMachineStateActivityProcessor(
                 StateActivityProcessorId,
                 provider.GetRequiredService<
-                    IMachineStateActivityAuthorityStore>(),
-                CanonicalCurrentStateContinuityPolicies.Preserve));
-        services.TryAddSingleton<IMappedMachineObservationProcessor>(
+                    InMemoryMachineStateActivityAuthorityStore>(),
+                provider.GetRequiredService<
+                    CurrentStateContinuityPolicy>()));
+        services.AddSingleton<IMappedMachineObservationProcessor>(
             static provider => provider.GetRequiredService<
                 JointAuthorityMachineStateActivityProcessor>());
 
