@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -43,9 +44,20 @@ public sealed class EdgeObservationProcessingCompositionTests
                 IMappingCoverageAuthorityStore>());
         Assert.Same(
             provider.GetRequiredService<
-                InMemoryMachineStateActivityProjectionStore>(),
+                InMemoryMachineStateActivityAuthorityStore>(),
             provider.GetRequiredService<
-                IMachineStateActivityProjectionStore>());
+                IMachineStateActivityAuthorityStore>());
+        Assert.IsType<JointMachineStateActivityCursorReader>(
+            provider.GetRequiredService<
+                IMachineStateActivityCursorReader>());
+        Assert.IsType<JointAuthorityMachineStateActivityProcessor>(
+            provider.GetRequiredService<
+                IMappedMachineObservationProcessor>());
+        Assert.DoesNotContain(
+            services,
+            static descriptor =>
+                descriptor.ServiceType ==
+                typeof(IMachineStateActivityProjectionStore));
     }
 
     [Fact]

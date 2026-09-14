@@ -4,12 +4,16 @@ using FactoryConnect.Core;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace FactoryConnect.Edge;
 
 public static class EdgeProductionMetricInputServiceCollectionExtensions
 {
     public const string SectionName = "ProductionProcessing";
+
+    private static readonly ObservationProcessorId StateActivityProcessorId =
+        new("machine-state-activity");
 
     public static IServiceCollection AddFactoryConnectProductionMetricInputs(
         this IServiceCollection services,
@@ -114,10 +118,15 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         }
         services.AddSingleton<PlannedProductionIntervalResolver>();
 
-        services.AddSingleton<ProjectionProductionContextActivityReader>();
+        services.TryAddSingleton<InMemoryMachineStateActivityAuthorityStore>();
+        services.AddSingleton(
+            static provider => new JointProductionContextActivityReader(
+                provider.GetRequiredService<
+                    InMemoryMachineStateActivityAuthorityStore>(),
+                StateActivityProcessorId));
         services.AddSingleton<IProductionContextActivityReader>(
             static provider => provider.GetRequiredService<
-                ProjectionProductionContextActivityReader>());
+                JointProductionContextActivityReader>());
         services.AddSingleton<InMemoryProductionQuantityEvidenceReader>();
         services.AddSingleton<IProductionQuantityEvidenceReader>(
             static provider => provider.GetRequiredService<

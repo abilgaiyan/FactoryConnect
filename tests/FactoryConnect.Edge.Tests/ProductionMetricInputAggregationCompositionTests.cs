@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -33,9 +34,9 @@ public sealed class ProductionMetricInputAggregationCompositionTests
             [machineId]);
 
         await using var provider = services.BuildServiceProvider();
-        var projectionStore = provider.GetRequiredService<
-            InMemoryMachineStateActivityProjectionStore>();
-        await SeedActivityAsync(projectionStore, activityStreamId);
+        var authorityStore = provider.GetRequiredService<
+            InMemoryMachineStateActivityAuthorityStore>();
+        await SeedActivityAsync(authorityStore, activityStreamId);
 
         var quantityReader = provider.GetRequiredService<
             InMemoryProductionQuantityEvidenceReader>();
@@ -164,7 +165,7 @@ public sealed class ProductionMetricInputAggregationCompositionTests
     }
 
     private static async Task SeedActivityAsync(
-        InMemoryMachineStateActivityProjectionStore store,
+        InMemoryMachineStateActivityAuthorityStore store,
         ObservationStreamId streamId)
     {
         var processorId = new ObservationProcessorId("machine-state-activity");
@@ -186,16 +187,24 @@ public sealed class ProductionMetricInputAggregationCompositionTests
             position,
             [],
             MachineState.Running,
-            activeState: null,
-            activeStartedAt: null);
+            null,
+            null);
+        var proposal = new MachineStateActivityAuthorityPublication(
+            null,
+            null,
+            projection,
+            [],
+            [period],
+            new EvaluationAuthorityReplayIdentity(
+                processorId,
+                streamId,
+                position,
+                MachineState.Running,
+                1,
+                CanonicalCurrentStateContinuityPolicies.Preserve.Reference));
 
-        await store.CommitAsync(
-            new MachineStateActivityProjectionCommit(
-                expectedProjection: null,
-                projection,
-                stateChanges: [],
-                activityPeriods: [period]),
-            CancellationToken.None);
+        Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
+            await store.PublishAsync(proposal, CancellationToken.None));
     }
 
     private static IConfiguration CreateConfiguration() =>

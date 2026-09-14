@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -22,7 +23,9 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddFactoryConnectEdgePersistence(configuration);
-        services.AddSingleton<InMemoryMachineStateActivityProjectionStore>();
+        services.AddFactoryConnectObservationProcessing(
+            configuration,
+            activityStreams);
         services.AddFactoryConnectProductionMetricInputs(
             configuration,
             activityStreams);
@@ -31,12 +34,15 @@ public sealed class MultiMachineProductionAggregationCompositionTests
             [machineA, machineB]);
 
         await using var provider = services.BuildServiceProvider();
-        var projectionStore = provider.GetRequiredService<
-            InMemoryMachineStateActivityProjectionStore>();
+        var authorityStore = provider.GetRequiredService<
+            InMemoryMachineStateActivityAuthorityStore>();
+        Assert.Same(
+            authorityStore,
+            provider.GetRequiredService<IMachineStateActivityAuthorityStore>());
         Assert.Null(provider.GetService<
             MachineShiftOccurrenceRosterMaterializationRuntimeSet>());
-        await SeedActivityAsync(projectionStore, activityA, 1);
-        await SeedActivityAsync(projectionStore, activityB, 1);
+        await SeedActivityAsync(authorityStore, activityA, 1);
+        await SeedActivityAsync(authorityStore, activityB, 1);
 
         var quantityReader = provider.GetRequiredService<
             InMemoryProductionQuantityEvidenceReader>();
@@ -65,6 +71,8 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         Assert.Equal(4, batchB.Facts.Count);
         Assert.All(batchA.Facts, fact => Assert.Equal(machineA, fact.Fact.MachineId));
         Assert.All(batchB.Facts, fact => Assert.Equal(machineB, fact.Fact.MachineId));
+        Assert.DoesNotContain(batchA.Facts, fact => fact.Fact.MachineId == machineB);
+        Assert.DoesNotContain(batchB.Facts, fact => fact.Fact.MachineId == machineA);
         Assert.All(
             batchA.Facts,
             fact => Assert.Equal(
@@ -75,6 +83,19 @@ public sealed class MultiMachineProductionAggregationCompositionTests
             fact => Assert.Equal(
                 new DateOnly(2026, 8, 27),
                 fact.ProductionDayId.BusinessDate));
+
+        var authorityPeriodsA = authorityStore.ReadActivityPeriods(
+            new ObservationProcessorId("machine-state-activity"),
+            activityA);
+        var authorityPeriodsB = authorityStore.ReadActivityPeriods(
+            new ObservationProcessorId("machine-state-activity"),
+            activityB);
+        Assert.Single(authorityPeriodsA);
+        Assert.Single(authorityPeriodsB);
+        Assert.All(authorityPeriodsA, period => Assert.Equal(activityA, period.StreamId));
+        Assert.All(authorityPeriodsB, period => Assert.Equal(activityB, period.StreamId));
+        Assert.DoesNotContain(authorityPeriodsA, period => period.StreamId == activityB);
+        Assert.DoesNotContain(authorityPeriodsB, period => period.StreamId == activityA);
 
         var aggregationSet = provider.GetRequiredService<
             MetricAggregationProcessingRuntimeSet>();
@@ -112,14 +133,35 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         Assert.NotNull(dayAggregateA);
         Assert.Equal(1800m, dayAggregateA.Value);
 
-        var crossMachine = await aggregationStore.ReadProductionDayAggregateAsync(
+        var runningB = Assert.Single(
+            batchB.Facts,
+            static item => item.Fact.Key == "duration.running");
+        var dayAggregateB = await aggregationStore.ReadProductionDayAggregateAsync(
+            runtimeB.ProcessorId,
+            new ProductionDayMetricAggregateKey(
+                machineB,
+                runningB.ProductionDayId,
+                runningB.Fact.Key),
+            CancellationToken.None);
+        Assert.NotNull(dayAggregateB);
+        Assert.Equal(1800m, dayAggregateB.Value);
+
+        var crossMachineA = await aggregationStore.ReadProductionDayAggregateAsync(
             runtimeA.ProcessorId,
             new ProductionDayMetricAggregateKey(
                 machineB,
                 batchB.Facts[0].ProductionDayId,
                 batchB.Facts[0].Fact.Key),
             CancellationToken.None);
-        Assert.Null(crossMachine);
+        var crossMachineB = await aggregationStore.ReadProductionDayAggregateAsync(
+            runtimeB.ProcessorId,
+            new ProductionDayMetricAggregateKey(
+                machineA,
+                batchA.Facts[0].ProductionDayId,
+                batchA.Facts[0].Fact.Key),
+            CancellationToken.None);
+        Assert.Null(crossMachineA);
+        Assert.Null(crossMachineB);
     }
 
     private static MetricAggregationProcessingRuntime FindAggregationRuntime(
@@ -171,7 +213,7 @@ public sealed class MultiMachineProductionAggregationCompositionTests
             });
 
     private static async Task SeedActivityAsync(
-        InMemoryMachineStateActivityProjectionStore store,
+        InMemoryMachineStateActivityAuthorityStore store,
         ObservationStreamId streamId,
         ulong positionValue)
     {
@@ -196,14 +238,22 @@ public sealed class MultiMachineProductionAggregationCompositionTests
             MachineState.Running,
             activeState: null,
             activeStartedAt: null);
+        var publication = new MachineStateActivityAuthorityPublication(
+            expectedProjectionPosition: null,
+            expectedAuthorityRevision: null,
+            projection,
+            stateChanges: [],
+            activityPeriods: [period],
+            new EvaluationAuthorityReplayIdentity(
+                processorId,
+                streamId,
+                position,
+                MachineState.Running,
+                lastConsumedInstanceId: 1,
+                CanonicalCurrentStateContinuityPolicies.Preserve.Reference));
 
-        await store.CommitAsync(
-            new MachineStateActivityProjectionCommit(
-                expectedProjection: null,
-                projection,
-                stateChanges: [],
-                activityPeriods: [period]),
-            CancellationToken.None);
+        Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
+            await store.PublishAsync(publication, CancellationToken.None));
     }
 
     private static IConfiguration CreateConfiguration(
@@ -213,17 +263,37 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         var values = new Dictionary<string, string?>
         {
             ["Persistence:Provider"] = "InMemory",
+            ["ObservationProcessing:BatchSize"] = "100",
+            ["ObservationProcessing:PollingInterval"] = "00:00:01",
             ["ProductionProcessing:BatchSize"] = "100",
             ["ProductionProcessing:PollingInterval"] = "00:00:01",
             ["MetricAggregation:BatchSize"] = "100",
             ["MetricAggregation:PollingInterval"] = "00:00:01",
         };
+        AddObservationStream(values, 0, machineA, "activity-a", "DI1");
+        AddObservationStream(values, 1, machineB, "activity-b", "DI2");
         AddMachine(values, 0, machineA, "activity-a", "quantity-a", "LINE-A", "CTX-A", "SHIFT-A", "POT-A");
         AddMachine(values, 1, machineB, "activity-b", "quantity-b", "LINE-B", "CTX-B", "SHIFT-B", "POT-B");
 
         return new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();
+    }
+
+    private static void AddObservationStream(
+        Dictionary<string, string?> values,
+        int index,
+        MachineId machineId,
+        string streamKey,
+        string address)
+    {
+        var prefix = $"ObservationProcessing:Streams:{index}";
+        values[$"{prefix}:MachineId"] = machineId.ToString();
+        values[$"{prefix}:StreamKey"] = streamKey;
+        values[$"{prefix}:Mappings:0:Source"] = "modbus";
+        values[$"{prefix}:Mappings:0:Address"] = address;
+        values[$"{prefix}:Mappings:0:SignalKey"] = CanonicalSignalKeys.Running;
+        values[$"{prefix}:Mappings:0:Type"] = "Digital";
     }
 
     private static void AddMachine(

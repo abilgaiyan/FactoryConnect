@@ -5,12 +5,16 @@ using FactoryConnect.Core.Machines;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace FactoryConnect.Edge;
 
 public static class EdgeObservationProcessingServiceCollectionExtensions
 {
     public const string SectionName = "ObservationProcessing";
+
+    private static readonly ObservationProcessorId StateActivityProcessorId =
+        new("machine-state-activity");
 
     public static IServiceCollection AddFactoryConnectObservationProcessing(
         this IServiceCollection services,
@@ -75,12 +79,35 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             static provider =>
                 provider.GetRequiredService<
                     InMemoryMappingCoverageAuthorityStore>());
-        services.AddSingleton<
-            InMemoryMachineStateActivityProjectionStore>();
-        services.AddSingleton<IMachineStateActivityProjectionStore>(
+
+        services.RemoveAll<InMemoryMachineStateActivityAuthorityStore>();
+        services.RemoveAll<IMachineStateActivityAuthorityStore>();
+        services.RemoveAll<IMachineStateActivityCursorReader>();
+        services.RemoveAll<CurrentStateContinuityPolicy>();
+        services.RemoveAll<JointAuthorityMachineStateActivityProcessor>();
+        services.RemoveAll<IMappedMachineObservationProcessor>();
+
+        services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>();
+        services.AddSingleton<IMachineStateActivityAuthorityStore>(
             static provider =>
                 provider.GetRequiredService<
-                    InMemoryMachineStateActivityProjectionStore>());
+                    InMemoryMachineStateActivityAuthorityStore>());
+        services.AddSingleton<IMachineStateActivityCursorReader>(
+            static provider => new JointMachineStateActivityCursorReader(
+                provider.GetRequiredService<
+                    InMemoryMachineStateActivityAuthorityStore>()));
+        services.AddSingleton(
+            CanonicalCurrentStateContinuityPolicies.Preserve);
+        services.AddSingleton<JointAuthorityMachineStateActivityProcessor>(
+            static provider => new JointAuthorityMachineStateActivityProcessor(
+                StateActivityProcessorId,
+                provider.GetRequiredService<
+                    InMemoryMachineStateActivityAuthorityStore>(),
+                provider.GetRequiredService<
+                    CurrentStateContinuityPolicy>()));
+        services.AddSingleton<IMappedMachineObservationProcessor>(
+            static provider => provider.GetRequiredService<
+                JointAuthorityMachineStateActivityProcessor>());
 
         services.AddSingleton<IDurableObservationReader>(
             static provider =>
@@ -103,8 +130,10 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     IMappingCoverageAuthorityStore>();
                 var mappedReader = provider.GetRequiredService<
                     IDurableMappedObservationReader>();
-                var projectionStore = provider.GetRequiredService<
-                    IMachineStateActivityProjectionStore>();
+                var cursorReader = provider.GetRequiredService<
+                    IMachineStateActivityCursorReader>();
+                var stateActivityProcessor = provider.GetRequiredService<
+                    IMappedMachineObservationProcessor>();
                 List<DurableObservationProcessingPipeline> pipelines = [];
 
                 foreach (var streamId in streams)
@@ -114,11 +143,6 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                         mappings[streamId],
                         mappedSink,
                         mappingAuthority);
-                    var stateActivityProcessor =
-                        new MachineStateActivityProcessor(
-                            new ObservationProcessorId(
-                                "machine-state-activity"),
-                            projectionStore);
 
                     pipelines.Add(
                         new DurableObservationProcessingPipeline(
@@ -130,7 +154,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                                 options),
                             new MappedObservationProcessingRuntime(
                                 mappedReader,
-                                projectionStore,
+                                cursorReader,
                                 stateActivityProcessor,
                                 streamId,
                                 options),
