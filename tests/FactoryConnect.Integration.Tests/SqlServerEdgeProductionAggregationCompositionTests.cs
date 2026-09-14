@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence.SqlServer;
@@ -29,11 +30,15 @@ public sealed class SqlServerEdgeProductionAggregationCompositionTests :
         var quantityStream = new ObservationStreamId(
             machineId,
             "production-quantity");
-        var configuration = CreateConfiguration(_fixture.ConnectionString);
+        var configuration = CreateConfiguration(
+            _fixture.ConnectionString,
+            machineId);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddFactoryConnectEdgePersistence(configuration);
-        services.AddSingleton<InMemoryMachineStateActivityProjectionStore>();
+        services.AddFactoryConnectObservationProcessing(
+            configuration,
+            activityStream);
         services.AddFactoryConnectProductionMetricInputs(
             configuration,
             activityStream);
@@ -49,9 +54,12 @@ public sealed class SqlServerEdgeProductionAggregationCompositionTests :
         Assert.IsType<SqlServerMetricAggregationStore>(
             provider.GetRequiredService<IMetricAggregationStore>());
 
-        await SeedActivityAsync(
-            provider.GetRequiredService<InMemoryMachineStateActivityProjectionStore>(),
-            activityStream);
+        var authorityStore = provider.GetRequiredService<
+            InMemoryMachineStateActivityAuthorityStore>();
+        Assert.Same(
+            authorityStore,
+            provider.GetRequiredService<IMachineStateActivityAuthorityStore>());
+        await SeedActivityAsync(authorityStore, activityStream);
         provider.GetRequiredService<InMemoryProductionQuantityEvidenceReader>()
             .Add(CreateQuantity(machineId, quantityStream));
 
@@ -151,7 +159,7 @@ public sealed class SqlServerEdgeProductionAggregationCompositionTests :
             });
 
     private static async Task SeedActivityAsync(
-        InMemoryMachineStateActivityProjectionStore store,
+        InMemoryMachineStateActivityAuthorityStore store,
         ObservationStreamId streamId)
     {
         var processorId = new ObservationProcessorId("machine-state-activity");
@@ -168,24 +176,34 @@ public sealed class SqlServerEdgeProductionAggregationCompositionTests :
             processorId,
             position,
             streamId,
-            1,
-            1,
+            instanceId: 1,
+            sequence: 1,
             new MachineActivityPeriod(
                 streamId.MachineId,
                 MachineState.Running,
                 new DateTimeOffset(2026, 8, 27, 10, 0, 0, TimeSpan.Zero),
                 new DateTimeOffset(2026, 8, 27, 11, 0, 0, TimeSpan.Zero)));
+        var publication = new MachineStateActivityAuthorityPublication(
+            expectedProjectionPosition: null,
+            expectedAuthorityRevision: null,
+            projection,
+            stateChanges: [],
+            activityPeriods: [period],
+            new EvaluationAuthorityReplayIdentity(
+                processorId,
+                streamId,
+                position,
+                MachineState.Running,
+                lastConsumedInstanceId: 1,
+                CanonicalCurrentStateContinuityPolicies.Preserve.Reference));
 
-        await store.CommitAsync(
-            new MachineStateActivityProjectionCommit(
-                null,
-                projection,
-                [],
-                [period]),
-            CancellationToken.None);
+        Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
+            await store.PublishAsync(publication, CancellationToken.None));
     }
 
-    private static IConfiguration CreateConfiguration(string connectionString) =>
+    private static IConfiguration CreateConfiguration(
+        string connectionString,
+        MachineId machineId) =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(
                 new Dictionary<string, string?>
@@ -193,6 +211,16 @@ public sealed class SqlServerEdgeProductionAggregationCompositionTests :
                     ["Persistence:Provider"] = "SqlServer",
                     [$"{SqlServerPersistenceOptions.SectionName}:ConnectionString"] =
                         connectionString,
+                    ["ObservationProcessing:BatchSize"] = "100",
+                    ["ObservationProcessing:PollingInterval"] = "00:00:01",
+                    ["ObservationProcessing:Streams:0:MachineId"] =
+                        machineId.ToString(),
+                    ["ObservationProcessing:Streams:0:StreamKey"] = "activity",
+                    ["ObservationProcessing:Streams:0:Mappings:0:Source"] = "modbus",
+                    ["ObservationProcessing:Streams:0:Mappings:0:Address"] = "DI1",
+                    ["ObservationProcessing:Streams:0:Mappings:0:SignalKey"] =
+                        CanonicalSignalKeys.Running,
+                    ["ObservationProcessing:Streams:0:Mappings:0:Type"] = "Digital",
                     ["ProductionProcessing:BatchSize"] = "100",
                     ["ProductionProcessing:PollingInterval"] = "00:00:01",
                     ["ProductionProcessing:CompanyId"] = "COMP-1",
