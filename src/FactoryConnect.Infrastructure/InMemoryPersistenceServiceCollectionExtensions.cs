@@ -19,6 +19,8 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                 PersistenceProviderCapabilities.All,
                 static _ =>
                 {
+                    var observationStore =
+                        new InMemoryObservationIngestionStore();
                     var productionContextStore =
                         new InMemoryProductionContextProcessingStore();
                     var aggregationStore = new InMemoryMetricAggregationStore();
@@ -28,9 +30,14 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         new InMemoryMappingCoverageAuthorityStore();
                     var machineStateActivityAuthorityStore =
                         new InMemoryMachineStateActivityAuthorityStore();
+                    var currentStateAuthorityCutProvider =
+                        new InMemoryCurrentStateAuthorityCutProvider(
+                            observationStore,
+                            mappingCoverageAuthorityStore,
+                            machineStateActivityAuthorityStore);
 
                     return new PersistenceProviderServices(
-                        new InMemoryObservationIngestionStore(),
+                        observationStore,
                         productionContextStore,
                         productionContextStore,
                         aggregationStore,
@@ -40,8 +47,11 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         projectionStore,
                         projectionStore,
                         rosterStore,
+                        currentStateAuthorityCutProvider:
+                            currentStateAuthorityCutProvider,
                         mappingCoverageAuthorityStore: mappingCoverageAuthorityStore,
-                        machineStateActivityAuthorityStore: machineStateActivityAuthorityStore);
+                        machineStateActivityAuthorityStore:
+                            machineStateActivityAuthorityStore);
                 }));
     }
 }
