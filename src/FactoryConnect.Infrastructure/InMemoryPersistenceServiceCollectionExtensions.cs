@@ -24,6 +24,10 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                     var aggregationStore = new InMemoryMetricAggregationStore();
                     var projectionStore = new InMemoryOperationalMetricProjectionStore();
                     var rosterStore = new InMemoryMachineShiftOccurrenceRosterStore();
+                    var mappingCoverageAuthorityStore =
+                        new InMemoryMappingCoverageAuthorityStore();
+                    var machineStateActivityAuthorityStore =
+                        new InMemoryMachineStateActivityAuthorityStore();
 
                     return new PersistenceProviderServices(
                         new InMemoryObservationIngestionStore(),
@@ -35,7 +39,9 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         projectionStore,
                         projectionStore,
                         projectionStore,
-                        rosterStore);
+                        rosterStore,
+                        mappingCoverageAuthorityStore: mappingCoverageAuthorityStore,
+                        machineStateActivityAuthorityStore: machineStateActivityAuthorityStore);
                 }));
     }
 }
