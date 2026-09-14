@@ -170,7 +170,7 @@ public sealed class JointAuthorityCompositionOwnershipTests
             sequence: 99,
             new MachineActivityPeriod(
                 machineId,
-                MachineState.Faulted,
+                MachineState.Fault,
                 new DateTimeOffset(
                     2026,
                     9,
@@ -194,7 +194,7 @@ public sealed class JointAuthorityCompositionOwnershipTests
                 streamId,
                 legacyPosition,
                 [],
-                MachineState.Faulted,
+                MachineState.Fault,
                 null,
                 null);
 
