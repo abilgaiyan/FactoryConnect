@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
