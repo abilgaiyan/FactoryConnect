@@ -117,6 +117,14 @@ public static class PersistenceServiceCollectionExtensions
             static serviceProvider => serviceProvider
                 .GetRequiredService<PersistenceProviderServices>()
                 .MetricAggregationStore);
+        services.AddSingleton<IMappingCoverageAuthorityStore>(
+            static serviceProvider => serviceProvider
+                .GetRequiredService<PersistenceProviderServices>()
+                .MappingCoverageAuthorityStore!);
+        services.AddSingleton<IMachineStateActivityAuthorityStore>(
+            static serviceProvider => serviceProvider
+                .GetRequiredService<PersistenceProviderServices>()
+                .MachineStateActivityAuthorityStore!);
 
         if ((requiredCapabilities & PersistenceProviderCapabilities.MetricAggregationRevisionReading) != 0)
         {
