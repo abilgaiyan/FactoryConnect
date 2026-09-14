@@ -12,7 +12,7 @@ public sealed class MachineStateActivityRuntimeRecoveryConformanceTests
         new(2026, 9, 14, 7, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task F01_FreshBootstrapPublishesCoherentJointAuthority()
+    public async Task FreshBootstrapPublishesCoherentJointAuthority()
     {
         var context = Context();
         var store = new InMemoryMachineStateActivityAuthorityStore();
@@ -39,7 +39,7 @@ public sealed class MachineStateActivityRuntimeRecoveryConformanceTests
     }
 
     [Fact]
-    public async Task F02_F05_F06_RestartResumesAfterJointPositionAndPreservesContinuityContext()
+    public async Task RestartResumesAfterJointPositionAndPreservesContinuityContext()
     {
         var context = Context();
         var store = new InMemoryMachineStateActivityAuthorityStore();
@@ -79,7 +79,7 @@ public sealed class MachineStateActivityRuntimeRecoveryConformanceTests
     }
 
     [Fact]
-    public async Task F03_F04_LostAcknowledgementRecoverySkipsCommittedPrefixAndOnlyPublishesForwardWork()
+    public async Task LostAcknowledgementRecoverySkipsCommittedPrefixAndOnlyPublishesForwardWork()
     {
         var context = Context();
         var inner = new InMemoryMachineStateActivityAuthorityStore();
