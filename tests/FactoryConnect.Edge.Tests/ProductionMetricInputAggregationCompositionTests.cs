@@ -187,20 +187,20 @@ public sealed class ProductionMetricInputAggregationCompositionTests
             position,
             [],
             MachineState.Running,
-            activeState: null,
-            activeStartedAt: null);
+            null,
+            null);
         var proposal = new MachineStateActivityAuthorityPublication(
-            expectedPosition: null,
-            expectedEvaluationRevision: null,
+            null,
+            null,
             projection,
-            stateChanges: [],
-            activityPeriods: [period],
+            [],
+            [period],
             new EvaluationAuthorityReplayIdentity(
                 processorId,
                 streamId,
                 position,
                 MachineState.Running,
-                lastConsumedInstanceId: 1,
+                1,
                 CanonicalCurrentStateContinuityPolicies.Preserve.Reference));
 
         Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
