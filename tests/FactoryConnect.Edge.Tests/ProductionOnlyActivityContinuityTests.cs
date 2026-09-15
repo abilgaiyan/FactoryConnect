@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -51,7 +52,8 @@ public sealed class ProductionOnlyActivityContinuityTests
                 lastConsumedInstanceId: 1,
                 new CurrentStatePolicyReference("continuity/preserve", "1.0")));
 
-        var authorityStore = provider.GetRequiredService<IMachineStateActivityAuthorityStore>();
+        var authorityStore = provider.GetRequiredService<
+            InMemoryMachineStateActivityAuthorityStore>();
         var publicationResult = await authorityStore.PublishAsync(publication);
         Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(publicationResult);
 
