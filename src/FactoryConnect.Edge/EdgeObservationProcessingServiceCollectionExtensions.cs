@@ -3,6 +3,7 @@ using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Infrastructure;
+using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -74,12 +75,9 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             static provider =>
                 provider.GetRequiredService<
                     InMemoryMappedMachineObservationSink>());
-        services.AddSingleton<InMemoryMappingCoverageAuthorityStore>();
-        services.AddSingleton<IMappingCoverageAuthorityStore>(
-            static provider =>
-                provider.GetRequiredService<
-                    InMemoryMappingCoverageAuthorityStore>());
 
+        services.RemoveAll<InMemoryMappingCoverageAuthorityStore>();
+        services.RemoveAll<IMappingCoverageAuthorityStore>();
         services.RemoveAll<InMemoryMachineStateActivityAuthorityStore>();
         services.RemoveAll<IMachineStateActivityAuthorityStore>();
         services.RemoveAll<IMachineStateActivityCursorReader>();
@@ -87,22 +85,38 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         services.RemoveAll<JointAuthorityMachineStateActivityProcessor>();
         services.RemoveAll<IMappedMachineObservationProcessor>();
 
-        services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>();
+        services.AddSingleton<ObservationAuthorityStoreGraph>();
+        services.AddSingleton<IMappingCoverageAuthorityStore>(
+            static provider =>
+                provider.GetRequiredService<ObservationAuthorityStoreGraph>()
+                    .MappingStore);
         services.AddSingleton<IMachineStateActivityAuthorityStore>(
             static provider =>
-                provider.GetRequiredService<
-                    InMemoryMachineStateActivityAuthorityStore>());
+                provider.GetRequiredService<ObservationAuthorityStoreGraph>()
+                    .StateActivityStore);
+        services.AddSingleton<InMemoryMappingCoverageAuthorityStore>(
+            static provider =>
+                RequireConcreteCompatibility<
+                    InMemoryMappingCoverageAuthorityStore>(
+                    provider.GetRequiredService<ObservationAuthorityStoreGraph>()
+                        .MappingStore));
+        services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>(
+            static provider =>
+                RequireConcreteCompatibility<
+                    InMemoryMachineStateActivityAuthorityStore>(
+                    provider.GetRequiredService<ObservationAuthorityStoreGraph>()
+                        .StateActivityStore));
         services.AddSingleton<IMachineStateActivityCursorReader>(
             static provider => new JointMachineStateActivityCursorReader(
-                provider.GetRequiredService<
-                    InMemoryMachineStateActivityAuthorityStore>()));
+                provider.GetRequiredService<ObservationAuthorityStoreGraph>()
+                    .StateActivityStore));
         services.AddSingleton(
             CanonicalCurrentStateContinuityPolicies.Preserve);
         services.AddSingleton<JointAuthorityMachineStateActivityProcessor>(
             static provider => new JointAuthorityMachineStateActivityProcessor(
                 StateActivityProcessorId,
-                provider.GetRequiredService<
-                    InMemoryMachineStateActivityAuthorityStore>(),
+                provider.GetRequiredService<ObservationAuthorityStoreGraph>()
+                    .StateActivityStore,
                 provider.GetRequiredService<
                     CurrentStateContinuityPolicy>()));
         services.AddSingleton<IMappedMachineObservationProcessor>(
@@ -126,8 +140,8 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     IObservationProcessingCheckpointStore>();
                 var mappedSink = provider.GetRequiredService<
                     IMappedMachineObservationSink>();
-                var mappingAuthority = provider.GetRequiredService<
-                    IMappingCoverageAuthorityStore>();
+                var authorityGraph = provider.GetRequiredService<
+                    ObservationAuthorityStoreGraph>();
                 var mappedReader = provider.GetRequiredService<
                     IDurableMappedObservationReader>();
                 var cursorReader = provider.GetRequiredService<
@@ -142,7 +156,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                         new ObservationProcessorId("canonical-mapping"),
                         mappings[streamId],
                         mappedSink,
-                        mappingAuthority);
+                        authorityGraph.MappingStore);
 
                     pipelines.Add(
                         new DurableObservationProcessingPipeline(
@@ -193,11 +207,55 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                 $"required processing capability '{typeof(TCapability).Name}'.");
     }
 
+    private static TConcrete RequireConcreteCompatibility<TConcrete>(
+        object selected)
+        where TConcrete : class =>
+        selected as TConcrete ??
+        throw new InvalidOperationException(
+            "The selected observation authority store cannot be exposed " +
+            $"through concrete compatibility service '{typeof(TConcrete).Name}'.");
+
+    private sealed class ObservationAuthorityStoreGraph
+    {
+        public ObservationAuthorityStoreGraph(IServiceProvider provider)
+        {
+            var providerServices =
+                provider.GetService<PersistenceProviderServices>();
+            var mappingStore =
+                providerServices?.MappingCoverageAuthorityStore;
+            var stateActivityStore =
+                providerServices?.MachineStateActivityAuthorityStore;
+
+            if ((mappingStore is null) != (stateActivityStore is null))
+            {
+                throw new InvalidOperationException(
+                    "The selected persistence provider must supply mapping " +
+                    "coverage and machine state/activity authority stores " +
+                    "together.");
+            }
+
+            if (mappingStore is not null && stateActivityStore is not null)
+            {
+                MappingStore = mappingStore;
+                StateActivityStore = stateActivityStore;
+                return;
+            }
+
+            MappingStore = new InMemoryMappingCoverageAuthorityStore();
+            StateActivityStore =
+                new InMemoryMachineStateActivityAuthorityStore();
+        }
+
+        public IMappingCoverageAuthorityStore MappingStore { get; }
+
+        public IMachineStateActivityAuthorityStore StateActivityStore { get; }
+    }
+
     private static Dictionary<
         ObservationStreamId,
         MachineSignalMappingConfiguration> ReadMappingConfigurations(
-            IConfigurationSection section,
-            ObservationStreamId[] streamIds)
+        IConfigurationSection section,
+        ObservationStreamId[] streamIds)
     {
         var streamSections = section.GetSection("Streams").GetChildren().ToArray();
 
