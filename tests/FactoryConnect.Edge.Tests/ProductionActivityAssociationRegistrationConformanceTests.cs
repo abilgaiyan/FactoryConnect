@@ -157,11 +157,11 @@ public sealed class ProductionActivityAssociationRegistrationConformanceTests
 
     private sealed class CompetingActivityReader : IProductionContextActivityReader
     {
-        public ValueTask<IReadOnlyList<DurableMachineActivityPeriod>> ReadAsync(
+        public Task<IReadOnlyList<DurableMachineActivityPeriod>> ReadAsync(
             ObservationStreamId streamId,
             ObservationPosition? afterPosition,
             int batchSize,
             CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<DurableMachineActivityPeriod>>([]);
+            Task.FromResult<IReadOnlyList<DurableMachineActivityPeriod>>([]);
     }
 }
