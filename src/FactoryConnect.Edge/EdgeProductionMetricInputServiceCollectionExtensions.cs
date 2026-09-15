@@ -12,9 +12,6 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
 {
     public const string SectionName = "ProductionProcessing";
 
-    private static readonly ObservationProcessorId StateActivityProcessorId =
-        new("machine-state-activity");
-
     public static IServiceCollection AddFactoryConnectProductionMetricInputs(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -118,15 +115,16 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         }
         services.AddSingleton<PlannedProductionIntervalResolver>();
 
-        services.TryAddSingleton<InMemoryMachineStateActivityAuthorityStore>();
-        services.AddSingleton(
-            static provider => new JointProductionContextActivityReader(
-                provider.GetRequiredService<
-                    InMemoryMachineStateActivityAuthorityStore>(),
-                StateActivityProcessorId));
+        services.AddSingleton<ProductionActivityAssociation>();
+        services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>(
+            static provider => provider.GetRequiredService<
+                ProductionActivityAssociation>().StateActivityStore);
+        services.AddSingleton<JointProductionContextActivityReader>(
+            static provider => provider.GetRequiredService<
+                ProductionActivityAssociation>().ActivityReader);
         services.AddSingleton<IProductionContextActivityReader>(
             static provider => provider.GetRequiredService<
-                JointProductionContextActivityReader>());
+                ProductionActivityAssociation>().ActivityReader);
         services.AddSingleton<InMemoryProductionQuantityEvidenceReader>();
         services.AddSingleton<IProductionQuantityEvidenceReader>(
             static provider => provider.GetRequiredService<
