@@ -99,13 +99,13 @@ public sealed class CurrentStatePersistenceCapabilityTests
     [Fact]
     public void SqlServerWithoutCurrentStateCapabilityFailsBeforeProviderConstruction()
     {
+        var configuration = BuildConfiguration("SqlServer");
         ServiceCollection services = new();
-        services.AddSqlServerPersistenceProvider(
-            services.BuildServiceProvider().GetRequiredService<IConfiguration>());
+        services.AddSqlServerPersistenceProvider(configuration);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             services.AddFactoryConnectPersistence(
-                BuildConfiguration("SqlServer"),
+                configuration,
                 PersistenceProviderCapabilities.CurrentStateAuthorityReading));
 
         Assert.Contains(
