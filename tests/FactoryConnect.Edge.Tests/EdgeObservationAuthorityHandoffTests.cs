@@ -51,8 +51,8 @@ public sealed class EdgeObservationAuthorityHandoffTests
             CancellationToken.None);
 
         var stable = Assert.IsType<StableCurrentStateAuthorityCut>(result);
-        Assert.NotNull(stable.Cut.Acquisition);
-        Assert.NotNull(stable.Cut.Mapping);
+        Assert.NotNull(stable.Cut.AcquisitionContact);
+        Assert.NotNull(stable.Cut.MappingCoverage);
         Assert.NotNull(stable.Cut.Evaluation);
     }
 
