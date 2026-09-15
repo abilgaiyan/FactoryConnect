@@ -115,16 +115,22 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         }
         services.AddSingleton<PlannedProductionIntervalResolver>();
 
-        services.AddSingleton<ProductionActivityAssociation>();
+        var activityReaderDescriptor =
+            ServiceDescriptor.Singleton<IProductionContextActivityReader>(
+                static provider => provider.GetRequiredService<
+                    ProductionActivityAssociation>().ActivityReader);
+        services.AddSingleton<ProductionActivityAssociation>(
+            provider => new ProductionActivityAssociation(
+                provider,
+                services,
+                activityReaderDescriptor));
         services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>(
             static provider => provider.GetRequiredService<
                 ProductionActivityAssociation>().StateActivityStore);
         services.AddSingleton<JointProductionContextActivityReader>(
             static provider => provider.GetRequiredService<
                 ProductionActivityAssociation>().ActivityReader);
-        services.AddSingleton<IProductionContextActivityReader>(
-            static provider => provider.GetRequiredService<
-                ProductionActivityAssociation>().ActivityReader);
+        services.Add(activityReaderDescriptor);
         services.AddSingleton<InMemoryProductionQuantityEvidenceReader>();
         services.AddSingleton<IProductionQuantityEvidenceReader>(
             static provider => provider.GetRequiredService<
