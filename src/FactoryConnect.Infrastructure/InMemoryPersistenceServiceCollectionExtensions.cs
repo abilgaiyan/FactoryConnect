@@ -16,7 +16,8 @@ public static class InMemoryPersistenceServiceCollectionExtensions
         return services.AddPersistenceProvider(
             new PersistenceProviderRegistration(
                 ProviderKey,
-                PersistenceProviderCapabilities.All,
+                PersistenceProviderCapabilities.All |
+                    PersistenceProviderCapabilities.CurrentStateAuthorityReading,
                 static _ =>
                 {
                     var observationStore =

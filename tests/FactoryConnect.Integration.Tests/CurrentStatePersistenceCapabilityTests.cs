@@ -2,6 +2,7 @@ using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
+using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -24,7 +25,27 @@ public sealed class CurrentStatePersistenceCapabilityTests
     }
 
     [Fact]
-    public void ExistingInMemoryProviderRemainsValidUntilCurrentStateIsRequested()
+    public void InMemoryProviderExplicitlyDeclaresCurrentStateCapability()
+    {
+        ServiceCollection services = new();
+        services.AddInMemoryPersistenceProvider();
+
+        var registration = Assert.Single(
+            services
+                .Where(descriptor => descriptor.ServiceType ==
+                    typeof(IPersistenceProviderRegistration))
+                .Select(descriptor =>
+                    Assert.IsAssignableFrom<IPersistenceProviderRegistration>(
+                        descriptor.ImplementationInstance)));
+
+        Assert.NotEqual(
+            PersistenceProviderCapabilities.None,
+            registration.Capabilities &
+                PersistenceProviderCapabilities.CurrentStateAuthorityReading);
+    }
+
+    [Fact]
+    public void InMemoryProviderDoesNotExposeCurrentStateUnlessRequested()
     {
         ServiceCollection services = new();
         services.AddInMemoryPersistenceProvider();
@@ -37,9 +58,31 @@ public sealed class CurrentStatePersistenceCapabilityTests
     }
 
     [Fact]
-    public void ProviderWithoutCurrentStateCapabilityFailsWhenCapabilityIsRequested()
+    public void InMemoryRequestedCurrentStateCapabilityActivatesExactProviderOwnedService()
     {
         ServiceCollection services = new();
+        services.AddInMemoryPersistenceProvider();
+        services.AddFactoryConnectPersistence(
+            BuildConfiguration("InMemory"),
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading);
+
+        using var provider = services.BuildServiceProvider();
+
+        var providerServices =
+            provider.GetRequiredService<PersistenceProviderServices>();
+        var activated =
+            provider.GetRequiredService<ICurrentStateAuthorityCutProvider>();
+
+        Assert.NotNull(providerServices.CurrentStateAuthorityCutProvider);
+        Assert.Same(providerServices.CurrentStateAuthorityCutProvider, activated);
+    }
+
+    [Fact]
+    public void ExistingCurrentStateRegistrationCausesFinalizationCollision()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<ICurrentStateAuthorityCutProvider>(
+            new StubCurrentStateAuthorityCutProvider());
         services.AddInMemoryPersistenceProvider();
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -48,9 +91,40 @@ public sealed class CurrentStatePersistenceCapabilityTests
                 PersistenceProviderCapabilities.CurrentStateAuthorityReading));
 
         Assert.Contains(
+            nameof(ICurrentStateAuthorityCutProvider),
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SqlServerWithoutCurrentStateCapabilityFailsBeforeProviderConstruction()
+    {
+        var configuration = BuildConfiguration("SqlServer");
+        ServiceCollection services = new();
+        services.AddSqlServerPersistenceProvider(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectPersistence(
+                configuration,
+                PersistenceProviderCapabilities.CurrentStateAuthorityReading));
+
+        Assert.Contains(
             nameof(PersistenceProviderCapabilities.CurrentStateAuthorityReading),
             exception.Message,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SqlServerWithoutCurrentStateRequirementRemainsCompatible()
+    {
+        var configuration = BuildConfiguration("SqlServer");
+        ServiceCollection services = new();
+        services.AddSqlServerPersistenceProvider(configuration);
+        services.AddFactoryConnectPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Null(provider.GetService<ICurrentStateAuthorityCutProvider>());
     }
 
     [Fact]
