@@ -1,0 +1,167 @@
+using FactoryConnect.Abstractions;
+using FactoryConnect.Edge;
+using FactoryConnect.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace FactoryConnect.Edge.Tests;
+
+public sealed class ProductionActivityAssociationRegistrationConformanceTests
+{
+    [Fact]
+    public void ObservationThenProductionConverges()
+    {
+        var streamId = new ObservationStreamId(MachineId.New(), "modbus:line-1");
+        var configuration = Configuration();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddFactoryConnectObservationProcessing(configuration, streamId);
+        services.AddFactoryConnectProductionMetricInputs(configuration, streamId);
+
+        using var provider = services.BuildServiceProvider();
+
+        AssertConverged(provider);
+    }
+
+    [Fact]
+    public void ProductionThenObservationConverges()
+    {
+        var streamId = new ObservationStreamId(MachineId.New(), "modbus:line-1");
+        var configuration = Configuration();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddFactoryConnectProductionMetricInputs(configuration, streamId);
+        services.AddFactoryConnectObservationProcessing(configuration, streamId);
+
+        using var provider = services.BuildServiceProvider();
+
+        AssertConverged(provider);
+    }
+
+    [Fact]
+    public void EarlierCompetingReaderIsDisplaced()
+    {
+        var streamId = new ObservationStreamId(MachineId.New(), "modbus:line-1");
+        var configuration = Configuration();
+        var competitor = new CompetingActivityReader();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IProductionContextActivityReader>(competitor);
+        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddFactoryConnectObservationProcessing(configuration, streamId);
+        services.AddFactoryConnectProductionMetricInputs(configuration, streamId);
+
+        using var provider = services.BuildServiceProvider();
+
+        var association = provider.GetRequiredService<ProductionActivityAssociation>();
+        var reader = provider.GetRequiredService<IProductionContextActivityReader>();
+
+        Assert.Same(association.ActivityReader, reader);
+        Assert.NotSame(competitor, reader);
+    }
+
+    [Fact]
+    public void LaterCompetingReaderFailsClosed()
+    {
+        var streamId = new ObservationStreamId(MachineId.New(), "modbus:line-1");
+        var configuration = Configuration();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddFactoryConnectEdgePersistence(configuration);
+        services.AddFactoryConnectObservationProcessing(configuration, streamId);
+        services.AddFactoryConnectProductionMetricInputs(configuration, streamId);
+        services.AddSingleton<IProductionContextActivityReader, CompetingActivityReader>();
+
+        using var provider = services.BuildServiceProvider();
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredService<ProductionActivityAssociation>()
+                .ActivityReader);
+
+        Assert.Contains(
+            "IProductionContextActivityReader",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    private static void AssertConverged(IServiceProvider provider)
+    {
+        var graph = provider.GetRequiredService<ObservationAuthorityStoreGraph>();
+        var association = provider.GetRequiredService<ProductionActivityAssociation>();
+        var concreteStore = provider.GetRequiredService<
+            InMemoryMachineStateActivityAuthorityStore>();
+        var authorityStore = provider.GetRequiredService<
+            IMachineStateActivityAuthorityStore>();
+        var concreteReader = provider.GetRequiredService<
+            JointProductionContextActivityReader>();
+        var portableReader = provider.GetRequiredService<
+            IProductionContextActivityReader>();
+
+        Assert.Same(graph.StateActivityStore, association.StateActivityStore);
+        Assert.Same(association.StateActivityStore, concreteStore);
+        Assert.Same(concreteStore, authorityStore);
+        Assert.Same(association.ActivityReader, concreteReader);
+        Assert.Same(concreteReader, portableReader);
+    }
+
+    private static IConfiguration Configuration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Persistence:Provider"] = "InMemory",
+                    ["ObservationProcessing:BatchSize"] = "10",
+                    ["ObservationProcessing:PollingInterval"] = "00:00:01",
+                    ["ObservationProcessing:Mappings:0:Source"] = "modbus",
+                    ["ObservationProcessing:Mappings:0:Address"] = "DI1",
+                    ["ObservationProcessing:Mappings:0:SignalKey"] =
+                        CanonicalSignalKeys.Running,
+                    ["ObservationProcessing:Mappings:0:Type"] = "Digital",
+                    ["ObservationProcessing:Mappings:0:Invert"] = "false",
+                    ["ProductionProcessing:BatchSize"] = "100",
+                    ["ProductionProcessing:PollingInterval"] = "00:00:01",
+                    ["ProductionProcessing:CompanyId"] = "COMP-1",
+                    ["ProductionProcessing:SiteId"] = "SITE-1",
+                    ["ProductionProcessing:ProductionLineId"] = "LINE-1",
+                    ["ProductionProcessing:ContextAssignmentId"] = "CTX-1",
+                    ["ProductionProcessing:ContextEffectiveFromUtc"] =
+                        "2026-01-01T00:00:00+00:00",
+                    ["ProductionProcessing:QuantityStreamKey"] =
+                        "production-quantity",
+                    ["ProductionProcessing:Shift:AssignmentId"] =
+                        "SHIFT-SCHEDULE-1",
+                    ["ProductionProcessing:Shift:ShiftId"] = "SHIFT-1",
+                    ["ProductionProcessing:Shift:Name"] = "Shift 1",
+                    ["ProductionProcessing:Shift:TimeZoneId"] = "UTC",
+                    ["ProductionProcessing:Shift:StartsAtLocal"] =
+                        "06:00:00",
+                    ["ProductionProcessing:Shift:EndsAtLocal"] =
+                        "14:00:00",
+                    ["ProductionProcessing:Shift:EffectiveFrom"] =
+                        "2026-01-01",
+                    ["ProductionProcessing:PlannedProduction:AssignmentId"] =
+                        "POT-1",
+                    ["ProductionProcessing:PlannedProduction:TimeZoneId"] =
+                        "UTC",
+                    ["ProductionProcessing:PlannedProduction:StartsAtLocal"] =
+                        "06:00:00",
+                    ["ProductionProcessing:PlannedProduction:EndsAtLocal"] =
+                        "14:00:00",
+                    ["ProductionProcessing:PlannedProduction:EffectiveFrom"] =
+                        "2026-01-01",
+                })
+            .Build();
+
+    private sealed class CompetingActivityReader : IProductionContextActivityReader
+    {
+        public Task<IReadOnlyList<DurableMachineActivityPeriod>> ReadAsync(
+            ObservationStreamId streamId,
+            ObservationPosition? afterPosition,
+            int batchSize,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<DurableMachineActivityPeriod>>([]);
+    }
+}

@@ -3,7 +3,6 @@ using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Infrastructure;
-using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -214,42 +213,6 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         throw new InvalidOperationException(
             "The selected observation authority store cannot be exposed " +
             $"through concrete compatibility service '{typeof(TConcrete).Name}'.");
-
-    private sealed class ObservationAuthorityStoreGraph
-    {
-        public ObservationAuthorityStoreGraph(IServiceProvider provider)
-        {
-            var providerServices =
-                provider.GetService<PersistenceProviderServices>();
-            var mappingStore =
-                providerServices?.MappingCoverageAuthorityStore;
-            var stateActivityStore =
-                providerServices?.MachineStateActivityAuthorityStore;
-
-            if ((mappingStore is null) != (stateActivityStore is null))
-            {
-                throw new InvalidOperationException(
-                    "The selected persistence provider must supply mapping " +
-                    "coverage and machine state/activity authority stores " +
-                    "together.");
-            }
-
-            if (mappingStore is not null && stateActivityStore is not null)
-            {
-                MappingStore = mappingStore;
-                StateActivityStore = stateActivityStore;
-                return;
-            }
-
-            MappingStore = new InMemoryMappingCoverageAuthorityStore();
-            StateActivityStore =
-                new InMemoryMachineStateActivityAuthorityStore();
-        }
-
-        public IMappingCoverageAuthorityStore MappingStore { get; }
-
-        public IMachineStateActivityAuthorityStore StateActivityStore { get; }
-    }
 
     private static Dictionary<
         ObservationStreamId,
