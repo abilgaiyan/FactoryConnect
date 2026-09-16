@@ -258,10 +258,7 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
         TimeSpan maximumCurrentAge,
         DateTimeOffset readAsOf)
     {
-        if (maximumCurrentAge < TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maximumCurrentAge));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumCurrentAge, TimeSpan.Zero);
 
         if (acquisitionContact is null)
         {
