@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Persistence;
 using FactoryConnect.Protocols.MTConnect;
