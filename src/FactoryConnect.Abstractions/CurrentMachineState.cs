@@ -100,6 +100,8 @@ public sealed record CurrentStateContinuityPolicy
 public interface ICurrentStateFreshnessPolicy
 {
     CurrentStatePolicyReference Reference { get; }
+
+    TimeSpan MaximumCurrentAge { get; }
 }
 
 public sealed record AcquisitionContactAuthority
@@ -257,6 +259,22 @@ public interface ICurrentStateAuthorityCutProvider
     Task<CurrentStateAuthorityCutReadResult> ReadAuthorityCutAsync(
         CurrentStateAuthorityBinding binding,
         CancellationToken cancellationToken);
+}
+
+public interface ICurrentStateOwnerResolver
+{
+    CurrentStateOwnerResolution Resolve(MachineId machineId);
+}
+
+public interface ICurrentStatePolicyResolver<TPolicy>
+    where TPolicy : class
+{
+    CurrentStatePolicyResolution<TPolicy> Resolve();
+}
+
+public interface ICurrentStateTimeProvider
+{
+    DateTimeOffset GetUtcNow();
 }
 
 public abstract record CurrentStateOwnerResolution;

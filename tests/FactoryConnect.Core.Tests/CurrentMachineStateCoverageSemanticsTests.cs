@@ -1,0 +1,168 @@
+using FactoryConnect.Abstractions;
+
+namespace FactoryConnect.Core.Tests;
+
+public sealed class CurrentMachineStateCoverageSemanticsTests
+{
+    [Fact]
+    public void MissingMappingIsIndeterminateRegardlessOfAcquisition()
+    {
+        Assert.Equal(CurrentStateCoverage.Indeterminate, CurrentMachineStateReader.ClassifyCoverage(null, null));
+    }
+
+    [Fact]
+    public void EstablishedEmptyMappedFrontierIsComplete()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 5, mappedHighWater: null);
+        Assert.Equal(CurrentStateCoverage.Complete, CurrentMachineStateReader.ClassifyCoverage(mapping, null));
+    }
+
+    [Fact]
+    public void MappedInputWithoutEvaluationIsBehind()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 5, mappedHighWater: 4);
+        Assert.Equal(CurrentStateCoverage.Behind, CurrentMachineStateReader.ClassifyCoverage(mapping, null));
+    }
+
+    [Fact]
+    public void EvaluationTrailingMappedFrontierIsBehind()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 8, mappedHighWater: 7);
+        var evaluation = CreateEvaluation(binding, evaluatedThrough: 6);
+        Assert.Equal(CurrentStateCoverage.Behind, CurrentMachineStateReader.ClassifyCoverage(mapping, evaluation));
+    }
+
+    [Fact]
+    public void EvaluationAtMappedFrontierIsComplete()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 8, mappedHighWater: 7);
+        var evaluation = CreateEvaluation(binding, evaluatedThrough: 7);
+        Assert.Equal(CurrentStateCoverage.Complete, CurrentMachineStateReader.ClassifyCoverage(mapping, evaluation));
+    }
+
+    [Fact]
+    public void EvaluationWithoutMappingIsIndeterminate()
+    {
+        var binding = CreateBinding();
+        var evaluation = CreateEvaluation(binding, evaluatedThrough: 3);
+        Assert.Equal(CurrentStateCoverage.Indeterminate, CurrentMachineStateReader.ClassifyCoverage(null, evaluation));
+    }
+
+    [Fact]
+    public async Task EmptyMappedFrontierWithoutEvaluationReturnsCompleteNoEvidence()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 5, mappedHighWater: null);
+        var reader = CreateReader(binding, new CurrentStateAuthorityCut(binding, null, mapping, null));
+        var result = await reader.ReadAsync(binding.MachineId, CancellationToken.None);
+        var noEvidence = Assert.IsType<CurrentMachineStateNoEvidence>(result);
+        Assert.Equal(CurrentStateCoverage.Complete, noEvidence.Coverage);
+    }
+
+    [Fact]
+    public async Task MappedInputWithoutEvaluationReturnsBehindNoEvidence()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 5, mappedHighWater: 4);
+        var reader = CreateReader(binding, new CurrentStateAuthorityCut(binding, null, mapping, null));
+        var result = await reader.ReadAsync(binding.MachineId, CancellationToken.None);
+        var noEvidence = Assert.IsType<CurrentMachineStateNoEvidence>(result);
+        Assert.Equal(CurrentStateCoverage.Behind, noEvidence.Coverage);
+    }
+
+    [Fact]
+    public async Task EvaluationBearingCutRetainsCompleteCoverageThroughEvidence()
+    {
+        var binding = CreateBinding();
+        var mapping = CreateMapping(binding, rawThrough: 5, mappedHighWater: 4);
+        var evaluation = CreateEvaluation(binding, evaluatedThrough: 4);
+        var readAsOf = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+        var reader = CreateReader(
+            binding,
+            new CurrentStateAuthorityCut(binding, null, mapping, evaluation),
+            new StubPolicyResolver<CurrentStateContinuityPolicy>(
+                new CurrentStateExactlyOnePolicy<CurrentStateContinuityPolicy>(
+                    new CurrentStateContinuityPolicy(evaluation.AppliedContinuityPolicy, StateContinuityMode.Preserve))),
+            new StubPolicyResolver<ICurrentStateFreshnessPolicy>(
+                new CurrentStateExactlyOnePolicy<ICurrentStateFreshnessPolicy>(new StubFreshnessPolicy())),
+            new StubTimeProvider(readAsOf));
+
+        var evidence = Assert.IsType<CurrentMachineStateEvidence>(
+            await reader.ReadAsync(binding.MachineId, CancellationToken.None));
+
+        Assert.Equal(CurrentStateCoverage.Complete, evidence.Coverage);
+        Assert.Equal(CurrentStateFreshness.Indeterminate, evidence.Freshness);
+        Assert.Equal(CurrentStateUsability.Indeterminate, evidence.Usability);
+        Assert.Equal(readAsOf, evidence.ReadAsOf);
+    }
+
+    private static CurrentMachineStateReader CreateReader(
+        CurrentStateAuthorityBinding binding,
+        CurrentStateAuthorityCut cut,
+        ICurrentStatePolicyResolver<CurrentStateContinuityPolicy>? continuityPolicyResolver = null,
+        ICurrentStatePolicyResolver<ICurrentStateFreshnessPolicy>? freshnessPolicyResolver = null,
+        ICurrentStateTimeProvider? timeProvider = null) =>
+        new(
+            new OwnerResolver(binding),
+            new CutProvider(cut),
+            continuityPolicyResolver ?? new ThrowingPolicyResolver<CurrentStateContinuityPolicy>(),
+            freshnessPolicyResolver ?? new ThrowingPolicyResolver<ICurrentStateFreshnessPolicy>(),
+            timeProvider ?? new ThrowingTimeProvider());
+
+    private static CurrentStateAuthorityBinding CreateBinding()
+    {
+        var machineId = MachineId.New();
+        return new CurrentStateAuthorityBinding(
+            machineId,
+            new ObservationStreamId(machineId, "primary"),
+            new ObservationProcessorId("mapper"),
+            new ObservationProcessorId("state"));
+    }
+
+    private static MappingCoverageAuthority CreateMapping(CurrentStateAuthorityBinding binding, ulong rawThrough, ulong? mappedHighWater) =>
+        new(binding.MappingProcessorId, binding.ObservationStreamId, new ObservationPosition(rawThrough), mappedHighWater is null ? null : new ObservationPosition(mappedHighWater.Value), new MappingAuthorityRevision(1));
+
+    private static EvaluationAuthority CreateEvaluation(CurrentStateAuthorityBinding binding, ulong evaluatedThrough) =>
+        new(binding.StateProcessorId, binding.ObservationStreamId, new ObservationPosition(evaluatedThrough), MachineState.Running, 1, new CurrentStatePolicyReference("continuity/preserve", "1.0"), new StateProjectionAuthorityRevision(1));
+
+    private sealed class StubFreshnessPolicy : ICurrentStateFreshnessPolicy
+    {
+        public CurrentStatePolicyReference Reference { get; } = new("freshness/default", "1.0");
+        public TimeSpan MaximumCurrentAge => TimeSpan.FromMinutes(5);
+    }
+
+    private sealed class OwnerResolver(CurrentStateAuthorityBinding binding) : ICurrentStateOwnerResolver
+    {
+        public CurrentStateOwnerResolution Resolve(MachineId machineId) => new CurrentStateExactlyOneOwner(binding);
+    }
+
+    private sealed class CutProvider(CurrentStateAuthorityCut cut) : ICurrentStateAuthorityCutProvider
+    {
+        public Task<CurrentStateAuthorityCutReadResult> ReadAuthorityCutAsync(CurrentStateAuthorityBinding binding, CancellationToken cancellationToken) =>
+            Task.FromResult<CurrentStateAuthorityCutReadResult>(new StableCurrentStateAuthorityCut(cut));
+    }
+
+    private sealed class StubPolicyResolver<TPolicy>(CurrentStatePolicyResolution<TPolicy> resolution) : ICurrentStatePolicyResolver<TPolicy> where TPolicy : class
+    {
+        public CurrentStatePolicyResolution<TPolicy> Resolve() => resolution;
+    }
+
+    private sealed class ThrowingPolicyResolver<TPolicy> : ICurrentStatePolicyResolver<TPolicy> where TPolicy : class
+    {
+        public CurrentStatePolicyResolution<TPolicy> Resolve() => throw new InvalidOperationException("This policy resolver must not be called on this semantic path.");
+    }
+
+    private sealed class StubTimeProvider(DateTimeOffset value) : ICurrentStateTimeProvider
+    {
+        public DateTimeOffset GetUtcNow() => value;
+    }
+
+    private sealed class ThrowingTimeProvider : ICurrentStateTimeProvider
+    {
+        public DateTimeOffset GetUtcNow() => throw new InvalidOperationException("Temporal observation must not occur on this semantic path.");
+    }
+}
