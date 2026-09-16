@@ -22,6 +22,10 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
 
         using var provider = services.BuildServiceProvider();
         var inventory = provider.GetRequiredService<MtConnectMachineInventory>();
+        var currentStateReader = provider.GetRequiredService<ICurrentMachineStateReader>();
+        var concreteCurrentStateReader = provider.GetRequiredService<CurrentMachineStateReader>();
+        var currentStateTime = provider.GetRequiredService<ICurrentStateTimeProvider>();
+        var timeProvider = provider.GetRequiredService<TimeProvider>();
         var acquisitionFactories = provider
             .GetServices<IMtConnectAcquisitionRuntimeFactory>()
             .ToArray();
@@ -41,6 +45,9 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
 
         Assert.Equal(2, inventory.Machines.Count);
         Assert.Equal(2, inventory.ActivityStreams.Count);
+        Assert.Same(concreteCurrentStateReader, currentStateReader);
+        Assert.NotNull(currentStateTime);
+        Assert.NotNull(timeProvider);
         Assert.Equal(2, acquisitionFactories.Length);
         Assert.Equal(2, observationPipelines.Pipelines.Count);
         Assert.Equal(2, producerRuntimes.ActivityRuntimes.Count);
@@ -105,6 +112,7 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
             ["MTConnect:Retry:JitterRatio"] = "0.20",
             ["ObservationProcessing:BatchSize"] = "100",
             ["ObservationProcessing:PollingInterval"] = "00:00:01",
+            ["CurrentState:Freshness:MaximumCurrentAge"] = "00:00:30",
             ["ProductionProcessing:BatchSize"] = "100",
             ["ProductionProcessing:PollingInterval"] = "00:00:01",
             ["ProductionProcessing:RosterMaterialization:FromProductionDayInclusive"] = "2026-08-27",
