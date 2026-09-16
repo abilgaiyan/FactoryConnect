@@ -1,6 +1,7 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
 using FactoryConnect.Persistence;
+using FactoryConnect.Protocols.MTConnect;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -10,19 +11,23 @@ namespace FactoryConnect.Edge.Tests;
 public sealed class CurrentStateWholeProviderConformanceTests
 {
     [Fact]
-    public async Task FinalizedInMemoryCarriesOneAuthorityGraphAcrossCutAndProductionReader()
+    public async Task FinalizedInMemoryCarriesOneAuthorityGraphThroughPublicCurrentStateReader()
     {
         var machineId = MachineId.New();
-        var streamId = new ObservationStreamId(machineId, "modbus:line-1");
+        var inventory = Inventory(machineId);
+        var streamId = inventory.ActivityStreams[0];
         var mappingProcessorId = new ObservationProcessorId("canonical-mapping");
         var stateProcessorId = new ObservationProcessorId("machine-state-activity");
+        var readAsOf = DateTimeOffset.UnixEpoch.AddMinutes(2).AddSeconds(30);
         var configuration = Configuration();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(readAsOf));
         services.AddFactoryConnectEdgePersistence(
             configuration,
             PersistenceProviderCapabilities.CurrentStateAuthorityReading);
         services.AddFactoryConnectObservationProcessing(configuration, streamId);
+        services.AddFactoryConnectCurrentMachineState(configuration, inventory);
         services.AddFactoryConnectProductionMetricInputs(configuration, streamId);
 
         using var provider = services.BuildServiceProvider();
@@ -32,6 +37,7 @@ public sealed class CurrentStateWholeProviderConformanceTests
         var stateStore = provider.GetRequiredService<IMachineStateActivityAuthorityStore>();
         var cutProvider = provider.GetRequiredService<ICurrentStateAuthorityCutProvider>();
         var activityReader = provider.GetRequiredService<IProductionContextActivityReader>();
+        var currentStateReader = provider.GetRequiredService<ICurrentMachineStateReader>();
 
         await observationStore.CommitAsync(
             new ObservationIngestionBatch(
@@ -99,7 +105,7 @@ public sealed class CurrentStateWholeProviderConformanceTests
                 authorityPosition,
                 projection.State,
                 lastConsumedInstanceId: 1,
-                new CurrentStatePolicyReference("continuity/preserve", "1.0")));
+                CanonicalCurrentStateContinuityPolicies.Preserve.Reference));
 
         var publicationResult = await stateStore.PublishAsync(publication);
         var accepted = Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
@@ -120,6 +126,18 @@ public sealed class CurrentStateWholeProviderConformanceTests
         Assert.Equal(mapping, stable.Cut.MappingCoverage);
         Assert.Equal(accepted.Snapshot.EvaluationAuthority, stable.Cut.Evaluation);
 
+        var currentStateResult = await currentStateReader.ReadAsync(
+            machineId,
+            CancellationToken.None);
+        var evidence = Assert.IsType<CurrentMachineStateEvidence>(currentStateResult);
+
+        Assert.Equal(machineId, evidence.MachineId);
+        Assert.Equal(MachineState.Idle, evidence.MachineState);
+        Assert.Equal(CurrentStateCoverage.Complete, evidence.Coverage);
+        Assert.Equal(CurrentStateFreshness.Current, evidence.Freshness);
+        Assert.Equal(CurrentStateUsability.Current, evidence.Usability);
+        Assert.Equal(readAsOf, evidence.ReadAsOf);
+
         var carried = await activityReader.ReadAsync(
             streamId,
             afterPosition: null,
@@ -128,6 +146,45 @@ public sealed class CurrentStateWholeProviderConformanceTests
 
         Assert.Equal(activity, Assert.Single(carried));
     }
+
+    [Fact]
+    public async Task PublicCurrentStateReaderPreservesNoEvidenceFromStableEmptyAuthorityCut()
+    {
+        var machineId = MachineId.New();
+        var inventory = Inventory(machineId);
+        var configuration = Configuration();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<TimeProvider>(
+            new FixedTimeProvider(DateTimeOffset.UnixEpoch.AddMinutes(5)));
+        services.AddFactoryConnectEdgePersistence(
+            configuration,
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading);
+        services.AddFactoryConnectObservationProcessing(
+            configuration,
+            inventory.ActivityStreams);
+        services.AddFactoryConnectCurrentMachineState(configuration, inventory);
+
+        using var provider = services.BuildServiceProvider();
+        var reader = provider.GetRequiredService<ICurrentMachineStateReader>();
+
+        var result = await reader.ReadAsync(machineId, CancellationToken.None);
+        var noEvidence = Assert.IsType<CurrentMachineStateNoEvidence>(result);
+
+        Assert.Equal(machineId, noEvidence.MachineId);
+        Assert.Equal(CurrentStateCoverage.Indeterminate, noEvidence.Coverage);
+    }
+
+    private static MtConnectMachineInventory Inventory(MachineId machineId) =>
+        new(
+            [
+                new MtConnectAcquisitionOptions(
+                    new MtConnectEndpoint(new Uri("http://localhost:5001/")),
+                    machineId,
+                    "CNC-01",
+                    fromSequence: 1,
+                    pollingInterval: TimeSpan.FromSeconds(1)),
+            ]);
 
     private static IConfiguration Configuration() =>
         new ConfigurationBuilder()
@@ -142,6 +199,7 @@ public sealed class CurrentStateWholeProviderConformanceTests
                     ["ObservationProcessing:Mappings:0:SignalKey"] = CanonicalSignalKeys.Running,
                     ["ObservationProcessing:Mappings:0:Type"] = "Digital",
                     ["ObservationProcessing:Mappings:0:Invert"] = "false",
+                    ["CurrentState:Freshness:MaximumCurrentAge"] = "00:01:00",
                     ["ProductionProcessing:BatchSize"] = "100",
                     ["ProductionProcessing:PollingInterval"] = "00:00:01",
                     ["ProductionProcessing:CompanyId"] = "COMP-1",
@@ -164,4 +222,16 @@ public sealed class CurrentStateWholeProviderConformanceTests
                     ["ProductionProcessing:PlannedProduction:EffectiveFrom"] = "2026-01-01",
                 })
             .Build();
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _utcNow;
+
+        public FixedTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+    }
 }
