@@ -110,8 +110,49 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
                 "Stable current-state authority cut does not retain the selected owner binding.");
         }
 
-        // FC-031.3C.3 owns coverage classification and NoEvidence completion.
+        var coverage = ClassifyCoverage(cut.MappingCoverage, cut.Evaluation);
+
+        if (cut.Evaluation is null)
+        {
+            return new CurrentMachineStateNoEvidence(machineId, coverage);
+        }
+
+        // FC-031.3C.4 owns continuity-policy authority and E admissibility.
         throw new NotSupportedException(
-            "Stable current-state authority-cut interpretation is not implemented until FC-031.3C.3.");
+            $"Evaluation-bearing current-state interpretation ({coverage}) is not implemented until FC-031.3C.4.");
+    }
+
+    internal static CurrentStateCoverage ClassifyCoverage(
+        MappingCoverageAuthority? mappingCoverage,
+        EvaluationAuthority? evaluation)
+    {
+        if (mappingCoverage is null)
+        {
+            return CurrentStateCoverage.Indeterminate;
+        }
+
+        var mappedHighWater = mappingCoverage.MappedEvaluationInputHighWater;
+        if (mappedHighWater is null)
+        {
+            return CurrentStateCoverage.Complete;
+        }
+
+        if (evaluation is null)
+        {
+            return CurrentStateCoverage.Behind;
+        }
+
+        if (evaluation.EvaluatedThrough < mappedHighWater)
+        {
+            return CurrentStateCoverage.Behind;
+        }
+
+        if (evaluation.EvaluatedThrough == mappedHighWater)
+        {
+            return CurrentStateCoverage.Complete;
+        }
+
+        throw new InvalidOperationException(
+            "Stable authority cut contains evaluation beyond the mapped evaluation-input frontier.");
     }
 }
