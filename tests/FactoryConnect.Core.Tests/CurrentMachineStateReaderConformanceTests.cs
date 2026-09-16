@@ -7,6 +7,8 @@ public sealed class CurrentMachineStateReaderConformanceTests
     private static readonly CurrentStatePolicyReference ContinuityReference = new("continuity/preserve", "1.0");
     private static readonly CurrentStatePolicyReference FreshnessReference = new("freshness/default", "1.0");
     private static readonly DateTimeOffset ReadAsOf = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+    private static readonly string[] FreshnessFailureEvents = ["owner", "cut", "continuity", "freshness"];
+    private static readonly string[] EvidenceEvents = ["owner", "cut", "continuity", "freshness", "time"];
 
     [Fact]
     public async Task NoEvidenceSuppressesBothPoliciesAndTimeAcrossEstablishedEmptyCoverage()
@@ -85,7 +87,7 @@ public sealed class CurrentMachineStateReaderConformanceTests
         Assert.Equal(1, dependencies.ContinuityCalls);
         Assert.Equal(1, dependencies.FreshnessCalls);
         Assert.Equal(0, dependencies.TimeCalls);
-        Assert.Equal(new[] { "owner", "cut", "continuity", "freshness" }, dependencies.Events);
+        Assert.Equal(FreshnessFailureEvents, dependencies.Events);
     }
 
     [Fact]
@@ -108,7 +110,7 @@ public sealed class CurrentMachineStateReaderConformanceTests
         Assert.Equal(1, dependencies.ContinuityCalls);
         Assert.Equal(1, dependencies.FreshnessCalls);
         Assert.Equal(1, dependencies.TimeCalls);
-        Assert.Equal(new[] { "owner", "cut", "continuity", "freshness", "time" }, dependencies.Events);
+        Assert.Equal(EvidenceEvents, dependencies.Events);
     }
 
     [Theory]
