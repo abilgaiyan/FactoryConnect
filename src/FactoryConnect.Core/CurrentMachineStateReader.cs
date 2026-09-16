@@ -96,7 +96,7 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
         }
     }
 
-    internal CurrentMachineStateReadResult ContinueFromStableCut(
+    internal static CurrentMachineStateReadResult ContinueFromStableCut(
         MachineId machineId,
         CurrentStateAuthorityBinding binding,
         CurrentStateAuthorityCut cut)
