@@ -134,19 +134,13 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
         switch (continuityResolution)
         {
             case CurrentStateMissingPolicy<CurrentStateContinuityPolicy>:
-                return new CurrentMachineStateAuthorityFailure(
-                    machineId,
-                    CurrentStateAuthorityFailureReason.MissingPolicyAuthority);
+                return PolicyFailure(machineId, CurrentStateAuthorityFailureReason.MissingPolicyAuthority);
 
             case CurrentStateAmbiguousPolicy<CurrentStateContinuityPolicy>:
-                return new CurrentMachineStateAuthorityFailure(
-                    machineId,
-                    CurrentStateAuthorityFailureReason.AmbiguousPolicyAuthority);
+                return PolicyFailure(machineId, CurrentStateAuthorityFailureReason.AmbiguousPolicyAuthority);
 
             case CurrentStateUnsupportedPolicy<CurrentStateContinuityPolicy>:
-                return new CurrentMachineStateAuthorityFailure(
-                    machineId,
-                    CurrentStateAuthorityFailureReason.UnsupportedPolicyAuthority);
+                return PolicyFailure(machineId, CurrentStateAuthorityFailureReason.UnsupportedPolicyAuthority);
 
             case CurrentStateExactlyOnePolicy<CurrentStateContinuityPolicy> exactlyOne:
                 continuityPolicy = exactlyOne.Policy;
@@ -171,23 +165,58 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
                 CurrentStateAuthorityFailureReason.UnauthorizedStateAuthority);
         }
 
-        return ContinueFromAdmissibleEvaluation(machineId, cut, coverage);
+        return ContinueFromAdmissibleEvaluation(machineId, cut, coverage, evaluation);
     }
 
     private CurrentMachineStateReadResult ContinueFromAdmissibleEvaluation(
         MachineId machineId,
         CurrentStateAuthorityCut cut,
-        CurrentStateCoverage coverage)
+        CurrentStateCoverage coverage,
+        EvaluationAuthority evaluation)
     {
-        _ = machineId;
-        _ = cut;
-        _ = coverage;
-        _ = _freshnessPolicyResolver;
-        _ = _timeProvider;
+        var freshnessResolution = _freshnessPolicyResolver.Resolve();
+        ICurrentStateFreshnessPolicy freshnessPolicy;
 
-        // FC-031.3C.5 owns freshness-policy authority, ReadAsOf and usability.
-        throw new NotSupportedException(
-            $"Admissible evaluation current-state interpretation ({coverage}) is not implemented until FC-031.3C.5.");
+        switch (freshnessResolution)
+        {
+            case CurrentStateMissingPolicy<ICurrentStateFreshnessPolicy>:
+                return PolicyFailure(machineId, CurrentStateAuthorityFailureReason.MissingPolicyAuthority);
+
+            case CurrentStateAmbiguousPolicy<ICurrentStateFreshnessPolicy>:
+                return PolicyFailure(machineId, CurrentStateAuthorityFailureReason.AmbiguousPolicyAuthority);
+
+            case CurrentStateUnsupportedPolicy<ICurrentStateFreshnessPolicy>:
+                return PolicyFailure(machineId, CurrentStateAuthorityFailureReason.UnsupportedPolicyAuthority);
+
+            case CurrentStateExactlyOnePolicy<ICurrentStateFreshnessPolicy> exactlyOne:
+                freshnessPolicy = exactlyOne.Policy;
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported freshness-policy resolution '{freshnessResolution?.GetType().FullName ?? "<null>"}'.");
+        }
+
+        if (freshnessPolicy.MaximumCurrentAge < TimeSpan.Zero)
+        {
+            throw new InvalidOperationException(
+                "Resolved current-state freshness policy has a negative maximum current age.");
+        }
+
+        var readAsOf = _timeProvider.GetUtcNow();
+        var freshness = ClassifyFreshness(
+            cut.AcquisitionContact,
+            freshnessPolicy.MaximumCurrentAge,
+            readAsOf);
+        var usability = ClassifyUsability(coverage, freshness);
+
+        return new CurrentMachineStateEvidence(
+            machineId,
+            evaluation.MachineState,
+            coverage,
+            freshness,
+            usability,
+            readAsOf);
     }
 
     internal static CurrentStateCoverage ClassifyCoverage(
@@ -223,4 +252,51 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
         throw new InvalidOperationException(
             "Stable authority cut contains evaluation beyond the mapped evaluation-input frontier.");
     }
+
+    internal static CurrentStateFreshness ClassifyFreshness(
+        AcquisitionContactAuthority? acquisitionContact,
+        TimeSpan maximumCurrentAge,
+        DateTimeOffset readAsOf)
+    {
+        if (maximumCurrentAge < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCurrentAge));
+        }
+
+        if (acquisitionContact is null)
+        {
+            return CurrentStateFreshness.Indeterminate;
+        }
+
+        var contactTime = acquisitionContact.SuccessfulContactTime;
+        if (contactTime > readAsOf)
+        {
+            return CurrentStateFreshness.Indeterminate;
+        }
+
+        return readAsOf - contactTime <= maximumCurrentAge
+            ? CurrentStateFreshness.Current
+            : CurrentStateFreshness.Stale;
+    }
+
+    internal static CurrentStateUsability ClassifyUsability(
+        CurrentStateCoverage coverage,
+        CurrentStateFreshness freshness) =>
+        coverage switch
+        {
+            CurrentStateCoverage.Behind => CurrentStateUsability.Behind,
+            CurrentStateCoverage.Indeterminate => CurrentStateUsability.Indeterminate,
+            CurrentStateCoverage.Complete when freshness == CurrentStateFreshness.Current =>
+                CurrentStateUsability.Current,
+            CurrentStateCoverage.Complete when freshness == CurrentStateFreshness.Stale =>
+                CurrentStateUsability.Stale,
+            CurrentStateCoverage.Complete when freshness == CurrentStateFreshness.Indeterminate =>
+                CurrentStateUsability.Indeterminate,
+            _ => throw new ArgumentOutOfRangeException(nameof(coverage)),
+        };
+
+    private static CurrentMachineStateAuthorityFailure PolicyFailure(
+        MachineId machineId,
+        CurrentStateAuthorityFailureReason reason) =>
+        new(machineId, reason);
 }
