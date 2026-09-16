@@ -96,7 +96,7 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
         }
     }
 
-    internal static CurrentMachineStateReadResult ContinueFromStableCut(
+    private CurrentMachineStateReadResult ContinueFromStableCut(
         MachineId machineId,
         CurrentStateAuthorityBinding binding,
         CurrentStateAuthorityCut cut)
@@ -117,9 +117,77 @@ public sealed class CurrentMachineStateReader : ICurrentMachineStateReader
             return new CurrentMachineStateNoEvidence(machineId, coverage);
         }
 
-        // FC-031.3C.4 owns continuity-policy authority and E admissibility.
+        return ContinueFromEvaluation(machineId, cut, coverage);
+    }
+
+    private CurrentMachineStateReadResult ContinueFromEvaluation(
+        MachineId machineId,
+        CurrentStateAuthorityCut cut,
+        CurrentStateCoverage coverage)
+    {
+        var evaluation = cut.Evaluation
+            ?? throw new InvalidOperationException("Evaluation authority is required on the E-bearing path.");
+
+        var continuityResolution = _continuityPolicyResolver.Resolve();
+        CurrentStateContinuityPolicy continuityPolicy;
+
+        switch (continuityResolution)
+        {
+            case CurrentStateMissingPolicy<CurrentStateContinuityPolicy>:
+                return new CurrentMachineStateAuthorityFailure(
+                    machineId,
+                    CurrentStateAuthorityFailureReason.MissingPolicyAuthority);
+
+            case CurrentStateAmbiguousPolicy<CurrentStateContinuityPolicy>:
+                return new CurrentMachineStateAuthorityFailure(
+                    machineId,
+                    CurrentStateAuthorityFailureReason.AmbiguousPolicyAuthority);
+
+            case CurrentStateUnsupportedPolicy<CurrentStateContinuityPolicy>:
+                return new CurrentMachineStateAuthorityFailure(
+                    machineId,
+                    CurrentStateAuthorityFailureReason.UnsupportedPolicyAuthority);
+
+            case CurrentStateExactlyOnePolicy<CurrentStateContinuityPolicy> exactlyOne:
+                continuityPolicy = exactlyOne.Policy;
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported continuity-policy resolution '{continuityResolution?.GetType().FullName ?? "<null>"}'.");
+        }
+
+        if (evaluation.AppliedContinuityPolicy != continuityPolicy.Reference)
+        {
+            return new CurrentMachineStateAuthorityFailure(
+                machineId,
+                CurrentStateAuthorityFailureReason.ContinuityPolicyMismatch);
+        }
+
+        if (evaluation.MachineState == MachineState.Offline)
+        {
+            return new CurrentMachineStateAuthorityFailure(
+                machineId,
+                CurrentStateAuthorityFailureReason.UnauthorizedStateAuthority);
+        }
+
+        return ContinueFromAdmissibleEvaluation(machineId, cut, coverage);
+    }
+
+    private CurrentMachineStateReadResult ContinueFromAdmissibleEvaluation(
+        MachineId machineId,
+        CurrentStateAuthorityCut cut,
+        CurrentStateCoverage coverage)
+    {
+        _ = machineId;
+        _ = cut;
+        _ = coverage;
+        _ = _freshnessPolicyResolver;
+        _ = _timeProvider;
+
+        // FC-031.3C.5 owns freshness-policy authority, ReadAsOf and usability.
         throw new NotSupportedException(
-            $"Evaluation-bearing current-state interpretation ({coverage}) is not implemented until FC-031.3C.4.");
+            $"Admissible evaluation current-state interpretation ({coverage}) is not implemented until FC-031.3C.5.");
     }
 
     internal static CurrentStateCoverage ClassifyCoverage(
