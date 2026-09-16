@@ -17,7 +17,8 @@ public static class EdgeApplicationServiceCollectionExtensions
 
         services.AddFactoryConnectEdgePersistence(
             configuration,
-            PersistenceProviderCapabilities.All);
+            PersistenceProviderCapabilities.All |
+                PersistenceProviderCapabilities.CurrentStateAuthorityReading);
         services.AddFactoryConnectObservationProcessing(
             configuration,
             inventory.ActivityStreams);
