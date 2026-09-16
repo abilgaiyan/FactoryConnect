@@ -102,7 +102,7 @@ public sealed class CurrentMachineStateReaderCoordinatorTests
     }
 
     [Fact]
-    public async Task StableCutReachesExplicitNextSliceBoundaryWithoutResolvingPoliciesOrTime()
+    public async Task StableAllNullCutCompletesAsIndeterminateNoEvidenceWithoutPoliciesOrTime()
     {
         var binding = CreateBinding();
         var cut = new CurrentStateAuthorityCut(binding, null, null, null);
@@ -110,10 +110,10 @@ public sealed class CurrentMachineStateReaderCoordinatorTests
             new StubOwnerResolver(new CurrentStateExactlyOneOwner(binding)),
             new StubCutProvider(new StableCurrentStateAuthorityCut(cut)));
 
-        var exception = await Assert.ThrowsAsync<NotSupportedException>(() =>
-            reader.ReadAsync(binding.MachineId, CancellationToken.None));
+        var result = await reader.ReadAsync(binding.MachineId, CancellationToken.None);
 
-        Assert.Contains("FC-031.3C.3", exception.Message, StringComparison.Ordinal);
+        var noEvidence = Assert.IsType<CurrentMachineStateNoEvidence>(result);
+        Assert.Equal(CurrentStateCoverage.Indeterminate, noEvidence.Coverage);
     }
 
     [Fact]
@@ -197,12 +197,12 @@ public sealed class CurrentMachineStateReaderCoordinatorTests
         where TPolicy : class
     {
         public CurrentStatePolicyResolution<TPolicy> Resolve() =>
-            throw new InvalidOperationException("Policy resolver must not be called in FC-031.3C.2.");
+            throw new InvalidOperationException("Policy resolver must not be called before its authorized semantic slice.");
     }
 
     private sealed class ThrowingTimeProvider : ICurrentStateTimeProvider
     {
         public DateTimeOffset GetUtcNow() =>
-            throw new InvalidOperationException("Time provider must not be called in FC-031.3C.2.");
+            throw new InvalidOperationException("Time provider must not be called before FC-031.3C.5.");
     }
 }
