@@ -21,6 +21,9 @@ public static class EdgeApplicationServiceCollectionExtensions
         services.AddFactoryConnectObservationProcessing(
             configuration,
             inventory.ActivityStreams);
+        services.AddFactoryConnectCurrentMachineState(
+            configuration,
+            inventory);
         services.AddFactoryConnectProductionMetricInputs(
             configuration,
             inventory.ActivityStreams);
