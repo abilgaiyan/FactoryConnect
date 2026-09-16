@@ -96,29 +96,35 @@ public sealed class CurrentMachineStateCoverageSemanticsTests
     }
 
     [Fact]
-    public async Task EvaluationBearingCutStopsAt3C4WithoutPolicyOrTimeObservation()
+    public async Task EvaluationBearingCutRetainsCoverageThrough3C4AndStopsAt3C5WithoutFreshnessOrTime()
     {
         var binding = CreateBinding();
         var mapping = CreateMapping(binding, rawThrough: 5, mappedHighWater: 4);
         var evaluation = CreateEvaluation(binding, evaluatedThrough: 4);
         var reader = CreateReader(
             binding,
-            new CurrentStateAuthorityCut(binding, null, mapping, evaluation));
+            new CurrentStateAuthorityCut(binding, null, mapping, evaluation),
+            new StubPolicyResolver<CurrentStateContinuityPolicy>(
+                new CurrentStateExactlyOnePolicy<CurrentStateContinuityPolicy>(
+                    new CurrentStateContinuityPolicy(
+                        evaluation.AppliedContinuityPolicy,
+                        StateContinuityMode.Preserve))));
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() =>
             reader.ReadAsync(binding.MachineId, CancellationToken.None));
 
-        Assert.Contains("FC-031.3C.4", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("FC-031.3C.5", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Complete", exception.Message, StringComparison.Ordinal);
     }
 
     private static CurrentMachineStateReader CreateReader(
         CurrentStateAuthorityBinding binding,
-        CurrentStateAuthorityCut cut) =>
+        CurrentStateAuthorityCut cut,
+        ICurrentStatePolicyResolver<CurrentStateContinuityPolicy>? continuityPolicyResolver = null) =>
         new(
             new OwnerResolver(binding),
             new CutProvider(cut),
-            new ThrowingPolicyResolver<CurrentStateContinuityPolicy>(),
+            continuityPolicyResolver ?? new ThrowingPolicyResolver<CurrentStateContinuityPolicy>(),
             new ThrowingPolicyResolver<ICurrentStateFreshnessPolicy>(),
             new ThrowingTimeProvider());
 
@@ -171,16 +177,23 @@ public sealed class CurrentMachineStateCoverageSemanticsTests
             Task.FromResult<CurrentStateAuthorityCutReadResult>(new StableCurrentStateAuthorityCut(cut));
     }
 
+    private sealed class StubPolicyResolver<TPolicy>(CurrentStatePolicyResolution<TPolicy> resolution)
+        : ICurrentStatePolicyResolver<TPolicy>
+        where TPolicy : class
+    {
+        public CurrentStatePolicyResolution<TPolicy> Resolve() => resolution;
+    }
+
     private sealed class ThrowingPolicyResolver<TPolicy> : ICurrentStatePolicyResolver<TPolicy>
         where TPolicy : class
     {
         public CurrentStatePolicyResolution<TPolicy> Resolve() =>
-            throw new InvalidOperationException("Policy resolution is not authorized in FC-031.3C.3.");
+            throw new InvalidOperationException("This policy resolver must not be called on this semantic path.");
     }
 
     private sealed class ThrowingTimeProvider : ICurrentStateTimeProvider
     {
         public DateTimeOffset GetUtcNow() =>
-            throw new InvalidOperationException("Temporal observation is not authorized in FC-031.3C.3.");
+            throw new InvalidOperationException("Temporal observation is not authorized before FC-031.3C.5.");
     }
 }
