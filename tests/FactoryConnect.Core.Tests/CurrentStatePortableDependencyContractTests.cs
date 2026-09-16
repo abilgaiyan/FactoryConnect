@@ -41,8 +41,9 @@ public sealed class CurrentStatePortableDependencyContractTests
         Assert.Equal(typeof(TimeSpan), properties[0].PropertyType);
         Assert.Equal("Reference", properties[1].Name);
         Assert.Equal(typeof(CurrentStatePolicyReference), properties[1].PropertyType);
-        Assert.Empty(typeof(ICurrentStateFreshnessPolicy).GetMethods()
-            .Where(method => !method.IsSpecialName));
+        Assert.DoesNotContain(
+            typeof(ICurrentStateFreshnessPolicy).GetMethods(),
+            method => !method.IsSpecialName);
     }
 
     [Fact]
