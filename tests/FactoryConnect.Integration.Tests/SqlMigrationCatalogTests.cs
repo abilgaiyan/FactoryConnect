@@ -22,16 +22,17 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 4, "ProductionContextMetricInputHandoff", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 5, "OperationalMetricReportingPersistence", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 6, "CorrectOperationalMetricProjectionManifestParent", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 7, "AcquisitionContactAuthority", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 7, "AcquisitionContactAuthority", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 8, "CurrentStateAuthorityPersistence", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
-    public void LoadExistingResourcesMatchesFrozenCanonicalChecksums()
+    public void LoadExistingResourcesMatchesFrozenCanonicalChecksumsThroughMigration007()
     {
         var catalog = SqlMigrationCatalog.Load();
 
         Assert.Collection(
-            catalog.Migrations,
+            catalog.Migrations.Take(7),
             migration => Assert.Equal("E1C14282B7A246BBD9D5734370498695721D3F0A78D60F74531E35D5FEDC9057", migration.Sha256Checksum),
             migration => Assert.Equal("F8DA0AFF348E3ED8964D5ED03042581A55D7C94898AAC739B81E60CA7F5E5113", migration.Sha256Checksum),
             migration => Assert.Equal("98A9635782C4D822441269ECEE8E13BBCDC5A61C07B64608F81A0107133535C6", migration.Sha256Checksum),

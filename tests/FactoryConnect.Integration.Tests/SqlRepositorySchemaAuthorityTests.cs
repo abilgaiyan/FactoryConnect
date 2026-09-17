@@ -10,9 +10,14 @@ public sealed class SqlRepositorySchemaAuthorityTests
     [
         "AcquisitionContactAuthority",
         "ContextualizedActivityOutput",
+        "MachineActivityPeriodHistory",
         "MachineObservation",
         "MachineShiftOccurrenceRoster",
         "MachineShiftOccurrenceRosterOccurrence",
+        "MachineStateActivityAuthority",
+        "MachineStateActivitySignal",
+        "MachineStateChangeHistory",
+        "MappingCoverageAuthority",
         "MetricAggregationCheckpoint",
         "MetricAggregationContribution",
         "MetricAggregationProcessor",
@@ -36,7 +41,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(21, ownedTables.Length);
+        Assert.Equal(26, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
@@ -60,9 +65,12 @@ public sealed class SqlRepositorySchemaAuthorityTests
         var ownedObjects = SqlRepositorySchemaAuthority.OwnedObjects;
 
         Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "AcquisitionContactAuthority")));
+        Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "MappingCoverageAuthority")));
+        Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "MachineStateActivityAuthority")));
         Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "MetricInputFact")));
         Assert.True(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "OperationalMetricProjection")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "acquisitioncontactauthority")));
+        Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "mappingcoverageauthority")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "metricinputfact")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("dbo", "CustomerOrders")));
         Assert.False(ownedObjects.ContainsRepositoryIdentity(new SqlObjectName("audit", "MetricInputFact")));

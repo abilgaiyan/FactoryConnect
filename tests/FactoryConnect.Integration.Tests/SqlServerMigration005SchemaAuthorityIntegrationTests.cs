@@ -7,11 +7,12 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
 {
     [Fact]
-    public void RepositoryAuthoritySeparatesHistoricalPost005FromCurrentPost007()
+    public void RepositoryAuthoritySeparatesHistoricalPost005FromCurrentPost008()
     {
         Assert.Equal(13, SqlRepositorySchemaDescriptors.LegacyPost004.Tables.Length);
         Assert.Equal(20, SqlRepositorySchemaDescriptors.Post005.Tables.Length);
-        Assert.Equal(21, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(21, SqlRepositorySchemaDescriptors.Post007.Tables.Length);
+        Assert.Equal(26, SqlRepositorySchemaDescriptors.Current.Tables.Length);
 
         var legacyNames = SqlRepositorySchemaDescriptors.LegacyPost004.Tables
             .Select(static table => table.Name.ObjectName)
@@ -33,6 +34,11 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Contains("MachineShiftOccurrenceRosterOccurrence", post005Names);
         Assert.DoesNotContain("AcquisitionContactAuthority", post005Names);
         Assert.Contains("AcquisitionContactAuthority", currentNames);
+        Assert.Contains("MappingCoverageAuthority", currentNames);
+        Assert.Contains("MachineStateActivityAuthority", currentNames);
+        Assert.Contains("MachineStateActivitySignal", currentNames);
+        Assert.Contains("MachineStateChangeHistory", currentNames);
+        Assert.Contains("MachineActivityPeriodHistory", currentNames);
     }
 
     [Fact]
