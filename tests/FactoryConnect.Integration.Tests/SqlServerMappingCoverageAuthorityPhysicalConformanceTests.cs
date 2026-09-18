@@ -112,10 +112,9 @@ public sealed class SqlServerMappingCoverageAuthorityPhysicalConformanceTests :
 
         var current = await RequiredAsync(CreateStore(), processorId, streamId);
         Assert.Equal(new MappingAuthorityRevision(1), current.MappingRevision);
-        Assert.Contains(
-            current.RawConsumedThrough,
-            new ObservationPosition(8),
-            new ObservationPosition(9));
+        Assert.True(
+            current.RawConsumedThrough == new ObservationPosition(8) ||
+            current.RawConsumedThrough == new ObservationPosition(9));
     }
 
     private SqlServerMappingCoverageAuthorityStore CreateStore() =>
@@ -213,7 +212,7 @@ public sealed class SqlServerMappingCoverageAuthorityPhysicalConformanceTests :
             mapped is null ? null : new ObservationPosition(mapped.Value));
 
     private static async Task<MappingCoverageAuthority> RequiredAsync(
-        IMappingCoverageAuthorityStore store,
+        SqlServerMappingCoverageAuthorityStore store,
         ObservationProcessorId processorId,
         ObservationStreamId streamId)
     {
