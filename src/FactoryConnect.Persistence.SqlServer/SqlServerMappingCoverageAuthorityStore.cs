@@ -355,7 +355,7 @@ internal sealed class SqlServerMappingCoverageAuthorityStore :
         command.Parameters.Add(
             "@StreamKeyBinary",
             SqlDbType.VarBinary,
-            OrdinalStringKeyCodec.MaximumEncodedLength).Value = streamKeyBinary;
+            OrdinalStringKeyCodec.MaxCodeUnits * 2).Value = streamKeyBinary;
         command.Parameters.Add(
             "@MappingProcessorIdOrderKey",
             SqlDbType.VarBinary,
