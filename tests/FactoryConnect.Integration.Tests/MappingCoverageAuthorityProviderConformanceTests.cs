@@ -131,6 +131,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
         var initial = Commit(
             null,
             processorId,
