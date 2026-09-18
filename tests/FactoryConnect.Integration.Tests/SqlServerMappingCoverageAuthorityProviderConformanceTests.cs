@@ -48,7 +48,7 @@ public sealed class SqlServerMappingCoverageAuthorityProviderConformanceTests :
         command.Parameters.Add(
             "@StreamKeyBinary",
             SqlDbType.VarBinary,
-            OrdinalStringKeyCodec.MaximumEncodedLength).Value =
+            OrdinalStringKeyCodec.MaxCodeUnits * 2).Value =
             OrdinalStringKeyCodec.Encode(streamId.StreamKey);
         command.Parameters.Add("@StreamKey", SqlDbType.NVarChar, 256).Value =
             streamId.StreamKey;
