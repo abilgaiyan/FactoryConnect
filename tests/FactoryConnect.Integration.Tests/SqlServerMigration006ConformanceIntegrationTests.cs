@@ -12,7 +12,7 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         "FK_OperationalMetricProjectionManifest_Processor";
 
     private static readonly int[] MigrationIdsThrough005 = [1, 2, 3, 4, 5];
-    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7, 8];
 
     [Fact]
     public async Task ExactPost005Applies006ThenCurrentAndPreservesExistingPublicationData()

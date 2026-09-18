@@ -16,6 +16,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.006_CorrectOperationalMetricProjectionManifestParent.sql";
     private const string AcquisitionContactAuthoritySchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.007_AcquisitionContactAuthority.sql";
+    private const string CurrentStateAuthorityPersistenceSchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.008_CurrentStateAuthorityPersistence.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -37,6 +39,9 @@ internal static class SqlServerSchema
 
     public static string ReadAcquisitionContactAuthoritySchema() =>
         ReadSchema(AcquisitionContactAuthoritySchemaResourceName);
+
+    public static string ReadCurrentStateAuthorityPersistenceSchema() =>
+        ReadSchema(CurrentStateAuthorityPersistenceSchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
