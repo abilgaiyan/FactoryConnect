@@ -11,6 +11,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         Assert.Null(await store.ReadAsync(processorId, streamId));
     }
@@ -20,6 +21,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         await store.CommitAsync(
             Commit(null, processorId, streamId, raw: 5, mapped: 3));
@@ -38,6 +40,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         await store.CommitAsync(
             Commit(null, processorId, streamId, raw: 5, mapped: 3));
@@ -60,6 +63,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         await store.CommitAsync(
             Commit(null, processorId, streamId, raw: 5, mapped: 3));
@@ -81,6 +85,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         await store.CommitAsync(
             Commit(null, processorId, streamId, raw: 5, mapped: 3));
@@ -99,6 +104,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         await store.CommitAsync(
             Commit(null, processorId, streamId, raw: 5, mapped: 3));
@@ -147,6 +153,7 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     {
         var store = CreateStore();
         var (processorId, streamId) = Identity();
+        await PrepareIdentityAsync(processorId, streamId);
 
         await store.CommitAsync(
             Commit(null, processorId, streamId, raw: 5, mapped: 3));
@@ -179,6 +186,10 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
         var secondStream = new ObservationStreamId(machineId, "MTConnect:CNC-02");
         var firstProcessor = new ObservationProcessorId("canonical-signals");
         var secondProcessor = new ObservationProcessorId("alternate-mapper");
+
+        await PrepareIdentityAsync(firstProcessor, firstStream);
+        await PrepareIdentityAsync(firstProcessor, secondStream);
+        await PrepareIdentityAsync(secondProcessor, firstStream);
 
         await store.CommitAsync(
             Commit(null, firstProcessor, firstStream, raw: 5, mapped: 3));
@@ -235,6 +246,11 @@ public abstract class MappingCoverageAuthorityProviderConformanceTests
     }
 
     protected abstract IMappingCoverageAuthorityStore CreateStore();
+
+    protected virtual ValueTask PrepareIdentityAsync(
+        ObservationProcessorId processorId,
+        ObservationStreamId streamId) =>
+        ValueTask.CompletedTask;
 
     private static MappingCoverageCommit Commit(
         MappingCoverageAuthority? expected,
