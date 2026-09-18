@@ -41,9 +41,7 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         operationalMetricReportingQueryProvider:
                             new SqlServerOperationalMetricReportingQueryProvider(connectionString),
                         machineShiftOccurrenceRosterStore:
-                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString),
-                        mappingCoverageAuthorityStore:
-                            new SqlServerMappingCoverageAuthorityStore(connectionString));
+                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString));
                 },
                 _ =>
                 {
