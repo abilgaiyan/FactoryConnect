@@ -35,7 +35,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
         Assert.Equal(0UL, retry.Snapshot.EvaluationAuthority.ProjectionRevision.Value);
 
         var read = await store.ReadAsync(id.ProcessorId, id.StreamId);
-        Assert.Equal(first.Snapshot, read);
+        AssertSnapshotEquivalent(first.Snapshot, read);
         Assert.Equal(1, await CountAsync("dbo.MachineStateChangeHistory", id));
         Assert.Equal(1, await CountAsync("dbo.MachineActivityPeriodHistory", id));
     }
@@ -89,7 +89,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
 
         await Assert.ThrowsAsync<InvalidCastException>(() => store.PublishAsync(changed).AsTask());
 
-        Assert.Equal(before, await store.ReadAsync(id.ProcessorId, id.StreamId));
+        AssertSnapshotEquivalent(before, await store.ReadAsync(id.ProcessorId, id.StreamId));
         Assert.Equal(1, await CountAsync("dbo.MachineStateChangeHistory", id));
         Assert.Equal(1, await CountAsync("dbo.MachineActivityPeriodHistory", id));
     }
@@ -106,6 +106,22 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
             () => store.PublishAsync(Publication(id, null, null, 1, MachineState.Running, 41), cts.Token).AsTask());
 
         Assert.Null(await store.ReadAsync(id.ProcessorId, id.StreamId));
+    }
+
+    private static void AssertSnapshotEquivalent(
+        MachineStateActivityAuthoritySnapshot? expected,
+        MachineStateActivityAuthoritySnapshot? actual)
+    {
+        Assert.NotNull(expected);
+        Assert.NotNull(actual);
+        Assert.Equal(expected.Projection.ProcessorId, actual.Projection.ProcessorId);
+        Assert.Equal(expected.Projection.StreamId, actual.Projection.StreamId);
+        Assert.Equal(expected.Projection.Position, actual.Projection.Position);
+        Assert.Equal(expected.Projection.State, actual.Projection.State);
+        Assert.Equal(expected.Projection.ActiveState, actual.Projection.ActiveState);
+        Assert.Equal(expected.Projection.ActiveStartedAt, actual.Projection.ActiveStartedAt);
+        Assert.Equal(expected.Projection.Signals, actual.Projection.Signals);
+        Assert.Equal(expected.EvaluationAuthority, actual.EvaluationAuthority);
     }
 
     private async Task<(ObservationProcessorId ProcessorId, ObservationStreamId StreamId)> CreateIdentityAsync()
