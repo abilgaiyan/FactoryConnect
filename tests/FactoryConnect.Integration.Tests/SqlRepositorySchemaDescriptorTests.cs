@@ -5,7 +5,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlRepositorySchemaDescriptorTests
 {
     [Fact]
-    public void CurrentExtendsLegacyPost004ThroughPost008()
+    public void CurrentExtendsLegacyPost004ThroughPost009()
     {
         var legacy = SqlRepositorySchemaDescriptors.LegacyPost004;
         var post005 = SqlRepositorySchemaDescriptors.Post005;
