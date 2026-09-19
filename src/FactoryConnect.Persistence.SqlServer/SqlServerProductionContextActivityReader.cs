@@ -41,42 +41,46 @@ internal sealed class SqlServerProductionContextActivityReader :
         {
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            await ValidateAuthorityIdentityAsync(
+                connection,
+                streamId,
+                streamKey,
+                processorKey,
+                cancellationToken).ConfigureAwait(false);
+
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                SELECT TOP (@BatchSize)
-                       Position, ProjectionRevision, OutputOrdinal, MachineState,
-                       StartedAt, EndedAt, InstanceId, Sequence
-                FROM dbo.MachineActivityPeriodHistory
+                SELECT TOP (@ReadLimit)
+                       h.Position, h.ProjectionRevision, h.OutputOrdinal, h.MachineState,
+                       h.StartedAt, h.EndedAt, h.InstanceId, h.Sequence
+                FROM dbo.MachineActivityPeriodHistory AS h
                      WITH (INDEX(IX_MachineActivityPeriodHistory_StreamPosition))
-                WHERE MachineId = @MachineId
-                  AND StreamKeyBinary = @StreamKeyBinary
-                  AND StateProcessorIdOrderKey = @StateProcessorIdOrderKey
-                  AND (@AfterPosition IS NULL OR Position > @AfterPosition)
-                ORDER BY Position ASC, ProjectionRevision ASC, OutputOrdinal ASC;
+                INNER JOIN dbo.MachineStateActivityAuthority AS a
+                    ON a.MachineId = h.MachineId
+                   AND a.StreamKeyBinary = h.StreamKeyBinary
+                   AND a.StateProcessorIdOrderKey = h.StateProcessorIdOrderKey
+                WHERE h.MachineId = @MachineId
+                  AND h.StreamKeyBinary = @StreamKeyBinary
+                  AND h.StateProcessorIdOrderKey = @StateProcessorIdOrderKey
+                  AND a.StateProcessorId = @StateProcessorId
+                  AND (@AfterPosition IS NULL OR h.Position > @AfterPosition)
+                ORDER BY h.Position ASC, h.ProjectionRevision ASC, h.OutputOrdinal ASC;
                 """;
 
-            command.Parameters.Add("@BatchSize", SqlDbType.Int).Value = batchSize;
-            command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value =
-                streamId.MachineId.Value;
-            command.Parameters.Add(
-                "@StreamKeyBinary",
-                SqlDbType.VarBinary,
-                OrdinalStringKeyCodec.MaxCodeUnits * 2).Value = streamKey;
-            command.Parameters.Add(
-                "@StateProcessorIdOrderKey",
-                SqlDbType.VarBinary,
-                StringOrderKeyV2Codec.MaximumEncodedLength).Value = processorKey;
+            command.Parameters.Add("@ReadLimit", SqlDbType.Int).Value =
+                batchSize == int.MaxValue ? int.MaxValue : batchSize + 1;
+            AddIdentityParameters(command, streamId, streamKey, processorKey);
 
-            var afterParameter = command.Parameters.Add(
-                "@AfterPosition",
-                SqlDbType.Decimal);
+            var afterParameter = command.Parameters.Add("@AfterPosition", SqlDbType.Decimal);
             afterParameter.Precision = 20;
             afterParameter.Scale = 0;
             afterParameter.Value = afterPosition is null
                 ? DBNull.Value
                 : checked((decimal)afterPosition.Value);
 
-            var result = new List<DurableMachineActivityPeriod>();
+            var result = new List<DurableMachineActivityPeriod>(batchSize);
+            ObservationPosition? previous = afterPosition;
             await using var reader = await command.ExecuteReaderAsync(cancellationToken)
                 .ConfigureAwait(false);
 
@@ -84,6 +88,13 @@ internal sealed class SqlServerProductionContextActivityReader :
             {
                 var position = new ObservationPosition(
                     SqlServerUInt64.Materialize(reader.GetDecimal(0)));
+                if (previous is not null && position <= previous)
+                {
+                    throw Corruption(
+                        "Persisted machine activity history positions are not strictly increasing.");
+                }
+
+                previous = position;
                 _ = SqlServerUInt64.Materialize(reader.GetDecimal(1));
                 if (reader.GetInt32(2) < 0)
                 {
@@ -98,14 +109,17 @@ internal sealed class SqlServerProductionContextActivityReader :
                     throw Corruption("Persisted machine activity interval is invalid.");
                 }
 
-                var instanceId = SqlServerUInt64.Materialize(reader.GetDecimal(6));
-                var sequence = SqlServerUInt64.Materialize(reader.GetDecimal(7));
+                if (result.Count == batchSize)
+                {
+                    break;
+                }
+
                 result.Add(new DurableMachineActivityPeriod(
                     _stateProcessorId,
                     position,
                     streamId,
-                    instanceId,
-                    sequence,
+                    SqlServerUInt64.Materialize(reader.GetDecimal(6)),
+                    SqlServerUInt64.Materialize(reader.GetDecimal(7)),
                     new MachineActivityPeriod(
                         streamId.MachineId,
                         state,
@@ -122,6 +136,81 @@ internal sealed class SqlServerProductionContextActivityReader :
                 exception,
                 cancellationToken);
         }
+    }
+
+    private async Task ValidateAuthorityIdentityAsync(
+        SqlConnection connection,
+        ObservationStreamId streamId,
+        byte[] streamKey,
+        byte[] processorKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT StateProcessorId, StateProcessorIdOrderKey
+            FROM dbo.MachineStateActivityAuthority
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND (StateProcessorIdOrderKey = @StateProcessorIdOrderKey
+                   OR StateProcessorId = @StateProcessorId)
+            ORDER BY StateProcessorIdOrderKey;
+            """;
+        AddIdentityParameters(command, streamId, streamKey, processorKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        ValidatePersistedProcessorIdentity(reader, processorKey);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw Corruption(
+                "Persisted machine state/activity authority has conflicting rows for one semantic identity.");
+        }
+    }
+
+    private void ValidatePersistedProcessorIdentity(
+        SqlDataReader reader,
+        byte[] expectedProcessorKey)
+    {
+        var persistedProcessorId = reader.GetString(0);
+        var persistedProcessorKey = (byte[])reader[1];
+
+        if (string.IsNullOrWhiteSpace(persistedProcessorId) ||
+            !string.Equals(
+                persistedProcessorId,
+                _stateProcessorId.Value,
+                StringComparison.Ordinal) ||
+            !persistedProcessorKey.AsSpan().SequenceEqual(expectedProcessorKey) ||
+            !persistedProcessorKey.AsSpan().SequenceEqual(
+                StringOrderKeyV2Codec.Encode(persistedProcessorId)))
+        {
+            throw Corruption(
+                "Persisted machine state/activity processor identity is inconsistent.");
+        }
+    }
+
+    private void AddIdentityParameters(
+        SqlCommand command,
+        ObservationStreamId streamId,
+        byte[] streamKey,
+        byte[] processorKey)
+    {
+        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value =
+            streamId.MachineId.Value;
+        command.Parameters.Add(
+            "@StreamKeyBinary",
+            SqlDbType.VarBinary,
+            OrdinalStringKeyCodec.MaxCodeUnits * 2).Value = streamKey;
+        command.Parameters.Add(
+            "@StateProcessorIdOrderKey",
+            SqlDbType.VarBinary,
+            StringOrderKeyV2Codec.MaximumEncodedLength).Value = processorKey;
+        command.Parameters.Add("@StateProcessorId", SqlDbType.NVarChar, 256).Value =
+            _stateProcessorId.Value;
     }
 
     private static MachineState CheckedMachineState(byte value)
