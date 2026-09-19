@@ -22,11 +22,11 @@ public sealed class SqlMigration007AuthorityTests
             migration.ResourceName);
         Assert.Equal(SqlMigrationTransactionPolicy.EngineOwned, migration.TransactionPolicy);
         Assert.Equal(Migration007Checksum, migration.Sha256Checksum);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8], catalog.Migrations.Select(static value => value.MigrationId));
+        Assert.Equal(Enumerable.Range(1, 9), catalog.Migrations.Select(static value => value.MigrationId));
     }
 
     [Fact]
-    public void ExactCurrentHistoryThroughPost008IsCurrent()
+    public void ExactCurrentHistoryThroughPost009IsCurrent()
     {
         var catalog = SqlMigrationCatalog.Load();
         var appliedAtUtc = new DateTimeOffset(2026, 9, 11, 0, 0, 0, TimeSpan.Zero);
