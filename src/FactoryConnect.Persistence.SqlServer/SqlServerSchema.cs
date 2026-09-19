@@ -18,6 +18,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.007_AcquisitionContactAuthority.sql";
     private const string CurrentStateAuthorityPersistenceSchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.008_CurrentStateAuthorityPersistence.sql";
+    private const string CorrectCurrentStateDurableOutputIdentitySchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.009_CorrectCurrentStateDurableOutputIdentity.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -42,6 +44,9 @@ internal static class SqlServerSchema
 
     public static string ReadCurrentStateAuthorityPersistenceSchema() =>
         ReadSchema(CurrentStateAuthorityPersistenceSchemaResourceName);
+
+    public static string ReadCorrectCurrentStateDurableOutputIdentitySchema() =>
+        ReadSchema(CorrectCurrentStateDurableOutputIdentitySchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
