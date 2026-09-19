@@ -74,7 +74,7 @@ internal sealed class SqlServerProductionContextActivityReader :
             afterParameter.Scale = 0;
             afterParameter.Value = afterPosition is null
                 ? DBNull.Value
-                : SqlServerUInt64.ToDecimal(afterPosition.Value);
+                : checked((decimal)afterPosition.Value);
 
             var result = new List<DurableMachineActivityPeriod>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken)
