@@ -95,8 +95,10 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
                 var current = await ReadCurrentAsync(
                     connection, transaction, processorId, streamId,
                     streamKey, processorKey, true, cancellationToken).ConfigureAwait(false);
-                var sessionId = await ReadSessionIdAsync(
-                    connection, transaction, cancellationToken).ConfigureAwait(false);
+                var sessionId = _testHook is null
+                    ? 0
+                    : await ReadSessionIdAsync(
+                        connection, transaction, cancellationToken).ConfigureAwait(false);
                 await VisitAsync(
                     SqlServerMachineStateActivityPublicationStage.AuthorityLocked,
                     sessionId,
