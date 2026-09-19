@@ -553,7 +553,7 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
                 case SignalType.Text:
                 case SignalType.Enumeration: text = (string)signal.Value; break;
                 case SignalType.Timestamp: timestamp = (DateTimeOffset)signal.Value; break;
-                default: throw new ArgumentOutOfRangeException(nameof(signal.Type));
+                default: throw new ArgumentOutOfRangeException(nameof(signal), signal.Type, "Unsupported machine signal type.");
             }
         }
         command.Parameters.Add("@DigitalValue", SqlDbType.Bit).Value = digital;
