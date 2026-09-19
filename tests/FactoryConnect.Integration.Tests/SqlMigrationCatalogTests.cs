@@ -23,7 +23,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 5, "OperationalMetricReportingPersistence", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 6, "CorrectOperationalMetricProjectionManifestParent", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 7, "AcquisitionContactAuthority", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 8, "CurrentStateAuthorityPersistence", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 8, "CurrentStateAuthorityPersistence", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 9, "CorrectCurrentStateDurableOutputIdentity", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
