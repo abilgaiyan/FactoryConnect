@@ -19,7 +19,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     }
 
     [Fact]
-    public async Task C03_LostAcknowledgementRetryIsExactReplayWithoutDuplicateHistory()
+    public async Task C03LostAcknowledgementRetryIsExactReplayWithoutDuplicateHistory()
     {
         var id = await CreateIdentityAsync();
         var store = new SqlServerMachineStateActivityAuthorityStore(_fixture.ConnectionString);
@@ -62,7 +62,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     }
 
     [Fact]
-    public async Task C01_MissingAuthoritySlotIsProtectedByPrimaryKeyRangeLock()
+    public async Task C01MissingAuthoritySlotIsProtectedByPrimaryKeyRangeLock()
     {
         var id = await CreateIdentityAsync();
         var held = HoldAtAuthorityLock(Publication(id, null, null, 1, MachineState.Running, 101));
@@ -94,7 +94,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     }
 
     [Fact]
-    public async Task C02_ExistingAuthoritySerializesAndContenderReclassifies()
+    public async Task C02ExistingAuthoritySerializesAndContenderReclassifies()
     {
         var id = await CreateIdentityAsync();
         var store = new SqlServerMachineStateActivityAuthorityStore(_fixture.ConnectionString);
@@ -125,7 +125,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     }
 
     [Fact]
-    public async Task C04_CancellationWhileWaitingForAuthorityLockLeavesNoMutation()
+    public async Task C04CancellationWhileWaitingForAuthorityLockLeavesNoMutation()
     {
         var id = await CreateIdentityAsync();
         var held = HoldAtAuthorityLock(Publication(id, null, null, 1, MachineState.Running, 121));
@@ -159,7 +159,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     [InlineData((int)SqlServerMachineStateActivityPublicationStage.SignalsDeleted)]
     [InlineData((int)SqlServerMachineStateActivityPublicationStage.StateHistoryInserted)]
     [InlineData((int)SqlServerMachineStateActivityPublicationStage.ActivityHistoryInserted)]
-    public async Task C05ThroughC08_FailureAfterMutationStageRollsBackWholePublication(int stageValue)
+    public async Task C05ThroughC08FailureAfterMutationStageRollsBackWholePublication(int stageValue)
     {
         var stage = (SqlServerMachineStateActivityPublicationStage)stageValue;
         var id = await CreateIdentityAsync();
@@ -188,7 +188,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     }
 
     [Fact]
-    public async Task C09_FreshLineageFailureConsumesNoRevision()
+    public async Task C09FreshLineageFailureConsumesNoRevision()
     {
         var id = await CreateIdentityAsync();
         var publication = Publication(id, null, null, 1, MachineState.Running, 141);
@@ -209,7 +209,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
     }
 
     [Fact]
-    public async Task C10_ExactReplayAtMaximumRevisionDoesNotAllocate()
+    public async Task C10ExactReplayAtMaximumRevisionDoesNotAllocate()
     {
         var id = await CreateIdentityAsync();
         var store = new SqlServerMachineStateActivityAuthorityStore(_fixture.ConnectionString);
