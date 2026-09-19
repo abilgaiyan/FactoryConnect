@@ -47,7 +47,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
         var storeA = new SqlServerMachineStateActivityAuthorityStore(_fixture.ConnectionString);
         var storeB = new SqlServerMachineStateActivityAuthorityStore(_fixture.ConnectionString);
         var a = Publication(id, null, null, 1, MachineState.Running, 21);
-        var b = Publication(id, null, null, 2, MachineState.Faulted, 22);
+        var b = Publication(id, null, null, 2, MachineState.Fault, 22);
 
         var results = await Task.WhenAll(
             storeA.PublishAsync(a).AsTask(),
@@ -83,7 +83,7 @@ public sealed class SqlServerMachineStateActivityAuthorityStoreIntegrationTests 
             accepted.Snapshot.Projection.Position,
             accepted.Snapshot.EvaluationAuthority.ProjectionRevision,
             2,
-            MachineState.Faulted,
+            MachineState.Fault,
             32,
             [invalidSignal]);
 
