@@ -298,10 +298,9 @@ public sealed class SqlServerCurrentStateAuthorityCutProviderIntegrationTests :
             """;
         AddStreamParameters(command, binding);
         command.Parameters.Add("@SuccessfulContactTime", SqlDbType.DateTimeOffset).Value = Stamp;
-        command.Parameters.Add(
-            SqlServerUInt64.CreateNullableParameter(
-                "@RawAcceptedThrough",
-                rawAcceptedThrough));
+        command.Parameters.Add(CreateNullableUInt64Parameter(
+            "@RawAcceptedThrough",
+            rawAcceptedThrough));
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", revision));
         await command.ExecuteNonQueryAsync();
     }
@@ -335,8 +334,9 @@ public sealed class SqlServerCurrentStateAuthorityCutProviderIntegrationTests :
             StringOrderKeyV2Codec.Encode(binding.MappingProcessorId.Value);
         command.Parameters.Add(
             SqlServerUInt64.CreateParameter("@RawConsumedThrough", rawConsumedThrough));
-        command.Parameters.Add(
-            SqlServerUInt64.CreateNullableParameter("@MappedHighWater", mappedHighWater));
+        command.Parameters.Add(CreateNullableUInt64Parameter(
+            "@MappedHighWater",
+            mappedHighWater));
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", revision));
         await command.ExecuteNonQueryAsync();
     }
@@ -376,6 +376,16 @@ public sealed class SqlServerCurrentStateAuthorityCutProviderIntegrationTests :
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", revision));
         await command.ExecuteNonQueryAsync();
     }
+
+    private static SqlParameter CreateNullableUInt64Parameter(
+        string name,
+        ulong? value) =>
+        new(name, SqlDbType.Decimal)
+        {
+            Precision = 20,
+            Scale = 0,
+            Value = value.HasValue ? checked((decimal)value.Value) : DBNull.Value,
+        };
 
     private static void AddStreamParameters(
         SqlCommand command,
