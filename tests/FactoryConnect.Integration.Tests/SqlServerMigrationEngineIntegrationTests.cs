@@ -88,6 +88,47 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         await AssertCurrentStateAsync(connection);
     }
 
+    [Theory]
+    [InlineData("MachineStateChangeHistory")]
+    [InlineData("MachineActivityPeriodHistory")]
+    public async Task Migration009RejectsPreCorrectionDurableHistoryAndRollsBackAtomically(string historyTable)
+    {
+        await using var database = await IsolatedMigrationDatabase.CreateAsync();
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        var catalog = SqlMigrationCatalog.Load();
+        await CreateExactPrefixAsync(connection, catalog, prefixLength: 8);
+        await SeedPreCorrectionDurableHistoryAsync(connection, historyTable);
+        var engine = CreateEngine();
+
+        var failure = await Assert.ThrowsAsync<MigrationExecutionException>(() =>
+            engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None));
+
+        Assert.Equal(9, failure.MigrationId);
+        Assert.Equal("CorrectCurrentStateDurableOutputIdentity", failure.MigrationName);
+        var sqlFailure = Assert.IsType<SqlException>(failure.InnerException);
+        Assert.Equal(51009, sqlFailure.Number);
+
+        Assert.False(await ColumnExistsAsync(connection, "dbo.MachineStateChangeHistory", "InstanceId"));
+        Assert.False(await ColumnExistsAsync(connection, "dbo.MachineStateChangeHistory", "Sequence"));
+        Assert.False(await ColumnExistsAsync(connection, "dbo.MachineActivityPeriodHistory", "InstanceId"));
+        Assert.False(await ColumnExistsAsync(connection, "dbo.MachineActivityPeriodHistory", "Sequence"));
+
+        await using var transaction = connection.BeginTransaction();
+        var historyStore = new SqlServerMigrationHistoryStore(new FixedUtcClock());
+        var history = await historyStore.ReadAsync(connection, transaction, CancellationToken.None);
+        Assert.Equal(8, SqlMigrationHistoryPrefixValidator.ValidateExactPrefix(history, catalog));
+
+        var schemaReader = new SqlServerSchemaMetadataReader();
+        var schema = await schemaReader.ReadFactoryConnectOwnedSchemaInTransactionAsync(
+            connection,
+            transaction,
+            CancellationToken.None);
+        var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Post008, schema);
+        Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
+        await transaction.RollbackAsync();
+    }
+
     [Fact]
     public async Task CompletedDatabaseSecondInvocationIsNoOp()
     {
@@ -233,6 +274,58 @@ public sealed class SqlServerMigrationEngineIntegrationTests
         }
 
         await transaction.CommitAsync();
+    }
+
+    private static async Task SeedPreCorrectionDurableHistoryAsync(
+        SqlConnection connection,
+        string historyTable)
+    {
+        var historyInsert = historyTable switch
+        {
+            "MachineStateChangeHistory" => """
+                INSERT INTO dbo.MachineStateChangeHistory
+                    (MachineId, StreamKeyBinary, StateProcessorIdOrderKey, ProjectionRevision, OutputOrdinal, Position, PreviousState, CurrentState, OccurredAt)
+                VALUES
+                    (@MachineId, 0x01, 0x01, 0, 0, 1, 0, 1, '2026-09-04T00:00:00+00:00');
+                """,
+            "MachineActivityPeriodHistory" => """
+                INSERT INTO dbo.MachineActivityPeriodHistory
+                    (MachineId, StreamKeyBinary, StateProcessorIdOrderKey, ProjectionRevision, OutputOrdinal, Position, MachineState, StartedAt, EndedAt)
+                VALUES
+                    (@MachineId, 0x01, 0x01, 0, 0, 1, 1, '2026-09-04T00:00:00+00:00', '2026-09-04T00:01:00+00:00');
+                """,
+            _ => throw new InvalidOperationException($"Unsupported durable history table '{historyTable}'.")
+        };
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DECLARE @MachineId uniqueidentifier = NEWID();
+
+            INSERT INTO dbo.ObservationStreamCheckpoint
+                (MachineId, StreamKeyBinary, StreamKey, InstanceId, NextSequence)
+            VALUES
+                (@MachineId, 0x01, N'migration-009-proof', 1, 2);
+
+            INSERT INTO dbo.MachineStateActivityAuthority
+                (MachineId, StreamKeyBinary, StateProcessorId, StateProcessorIdOrderKey, Position, MachineState, ActiveState, ActiveStartedAt, LastConsumedInstanceId, ContinuityPolicyIdentity, ContinuityPolicyVersion, ProjectionRevision)
+            VALUES
+                (@MachineId, 0x01, N'migration-009-proof', 0x01, 1, 1, NULL, NULL, 1, N'preserve', N'1', 0);
+
+            """ + historyInsert;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<bool> ColumnExistsAsync(
+        SqlConnection connection,
+        string objectName,
+        string columnName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COL_LENGTH(@ObjectName, @ColumnName);";
+        command.Parameters.AddWithValue("@ObjectName", objectName);
+        command.Parameters.AddWithValue("@ColumnName", columnName);
+        var result = await command.ExecuteScalarAsync();
+        return result is not null && result != DBNull.Value;
     }
 
     private static async Task CorruptFirstHistoryRowAsync(SqlConnection connection, string corruption)
