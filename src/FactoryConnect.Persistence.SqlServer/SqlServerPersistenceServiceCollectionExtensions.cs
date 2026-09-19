@@ -25,14 +25,23 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                 PersistenceProviderCapabilities.Core |
                 PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
                 PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster,
+                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
+                PersistenceProviderCapabilities.CurrentStateAuthorityReading,
                 _ =>
                 {
                     var snapshot = configurationSnapshot.Value;
                     var connectionString = snapshot.ConnectionString;
+                    var observationStore =
+                        new SqlServerObservationIngestionStore(connectionString);
+                    var mappingStore =
+                        new SqlServerMappingCoverageAuthorityStore(connectionString);
+                    var stateActivityStore =
+                        new SqlServerMachineStateActivityAuthorityStore(connectionString);
+                    var authorityCutProvider =
+                        new SqlServerCurrentStateAuthorityCutProvider(connectionString);
 
                     return new PersistenceProviderServices(
-                        new SqlServerObservationIngestionStore(connectionString),
+                        observationStore,
                         new SqlServerProductionContextProcessingStore(connectionString),
                         new SqlServerMetricInputStore(connectionString),
                         new SqlServerMetricAggregationStore(connectionString),
@@ -41,7 +50,10 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         operationalMetricReportingQueryProvider:
                             new SqlServerOperationalMetricReportingQueryProvider(connectionString),
                         machineShiftOccurrenceRosterStore:
-                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString));
+                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString),
+                        currentStateAuthorityCutProvider: authorityCutProvider,
+                        mappingCoverageAuthorityStore: mappingStore,
+                        machineStateActivityAuthorityStore: stateActivityStore);
                 },
                 _ =>
                 {
