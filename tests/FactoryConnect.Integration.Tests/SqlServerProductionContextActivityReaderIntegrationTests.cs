@@ -113,7 +113,7 @@ public sealed class SqlServerProductionContextActivityReaderIntegrationTests :
         var id = await CreateIdentityAsync();
         var store = new SqlServerMachineStateActivityAuthorityStore(_fixture.ConnectionString);
         await PublishAsync(store, id, 7, MachineState.Running, 401, null, null);
-        IMachineStateActivityCursorReader cursor = new JointMachineStateActivityCursorReader(store);
+        var cursor = new JointMachineStateActivityCursorReader(store);
 
         var position = await cursor.ReadAsync(id.ProcessorId, id.StreamId);
 
