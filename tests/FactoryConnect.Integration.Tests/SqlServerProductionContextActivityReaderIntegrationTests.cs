@@ -56,18 +56,48 @@ public sealed class SqlServerProductionContextActivityReaderIntegrationTests :
     }
 
     [Fact]
-    public async Task IdenticalPositionsUseRevisionAndOutputOrdinalTieBreakers()
+    public async Task DuplicatePositionsAreRejectedAsCorruption()
     {
         var id = await CreateIdentityAsync();
         await InsertAuthorityAsync(id);
-        await InsertPeriodAsync(id, 5, 2, 1, 201, 21, MachineState.Fault);
-        await InsertPeriodAsync(id, 5, 1, 1, 202, 12, MachineState.Idle);
         await InsertPeriodAsync(id, 5, 1, 0, 203, 11, MachineState.Running);
+        await InsertPeriodAsync(id, 5, 1, 1, 202, 12, MachineState.Idle);
 
-        var result = await CreateReader(id.ProcessorId)
-            .ReadAsync(id.StreamId, null, 10, CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateReader(id.ProcessorId).ReadAsync(
+                id.StreamId, null, 10, CancellationToken.None));
 
-        Assert.Equal([203UL, 202UL, 201UL], result.Select(item => item.InstanceId));
+        Assert.Contains("strictly increasing", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DuplicatePositionBeyondBatchBoundaryIsRejectedAsCorruption()
+    {
+        var id = await CreateIdentityAsync();
+        await InsertAuthorityAsync(id);
+        await InsertPeriodAsync(id, 5, 1, 0, 203, 11, MachineState.Running);
+        await InsertPeriodAsync(id, 5, 1, 1, 202, 12, MachineState.Idle);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateReader(id.ProcessorId).ReadAsync(
+                id.StreamId, null, 1, CancellationToken.None));
+
+        Assert.Contains("strictly increasing", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CorruptProcessorIdentityIsRejected()
+    {
+        var id = await CreateIdentityAsync();
+        await InsertAuthorityAsync(id);
+        await InsertPeriodAsync(id, 5, 1, 0, 204, 13, MachineState.Running);
+        await CorruptAuthorityProcessorIdentityAsync(id);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateReader(id.ProcessorId).ReadAsync(
+                id.StreamId, null, 10, CancellationToken.None));
+
+        Assert.Contains("processor identity", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -211,6 +241,25 @@ public sealed class SqlServerProductionContextActivityReaderIntegrationTests :
             """;
         AddIdentityParameters(command, id);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task CorruptAuthorityProcessorIdentityAsync(
+        (ObservationProcessorId ProcessorId, ObservationStreamId StreamId) id)
+    {
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE dbo.MachineStateActivityAuthority
+            SET StateProcessorId = @CorruptProcessorId
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND StateProcessorIdOrderKey = @ProcessorKey;
+            """;
+        AddIdentityParameters(command, id);
+        command.Parameters.Add("@CorruptProcessorId", SqlDbType.NVarChar, 256).Value =
+            $"corrupt-{Guid.NewGuid():N}";
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private async Task InsertPeriodAsync(
