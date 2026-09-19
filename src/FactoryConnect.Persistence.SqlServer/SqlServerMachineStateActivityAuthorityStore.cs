@@ -5,6 +5,16 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
+internal enum SqlServerMachineStateActivityPublicationStage
+{
+    AuthorityLocked,
+    AuthorityMutated,
+    SignalsDeleted,
+    SignalsInserted,
+    StateHistoryInserted,
+    ActivityHistoryInserted,
+}
+
 /// <summary>
 /// SQL Server implementation of the FC-031 joint state/activity authority.
 /// Projection, current signals, derived output batches, and evaluation authority
@@ -14,11 +24,20 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
     IMachineStateActivityAuthorityStore
 {
     private readonly string _connectionString;
+    private readonly Func<SqlServerMachineStateActivityPublicationStage, int, CancellationToken, Task>? _testHook;
 
     internal SqlServerMachineStateActivityAuthorityStore(string connectionString)
+        : this(connectionString, null)
+    {
+    }
+
+    internal SqlServerMachineStateActivityAuthorityStore(
+        string connectionString,
+        Func<SqlServerMachineStateActivityPublicationStage, int, CancellationToken, Task>? testHook)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         _connectionString = connectionString;
+        _testHook = testHook;
     }
 
     public async ValueTask<MachineStateActivityAuthoritySnapshot?> ReadAsync(
@@ -76,6 +95,12 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
                 var current = await ReadCurrentAsync(
                     connection, transaction, processorId, streamId,
                     streamKey, processorKey, true, cancellationToken).ConfigureAwait(false);
+                var sessionId = await ReadSessionIdAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false);
+                await VisitAsync(
+                    SqlServerMachineStateActivityPublicationStage.AuthorityLocked,
+                    sessionId,
+                    cancellationToken).ConfigureAwait(false);
 
                 if (current is not null &&
                     await IsExactReplayAsync(
@@ -121,15 +146,30 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
                         cancellationToken).ConfigureAwait(false);
                 }
 
+                await VisitAsync(
+                    SqlServerMachineStateActivityPublicationStage.AuthorityMutated,
+                    sessionId,
+                    cancellationToken).ConfigureAwait(false);
+
                 await ReplaceSignalsAsync(
                     connection, transaction, publication.Projection,
-                    streamKey, processorKey, cancellationToken).ConfigureAwait(false);
+                    streamKey, processorKey,
+                    (stage, token) => VisitAsync(stage, sessionId, token),
+                    cancellationToken).ConfigureAwait(false);
                 await InsertStateChangesAsync(
                     connection, transaction, publication.StateChanges, revision,
                     streamKey, processorKey, cancellationToken).ConfigureAwait(false);
+                await VisitAsync(
+                    SqlServerMachineStateActivityPublicationStage.StateHistoryInserted,
+                    sessionId,
+                    cancellationToken).ConfigureAwait(false);
                 await InsertActivityPeriodsAsync(
                     connection, transaction, publication.ActivityPeriods, revision,
                     streamKey, processorKey, cancellationToken).ConfigureAwait(false);
+                await VisitAsync(
+                    SqlServerMachineStateActivityPublicationStage.ActivityHistoryInserted,
+                    sessionId,
+                    cancellationToken).ConfigureAwait(false);
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -495,7 +535,9 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
     private static async Task ReplaceSignalsAsync(
         SqlConnection connection, SqlTransaction transaction,
         MachineStateActivityProjection projection,
-        byte[] streamKey, byte[] processorKey, CancellationToken cancellationToken)
+        byte[] streamKey, byte[] processorKey,
+        Func<SqlServerMachineStateActivityPublicationStage, CancellationToken, Task> visitAsync,
+        CancellationToken cancellationToken)
     {
         await using (var delete = connection.CreateCommand())
         {
@@ -508,6 +550,9 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
             AddChildIdentityParameters(delete, projection.StreamId, streamKey, processorKey);
             await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+        await visitAsync(
+            SqlServerMachineStateActivityPublicationStage.SignalsDeleted,
+            cancellationToken).ConfigureAwait(false);
 
         for (var i = 0; i < projection.Signals.Count; i++)
         {
@@ -535,6 +580,28 @@ internal sealed class SqlServerMachineStateActivityAuthorityStore :
             command.Parameters.Add("@Timestamp", SqlDbType.DateTimeOffset).Value = signal.Timestamp;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+        await visitAsync(
+            SqlServerMachineStateActivityPublicationStage.SignalsInserted,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task VisitAsync(
+        SqlServerMachineStateActivityPublicationStage stage,
+        int sessionId,
+        CancellationToken cancellationToken) =>
+        _testHook?.Invoke(stage, sessionId, cancellationToken) ?? Task.CompletedTask;
+
+    private static async Task<int> ReadSessionIdAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT @@SPID;";
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture);
     }
 
     private static void AddSignalValueParameters(SqlCommand command, MachineSignalValue signal)
