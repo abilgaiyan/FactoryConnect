@@ -17,8 +17,11 @@ internal static class SqlRepositorySchemaDescriptors
     public static SqlSchemaDescriptor Post007 { get; } =
         SqlRepositoryPost007SchemaDescriptor.Create(Post006);
 
-    public static SqlSchemaDescriptor Current { get; } =
+    public static SqlSchemaDescriptor Post008 { get; } =
         SqlRepositoryPost008SchemaDescriptor.Create(Post007);
+
+    public static SqlSchemaDescriptor Current { get; } =
+        SqlRepositoryPost009SchemaDescriptor.Create(Post008);
 
     private static SqlSchemaDescriptor CreatePost004() => new(
     [
