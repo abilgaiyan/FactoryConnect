@@ -150,21 +150,43 @@ internal sealed class SqlServerCurrentStateAuthorityCutProvider :
             throw Corruption("Persisted mapping coverage authority processor identity is inconsistent.");
         }
 
-        var rawConsumed = new ObservationPosition(SqlServerUInt64.Materialize(reader.GetDecimal(2)));
-        var mappedHighWater = reader.IsDBNull(3)
-            ? null
-            : new ObservationPosition(SqlServerUInt64.Materialize(reader.GetDecimal(3)));
-        if (mappedHighWater is not null && mappedHighWater > rawConsumed)
+        MappingCoverageAuthority result;
+        try
         {
-            throw Corruption("Persisted mapping coverage authority mapped high-water exceeds raw consumed coverage.");
-        }
+            var rawConsumed = new ObservationPosition(
+                SqlServerUInt64.Materialize(reader.GetDecimal(2)));
+            var mappedHighWater = reader.IsDBNull(3)
+                ? null
+                : new ObservationPosition(
+                    SqlServerUInt64.Materialize(reader.GetDecimal(3)));
 
-        var result = new MappingCoverageAuthority(
-            binding.MappingProcessorId,
-            binding.ObservationStreamId,
-            rawConsumed,
-            mappedHighWater,
-            new MappingAuthorityRevision(SqlServerUInt64.Materialize(reader.GetDecimal(4))));
+            if (mappedHighWater is not null && mappedHighWater > rawConsumed)
+            {
+                throw Corruption(
+                    "Persisted mapping coverage authority mapped high-water exceeds raw consumed coverage.");
+            }
+
+            result = new MappingCoverageAuthority(
+                binding.MappingProcessorId,
+                binding.ObservationStreamId,
+                rawConsumed,
+                mappedHighWater,
+                new MappingAuthorityRevision(
+                    SqlServerUInt64.Materialize(reader.GetDecimal(4))));
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+            OverflowException or
+            InvalidCastException)
+        {
+            throw Corruption(
+                "Persisted mapping coverage authority is invalid.",
+                exception);
+        }
 
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
