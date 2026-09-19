@@ -97,21 +97,48 @@ public sealed class CurrentStatePersistenceCapabilityTests
     }
 
     [Fact]
-    public void SqlServerWithoutCurrentStateCapabilityFailsBeforeProviderConstruction()
+    public void SqlServerExplicitlyDeclaresCurrentStateCapability()
     {
-        var configuration = BuildConfiguration("SqlServer");
+        var configuration = BuildSqlServerConfiguration();
         ServiceCollection services = new();
         services.AddSqlServerPersistenceProvider(configuration);
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            services.AddFactoryConnectPersistence(
-                configuration,
-                PersistenceProviderCapabilities.CurrentStateAuthorityReading));
+        var registration = Assert.Single(
+            services
+                .Where(descriptor => descriptor.ServiceType ==
+                    typeof(IPersistenceProviderRegistration))
+                .Select(descriptor =>
+                    Assert.IsAssignableFrom<IPersistenceProviderRegistration>(
+                        descriptor.ImplementationInstance)));
 
-        Assert.Contains(
-            nameof(PersistenceProviderCapabilities.CurrentStateAuthorityReading),
-            exception.Message,
-            StringComparison.Ordinal);
+        Assert.NotEqual(
+            PersistenceProviderCapabilities.None,
+            registration.Capabilities &
+                PersistenceProviderCapabilities.CurrentStateAuthorityReading);
+    }
+
+    [Fact]
+    public void SqlServerRequestedCurrentStateCapabilityPublishesProviderOwnedGraph()
+    {
+        var configuration = BuildSqlServerConfiguration();
+        ServiceCollection services = new();
+        services.AddSqlServerPersistenceProvider(configuration);
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading);
+
+        using var provider = services.BuildServiceProvider();
+
+        var providerServices = provider.GetRequiredService<PersistenceProviderServices>();
+        Assert.Same(
+            providerServices.CurrentStateAuthorityCutProvider,
+            provider.GetRequiredService<ICurrentStateAuthorityCutProvider>());
+        Assert.Same(
+            providerServices.MappingCoverageAuthorityStore,
+            provider.GetRequiredService<IMappingCoverageAuthorityStore>());
+        Assert.Same(
+            providerServices.MachineStateActivityAuthorityStore,
+            provider.GetRequiredService<IMachineStateActivityAuthorityStore>());
     }
 
     [Fact]
@@ -190,6 +217,17 @@ public sealed class CurrentStatePersistenceCapabilityTests
 
         Assert.Null(provider.GetService<ICurrentStateAuthorityCutProvider>());
     }
+
+    private static IConfiguration BuildSqlServerConfiguration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Persistence:Provider"] = "SqlServer",
+                    ["ConnectionString"] =
+                        "Server=(local);Database=FactoryConnect;Integrated Security=true;TrustServerCertificate=true",
+                })
+            .Build();
 
     private static IConfiguration BuildConfiguration(string provider) =>
         new ConfigurationBuilder()
