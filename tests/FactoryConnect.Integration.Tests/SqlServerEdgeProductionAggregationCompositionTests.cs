@@ -3,6 +3,7 @@ using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
+using FactoryConnect.Persistence;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,6 +54,12 @@ public sealed class SqlServerEdgeProductionAggregationCompositionTests :
             provider.GetRequiredService<IMetricInputReader>());
         Assert.IsType<SqlServerMetricAggregationStore>(
             provider.GetRequiredService<IMetricAggregationStore>());
+
+        var providerServices =
+            provider.GetRequiredService<PersistenceProviderServices>();
+        Assert.Null(providerServices.CurrentStateAuthorityCutProvider);
+        Assert.Null(providerServices.MappingCoverageAuthorityStore);
+        Assert.Null(providerServices.MachineStateActivityAuthorityStore);
 
         var authorityStore = provider.GetRequiredService<
             InMemoryMachineStateActivityAuthorityStore>();
