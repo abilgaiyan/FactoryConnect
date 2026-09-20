@@ -225,6 +225,77 @@ public sealed class SqlServerMetricAggregationStoreIntegrationTests :
         Assert.Null(restored);
     }
 
+    [Fact]
+    public async Task RevisionReaderEnumeratesExactCommittedRevisionsIncludingEmptyMembership()
+    {
+        var machineId = new MachineId(Guid.NewGuid());
+        var inputStore = new SqlServerMetricInputStore(_fixture.ConnectionString);
+        var store = new SqlServerMetricAggregationStore(_fixture.ConnectionString);
+        var first = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-revision-1", 10m, minute: 40),
+            CancellationToken.None);
+        var second = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-revision-2", 20m, minute: 41),
+            CancellationToken.None);
+        var processorId = new MetricAggregationProcessorId($"sql-revision-{Guid.NewGuid():N}");
+        var firstRevision = new MetricAggregationCheckpoint(
+            processorId,
+            first.StreamId,
+            first.Position);
+        var secondRevision = new MetricAggregationCheckpoint(
+            processorId,
+            first.StreamId,
+            second.Position);
+
+        await store.CommitAsync(
+            new MetricAggregationCommit(
+                processorId,
+                expectedCheckpoint: null,
+                firstRevision,
+                []),
+            CancellationToken.None);
+        await store.CommitAsync(
+            new MetricAggregationCommit(
+                processorId,
+                firstRevision,
+                secondRevision,
+                [second]),
+            CancellationToken.None);
+
+        var firstChange = await store.ReadNextAsync(
+            processorId,
+            first.StreamId,
+            afterRevision: null,
+            CancellationToken.None);
+        var secondChange = await store.ReadNextAsync(
+            processorId,
+            first.StreamId,
+            firstRevision,
+            CancellationToken.None);
+        var exactFirst = await store.ReadExactAsync(firstRevision, CancellationToken.None);
+        var exactSecond = await store.ReadExactAsync(secondRevision, CancellationToken.None);
+
+        Assert.NotNull(firstChange);
+        Assert.Equal(firstRevision, firstChange.Revision);
+        Assert.Empty(firstChange.ShiftOccurrenceIds);
+        Assert.Empty(firstChange.ProductionDayIds);
+        Assert.Equal(firstChange, exactFirst);
+
+        Assert.NotNull(secondChange);
+        Assert.Equal(secondRevision, secondChange.Revision);
+        Assert.Single(secondChange.ShiftOccurrenceIds);
+        Assert.Equal(second.ShiftOccurrenceId, secondChange.ShiftOccurrenceIds[0]);
+        Assert.Single(secondChange.ProductionDayIds);
+        Assert.Equal(second.ProductionDayId, secondChange.ProductionDayIds[0]);
+        Assert.Equal(secondChange, exactSecond);
+
+        Assert.Null(await store.ReadNextAsync(
+            processorId,
+            first.StreamId,
+            secondRevision,
+            CancellationToken.None));
+    }
+
     private static DurableMetricInputAppend CreateAppend(
         MachineId machineId,
         string factId,
