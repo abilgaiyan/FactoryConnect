@@ -21,6 +21,9 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "MetricAggregationCheckpoint",
         "MetricAggregationContribution",
         "MetricAggregationProcessor",
+        "MetricAggregationRevision",
+        "MetricAggregationRevisionProductionDay",
+        "MetricAggregationRevisionShiftOccurrence",
         "MetricInputFact",
         "MetricInputStream",
         "ObservationProcessingCheckpoint",
@@ -42,7 +45,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(27, ownedTables.Length);
+        Assert.Equal(30, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
