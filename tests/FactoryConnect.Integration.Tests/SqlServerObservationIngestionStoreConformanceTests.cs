@@ -58,6 +58,22 @@ public sealed class SqlServerObservationIngestionStoreConformanceTests :
             await store.ReadCheckpointAsync(streamId));
         Assert.Equal(1, ReadObservationCount(store, streamId));
 
+        var durableReader = Assert.IsAssignableFrom<IDurableObservationReader>(store);
+        var readBatch = await durableReader.ReadAsync(
+            new ObservationReadRequest(
+                streamId,
+                afterPosition: null,
+                batchSize: 10));
+        var durable = Assert.Single(readBatch.Observations);
+
+        Assert.False(readBatch.HasMore);
+        Assert.Equal(new ObservationPosition(1), durable.Position);
+        Assert.Equal(streamId, durable.StreamId);
+        Assert.Equal(7UL, durable.InstanceId);
+        Assert.Equal(1UL, durable.Sequence);
+        Assert.Equal(SignalType.Digital, durable.Observation.Type);
+        Assert.Equal(value, Assert.IsType<bool>(durable.Observation.Value));
+
         await using var connection = new SqlConnection(_fixture.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
