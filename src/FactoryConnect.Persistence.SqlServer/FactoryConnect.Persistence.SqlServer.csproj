@@ -26,6 +26,8 @@
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.008_CurrentStateAuthorityPersistence.sql" />
     <EmbeddedResource Include="Sql\009_CorrectCurrentStateDurableOutputIdentity.sql"
                       LogicalName="FactoryConnect.Persistence.SqlServer.Sql.009_CorrectCurrentStateDurableOutputIdentity.sql" />
+    <EmbeddedResource Include="Sql\010_DurableObservationProcessingCheckpoint.sql"
+                      LogicalName="FactoryConnect.Persistence.SqlServer.Sql.010_DurableObservationProcessingCheckpoint.sql" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
