@@ -20,6 +20,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.008_CurrentStateAuthorityPersistence.sql";
     private const string CorrectCurrentStateDurableOutputIdentitySchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.009_CorrectCurrentStateDurableOutputIdentity.sql";
+    private const string DurableObservationProcessingCheckpointSchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.010_DurableObservationProcessingCheckpoint.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -47,6 +49,9 @@ internal static class SqlServerSchema
 
     public static string ReadCorrectCurrentStateDurableOutputIdentitySchema() =>
         ReadSchema(CorrectCurrentStateDurableOutputIdentitySchemaResourceName);
+
+    public static string ReadDurableObservationProcessingCheckpointSchema() =>
+        ReadSchema(DurableObservationProcessingCheckpointSchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
