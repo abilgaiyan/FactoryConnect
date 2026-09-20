@@ -74,6 +74,7 @@ public sealed class InMemoryAuthorityInstanceGraphConformanceTests
             productionStore,
             new InMemoryMetricAggregationStore());
 
+        Assert.Null(providerServices.CurrentStateAuthorityCutProvider);
         Assert.Null(providerServices.MappingCoverageAuthorityStore);
         Assert.Null(providerServices.MachineStateActivityAuthorityStore);
         Assert.Null(providerServices.CurrentStateAuthorityCutProvider);
@@ -240,7 +241,7 @@ public sealed class InMemoryAuthorityInstanceGraphConformanceTests
     }
 
     [Fact]
-    public void SqlServerProviderKeepsLegacyCapabilitiesAndNullInternalAuthorityRoles()
+    public void SqlServerProviderAdvertisesCurrentStateButKeepsAuthorityRolesInactiveWhenUnrequested()
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(
@@ -262,12 +263,10 @@ public sealed class InMemoryAuthorityInstanceGraphConformanceTests
             PersistenceProviderCapabilities.Core |
             PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
             PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster;
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading;
 
         Assert.Equal(expectedCapabilities, registration.Capabilities);
-        Assert.Equal(
-            PersistenceProviderCapabilities.None,
-            registration.Capabilities & PersistenceProviderCapabilities.CurrentStateAuthorityReading);
 
         services.AddFactoryConnectPersistence(configuration);
         using var provider = services.BuildServiceProvider();
