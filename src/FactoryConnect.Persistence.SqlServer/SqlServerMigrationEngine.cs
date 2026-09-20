@@ -259,8 +259,13 @@ internal sealed class SqlServerMigrationEngine
             liveSchema);
         if (!comparison.IsExactMatch)
         {
+            var details = string.Join(
+                "; ",
+                comparison.Differences.Select(static difference =>
+                    $"{difference.Table.SchemaName}.{difference.Table.ObjectName}:{difference.Kind}:{difference.ArtifactName}:{difference.Detail}"));
+
             throw new FinalSchemaValidationException(
-                "Final FactoryConnect-owned SQL schema does not exactly match the current repository descriptor.");
+                $"Final FactoryConnect-owned SQL schema does not exactly match the current repository descriptor. {details}");
         }
     }
 
