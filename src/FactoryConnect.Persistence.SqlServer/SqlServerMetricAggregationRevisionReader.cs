@@ -47,7 +47,7 @@ internal sealed partial class SqlServerMetricAggregationStore
         after.Scale = 0;
         after.Value = afterRevision is null
             ? DBNull.Value
-            : SqlServerUInt64.ToDecimal(afterRevision.Position.Value);
+            : checked((decimal)afterRevision.Position.Value);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         if (result is null || result is DBNull)
