@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
+internal sealed partial class SqlServerMetricAggregationStore : IMetricAggregationStore
 {
     private readonly string _connectionString;
 
@@ -172,6 +172,14 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
                     staged.Input.Position,
                     cancellationToken);
             }
+
+            await InsertRevisionAsync(
+                connection,
+                sqlTransaction,
+                processorRowId,
+                commit.ProposedCheckpoint.Position,
+                stagedInputs.Select(static item => item.Input),
+                cancellationToken);
 
             await WriteCheckpointAsync(
                 connection,
