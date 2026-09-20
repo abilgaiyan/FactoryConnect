@@ -66,7 +66,7 @@ internal static class SqlRepositoryPost011SchemaDescriptor
                 [
                     Check(
                         "CK_MetricAggregationRevisionShiftOccurrence_Identity",
-                        "(datalength([ShiftOccurrenceIdentityBinary])>(0) AND datalength([SiteId])>(0) AND datalength([SiteOrderKey])>=(1) AND datalength([SiteOrderKey])<=(769) AND datalength([ShiftScheduleAssignmentId])>(0) AND datalength([ShiftScheduleAssignmentOrderKey])>=(1) AND datalength([ShiftScheduleAssignmentOrderKey])<=(769) AND datalength([ShiftId])>(0) AND datalength([ShiftOrderKey])>=(1) AND datalength([ShiftOrderKey])<=(769))"),
+                        "(datalength([ShiftOccurrenceIdentityBinary])>(0) AND datalength([SiteId])>(0) AND (datalength([SiteOrderKey])>=(1) AND datalength([SiteOrderKey])<=(769)) AND datalength([ShiftScheduleAssignmentId])>(0) AND (datalength([ShiftScheduleAssignmentOrderKey])>=(1) AND datalength([ShiftScheduleAssignmentOrderKey])<=(769)) AND datalength([ShiftId])>(0) AND (datalength([ShiftOrderKey])>=(1) AND datalength([ShiftOrderKey])<=(769)))"),
                     Check(
                         "CK_MetricAggregationRevisionShiftOccurrence_Time",
                         "(datepart(tzoffset,[ShiftStartsAtUtc])=(0) AND datepart(tzoffset,[ShiftEndsAtUtc])=(0) AND [ShiftEndsAtUtc]>[ShiftStartsAtUtc])")
@@ -95,7 +95,7 @@ internal static class SqlRepositoryPost011SchemaDescriptor
                 [
                     Check(
                         "CK_MetricAggregationRevisionProductionDay_Site",
-                        "(datalength([SiteId])>(0) AND datalength([SiteOrderKey])>=(1) AND datalength([SiteOrderKey])<=(769))")
+                        "(datalength([SiteId])>(0) AND (datalength([SiteOrderKey])>=(1) AND datalength([SiteOrderKey])<=(769)))")
                 ])
         ]);
     }
