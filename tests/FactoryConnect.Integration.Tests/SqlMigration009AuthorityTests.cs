@@ -21,14 +21,14 @@ public sealed class SqlMigration009AuthorityTests
             migration.ResourceName);
         Assert.Equal(SqlMigrationTransactionPolicy.EngineOwned, migration.TransactionPolicy);
         Assert.Equal(Migration009Checksum, migration.Sha256Checksum);
-        Assert.Equal(Enumerable.Range(1, 9), catalog.Migrations.Select(static value => value.MigrationId));
+        Assert.Equal(Enumerable.Range(1, 10), catalog.Migrations.Select(static value => value.MigrationId));
     }
 
     [Fact]
     public void Post009ChangesOnlyDurableHistoryPayloadIdentity()
     {
         var post008 = SqlRepositorySchemaDescriptors.Post008;
-        var post009 = SqlRepositorySchemaDescriptors.Current;
+        var post009 = SqlRepositorySchemaDescriptors.Post009;
 
         Assert.Equal(post008.Tables.Length, post009.Tables.Length);
 
