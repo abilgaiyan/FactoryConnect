@@ -144,7 +144,7 @@ public sealed class CurrentStatePersistenceCapabilityTests
     [Fact]
     public void SqlServerWithoutCurrentStateRequirementRemainsCompatible()
     {
-        var configuration = BuildConfiguration("SqlServer");
+        var configuration = BuildSqlServerConfiguration();
         ServiceCollection services = new();
         services.AddSqlServerPersistenceProvider(configuration);
         services.AddFactoryConnectPersistence(configuration);
