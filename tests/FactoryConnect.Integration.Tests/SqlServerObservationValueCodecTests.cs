@@ -6,6 +6,87 @@ namespace FactoryConnect.Integration.Tests;
 
 public sealed class SqlServerObservationValueCodecTests
 {
+    [Theory]
+    [InlineData(false, "false")]
+    [InlineData(true, "true")]
+    public void DigitalBooleanSerializesCanonically(bool value, string expected)
+    {
+        Assert.Equal(
+            expected,
+            SqlServerObservationValueCodec.Serialize(
+                SignalType.Digital,
+                value));
+    }
+
+    [Theory]
+    [InlineData("false", false)]
+    [InlineData("true", true)]
+    public void DigitalBooleanRoundTripsExactly(string persisted, bool expected)
+    {
+        var restored = SqlServerObservationValueCodec.Deserialize(
+            SignalType.Digital,
+            persisted);
+
+        Assert.Equal(expected, Assert.IsType<bool>(restored));
+    }
+
+    [Fact]
+    public void DigitalNullRoundTrips()
+    {
+        var persisted = SqlServerObservationValueCodec.Serialize(
+            SignalType.Digital,
+            null);
+        var restored = SqlServerObservationValueCodec.Deserialize(
+            SignalType.Digital,
+            persisted);
+
+        Assert.Null(persisted);
+        Assert.Null(restored);
+    }
+
+    [Theory]
+    [InlineData("TRUE")]
+    [InlineData("False")]
+    [InlineData("1")]
+    [InlineData("0")]
+    [InlineData("")]
+    public void InvalidPersistedDigitalTextIsRejected(string persisted)
+    {
+        Assert.Throws<InvalidDataException>(
+            () => SqlServerObservationValueCodec.Deserialize(
+                SignalType.Digital,
+                persisted));
+    }
+
+    [Fact]
+    public void DigitalRejectsNonBooleanClrValue()
+    {
+        Assert.Throws<InvalidOperationException>(
+            () => SqlServerObservationValueCodec.Serialize(
+                SignalType.Digital,
+                "true"));
+    }
+
+    [Fact]
+    public void DigitalEquivalenceUsesCanonicalOrdinalRepresentation()
+    {
+        Assert.True(
+            SqlServerObservationValueCodec.AreEquivalent(
+                SignalType.Digital,
+                true,
+                true));
+        Assert.True(
+            SqlServerObservationValueCodec.AreEquivalent(
+                SignalType.Digital,
+                false,
+                false));
+        Assert.False(
+            SqlServerObservationValueCodec.AreEquivalent(
+                SignalType.Digital,
+                true,
+                false));
+    }
+
     [Fact]
     public void NumericDecimalSerializesCanonically()
     {
@@ -106,7 +187,6 @@ public sealed class SqlServerObservationValueCodecTests
     }
 
     [Theory]
-    [InlineData(SignalType.Digital)]
     [InlineData(SignalType.Analog)]
     [InlineData(SignalType.Counter)]
     [InlineData(SignalType.WholeNumber)]
@@ -119,7 +199,6 @@ public sealed class SqlServerObservationValueCodecTests
     }
 
     [Theory]
-    [InlineData(SignalType.Digital)]
     [InlineData(SignalType.Analog)]
     [InlineData(SignalType.Counter)]
     [InlineData(SignalType.WholeNumber)]
