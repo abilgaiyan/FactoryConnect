@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-internal sealed partial class SqlServerMetricAggregationStore : IMetricAggregationStore, IMetricAggregationRevisionReader
+internal sealed partial class SqlServerMetricAggregationStore : IMetricAggregationStore, IMetricAggregationRevisionReader, IRevisionedOperationalMetricComponentSnapshotReader
 {
     private readonly string _connectionString;
 
