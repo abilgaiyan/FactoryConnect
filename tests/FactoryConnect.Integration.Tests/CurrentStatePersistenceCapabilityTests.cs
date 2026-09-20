@@ -151,6 +151,11 @@ public sealed class CurrentStatePersistenceCapabilityTests
 
         using var provider = services.BuildServiceProvider();
 
+        var providerServices =
+            provider.GetRequiredService<PersistenceProviderServices>();
+        Assert.Null(providerServices.CurrentStateAuthorityCutProvider);
+        Assert.Null(providerServices.MappingCoverageAuthorityStore);
+        Assert.Null(providerServices.MachineStateActivityAuthorityStore);
         Assert.Null(provider.GetService<ICurrentStateAuthorityCutProvider>());
     }
 
