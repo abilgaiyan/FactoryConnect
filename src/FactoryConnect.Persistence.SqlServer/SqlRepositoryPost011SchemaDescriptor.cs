@@ -144,7 +144,7 @@ internal static class SqlRepositoryPost011SchemaDescriptor
     private static SqlColumnDescriptor UInt64(string name) =>
         new(name, "decimal", null, 20, 0, false, null, null);
 
-    private static SqlColumnDescriptor DateTimeOffset(string name, int scale) =>
+    private static SqlColumnDescriptor DateTimeOffset(string name, byte scale) =>
         new(name, "datetimeoffset", null, null, scale, false, null, null);
 
     private static SqlPrimaryKeyDescriptor PrimaryKey(string name, params string[] columns) =>
