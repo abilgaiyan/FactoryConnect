@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class SqlServerMigration006ConcurrencyIntegrationTests
 {
-    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     private static readonly TimeSpan MigrationLockTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(15);
 
