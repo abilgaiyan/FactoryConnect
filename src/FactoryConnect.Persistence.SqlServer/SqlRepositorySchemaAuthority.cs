@@ -19,6 +19,7 @@ internal static class SqlRepositorySchemaAuthority
         Table("MetricAggregationProcessor"),
         Table("MetricInputFact"),
         Table("MetricInputStream"),
+        Table("ObservationProcessingCheckpoint"),
         Table("ObservationStreamCheckpoint"),
         Table("OperationalMetricProjection"),
         Table("OperationalMetricProjectionCheckpoint"),
