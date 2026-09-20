@@ -1,3 +1,4 @@
+using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,12 +34,19 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                     var connectionString = snapshot.ConnectionString;
                     var observationStore =
                         new SqlServerObservationIngestionStore(connectionString);
-                    var mappingStore =
-                        new SqlServerMappingCoverageAuthorityStore(connectionString);
-                    var stateActivityStore =
-                        new SqlServerMachineStateActivityAuthorityStore(connectionString);
-                    var authorityCutProvider =
-                        new SqlServerCurrentStateAuthorityCutProvider(connectionString);
+                    var currentStateRequested = services.Any(
+                        static descriptor =>
+                            descriptor.ServiceType ==
+                            typeof(ICurrentStateAuthorityCutProvider));
+                    var mappingStore = currentStateRequested
+                        ? new SqlServerMappingCoverageAuthorityStore(connectionString)
+                        : null;
+                    var stateActivityStore = currentStateRequested
+                        ? new SqlServerMachineStateActivityAuthorityStore(connectionString)
+                        : null;
+                    var authorityCutProvider = currentStateRequested
+                        ? new SqlServerCurrentStateAuthorityCutProvider(connectionString)
+                        : null;
 
                     return new PersistenceProviderServices(
                         observationStore,
