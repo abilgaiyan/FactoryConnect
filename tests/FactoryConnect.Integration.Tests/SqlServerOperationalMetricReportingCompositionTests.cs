@@ -31,7 +31,8 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
             PersistenceProviderCapabilities.Core |
             PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
             PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster;
+            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading;
 
         Assert.Equal(expected, registration.Capabilities);
         Assert.Equal(

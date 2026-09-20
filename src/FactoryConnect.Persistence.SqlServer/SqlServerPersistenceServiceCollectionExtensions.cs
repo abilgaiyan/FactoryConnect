@@ -1,3 +1,4 @@
+using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,14 +26,30 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                 PersistenceProviderCapabilities.Core |
                 PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
                 PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster,
+                PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
+                PersistenceProviderCapabilities.CurrentStateAuthorityReading,
                 _ =>
                 {
                     var snapshot = configurationSnapshot.Value;
                     var connectionString = snapshot.ConnectionString;
+                    var observationStore =
+                        new SqlServerObservationIngestionStore(connectionString);
+                    var currentStateRequested = services.Any(
+                        static descriptor =>
+                            descriptor.ServiceType ==
+                            typeof(ICurrentStateAuthorityCutProvider));
+                    var mappingStore = currentStateRequested
+                        ? new SqlServerMappingCoverageAuthorityStore(connectionString)
+                        : null;
+                    var stateActivityStore = currentStateRequested
+                        ? new SqlServerMachineStateActivityAuthorityStore(connectionString)
+                        : null;
+                    var authorityCutProvider = currentStateRequested
+                        ? new SqlServerCurrentStateAuthorityCutProvider(connectionString)
+                        : null;
 
                     return new PersistenceProviderServices(
-                        new SqlServerObservationIngestionStore(connectionString),
+                        observationStore,
                         new SqlServerProductionContextProcessingStore(connectionString),
                         new SqlServerMetricInputStore(connectionString),
                         new SqlServerMetricAggregationStore(connectionString),
@@ -41,7 +58,10 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         operationalMetricReportingQueryProvider:
                             new SqlServerOperationalMetricReportingQueryProvider(connectionString),
                         machineShiftOccurrenceRosterStore:
-                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString));
+                            new SqlServerMachineShiftOccurrenceRosterStore(connectionString),
+                        currentStateAuthorityCutProvider: authorityCutProvider,
+                        mappingCoverageAuthorityStore: mappingStore,
+                        machineStateActivityAuthorityStore: stateActivityStore);
                 },
                 _ =>
                 {
