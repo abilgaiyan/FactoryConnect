@@ -40,7 +40,7 @@ public sealed class SqlServerObservationProcessingCheckpointConcurrencyTests(
             processorId,
             streamId,
             new ObservationPosition(2));
-        var checkpoints = (IObservationProcessingCheckpointStore)store;
+        var checkpoints = store;
 
         var attempts = await Task.WhenAll(
             AttemptAsync(
@@ -50,10 +50,10 @@ public sealed class SqlServerObservationProcessingCheckpointConcurrencyTests(
                 () => checkpoints.CommitAsync(
                     new ObservationProcessingCommit(null, second)).AsTask()));
 
-        Assert.Single(attempts.Where(static result => result is null));
+        Assert.Single(attempts, static result => result is null);
         Assert.Single(
-            attempts.Where(static result =>
-                result is InvalidOperationException));
+            attempts,
+            static result => result is InvalidOperationException);
 
         var committed = await checkpoints.ReadCheckpointAsync(
             processorId,
