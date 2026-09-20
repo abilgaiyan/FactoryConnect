@@ -5,7 +5,9 @@ using Microsoft.Data.SqlClient;
 namespace FactoryConnect.Persistence.SqlServer;
 
 internal sealed class SqlServerObservationIngestionStore :
-    IObservationIngestionStore
+    IObservationIngestionStore,
+    IDurableObservationReader,
+    IObservationProcessingCheckpointStore
 {
     internal string ConnectionString { get; }
 
@@ -71,6 +73,199 @@ internal sealed class SqlServerObservationIngestionStore :
             streamId,
             streamKeyBinary,
             cancellationToken);
+    }
+
+    public async ValueTask<ObservationReadBatch> ReadAsync(
+        ObservationReadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var streamKeyBinary = OrdinalStringKeyCodec.Encode(request.StreamId.StreamKey);
+        var readLimit = request.BatchSize == int.MaxValue
+            ? int.MaxValue
+            : request.BatchSize + 1;
+
+        await using var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = request.AfterPosition is null
+            ? """
+                SELECT TOP (@ReadLimit)
+                    Position, InstanceId, Sequence, Source, Address,
+                    SignalType, ObservationValue, Quality, ObservedAt
+                FROM dbo.MachineObservation
+                WHERE MachineId = @MachineId
+                  AND StreamKeyBinary = @StreamKeyBinary
+                ORDER BY Position ASC;
+                """
+            : """
+                SELECT TOP (@ReadLimit)
+                    Position, InstanceId, Sequence, Source, Address,
+                    SignalType, ObservationValue, Quality, ObservedAt
+                FROM dbo.MachineObservation
+                WHERE MachineId = @MachineId
+                  AND StreamKeyBinary = @StreamKeyBinary
+                  AND Position > @AfterPosition
+                ORDER BY Position ASC;
+                """;
+
+        AddStreamIdentityParameters(command, request.StreamId, streamKeyBinary);
+        command.Parameters.Add(
+            new SqlParameter("@ReadLimit", SqlDbType.Int) { Value = readLimit });
+        if (request.AfterPosition is not null)
+        {
+            command.Parameters.Add(
+                SqlServerUInt64.CreateParameter(
+                    "@AfterPosition",
+                    request.AfterPosition.Value));
+        }
+
+        List<DurableMachineObservation> observations = [];
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var type = (SignalType)reader.GetByte(5);
+            var quality = (ObservationQuality)reader.GetByte(7);
+            if (!Enum.IsDefined(type) || !Enum.IsDefined(quality))
+            {
+                throw new InvalidDataException(
+                    "Persisted observation contains an unsupported enum value.");
+            }
+
+            var persistedValue = reader.IsDBNull(6) ? null : reader.GetString(6);
+            var observation = new MachineObservation
+            {
+                MachineId = request.StreamId.MachineId,
+                Source = reader.GetString(3),
+                Address = reader.GetString(4),
+                Type = type,
+                Value = SqlServerObservationValueCodec.Deserialize(type, persistedValue),
+                Quality = quality,
+                Timestamp = reader.GetDateTimeOffset(8),
+            };
+
+            observations.Add(
+                new DurableMachineObservation(
+                    new ObservationPosition(
+                        SqlServerUInt64.Materialize(reader.GetDecimal(0))),
+                    request.StreamId,
+                    SqlServerUInt64.Materialize(reader.GetDecimal(1)),
+                    SqlServerUInt64.Materialize(reader.GetDecimal(2)),
+                    observation));
+        }
+
+        var hasMore = observations.Count > request.BatchSize;
+        if (hasMore)
+        {
+            observations.RemoveAt(observations.Count - 1);
+        }
+
+        return new ObservationReadBatch(request.StreamId, observations, hasMore);
+    }
+
+    public async ValueTask<ObservationProcessingCheckpoint?>
+        ReadCheckpointAsync(
+            ObservationProcessorId processorId,
+            ObservationStreamId streamId,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(processorId);
+        ArgumentNullException.ThrowIfNull(streamId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var streamKeyBinary = OrdinalStringKeyCodec.Encode(streamId.StreamKey);
+        var processorOrderKey = StringOrderKeyV2Codec.Encode(processorId.Value);
+
+        await using var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Position
+            FROM dbo.ObservationProcessingCheckpoint
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND ProcessorIdOrderKey = @ProcessorIdOrderKey;
+            """;
+        AddStreamIdentityParameters(command, streamId, streamKeyBinary);
+        command.Parameters.Add(
+            new SqlParameter("@ProcessorIdOrderKey", SqlDbType.VarBinary, 769)
+            { Value = processorOrderKey });
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull
+            ? null
+            : new ObservationProcessingCheckpoint(
+                processorId,
+                streamId,
+                new ObservationPosition(
+                    SqlServerUInt64.Materialize((decimal)result)));
+    }
+
+    public async ValueTask CommitAsync(
+        ObservationProcessingCommit commit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var checkpoint = commit.Checkpoint;
+        var streamKeyBinary =
+            OrdinalStringKeyCodec.Encode(checkpoint.StreamId.StreamKey);
+        var processorOrderKey =
+            StringOrderKeyV2Codec.Encode(checkpoint.ProcessorId.Value);
+
+        await using var connection = new SqlConnection(ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+        try
+        {
+            var current = await ReadProcessingCheckpointForUpdateAsync(
+                connection,
+                transaction,
+                checkpoint.ProcessorId,
+                checkpoint.StreamId,
+                streamKeyBinary,
+                processorOrderKey,
+                cancellationToken);
+
+            if (current != commit.ExpectedCheckpoint)
+            {
+                throw new InvalidOperationException(
+                    "The processing checkpoint no longer matches the expected state.");
+            }
+
+            if (!await DurableObservationPositionExistsAsync(
+                    connection,
+                    transaction,
+                    checkpoint.StreamId,
+                    streamKeyBinary,
+                    checkpoint.Position,
+                    cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "A processing checkpoint must reference a durable observation in the same stream.");
+            }
+
+            await PersistProcessingCheckpointAsync(
+                connection,
+                transaction,
+                checkpoint,
+                streamKeyBinary,
+                processorOrderKey,
+                current is null,
+                cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async ValueTask CommitAsync(
@@ -746,6 +941,109 @@ internal sealed class SqlServerObservationIngestionStore :
             SqlServerUInt64.CreateParameter(
                 "@AcquisitionRevision",
                 authority.AcquisitionRevision.Value));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<ObservationProcessingCheckpoint?>
+        ReadProcessingCheckpointForUpdateAsync(
+            SqlConnection connection,
+            SqlTransaction transaction,
+            ObservationProcessorId processorId,
+            ObservationStreamId streamId,
+            byte[] streamKeyBinary,
+            byte[] processorOrderKey,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT Position
+            FROM dbo.ObservationProcessingCheckpoint WITH (UPDLOCK, HOLDLOCK)
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND ProcessorIdOrderKey = @ProcessorIdOrderKey;
+            """;
+        AddStreamIdentityParameters(command, streamId, streamKeyBinary);
+        command.Parameters.Add(
+            new SqlParameter("@ProcessorIdOrderKey", SqlDbType.VarBinary, 769)
+            { Value = processorOrderKey });
+
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null || result is DBNull
+            ? null
+            : new ObservationProcessingCheckpoint(
+                processorId,
+                streamId,
+                new ObservationPosition(
+                    SqlServerUInt64.Materialize((decimal)result)));
+    }
+
+    private static async Task<bool> DurableObservationPositionExistsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        ObservationStreamId streamId,
+        byte[] streamKeyBinary,
+        ObservationPosition position,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT 1
+            FROM dbo.MachineObservation WITH (UPDLOCK, HOLDLOCK)
+            WHERE MachineId = @MachineId
+              AND StreamKeyBinary = @StreamKeyBinary
+              AND Position = @Position;
+            """;
+        AddStreamIdentityParameters(command, streamId, streamKeyBinary);
+        command.Parameters.Add(
+            SqlServerUInt64.CreateParameter("@Position", position.Value));
+
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task PersistProcessingCheckpointAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        ObservationProcessingCheckpoint checkpoint,
+        byte[] streamKeyBinary,
+        byte[] processorOrderKey,
+        bool insert,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = insert
+            ? """
+                INSERT INTO dbo.ObservationProcessingCheckpoint
+                    (MachineId, StreamKeyBinary, ProcessorId,
+                     ProcessorIdOrderKey, Position)
+                VALUES
+                    (@MachineId, @StreamKeyBinary, @ProcessorId,
+                     @ProcessorIdOrderKey, @Position);
+                """
+            : """
+                UPDATE dbo.ObservationProcessingCheckpoint
+                SET Position = @Position
+                WHERE MachineId = @MachineId
+                  AND StreamKeyBinary = @StreamKeyBinary
+                  AND ProcessorIdOrderKey = @ProcessorIdOrderKey;
+                """;
+        AddStreamIdentityParameters(
+            command,
+            checkpoint.StreamId,
+            streamKeyBinary);
+        command.Parameters.Add(
+            new SqlParameter("@ProcessorId", SqlDbType.NVarChar, 256)
+            { Value = checkpoint.ProcessorId.Value });
+        command.Parameters.Add(
+            new SqlParameter("@ProcessorIdOrderKey", SqlDbType.VarBinary, 769)
+            { Value = processorOrderKey });
+        command.Parameters.Add(
+            SqlServerUInt64.CreateParameter(
+                "@Position",
+                checkpoint.Position.Value));
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
