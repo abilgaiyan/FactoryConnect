@@ -203,11 +203,15 @@ internal static class SqlSchemaComparator
 
         foreach (var name in expectedByName.Keys.Union(actualByName.Keys, StringComparer.Ordinal).OrderBy(static item => item, StringComparer.Ordinal))
         {
-            if (!expectedByName.TryGetValue(name, out var expectedItem) ||
-                !actualByName.TryGetValue(name, out var actualItem) ||
-                !equals(expectedItem, actualItem))
+            var hasExpected = expectedByName.TryGetValue(name, out var expectedItem);
+            var hasActual = actualByName.TryGetValue(name, out var actualItem);
+            if (!hasExpected ||
+                !hasActual ||
+                !equals(expectedItem!, actualItem!))
             {
                 var detail = mismatchKind == SqlSchemaDifferenceKind.CheckConstraintMismatch &&
+                             hasExpected &&
+                             hasActual &&
                              expectedItem is SqlCheckConstraintDescriptor expectedCheck &&
                              actualItem is SqlCheckConstraintDescriptor actualCheck
                     ? $"Expected '{expectedCheck.CanonicalDefinition}'; actual '{actualCheck.CanonicalDefinition}'."
