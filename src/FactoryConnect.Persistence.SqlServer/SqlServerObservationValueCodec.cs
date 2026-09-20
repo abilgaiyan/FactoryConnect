@@ -13,6 +13,7 @@ internal static class SqlServerObservationValueCodec
     {
         return type switch
         {
+            SignalType.Digital => SerializeDigital(value),
             SignalType.Numeric => SerializeNumeric(value),
             SignalType.Enumeration => SerializeString(type, value),
             SignalType.Text => SerializeString(type, value),
@@ -26,6 +27,9 @@ internal static class SqlServerObservationValueCodec
     {
         return type switch
         {
+            SignalType.Digital => persistedValue is null
+                ? null
+                : DeserializeDigital(persistedValue),
             SignalType.Numeric => persistedValue is null
                 ? null
                 : DeserializeNumeric(persistedValue),
@@ -43,6 +47,31 @@ internal static class SqlServerObservationValueCodec
             Serialize(type, left),
             Serialize(type, right),
             StringComparison.Ordinal);
+
+    private static string? SerializeDigital(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is bool digital)
+        {
+            return digital ? "true" : "false";
+        }
+
+        throw Unsupported(SignalType.Digital, value);
+    }
+
+    private static bool DeserializeDigital(string persistedValue) =>
+        persistedValue switch
+        {
+            "true" => true,
+            "false" => false,
+            _ => throw new InvalidDataException(
+                $"Persisted SQL Server digital observation value " +
+                $"'{persistedValue}' is invalid."),
+        };
 
     private static string? SerializeNumeric(object? value)
     {
