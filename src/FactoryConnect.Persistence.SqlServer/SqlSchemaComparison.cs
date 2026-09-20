@@ -207,7 +207,12 @@ internal static class SqlSchemaComparator
                 !actualByName.TryGetValue(name, out var actualItem) ||
                 !equals(expectedItem, actualItem))
             {
-                differences.Add(Difference(mismatchKind, table, name, "Structural or operational semantics differ."));
+                var detail = mismatchKind == SqlSchemaDifferenceKind.CheckConstraintMismatch &&
+                             expectedItem is SqlCheckConstraintDescriptor expectedCheck &&
+                             actualItem is SqlCheckConstraintDescriptor actualCheck
+                    ? $"Expected '{expectedCheck.CanonicalDefinition}'; actual '{actualCheck.CanonicalDefinition}'."
+                    : "Structural or operational semantics differ.";
+                differences.Add(Difference(mismatchKind, table, name, detail));
             }
         }
     }
