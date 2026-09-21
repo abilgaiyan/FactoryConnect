@@ -84,4 +84,29 @@ public sealed class CurrentStateGatewayRouteTests
                     services.AddSingleton<IHttpClientFactory>(upstream);
                 });
             });
+    private sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
+    {
+        private readonly HttpClient client;
+
+        public StubHttpClientFactory(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+        {
+            client = new HttpClient(new StubHandler(send)) { Timeout = Timeout.InfiniteTimeSpan };
+        }
+
+        public HttpClient CreateClient(string name)
+        {
+            Assert.Equal(ReportingGateway.ClientName, name);
+            return client;
+        }
+
+        public void Dispose() => client.Dispose();
+    }
+
+    private sealed class StubHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => send(request, cancellationToken);
+    }
 }
