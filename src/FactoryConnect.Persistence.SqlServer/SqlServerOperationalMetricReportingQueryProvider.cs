@@ -33,10 +33,10 @@ internal sealed class SqlServerOperationalMetricReportingQueryProvider :
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var persistedMachineId = await _sourceBindingReader.ReadMachineIdAsync(
+            var binding = await _sourceBindingReader.ReadAsync(
                 source.ProcessorId,
                 cancellationToken);
-            if (persistedMachineId is not null && persistedMachineId.Value != source.MachineId)
+            if (binding is not null && binding.StreamId.MachineId != source.MachineId)
             {
                 throw new InvalidOperationException(
                     $"Operational metric reporting source binding for processor '{source.ProcessorId}' does not match requested machine '{source.MachineId}'.");
