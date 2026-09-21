@@ -11,10 +11,17 @@ public sealed class ReportingGateway(
 
     private readonly DashboardOptions dashboardOptions = options.Value;
 
-    public async Task ForwardAsync(HttpContext context, string relativePath)
+    public Task ForwardAsync(HttpContext context, string relativePath) =>
+        ForwardAsync(context, relativePath, HttpMethod.Post);
+
+    public async Task ForwardAsync(
+        HttpContext context,
+        string relativePath,
+        HttpMethod method)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
+        ArgumentNullException.ThrowIfNull(method);
 
         using var timeoutCancellation = new CancellationTokenSource(dashboardOptions.RequestTimeout);
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -23,7 +30,7 @@ public sealed class ReportingGateway(
 
         try
         {
-            using var request = CreateUpstreamRequest(context, relativePath);
+            using var request = CreateUpstreamRequest(context, relativePath, method);
             using var response = await httpClientFactory
                 .CreateClient(ClientName)
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCancellation.Token)
@@ -71,18 +78,22 @@ public sealed class ReportingGateway(
         }
     }
 
-    private HttpRequestMessage CreateUpstreamRequest(HttpContext context, string relativePath)
+    private HttpRequestMessage CreateUpstreamRequest(
+        HttpContext context,
+        string relativePath,
+        HttpMethod method)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, ComposeUpstreamUri(relativePath))
-        {
-            Content = new StreamContent(context.Request.BodyReader.AsStream(leaveOpen: true))
-        };
+        var request = new HttpRequestMessage(method, ComposeUpstreamUri(relativePath));
 
-        if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
+        if (method == HttpMethod.Post)
         {
-            request.Content.Headers.TryAddWithoutValidation(
-                HeaderNames.ContentType,
-                context.Request.ContentType);
+            request.Content = new StreamContent(context.Request.BodyReader.AsStream(leaveOpen: true));
+            if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
+            {
+                request.Content.Headers.TryAddWithoutValidation(
+                    HeaderNames.ContentType,
+                    context.Request.ContentType);
+            }
         }
 
         if (context.Request.Headers.TryGetValue(HeaderNames.Accept, out var accept))
