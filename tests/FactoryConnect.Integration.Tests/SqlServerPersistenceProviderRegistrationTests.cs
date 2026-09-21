@@ -106,6 +106,38 @@ public sealed class SqlServerPersistenceProviderRegistrationTests
     }
 
     [Fact]
+    public void SelectedSqlServerProviderActivatesOperationalMetricProcessingCapabilities()
+    {
+        const string connectionString = "Server=test;Database=test;";
+        ServiceCollection services = new();
+        var configuration = BuildConfiguration(
+            selectedProvider: "SqlServer",
+            connectionString);
+
+        services.AddSqlServerPersistenceProvider(
+            configuration.GetRequiredSection(
+                SqlServerPersistenceOptions.SectionName));
+        services.AddFactoryConnectPersistence(
+            configuration,
+            PersistenceProviderCapabilities.All);
+
+        using var provider = services.BuildServiceProvider();
+
+        var aggregation = Assert.IsType<SqlServerMetricAggregationStore>(
+            provider.GetRequiredService<IMetricAggregationStore>());
+        Assert.Same(
+            aggregation,
+            provider.GetRequiredService<IMetricAggregationRevisionReader>());
+        Assert.Same(
+            aggregation,
+            provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>());
+        Assert.IsType<SqlServerOperationalMetricProjectionStore>(
+            provider.GetRequiredService<IOperationalMetricProjectionStore>());
+        Assert.IsType<SqlServerOperationalMetricProjectionQueryReader>(
+            provider.GetRequiredService<IOperationalMetricProjectionQueryReader>());
+    }
+
+    [Fact]
     public void RegistrationDoesNotActivateAnySelectedCapability()
     {
         ServiceCollection services = new();
