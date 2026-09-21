@@ -1,4 +1,5 @@
 using FactoryConnect.Persistence.SqlServer;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
