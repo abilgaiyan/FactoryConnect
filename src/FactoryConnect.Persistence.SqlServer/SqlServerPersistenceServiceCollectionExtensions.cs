@@ -24,6 +24,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
             new PersistenceProviderRegistration(
                 ProviderKey,
                 PersistenceProviderCapabilities.Core |
+                PersistenceProviderCapabilities.MetricAggregationRevisionReading |
+                PersistenceProviderCapabilities.RevisionedOperationalMetricSnapshotReading |
+                PersistenceProviderCapabilities.OperationalMetricProjectionStorage |
                 PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
                 PersistenceProviderCapabilities.OperationalMetricReportingQuery |
                 PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
@@ -48,11 +51,18 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         ? new SqlServerCurrentStateAuthorityCutProvider(connectionString)
                         : null;
 
+                    var metricAggregationStore =
+                        new SqlServerMetricAggregationStore(connectionString);
+
                     return new PersistenceProviderServices(
                         observationStore,
                         new SqlServerProductionContextProcessingStore(connectionString),
                         new SqlServerMetricInputStore(connectionString),
-                        new SqlServerMetricAggregationStore(connectionString),
+                        metricAggregationStore,
+                        metricAggregationRevisionReader: metricAggregationStore,
+                        revisionedOperationalMetricComponentSnapshotReader: metricAggregationStore,
+                        operationalMetricProjectionStore:
+                            new SqlServerOperationalMetricProjectionStore(connectionString),
                         operationalMetricProjectionQueryReader:
                             new SqlServerOperationalMetricProjectionQueryReader(connectionString),
                         operationalMetricReportingQueryProvider:

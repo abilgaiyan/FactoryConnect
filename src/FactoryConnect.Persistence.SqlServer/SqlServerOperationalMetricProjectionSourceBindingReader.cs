@@ -4,6 +4,10 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
+internal sealed record SqlServerOperationalMetricProjectionSourceBinding(
+    MetricAggregationProcessorId ProcessorId,
+    MetricInputStreamId StreamId);
+
 internal sealed class SqlServerOperationalMetricProjectionSourceBindingReader
 {
     private readonly string _connectionString;
@@ -14,7 +18,7 @@ internal sealed class SqlServerOperationalMetricProjectionSourceBindingReader
         _connectionString = connectionString;
     }
 
-    public async ValueTask<MachineId?> ReadMachineIdAsync(
+    public async ValueTask<SqlServerOperationalMetricProjectionSourceBinding?> ReadAsync(
         OperationalMetricProjectionProcessorId processorId,
         CancellationToken cancellationToken)
     {
@@ -71,7 +75,9 @@ internal sealed class SqlServerOperationalMetricProjectionSourceBindingReader
             throw Corrupt("projection processor source binding");
         }
 
-        return machineId;
+        return new SqlServerOperationalMetricProjectionSourceBinding(
+            new MetricAggregationProcessorId(aggregationProcessorKey),
+            new MetricInputStreamId(machineId, streamKey));
     }
 
     private static InvalidOperationException Corrupt(string field) =>

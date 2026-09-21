@@ -5,7 +5,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlRepositorySchemaDescriptorTests
 {
     [Fact]
-    public void CurrentExtendsLegacyPost004ThroughPost010()
+    public void CurrentExtendsLegacyPost004ThroughPost011()
     {
         var legacy = SqlRepositorySchemaDescriptors.LegacyPost004;
         var post005 = SqlRepositorySchemaDescriptors.Post005;
@@ -16,7 +16,7 @@ public sealed class SqlRepositorySchemaDescriptorTests
         Assert.Equal(13, legacy.Tables.Length);
         Assert.Equal(20, post005.Tables.Length);
         Assert.Equal(21, post007.Tables.Length);
-        Assert.Equal(27, current.Tables.Length);
+        Assert.Equal(30, current.Tables.Length);
         Assert.Equal(
             legacy.Tables.Select(static table => table.Name),
             current.Tables.Take(legacy.Tables.Length).Select(static table => table.Name));
@@ -35,7 +35,10 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "MachineStateActivitySignal",
                 "MachineStateChangeHistory",
                 "MachineActivityPeriodHistory",
-                "ObservationProcessingCheckpoint"
+                "ObservationProcessingCheckpoint",
+                "MetricAggregationRevision",
+                "MetricAggregationRevisionShiftOccurrence",
+                "MetricAggregationRevisionProductionDay"
             ],
             current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }

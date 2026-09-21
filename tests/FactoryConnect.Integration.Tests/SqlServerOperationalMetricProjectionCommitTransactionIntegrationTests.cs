@@ -33,6 +33,25 @@ public sealed class SqlServerOperationalMetricProjectionCommitTransactionIntegra
     }
 
     [Fact]
+    public async Task SourceBindingReaderReturnsExactAggregationProcessorAndCanonicalStream()
+    {
+        var source = await CreateSourceAsync();
+        var processorId = new OperationalMetricProjectionProcessorId($"projection-binding-{Guid.NewGuid():N}");
+        var transaction = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
+        await transaction.ExecuteAsync(
+            CreateEmptyCommit(processorId, expected: null, source.FirstCheckpoint),
+            NoOpBody,
+            CancellationToken.None);
+
+        var reader = new SqlServerOperationalMetricProjectionSourceBindingReader(_fixture.ConnectionString);
+        var binding = await reader.ReadAsync(processorId, CancellationToken.None);
+
+        Assert.NotNull(binding);
+        Assert.Equal(source.FirstCheckpoint.ProcessorId, binding.ProcessorId);
+        Assert.Equal(source.FirstCheckpoint.StreamId, binding.StreamId);
+    }
+
+    [Fact]
     public async Task InitialEmptyCommitCreatesProcessorAndCheckpointInsideSerializableTransaction()
     {
         var source = await CreateSourceAsync();

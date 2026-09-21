@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
+internal sealed partial class SqlServerMetricAggregationStore : IMetricAggregationStore, IMetricAggregationRevisionReader, IRevisionedOperationalMetricComponentSnapshotReader
 {
     private readonly string _connectionString;
 
@@ -129,6 +129,17 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
                 lockForUpdate: true);
             ValidateExpectedCheckpoint(commit, currentPosition);
 
+            if (await RevisionExistsAsync(
+                    connection,
+                    sqlTransaction,
+                    processorRowId,
+                    commit.ProposedCheckpoint.Position,
+                    cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "Metric aggregation revision position already exists.");
+            }
+
             var stagedInputs = await StageNewInputsAsync(
                 connection,
                 sqlTransaction,
@@ -172,6 +183,14 @@ internal sealed class SqlServerMetricAggregationStore : IMetricAggregationStore
                     staged.Input.Position,
                     cancellationToken);
             }
+
+            await InsertRevisionAsync(
+                connection,
+                sqlTransaction,
+                processorRowId,
+                commit.ProposedCheckpoint.Position,
+                stagedInputs.Select(static item => item.Input),
+                cancellationToken);
 
             await WriteCheckpointAsync(
                 connection,
