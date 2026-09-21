@@ -260,10 +260,7 @@ public sealed class InMemoryAuthorityInstanceGraphConformanceTests
                 .Select(descriptor => Assert.IsAssignableFrom<IPersistenceProviderRegistration>(
                     descriptor.ImplementationInstance)));
         var expectedCapabilities =
-            PersistenceProviderCapabilities.Core |
-            PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
+            PersistenceProviderCapabilities.All |
             PersistenceProviderCapabilities.CurrentStateAuthorityReading;
 
         Assert.Equal(expectedCapabilities, registration.Capabilities);
