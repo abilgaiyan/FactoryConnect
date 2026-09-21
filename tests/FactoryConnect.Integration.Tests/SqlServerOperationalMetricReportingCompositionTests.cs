@@ -28,17 +28,14 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
                         descriptor.ImplementationInstance)));
 
         var expected =
-            PersistenceProviderCapabilities.Core |
-            PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
-            PersistenceProviderCapabilities.OperationalMetricReportingQuery |
-            PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
+            PersistenceProviderCapabilities.All |
             PersistenceProviderCapabilities.CurrentStateAuthorityReading;
 
         Assert.Equal(expected, registration.Capabilities);
         Assert.Equal(
-            PersistenceProviderCapabilities.None,
+            PersistenceProviderCapabilities.OperationalMetrics,
             registration.Capabilities &
-            PersistenceProviderCapabilities.OperationalMetricProjectionStorage);
+            PersistenceProviderCapabilities.OperationalMetrics);
     }
 
     [Fact]
