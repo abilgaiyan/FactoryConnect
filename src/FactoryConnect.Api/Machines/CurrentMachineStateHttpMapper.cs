@@ -13,7 +13,7 @@ internal static class CurrentMachineStateHttpMapper
         {
             CurrentMachineStateEvidence evidence => new CurrentMachineStateResponse(
                 evidence.MachineId.Value,
-                "evidence",
+                CurrentMachineStateHttpVocabulary.OutcomeEvidence,
                 Coverage(evidence.Coverage),
                 new CurrentMachineStateEvidenceResponse(
                     MachineState(evidence.MachineState),
@@ -22,7 +22,7 @@ internal static class CurrentMachineStateHttpMapper
                     evidence.ReadAsOf)),
             CurrentMachineStateNoEvidence noEvidence => new CurrentMachineStateResponse(
                 noEvidence.MachineId.Value,
-                "no-evidence",
+                CurrentMachineStateHttpVocabulary.OutcomeNoEvidence,
                 Coverage(noEvidence.Coverage),
                 null),
             _ => throw new InvalidOperationException(
@@ -33,9 +33,9 @@ internal static class CurrentMachineStateHttpMapper
     private static string Coverage(CurrentStateCoverage coverage) =>
         coverage switch
         {
-            CurrentStateCoverage.Complete => "complete",
-            CurrentStateCoverage.Behind => "behind",
-            CurrentStateCoverage.Indeterminate => "indeterminate",
+            CurrentStateCoverage.Complete => CurrentMachineStateHttpVocabulary.CoverageComplete,
+            CurrentStateCoverage.Behind => CurrentMachineStateHttpVocabulary.CoverageBehind,
+            CurrentStateCoverage.Indeterminate => CurrentMachineStateHttpVocabulary.Indeterminate,
             _ => throw new InvalidOperationException(
                 "Unsupported current-state coverage value."),
         };
@@ -43,11 +43,11 @@ internal static class CurrentMachineStateHttpMapper
     private static string MachineState(MachineState machineState) =>
         machineState switch
         {
-            FactoryConnect.Abstractions.MachineState.Unknown => "unknown",
-            FactoryConnect.Abstractions.MachineState.Stopped => "stopped",
-            FactoryConnect.Abstractions.MachineState.Idle => "idle",
-            FactoryConnect.Abstractions.MachineState.Running => "running",
-            FactoryConnect.Abstractions.MachineState.Fault => "fault",
+            FactoryConnect.Abstractions.MachineState.Unknown => CurrentMachineStateHttpVocabulary.MachineStateUnknown,
+            FactoryConnect.Abstractions.MachineState.Stopped => CurrentMachineStateHttpVocabulary.MachineStateStopped,
+            FactoryConnect.Abstractions.MachineState.Idle => CurrentMachineStateHttpVocabulary.MachineStateIdle,
+            FactoryConnect.Abstractions.MachineState.Running => CurrentMachineStateHttpVocabulary.MachineStateRunning,
+            FactoryConnect.Abstractions.MachineState.Fault => CurrentMachineStateHttpVocabulary.MachineStateFault,
             _ => throw new InvalidOperationException(
                 "Unsupported current machine-state evidence value."),
         };
@@ -55,9 +55,9 @@ internal static class CurrentMachineStateHttpMapper
     private static string Freshness(CurrentStateFreshness freshness) =>
         freshness switch
         {
-            CurrentStateFreshness.Current => "current",
-            CurrentStateFreshness.Stale => "stale",
-            CurrentStateFreshness.Indeterminate => "indeterminate",
+            CurrentStateFreshness.Current => CurrentMachineStateHttpVocabulary.Current,
+            CurrentStateFreshness.Stale => CurrentMachineStateHttpVocabulary.Stale,
+            CurrentStateFreshness.Indeterminate => CurrentMachineStateHttpVocabulary.Indeterminate,
             _ => throw new InvalidOperationException(
                 "Unsupported current-state freshness value."),
         };
@@ -65,10 +65,10 @@ internal static class CurrentMachineStateHttpMapper
     private static string Usability(CurrentStateUsability usability) =>
         usability switch
         {
-            CurrentStateUsability.Current => "current",
-            CurrentStateUsability.Stale => "stale",
-            CurrentStateUsability.Indeterminate => "indeterminate",
-            CurrentStateUsability.Behind => "behind",
+            CurrentStateUsability.Current => CurrentMachineStateHttpVocabulary.Current,
+            CurrentStateUsability.Stale => CurrentMachineStateHttpVocabulary.Stale,
+            CurrentStateUsability.Indeterminate => CurrentMachineStateHttpVocabulary.Indeterminate,
+            CurrentStateUsability.Behind => CurrentMachineStateHttpVocabulary.CoverageBehind,
             _ => throw new InvalidOperationException(
                 "Unsupported current-state usability value."),
         };
