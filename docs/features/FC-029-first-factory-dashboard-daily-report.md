@@ -40,11 +40,11 @@
   - **FC-029.4C — Whole-Feature Conformance:** complete / frozen
   - **FC-029.4D — Final Closure / Documentation:** complete / frozen
 
-Machine Status remains deferred until an authoritative server-side current-state reader/API exists.
+**Machine Status deferral: closed by FC-031.** FC-031 delivers the authoritative current-state reader, HTTP surface, and configured-machine dashboard consumption. FC-029's reporting contracts and historical closure remain unchanged.
 
 ## Architectural invariant
 
-The dashboard consumes reporting contracts. It does not reconstruct factory metrics, reporting periods, production context, current machine state, or reporting persistence.
+The dashboard consumes authoritative reporting and current-state contracts. It does not reconstruct factory metrics, reporting periods, production context, current machine state, or reporting persistence.
 
 ```text
 FC-027 durable operational metric projections
@@ -56,9 +56,9 @@ FactoryConnect.Dashboard
 presentation only
 ```
 
-`FactoryConnect.Dashboard` has no FactoryConnect project or runtime assembly dependency. Browser transport contracts come from generated FC-028 OpenAPI types.
+`FactoryConnect.Dashboard` has no FactoryConnect project or runtime assembly dependency. Browser transport contracts come from the generated FactoryConnect.Api OpenAPI artifact; FC-029 reporting types and the later FC-031 current-state types share that generated transport authority.
 
-The dashboard may format, group, filter, navigate, and render authoritative reporting results. It must not calculate Availability, Performance, Quality, OEE, Utilization, production-day boundaries, current machine state, or factory-wide percentages. It must not combine metric-definition versions or reinterpret reporting absence/failure states.
+The dashboard may format, group, filter, navigate, and render authoritative reporting results and the authoritative FC-031 current-state response. It must not calculate Availability, Performance, Quality, OEE, Utilization, production-day boundaries, current machine state, or factory-wide percentages. It must not combine metric-definition versions or reinterpret reporting absence/failure states.
 
 ## FC-029.1 closure evidence
 
