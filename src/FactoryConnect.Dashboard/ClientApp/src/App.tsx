@@ -19,6 +19,8 @@ import { useProductionDayOverview } from "./application/use-production-day-overv
 import { useShiftPerformanceOverview } from "./application/use-shift-performance-overview.ts";
 import { DailyReportPage } from "./presentation/DailyReportPage.tsx";
 import { ShiftPerformancePage } from "./presentation/ShiftPerformancePage.tsx";
+import { MachineCurrentStatePage } from "./presentation/MachineCurrentStatePage.tsx";
+import { useMachineCurrentState } from "./application/use-machine-current-state.ts";
 import type { ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
@@ -87,7 +89,7 @@ function RouteView({ route, navigate, runtime }: RouteViewProps) {
     case "shiftPerformance":
       return <ShiftPerformanceSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "machineDetail":
-      return <section aria-labelledby="route-title"><RouteContext current="Machine" navigate={navigate} /><h1 id="route-title">Machine</h1><p>{route.machineId}</p><p>Machine detail placeholder.</p></section>;
+      return <MachineDetail key={route.machineId} machineId={route.machineId} navigate={navigate} runtime={runtime} />;
     case "dailyReport":
       return <DailyReportSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "notFound":
@@ -207,6 +209,36 @@ function ShiftPerformanceSelection({ productionDay, navigate, runtime }: ShiftPe
         : null}
     </section>
   );
+}
+
+interface MachineDetailProps {
+  readonly machineId: string;
+  readonly navigate: (href: string) => void;
+  readonly runtime: DashboardApplicationRuntime;
+}
+
+function MachineDetail({ machineId, navigate, runtime }: MachineDetailProps) {
+  const source = runtime.configuration.sources.find(
+    candidate => candidate.machineId.toLowerCase() === machineId.toLowerCase(),
+  );
+
+  return (
+    <section aria-labelledby="route-title">
+      <RouteContext current="Machine" navigate={navigate} />
+      <h1 id="route-title">Machine</h1>
+      {source === undefined
+        ? <p role="alert">This machine is not configured for the dashboard.</p>
+        : <ConfiguredMachineDetail source={source} runtime={runtime} />}
+    </section>
+  );
+}
+
+function ConfiguredMachineDetail(props: {
+  readonly source: DashboardApplicationRuntime["configuration"]["sources"][number];
+  readonly runtime: DashboardApplicationRuntime;
+}) {
+  const currentState = useMachineCurrentState(props.source.machineId, props.runtime);
+  return <MachineCurrentStatePage source={props.source} state={currentState.state} refresh={currentState.refresh} />;
 }
 
 interface DailyReportSelectionProps {
