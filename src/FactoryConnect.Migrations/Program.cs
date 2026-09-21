@@ -20,7 +20,7 @@ Console.CancelKeyPress += cancelHandler;
 try
 {
     await SqlServerMigrationOperation.ApplyAsync(
-        options.GetRequiredConnectionStringForMigration(),
+        options.ConnectionString ?? string.Empty,
         options.Startup?.LockTimeout ?? TimeSpan.FromSeconds(30),
         cancellationSource.Token);
 
