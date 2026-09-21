@@ -279,7 +279,10 @@ public sealed class SqlServerMetricAggregationStoreIntegrationTests :
         Assert.Equal(firstRevision, firstChange.Revision);
         Assert.Empty(firstChange.ShiftOccurrenceIds);
         Assert.Empty(firstChange.ProductionDayIds);
-        Assert.Equal(firstChange, exactFirst);
+        Assert.NotNull(exactFirst);
+        Assert.Equal(firstChange.Revision, exactFirst.Revision);
+        Assert.Equal(firstChange.ShiftOccurrenceIds, exactFirst.ShiftOccurrenceIds);
+        Assert.Equal(firstChange.ProductionDayIds, exactFirst.ProductionDayIds);
 
         Assert.NotNull(secondChange);
         Assert.Equal(secondRevision, secondChange.Revision);
@@ -287,7 +290,10 @@ public sealed class SqlServerMetricAggregationStoreIntegrationTests :
         Assert.Equal(second.ShiftOccurrenceId, secondChange.ShiftOccurrenceIds[0]);
         Assert.Single(secondChange.ProductionDayIds);
         Assert.Equal(second.ProductionDayId, secondChange.ProductionDayIds[0]);
-        Assert.Equal(secondChange, exactSecond);
+        Assert.NotNull(exactSecond);
+        Assert.Equal(secondChange.Revision, exactSecond.Revision);
+        Assert.Equal(secondChange.ShiftOccurrenceIds, exactSecond.ShiftOccurrenceIds);
+        Assert.Equal(secondChange.ProductionDayIds, exactSecond.ProductionDayIds);
 
         Assert.Null(await store.ReadNextAsync(
             processorId,
