@@ -72,7 +72,7 @@ Repository defaults intentionally fail closed:
 }
 ```
 
-A production deployment must provide a non-loopback absolute HTTP/HTTPS reporting API address and at least one unique reporting source identity.
+A production deployment must provide a non-loopback absolute HTTP/HTTPS reporting API address. Configured sources may be `0..N`; when present, each source must satisfy the validated identity and presentation fields below.
 
 The browser never receives `ReportingApiBaseAddress`. `/dashboard/config` exposes only:
 
