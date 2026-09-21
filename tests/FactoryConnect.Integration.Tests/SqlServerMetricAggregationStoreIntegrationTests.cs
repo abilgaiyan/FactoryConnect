@@ -302,6 +302,141 @@ public sealed class SqlServerMetricAggregationStoreIntegrationTests :
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task RevisionedSnapshotUsesExactLedgerRevisionAndHistoricalContributions()
+    {
+        var machineId = new MachineId(Guid.NewGuid());
+        var inputStore = new SqlServerMetricInputStore(_fixture.ConnectionString);
+        var store = new SqlServerMetricAggregationStore(_fixture.ConnectionString);
+        var first = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-historical-1", 10m, minute: 42),
+            CancellationToken.None);
+        var second = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-historical-2", 20m, minute: 43),
+            CancellationToken.None);
+        var processorId = new MetricAggregationProcessorId($"sql-historical-{Guid.NewGuid():N}");
+        var firstRevision = new MetricAggregationCheckpoint(
+            processorId,
+            first.StreamId,
+            first.Position);
+        var secondRevision = new MetricAggregationCheckpoint(
+            processorId,
+            first.StreamId,
+            second.Position);
+
+        await store.CommitAsync(
+            new MetricAggregationCommit(
+                processorId,
+                expectedCheckpoint: null,
+                firstRevision,
+                [first]),
+            CancellationToken.None);
+        await store.CommitAsync(
+            new MetricAggregationCommit(
+                processorId,
+                firstRevision,
+                secondRevision,
+                [second]),
+            CancellationToken.None);
+
+        var request = new OperationalMetricComponentSnapshotRequest(
+            new OperationalMetricEvaluationKey(
+                machineId,
+                new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId),
+                new OperationalMetricDefinitionId("historical-proof", "1"),
+                OperationalMetricEvaluationContextKey.Unpartitioned),
+            processorId,
+            [
+                new OperationalMetricOperandDefinition
+                {
+                    OperandName = "running",
+                    Source = new OperationalMetricOperandSource.Component(first.Fact.Key),
+                    RequiredDimension = MetricDimension.Duration,
+                    RequiredUnit = "seconds",
+                },
+            ]);
+
+        var firstSnapshot = await store.ReadAtRevisionAsync(
+            request,
+            firstRevision,
+            CancellationToken.None);
+        var secondSnapshot = await store.ReadAtRevisionAsync(
+            request,
+            secondRevision,
+            CancellationToken.None);
+
+        Assert.Equal(firstRevision, firstSnapshot.Revision);
+        var firstComponent = Assert.Single(firstSnapshot.Components);
+        Assert.Equal(10m, firstComponent.Aggregate.Value);
+        Assert.Equal(1L, firstComponent.Aggregate.InputCount);
+
+        Assert.Equal(secondRevision, secondSnapshot.Revision);
+        var secondComponent = Assert.Single(secondSnapshot.Components);
+        Assert.Equal(30m, secondComponent.Aggregate.Value);
+        Assert.Equal(2L, secondComponent.Aggregate.InputCount);
+    }
+
+    [Fact]
+    public async Task RevisionedSnapshotRejectsPositionWithoutCommittedLedgerRevision()
+    {
+        var machineId = new MachineId(Guid.NewGuid());
+        var inputStore = new SqlServerMetricInputStore(_fixture.ConnectionString);
+        var store = new SqlServerMetricAggregationStore(_fixture.ConnectionString);
+        var first = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-ledger-proof-1", 10m, minute: 44),
+            CancellationToken.None);
+        var second = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-ledger-proof-2", 20m, minute: 45),
+            CancellationToken.None);
+        var third = await inputStore.AppendAsync(
+            CreateAppend(machineId, "sql-ledger-proof-3", 30m, minute: 46),
+            CancellationToken.None);
+        var processorId = new MetricAggregationProcessorId($"sql-ledger-proof-{Guid.NewGuid():N}");
+        var committedRevision = new MetricAggregationCheckpoint(
+            processorId,
+            first.StreamId,
+            third.Position);
+
+        await store.CommitAsync(
+            new MetricAggregationCommit(
+                processorId,
+                expectedCheckpoint: null,
+                committedRevision,
+                [first, second, third]),
+            CancellationToken.None);
+
+        var request = new OperationalMetricComponentSnapshotRequest(
+            new OperationalMetricEvaluationKey(
+                machineId,
+                new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId),
+                new OperationalMetricDefinitionId("ledger-proof", "1"),
+                OperationalMetricEvaluationContextKey.Unpartitioned),
+            processorId,
+            [
+                new OperationalMetricOperandDefinition
+                {
+                    OperandName = "running",
+                    Source = new OperationalMetricOperandSource.Component(first.Fact.Key),
+                    RequiredDimension = MetricDimension.Duration,
+                    RequiredUnit = "seconds",
+                },
+            ]);
+        var neverCommittedRevision = new MetricAggregationCheckpoint(
+            processorId,
+            first.StreamId,
+            second.Position);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await store.ReadAtRevisionAsync(
+                request,
+                neverCommittedRevision,
+                CancellationToken.None));
+
+        Assert.Equal(
+            "Requested historical aggregation revision is not available.",
+            exception.Message);
+    }
+
     private static DurableMetricInputAppend CreateAppend(
         MachineId machineId,
         string factId,
