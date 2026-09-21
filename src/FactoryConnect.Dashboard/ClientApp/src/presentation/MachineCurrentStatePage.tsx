@@ -24,7 +24,7 @@ export function MachineCurrentStatePage(props: {
   const response = state.data;
   return (
     <>
-      <p>{source.DisplayName ?? source.displayName}</p>
+      <p>{source.displayName}</p>
       <dl>
         <dt>Outcome</dt><dd>{response.outcome}</dd>
         <dt>Coverage</dt><dd>{response.coverage}</dd>
