@@ -432,11 +432,20 @@ public sealed class CurrentMachineStateEndpointTests
                     && value.GetString() == "null");
         }
 
-        return schema.TryGetProperty("anyOf", out var anyOf)
-            && anyOf.EnumerateArray().Any(static candidate =>
-                candidate.TryGetProperty("type", out var candidateType)
-                && candidateType.ValueKind == JsonValueKind.String
-                && candidateType.GetString() == "null");
+        foreach (var keyword in new[] { "oneOf", "anyOf" })
+        {
+            if (schema.TryGetProperty(keyword, out var branches)
+                && branches.ValueKind == JsonValueKind.Array
+                && branches.EnumerateArray().Any(static candidate =>
+                    candidate.TryGetProperty("type", out var candidateType)
+                    && candidateType.ValueKind == JsonValueKind.String
+                    && candidateType.GetString() == "null"))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool HasEvidenceSchemaBranch(JsonElement schema)
