@@ -50,6 +50,15 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         return new ReadOnlyCollection<OperationalMetricProjectionSummary>(ordered);
     }
 
+    internal async ValueTask<OperationalMetricProjectionBatchManifest> ReadCurrentManifestAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        CancellationToken cancellationToken)
+    {
+        var summaries = await ReadCurrentPublicationSummariesAsync(processorId, cancellationToken);
+        return new OperationalMetricProjectionBatchManifest(
+            summaries.Select(static summary => summary.Key));
+    }
+
     internal async ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadCurrentPublicationSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         CancellationToken cancellationToken)
