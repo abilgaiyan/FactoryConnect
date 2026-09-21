@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document defines the FC-029.1 production-LAN deployment boundary for `FactoryConnect.Dashboard`.
+This document defines the production-LAN deployment boundary for `FactoryConnect.Dashboard`, including the FC-029 reporting surfaces and FC-031 current-state consumption.
 
-The dashboard is a presentation host. It serves the React production assets, exposes browser-safe runtime configuration, and forwards only the two FC-028 reporting operations through a same-origin gateway. It does not read FactoryConnect persistence directly and does not calculate factory metrics.
+The dashboard is a presentation host. It serves the React production assets, exposes browser-safe runtime configuration, and forwards only the explicitly mapped reporting and current-state operations through a same-origin gateway. It does not read FactoryConnect persistence directly, calculate factory metrics, or derive current machine state.
 
 ```text
 browser
@@ -12,7 +12,7 @@ browser
 FactoryConnect.Dashboard
   ├── /dashboard/config
   ├── static React assets
-  └── exact FC-028 gateway routes
+  └── exact reporting + current-state gateway routes
           ↓
 FactoryConnect.Api
 ```
@@ -47,6 +47,8 @@ Dashboard__ReportingApiBaseAddress=http://<reporting-host>:<reporting-port>/<opt
 Dashboard__RequestTimeout=00:00:30
 Dashboard__Sources__0__MachineId=<machine-guid>
 Dashboard__Sources__0__ProcessorId=<processor-id>
+Dashboard__Sources__0__SiteId=<site-id>
+Dashboard__Sources__0__ProductionLineId=<production-line-id>
 Dashboard__Sources__0__DisplayName=<display-name>
 ```
 
@@ -70,19 +72,19 @@ Repository defaults intentionally fail closed:
 }
 ```
 
-A production deployment must provide a non-loopback absolute HTTP/HTTPS reporting API address and at least one unique reporting source identity.
+A production deployment must provide a non-loopback absolute HTTP/HTTPS reporting API address. Configured sources may be `0..N`; when present, each source must satisfy the validated identity and presentation fields below.
 
 The browser never receives `ReportingApiBaseAddress`. `/dashboard/config` exposes only:
 
 ```text
 reportingBasePath = "/"
 requestTimeoutMilliseconds
-sources[] = MachineId + ProcessorId + DisplayName
+sources[] = MachineId + ProcessorId + SiteId + ProductionLineId + DisplayName + GroupName? + DisplayOrder
 ```
 
 ## Seven-source pilot composition fixture
 
-The following is a shape example only. Replace every machine identity, processor identity, display name, hostname, and port with the deployed values.
+The following is a shape example only. Replace every machine, processor, site, production-line and presentation identity, hostname, and port with the deployed values.
 
 ```json
 {
@@ -90,13 +92,13 @@ The following is a shape example only. Replace every machine identity, processor
     "ReportingApiBaseAddress": "http://factory-reporting.internal:5080/factoryconnect/",
     "RequestTimeout": "00:00:30",
     "Sources": [
-      { "MachineId": "00000000-0000-0000-0000-000000000001", "ProcessorId": "operational-metrics-1", "DisplayName": "Machine 1" },
-      { "MachineId": "00000000-0000-0000-0000-000000000002", "ProcessorId": "operational-metrics-2", "DisplayName": "Machine 2" },
-      { "MachineId": "00000000-0000-0000-0000-000000000003", "ProcessorId": "operational-metrics-3", "DisplayName": "Machine 3" },
-      { "MachineId": "00000000-0000-0000-0000-000000000004", "ProcessorId": "operational-metrics-4", "DisplayName": "Machine 4" },
-      { "MachineId": "00000000-0000-0000-0000-000000000005", "ProcessorId": "operational-metrics-5", "DisplayName": "Machine 5" },
-      { "MachineId": "00000000-0000-0000-0000-000000000006", "ProcessorId": "operational-metrics-6", "DisplayName": "Machine 6" },
-      { "MachineId": "00000000-0000-0000-0000-000000000007", "ProcessorId": "operational-metrics-7", "DisplayName": "Machine 7" }
+      { "MachineId": "00000000-0000-0000-0000-000000000001", "ProcessorId": "operational-metrics-1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 1", "DisplayOrder": 0 },
+      { "MachineId": "00000000-0000-0000-0000-000000000002", "ProcessorId": "operational-metrics-2", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 2", "DisplayOrder": 1 },
+      { "MachineId": "00000000-0000-0000-0000-000000000003", "ProcessorId": "operational-metrics-3", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 3", "DisplayOrder": 2 },
+      { "MachineId": "00000000-0000-0000-0000-000000000004", "ProcessorId": "operational-metrics-4", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 4", "DisplayOrder": 3 },
+      { "MachineId": "00000000-0000-0000-0000-000000000005", "ProcessorId": "operational-metrics-5", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 5", "DisplayOrder": 4 },
+      { "MachineId": "00000000-0000-0000-0000-000000000006", "ProcessorId": "operational-metrics-6", "SiteId": "site-1", "ProductionLineId": "line-2", "DisplayName": "Machine 6", "DisplayOrder": 5 },
+      { "MachineId": "00000000-0000-0000-0000-000000000007", "ProcessorId": "operational-metrics-7", "SiteId": "site-1", "ProductionLineId": "line-2", "DisplayName": "Machine 7", "DisplayOrder": 6 }
     ]
   }
 }
@@ -106,14 +108,18 @@ Source identity is exactly `(MachineId, ProcessorId)`. `DisplayName` is presenta
 
 ## Gateway restriction
 
-The dashboard forwards exactly these two POST operations:
+The dashboard forwards exactly these API operations:
 
 ```text
 POST /api/reporting/v1/operational-metrics/shifts/query
 POST /api/reporting/v1/operational-metrics/production-days/query
+POST /api/reporting/v1/operational-metrics/production-day-shifts/query
+GET  /api/machines/v1/{machineId}/current-state
 ```
 
-No generic `/api` proxy exists. Near-miss paths, trailing-slash variants, extra segments, unknown reporting paths, and non-POST methods are not forwarded.
+The current-state route uses the same configured `ReportingApiBaseAddress` and request timeout as the reporting routes; FC-031.5B requires no additional dashboard upstream endpoint or port.
+
+No generic `/api` proxy exists. Near-miss paths, trailing-slash variants, extra segments, unknown API paths, and unsupported methods are not forwarded.
 
 The gateway preserves request JSON bytes and upstream HTTP status/body/content type. It does not retry, cache, reshape, classify, aggregate, or calculate reporting data.
 
@@ -126,18 +132,25 @@ GET /health/live
 GET /health/ready
 ```
 
-`live` proves the process is running. `ready` proves the production frontend entry asset exists. Neither endpoint probes FC-028.
+`live` proves the process is running. `ready` proves the production frontend entry asset exists. Neither endpoint probes the reporting API or current-state authority.
 
-Startup validation rejects malformed reporting addresses, loopback production addresses, non-positive or over-five-minute timeouts, empty source sets, empty identities/display names, and duplicate `(MachineId, ProcessorId)` pairs.
+Startup validation rejects malformed reporting addresses, loopback production addresses, non-positive or over-five-minute timeouts, invalid configured source identity/presentation fields, and duplicate `(MachineId, ProcessorId)` pairs. `MachineId`, `ProcessorId`, `SiteId`, `ProductionLineId`, and `DisplayName` are required for each configured source; `GroupName` is optional and `DisplayOrder` must be non-negative.
 
 ## Presentation boundary
 
-The browser may select a production-day business date and submit an FC-028 query. It may format and render returned records. It must not:
+The browser may query the delivered reporting surfaces and, for configured machines, consume the authoritative FC-031 current-state response. It may format and render returned records. It must not:
 
 - calculate Availability, Performance, Quality, OEE, utilization, or factory-wide percentages;
 - infer production-day timezone boundaries;
-- infer current machine state;
+- infer current machine state from observations or reporting data; current-state presentation must preserve the authoritative FC-031 response;
 - combine metric-definition versions;
 - reinterpret `unavailable` or `insufficient-evidence` as zero;
 - convert failures into empty reporting results;
 - inspect or synthesize continuation-token semantics.
+
+
+## Current-state refresh boundary
+
+Machine current state is loaded on initial machine-detail presentation and may be refreshed manually. FC-031 does not add dashboard polling, streaming, push updates, focus/visibility refresh, or background refresh. Those remain optional future product work.
+
+TLS termination, certificate lifecycle, service supervision, restart policy, startup ordering, log collection, firewall policy, and host hardening remain deployment/infrastructure responsibilities rather than dashboard application behavior.

@@ -13,15 +13,19 @@ I/O Gateway / Industrial Protocol
   ↓
 FactoryConnect Edge
   ↓
-Signal Mapping
+Durable Observations
   ↓
-Canonical Machine State
+Signal Mapping + Current-State Authorities
   ↓
-Production Events
+Canonical Machine State / Activity
   ↓
-Persistence / API
+Production Context + Operational Metrics
   ↓
-Dashboard / Analytics
+Persistence
+  ↓
+FactoryConnect.Api
+  ↓
+FactoryConnect.Dashboard / Analytics
   ↓
 PulseStackAI (future integration)
 ```
@@ -45,8 +49,8 @@ Protocol implementations remain adapters. The factory domain must not depend on 
 
 ## Initial connectivity
 
-The first pilot uses industrial Ethernet I/O gateways and Modbus TCP. MTConnect and other protocols can be added later without changing the canonical machine domain.
+The delivered connectivity stack includes industrial Ethernet I/O gateways, Modbus TCP, and MTConnect discovery plus current/sequence-aware sample acquisition. Protocol adapters feed the canonical FactoryConnect model without becoming domain authority; additional protocols can be added behind the same boundary.
 
 ## Development principle
 
-Physical hardware must not be required for core development. A simulator/fake connector will exercise the same contracts used by real industrial connectors.
+Physical hardware is not required for core development or conformance. Simulated/fake connectors and provider conformance fixtures exercise the same contracts used by real industrial connectors.
