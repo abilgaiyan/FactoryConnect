@@ -30,7 +30,11 @@ public static class CurrentMachineStateEndpoints
         ArgumentNullException.ThrowIfNull(reader);
 
         if (!Guid.TryParseExact(machineId, "D", out var value)
-            || value == Guid.Empty)
+            || value == Guid.Empty
+            || !string.Equals(
+                machineId,
+                value.ToString("D"),
+                StringComparison.OrdinalIgnoreCase))
         {
             return CurrentMachineStateProblemDetails.InvalidMachineId();
         }
