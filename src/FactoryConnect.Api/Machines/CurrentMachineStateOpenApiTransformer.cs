@@ -31,6 +31,9 @@ internal sealed class CurrentMachineStateOpenApiTransformer : IOpenApiSchemaTran
             ApplyPropertyEnum(schema, "coverage", CoverageValues);
             schema.Required ??= new HashSet<string>(StringComparer.Ordinal);
             schema.Required.Add("evidence");
+            MakePropertyNullable(
+                schema,
+                "evidence");
         }
         else if (context.JsonTypeInfo.Type == typeof(CurrentMachineStateEvidenceResponse))
         {
@@ -44,6 +47,28 @@ internal sealed class CurrentMachineStateOpenApiTransformer : IOpenApiSchemaTran
 
     private static JsonNode[] ToEnumValues(IEnumerable<string> values) =>
         values.Select(static value => JsonValue.Create(value)!).Cast<JsonNode>().ToArray();
+
+    private static void MakePropertyNullable(
+        OpenApiSchema schema,
+        string propertyName)
+    {
+        if (schema.Properties?.TryGetValue(propertyName, out var propertySchema) != true)
+        {
+            return;
+        }
+
+        schema.Properties[propertyName] = new OpenApiSchema
+        {
+            AnyOf =
+            [
+                propertySchema,
+                new OpenApiSchema
+                {
+                    Type = JsonSchemaType.Null,
+                },
+            ],
+        };
+    }
 
     private static void ApplyPropertyEnum(
         OpenApiSchema schema,
