@@ -2,11 +2,12 @@
 
 ## Status
 
-- **FC-030.1 — SQL Migration & Schema Compatibility Foundation:** active
-  - architecture/evidence definition: complete
-  - migration infrastructure implementation: not started
-  - migration 005: prohibited until FC-030.1 implementation/conformance closes
-- **FC-030.2+ — production reporting SQL persistence:** blocked by FC-030.1
+- **FC-030 — SQL Production Reporting Persistence:** complete / frozen
+- **FC-030.1 — SQL Migration & Schema Compatibility Foundation:** complete / frozen
+- Production-reporting SQL persistence and provider composition required by the delivered reporting path are complete.
+- Later migrations added by subsequent features continue to use the FC-030 migration/catalog/schema authority established here.
+
+The remainder of this document preserves the FC-030 design narrative and the repository state at the start of the feature. Statements such as “not started,” “prohibited,” or “future migration” below are historical design constraints unless explicitly presented as current status.
 
 ## Goal
 
