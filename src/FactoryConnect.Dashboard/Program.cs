@@ -4,6 +4,8 @@ using Microsoft.Extensions.Options;
 const string shiftReportingPath = "api/reporting/v1/operational-metrics/shifts/query";
 const string productionDayReportingPath = "api/reporting/v1/operational-metrics/production-days/query";
 const string productionDayShiftReportingPath = "api/reporting/v1/operational-metrics/production-day-shifts/query";
+const string currentMachineStatePrefix = "/api/machines/v1/";
+const string currentMachineStateSuffix = "/current-state";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -67,6 +69,23 @@ app.MapPost('/' + productionDayReportingPath, (HttpContext context, ReportingGat
 
 app.MapPost('/' + productionDayShiftReportingPath, (HttpContext context, ReportingGateway gateway) =>
     ForwardExactReportingRouteAsync(context, gateway, productionDayShiftReportingPath));
+
+app.MapGet("/api/machines/v1/{machineId}/current-state", async (
+    HttpContext context,
+    string machineId,
+    ReportingGateway gateway) =>
+{
+    var expectedPath = currentMachineStatePrefix + machineId + currentMachineStateSuffix;
+    if (!string.Equals(context.Request.Path.Value, expectedPath, StringComparison.Ordinal))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    await gateway
+        .ForwardAsync(context, expectedPath.TrimStart('/'), HttpMethod.Get)
+        .ConfigureAwait(false);
+});
 
 app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment) =>
 {

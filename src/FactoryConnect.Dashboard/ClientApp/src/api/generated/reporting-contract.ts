@@ -35,6 +35,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/machines/v1/{machineId}/current-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["GetCurrentMachineState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reporting/v1/operational-metrics/shifts/query": {
         parameters: {
             query?: never;
@@ -87,6 +103,25 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CurrentMachineStateEvidenceResponse: {
+            /** @enum {string} */
+            machineState: "unknown" | "stopped" | "idle" | "running" | "fault";
+            /** @enum {string} */
+            freshness: "current" | "stale" | "indeterminate";
+            /** @enum {string} */
+            usability: "current" | "stale" | "indeterminate" | "behind";
+            /** Format: date-time */
+            readAsOf: string;
+        };
+        CurrentMachineStateResponse: {
+            /** Format: uuid */
+            machineId: string;
+            /** @enum {string} */
+            outcome: "evidence" | "no-evidence";
+            /** @enum {string} */
+            coverage: "complete" | "behind" | "indeterminate";
+            evidence: null | components["schemas"]["CurrentMachineStateEvidenceResponse"];
+        };
         MetricSourceRevisionResponse: {
             processorId: string;
             /** Format: uuid */
@@ -246,6 +281,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    GetCurrentMachineState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machineId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentMachineStateResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     QueryShiftOperationalMetrics: {
         parameters: {
             query?: never;
