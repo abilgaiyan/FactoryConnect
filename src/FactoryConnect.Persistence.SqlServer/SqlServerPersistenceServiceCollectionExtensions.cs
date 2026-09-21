@@ -51,15 +51,16 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         ? new SqlServerCurrentStateAuthorityCutProvider(connectionString)
                         : null;
 
+                    var metricAggregationStore =
+                        new SqlServerMetricAggregationStore(connectionString);
+
                     return new PersistenceProviderServices(
                         observationStore,
                         new SqlServerProductionContextProcessingStore(connectionString),
                         new SqlServerMetricInputStore(connectionString),
-                        new SqlServerMetricAggregationStore(connectionString),
-                        metricAggregationRevisionReader:
-                            new SqlServerMetricAggregationRevisionReader(connectionString),
-                        revisionedOperationalMetricComponentSnapshotReader:
-                            new SqlServerRevisionedOperationalMetricComponentSnapshotReader(connectionString),
+                        metricAggregationStore,
+                        metricAggregationRevisionReader: metricAggregationStore,
+                        revisionedOperationalMetricComponentSnapshotReader: metricAggregationStore,
                         operationalMetricProjectionStore:
                             new SqlServerOperationalMetricProjectionStore(connectionString),
                         operationalMetricProjectionQueryReader:
