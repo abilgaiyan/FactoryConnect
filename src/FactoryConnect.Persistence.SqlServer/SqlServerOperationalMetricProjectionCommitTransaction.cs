@@ -42,6 +42,8 @@ internal sealed record SqlServerOperationalMetricProjectionCheckpointHeader(
     long ProjectionProcessorRowId,
     long MetricAggregationProcessorRowId,
     long MetricInputStreamRowId,
+    MetricAggregationProcessorId AggregationProcessorId,
+    MetricInputStreamId StreamId,
     MetricInputPosition Position);
 
 internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
@@ -68,8 +70,13 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
         command.CommandText =
             "SELECT p.OperationalMetricProjectionProcessorRowId, " +
             "p.MetricAggregationProcessorRowId, p.MetricInputStreamRowId, c.Position, " +
-            "p.ProcessorKey, p.ProcessorKeyBinary " +
+            "p.ProcessorKey, p.ProcessorKeyBinary, ap.ProcessorKey, ap.ProcessorKeyBinary, " +
+            "ap.MetricInputStreamRowId, s.MachineId, s.StreamKey, s.StreamKeyBinary " +
             "FROM dbo.OperationalMetricProjectionProcessor AS p " +
+            "INNER JOIN dbo.MetricAggregationProcessor AS ap " +
+            "ON ap.MetricAggregationProcessorRowId = p.MetricAggregationProcessorRowId " +
+            "INNER JOIN dbo.MetricInputStream AS s " +
+            "ON s.MetricInputStreamRowId = p.MetricInputStreamRowId " +
             "LEFT JOIN dbo.OperationalMetricProjectionCheckpoint AS c " +
             "ON c.OperationalMetricProjectionProcessorRowId = p.OperationalMetricProjectionProcessorRowId " +
             "WHERE p.ProcessorKeyBinary = @ProcessorKeyBinary;";
@@ -84,6 +91,21 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
 
         ValidateProcessorIdentity(reader.GetString(4), (byte[])reader[5], processorId, keyBinary);
 
+        var aggregationProcessorKey = reader.GetString(6);
+        var aggregationProcessorKeyBinary = (byte[])reader[7];
+        var aggregationStreamRowId = reader.GetInt64(8);
+        var machineId = new MachineId(reader.GetGuid(9));
+        var streamKey = reader.GetString(10);
+        var streamKeyBinary = (byte[])reader[11];
+
+        if (aggregationStreamRowId != reader.GetInt64(2) ||
+            !aggregationProcessorKeyBinary.AsSpan().SequenceEqual(OrdinalStringKeyCodec.Encode(aggregationProcessorKey)) ||
+            !streamKeyBinary.AsSpan().SequenceEqual(OrdinalStringKeyCodec.Encode(streamKey)))
+        {
+            throw new InvalidOperationException(
+                "Persisted operational metric projection checkpoint source binding is corrupt or unsupported.");
+        }
+
         if (reader.IsDBNull(3))
         {
             return null;
@@ -93,6 +115,8 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
             reader.GetInt64(0),
             reader.GetInt64(1),
             reader.GetInt64(2),
+            new MetricAggregationProcessorId(aggregationProcessorKey),
+            new MetricInputStreamId(machineId, streamKey),
             new MetricInputPosition(SqlServerUInt64.Materialize(reader.GetDecimal(3))));
     }
 
