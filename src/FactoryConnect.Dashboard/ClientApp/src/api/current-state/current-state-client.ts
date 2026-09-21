@@ -6,25 +6,34 @@ export type CurrentMachineStateProblemDetails = Operation["responses"][400]["con
 
 export class CurrentStateAuthorityUnavailableFailure extends Error {
   readonly kind = "authority-unavailable" as const;
-  constructor(readonly problemDetails: CurrentMachineStateProblemDetails) {
+  readonly problemDetails: CurrentMachineStateProblemDetails;
+
+  constructor(problemDetails: CurrentMachineStateProblemDetails) {
     super("Authoritative current machine state is temporarily unavailable.");
     this.name = "CurrentStateAuthorityUnavailableFailure";
+    this.problemDetails = problemDetails;
   }
 }
 
 export class CurrentStateInvalidMachineFailure extends Error {
   readonly kind = "invalid-machine" as const;
-  constructor(readonly problemDetails: CurrentMachineStateProblemDetails) {
+  readonly problemDetails: CurrentMachineStateProblemDetails;
+
+  constructor(problemDetails: CurrentMachineStateProblemDetails) {
     super("The current-state machine identity is invalid.");
     this.name = "CurrentStateInvalidMachineFailure";
+    this.problemDetails = problemDetails;
   }
 }
 
 export class CurrentStateTransportFailure extends Error {
   readonly kind = "transport" as const;
-  constructor(readonly status: number, message: string, cause?: unknown) {
+  readonly status: number;
+
+  constructor(status: number, message: string, cause?: unknown) {
     super(message, { cause });
     this.name = "CurrentStateTransportFailure";
+    this.status = status;
   }
 }
 
