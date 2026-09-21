@@ -53,18 +53,18 @@ internal sealed class SqlServerOperationalMetricProjectionStore : IOperationalMe
         CancellationToken cancellationToken) =>
         _queryReader.ReadDetailAsync(processorId, key, cancellationToken);
 
-    public Task CommitAsync(
+    public ValueTask CommitAsync(
         OperationalMetricProjectionCommit commit,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(commit);
-        return _commitTransaction.ExecuteAsync(
+        return new ValueTask(_commitTransaction.ExecuteAsync(
             commit,
             async (context, token) =>
                 await SqlServerOperationalMetricProjectionPublication.ExecuteAsync(
                     context,
                     commit,
                     token),
-            cancellationToken);
+            cancellationToken));
     }
 }
