@@ -127,7 +127,7 @@ public sealed class CurrentMachineStateEndpointTests
         await using var app = await CreateAppAsync(reader);
         using var client = app.GetTestClient();
 
-        using var response = await client.GetAsync(RoutePrefix + machineId);
+        using var response = await client.GetAsync(RoutePrefix + machineId + "/current-state");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -265,8 +265,11 @@ public sealed class CurrentMachineStateEndpointTests
             "complete",
             "behind",
             "indeterminate");
-        Assert.True(
-            IsNullable(responseSchema.GetProperty("properties").GetProperty("evidence")));
+        var evidenceProperty = responseSchema
+            .GetProperty("properties")
+            .GetProperty("evidence");
+        Assert.True(IsNullable(evidenceProperty));
+        Assert.True(HasEvidenceSchemaBranch(evidenceProperty));
 
         var evidenceSchema = schemas.GetProperty(nameof(CurrentMachineStateEvidenceResponse));
         AssertRequired(
@@ -355,8 +358,11 @@ public sealed class CurrentMachineStateEndpointTests
         Assert.Equal(expectedCode, root.GetProperty("code").GetString());
         Assert.False(root.TryGetProperty("instance", out _));
         Assert.Equal(
-            ["type", "title", "status", "detail", "code"],
-            root.EnumerateObject().Select(static property => property.Name).Order().OrderBy(static value => value, StringComparer.Ordinal).ToArray());
+            ["code", "detail", "status", "title", "type"],
+            root.EnumerateObject()
+                .Select(static property => property.Name)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray());
     }
 
     private static void AssertNoInternalFields(JsonElement root)
@@ -431,6 +437,30 @@ public sealed class CurrentMachineStateEndpointTests
                 candidate.TryGetProperty("type", out var candidateType)
                 && candidateType.ValueKind == JsonValueKind.String
                 && candidateType.GetString() == "null");
+    }
+
+    private static bool HasEvidenceSchemaBranch(JsonElement schema)
+    {
+        if (schema.TryGetProperty("$ref", out var reference)
+            && reference.ValueKind == JsonValueKind.String
+            && reference.GetString()?.EndsWith(
+                "/" + nameof(CurrentMachineStateEvidenceResponse),
+                StringComparison.Ordinal) == true)
+        {
+            return true;
+        }
+
+        foreach (var keyword in new[] { "anyOf", "oneOf", "allOf" })
+        {
+            if (schema.TryGetProperty(keyword, out var branches)
+                && branches.ValueKind == JsonValueKind.Array
+                && branches.EnumerateArray().Any(HasEvidenceSchemaBranch))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private sealed class StubReader(
