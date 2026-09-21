@@ -43,11 +43,11 @@ internal static class CurrentMachineStateHttpMapper
     private static string MachineState(MachineState machineState) =>
         machineState switch
         {
-            Abstractions.MachineState.Unknown => "unknown",
-            Abstractions.MachineState.Stopped => "stopped",
-            Abstractions.MachineState.Idle => "idle",
-            Abstractions.MachineState.Running => "running",
-            Abstractions.MachineState.Fault => "fault",
+            FactoryConnect.Abstractions.MachineState.Unknown => "unknown",
+            FactoryConnect.Abstractions.MachineState.Stopped => "stopped",
+            FactoryConnect.Abstractions.MachineState.Idle => "idle",
+            FactoryConnect.Abstractions.MachineState.Running => "running",
+            FactoryConnect.Abstractions.MachineState.Fault => "fault",
             _ => throw new InvalidOperationException(
                 "Unsupported current machine-state evidence value."),
         };
