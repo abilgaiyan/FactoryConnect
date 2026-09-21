@@ -52,7 +52,8 @@ internal sealed class CurrentMachineStateOpenApiTransformer : IOpenApiSchemaTran
         OpenApiSchema schema,
         string propertyName)
     {
-        if (schema.Properties?.TryGetValue(propertyName, out var propertySchema) != true)
+        if (schema.Properties?.TryGetValue(propertyName, out var propertySchema) != true
+            || propertySchema is null)
         {
             return;
         }
