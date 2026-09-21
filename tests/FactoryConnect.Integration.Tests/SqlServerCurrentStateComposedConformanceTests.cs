@@ -303,7 +303,7 @@ public sealed class SqlServerCurrentStateComposedConformanceTests :
     }
 
     private static ObservationStreamId Stream(MachineId machineId) =>
-        new(machineId, "MTConnect:CNC-01");
+        MtConnectObservationStreamId.Create(machineId, "CNC-01");
 
     private static MtConnectMachineInventory Inventory(MachineId machineId) =>
         new(
