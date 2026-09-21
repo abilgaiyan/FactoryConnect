@@ -17,7 +17,7 @@ internal sealed class CurrentMachineStateOpenApiTransformer : IOpenApiSchemaTran
     private static readonly JsonNode[] UsabilityValues =
         ToEnumValues(CurrentMachineStateHttpVocabulary.UsabilityValues);
 
-    public Task TransformAsync(
+    public async Task TransformAsync(
         OpenApiSchema schema,
         OpenApiSchemaTransformerContext context,
         CancellationToken cancellationToken)
@@ -31,9 +31,11 @@ internal sealed class CurrentMachineStateOpenApiTransformer : IOpenApiSchemaTran
             ApplyPropertyEnum(schema, "coverage", CoverageValues);
             schema.Required ??= new HashSet<string>(StringComparer.Ordinal);
             schema.Required.Add("evidence");
-            MakePropertyNullable(
-                schema,
-                "evidence");
+            await MakeEvidencePropertyNullableAsync(
+                    schema,
+                    context,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         else if (context.JsonTypeInfo.Type == typeof(CurrentMachineStateEvidenceResponse))
         {
@@ -42,31 +44,36 @@ internal sealed class CurrentMachineStateOpenApiTransformer : IOpenApiSchemaTran
             ApplyPropertyEnum(schema, "usability", UsabilityValues);
         }
 
-        return Task.CompletedTask;
     }
 
     private static JsonNode[] ToEnumValues(IEnumerable<string> values) =>
         values.Select(static value => JsonValue.Create(value)!).Cast<JsonNode>().ToArray();
 
-    private static void MakePropertyNullable(
+    private static async Task MakeEvidencePropertyNullableAsync(
         OpenApiSchema schema,
-        string propertyName)
+        OpenApiSchemaTransformerContext context,
+        CancellationToken cancellationToken)
     {
-        if (schema.Properties?.TryGetValue(propertyName, out var propertySchema) != true
-            || propertySchema is null)
+        if (schema.Properties?.ContainsKey("evidence") != true)
         {
             return;
         }
 
-        schema.Properties[propertyName] = new OpenApiSchema
+        var evidenceSchema = await context
+            .GetOrCreateSchemaAsync(
+                typeof(CurrentMachineStateEvidenceResponse),
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        schema.Properties["evidence"] = new OpenApiSchema
         {
-            AnyOf =
+            OneOf =
             [
-                propertySchema,
                 new OpenApiSchema
                 {
                     Type = JsonSchemaType.Null,
                 },
+                evidenceSchema,
             ],
         };
     }
