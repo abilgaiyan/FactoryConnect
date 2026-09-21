@@ -43,7 +43,7 @@ Applications / Analytics / AI
 - Durable observation ingestion with atomic cursor checkpointing
 - Pluggable persistence-provider selection with declared provider capabilities
 - In-memory persistence provider with full FC-027 operational-metric support
-- SQL Server core persistence provider with transactional commits, idempotent replay, exact stream identity, and same-stream concurrency protection
+- SQL Server persistence with transactional ingestion, durable observation processing, production reporting, operational-metric projection/query persistence, and authoritative current-state support
 - Durable raw-to-canonical observation processing with independent checkpoints
 - Durable machine state changes and activity-period projection
 - Effective-dated production context with company, site, line, machine, order, operation, part, and operator dimensions
@@ -59,7 +59,13 @@ Applications / Analytics / AI
 - Coherent exact-revision metric evaluation with full-precision dependency composition
 - Durable operational metric projections with atomic checkpointing, replay manifests, and recursive evidence lineage
 - Provider-neutral shift and production-day reporting readers with lightweight summaries and exact-version detail
-- Shared persistence and processing conformance tests
+- Versioned HTTP reporting APIs for shift, production-day, and production-day-to-shift queries
+- Authoritative current-machine-state reading over acquisition/contact, mapping-coverage, and state/activity continuity authorities
+- In-memory and SQL Server current-state authority realization with stable authority-cut semantics
+- Versioned HTTP current-state surface with explicit evidence/no-evidence, coverage, freshness, and usability semantics
+- React/TypeScript factory dashboard with production-day, shift-performance, daily-report/print, and machine current-state surfaces
+- Same-origin dashboard gateway with generated OpenAPI-derived browser contracts
+- Shared persistence, processing, API, and presentation conformance tests
 
 ## Technology
 
@@ -72,7 +78,7 @@ Applications / Analytics / AI
 - Modbus TCP
 - MTConnect
 - xUnit
-- React + TypeScript (planned)
+- React + TypeScript
 
 ## Architecture Principles
 
@@ -120,17 +126,15 @@ For SQL Server, provider-specific configuration is supplied separately:
 
 Provider registration remains separate from provider activation. SQL Server configuration is validated only when SQL Server is selected.
 
-Persistence providers also declare the capability set they implement. The full Edge application currently requires the FC-027 operational-metric capabilities in addition to the core persistence contracts.
+Persistence providers also declare the capability set they implement. Composition roots activate only the capabilities they require and fail explicitly when the selected provider cannot supply them.
 
-The in-memory provider currently supports the complete Edge capability set. The SQL Server provider is currently **core-only**: it supports observation ingestion, production-context persistence, metric-input persistence, and FC-026 aggregate persistence, but not FC-027 historical-revision reconstruction or operational-metric projection/query persistence. Selecting SQL Server for the full Edge application therefore fails during persistence finalization instead of mixing SQL core state with in-memory FC-027 state.
+The in-memory and SQL Server providers both participate in the delivered production-reporting and authoritative current-state paths. SQL Server now supports durable observation processing, operational-metric projection/query persistence, the current-state authority graph, and stable current-state authority-cut reading in addition to the earlier core persistence contracts.
 
 ## SQL Server Deployment Prerequisite
 
-A production SQL Server database must be provisioned before starting FactoryConnect Edge for SQL-backed core persistence. Apply the provider-owned schema migrations to that database, then supply its connection string through normal .NET configuration or a secret store.
+A production SQL Server database must be provisioned and migrated through the repository-owned migration path before starting a SQL-backed FactoryConnect runtime. Supply its connection string through normal .NET configuration or a secret store.
 
-The runtime does not create production databases and FC-023 does not introduce an automatic migration framework. Database provisioning and credentials remain deployment/infrastructure responsibilities.
-
-SQL-backed FC-027 operational-metric durability remains future provider work.
+Runtime hosts verify migration history and current schema compatibility but do not perform deployment DDL. Database provisioning, migration execution, credentials, and infrastructure policy remain deployment responsibilities.
 
 ## Initial Deployment Scope
 
@@ -138,13 +142,15 @@ The first deployment scope targets industrial machine connectivity through Ether
 
 ## Project Status
 
-FactoryConnect has progressed through **FC-027 — Operational Metric Evaluation and Reporting Model**. The durable pipeline now spans acquisition, canonical signal processing, machine state/activity history, historically effective production and shift context, planned-production eligibility, durable metric-input facts, shift/production-day component aggregation, exact-version operational metric evaluation, durable metric projections, and provider-neutral reporting reads.
+FactoryConnect has progressed through **FC-031 — Authoritative Current Machine State**.
 
-FC-027 includes built-in Availability, Utilization, Performance, Quality, and OEE definitions; exact-version dependency evaluation; coherent historical source revisions; durable replay-safe projections; lightweight period summaries; and exact-version recursive lineage detail.
+The delivered platform now spans durable acquisition and observation processing; production context, shift, planned-production and metric-input persistence; shift/production-day aggregation; exact-version operational metric evaluation; SQL-backed reporting persistence; versioned HTTP reporting APIs; the React/TypeScript dashboard and daily report; and authoritative current-machine-state consumption from acquisition authority through the machine-detail presentation.
 
-HTTP reporting APIs, dashboards, cross-machine/site rollups, downtime reason workflows, manual backfill/re-evaluation, SQL-backed FC-027 projection persistence, alerting, and predictive metrics remain downstream work.
+FC-031 closes the current-state path through acquisition/contact, mapping-coverage and state/activity continuity authorities, a stable authority cut, the Core semantic reader, InMemory and SQL Server realization, `GET /api/machines/v1/{machineId}/current-state`, and configured-machine dashboard consumption. Current-state reading is request-driven. Initial load and manual refresh are delivered; polling, streaming, push updates, and background refresh remain optional future product work.
 
-See `docs/features/FC-027-operational-metric-evaluation-reporting-model.md` for the FC-027 architecture and conformance model.
+See `docs/features/FC-028-reporting-api.md`, `docs/features/FC-029-first-factory-dashboard-daily-report.md`, `docs/features/FC-030-sql-production-reporting-persistence.md`, and `docs/features/FC-031-authoritative-current-machine-state.md` for the corresponding feature boundaries and closure records.
+
+Cross-machine/site rollups, downtime-reason workflows, manual backfill/re-evaluation, alerting, predictive metrics, and AI integration remain separate future work.
 
 ## License
 
