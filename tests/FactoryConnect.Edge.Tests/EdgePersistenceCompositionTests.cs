@@ -113,7 +113,7 @@ public sealed class EdgePersistenceCompositionTests
     }
 
     [Fact]
-    public void SqlServerFullCapabilitySelectionFailsDuringPersistenceFinalization()
+    public void SqlServerFullCapabilitySelectionComposesAdvertisedCapabilities()
     {
         var configuration = CreateConfiguration(
             new Dictionary<string, string?>
