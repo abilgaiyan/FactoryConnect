@@ -13,18 +13,19 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
-    public async Task StartupWaitsForExternalCommitThenRealMigrationOwnsCommittedSchemaDriftRejection()
+    public async Task RuntimeVerificationWaitsForExternalCommitThenRejectsCommittedSchemaDrift()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
-        await RunRealMigrationAsync(database.ConnectionString);
+        await SqlServerMigrationOperation.ApplyAsync(
+            database.ConnectionString,
+            StartupLockTimeout,
+            CancellationToken.None);
 
         SqlConnection? blockerConnection = null;
         SqlTransaction? blockerTransaction = null;
-        Exception? migrationFailure = null;
         Exception? primaryFailure = null;
-        var verificationCount = 0;
         var activationCount = 0;
-        var migrationSessionId = new TaskCompletionSource<int>(
+        var verificationSessionId = new TaskCompletionSource<int>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
         try
@@ -39,26 +40,8 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
                 {
                     await using var connection = new SqlConnection(connectionString);
                     await connection.OpenAsync(cancellationToken);
-                    migrationSessionId.TrySetResult(
+                    verificationSessionId.TrySetResult(
                         await ReadSessionIdAsync(connection, cancellationToken));
-                    try
-                    {
-                        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
-                            connection,
-                            lockTimeout,
-                            cancellationToken);
-                    }
-                    catch (Exception exception)
-                    {
-                        migrationFailure = exception;
-                        throw;
-                    }
-                },
-                async (connectionString, lockTimeout, cancellationToken) =>
-                {
-                    verificationCount++;
-                    await using var connection = new SqlConnection(connectionString);
-                    await connection.OpenAsync(cancellationToken);
                     return await SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault().VerifyAsync(
                         connection,
                         lockTimeout,
@@ -72,14 +55,13 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
             }
 
             var startupTask = RunStartupAsync();
-            var sessionId = await migrationSessionId.Task.WaitAsync(ObservationTimeout);
+            var sessionId = await verificationSessionId.Task.WaitAsync(ObservationTimeout);
 
-            await AssertWaitingExclusiveApplicationLockAsync(
+            await AssertWaitingSharedApplicationLockAsync(
                 database.ConnectionString,
                 sessionId,
                 startupTask,
                 ObservationTimeout);
-            Assert.Equal(0, verificationCount);
             Assert.Equal(0, activationCount);
 
             await blockerTransaction.CommitAsync();
@@ -92,22 +74,13 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
                 () => startupTask.WaitAsync(CompletionTimeout));
             primaryFailure = exception;
 
-            Assert.Equal(
-                SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
-                exception.FailureKind);
-            Assert.Null(exception.CompatibilityResult);
-            Assert.NotNull(migrationFailure);
-            Assert.IsType<FinalSchemaValidationException>(migrationFailure);
-            Assert.Same(migrationFailure, exception.InnerException);
-            Assert.Equal(0, verificationCount);
-            Assert.Equal(0, activationCount);
-
-            var committedResult = await RunRealVerificationAsync(database.ConnectionString);
+            Assert.Equal(SqlPersistenceStartupFailureKind.DatabaseIncompatible, exception.FailureKind);
+            Assert.Null(exception.InnerException);
+            Assert.NotNull(exception.CompatibilityResult);
             Assert.Equal(
                 SqlRuntimeCompatibilityClassification.MigrationSchemaDrift,
-                committedResult.Classification);
-            Assert.False(committedResult.IsCompatible);
-            Assert.NotEmpty(committedResult.Diagnostics);
+                exception.CompatibilityResult.Classification);
+            Assert.Equal(0, activationCount);
         }
         catch (Exception exception)
         {
@@ -116,10 +89,7 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
         }
         finally
         {
-            await CleanupBlockerAsync(
-                blockerConnection,
-                blockerTransaction,
-                primaryFailure);
+            await CleanupBlockerAsync(blockerConnection, blockerTransaction, primaryFailure);
         }
     }
 
@@ -200,7 +170,7 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
             $"Failed to acquire E.5.5 external migration lock. Result: {result}.");
     }
 
-    private static async Task AssertWaitingExclusiveApplicationLockAsync(
+    private static async Task AssertWaitingSharedApplicationLockAsync(
         string connectionString,
         int sessionId,
         Task startupTask,
@@ -235,7 +205,7 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
                     var ownerType = reader.GetString(2);
                     if (string.Equals(status, "WAIT", StringComparison.Ordinal))
                     {
-                        Assert.Equal("X", mode);
+                        Assert.Equal("S", mode);
                         Assert.Equal("TRANSACTION", ownerType);
                         Assert.False(startupTask.IsCompleted);
                         return;
@@ -251,7 +221,7 @@ public sealed class SqlPersistenceStartupCommitBoundaryRealSqlIntegrationTests
         }
 
         throw new TimeoutException(
-            $"SQL session {sessionId} was not observed waiting on the E.5.5 migration APPLICATION lock.");
+            $"SQL session {sessionId} was not observed waiting on the FC-032.3B compatibility APPLICATION lock.");
     }
 
     private static async Task<int> ReadSessionIdAsync(
