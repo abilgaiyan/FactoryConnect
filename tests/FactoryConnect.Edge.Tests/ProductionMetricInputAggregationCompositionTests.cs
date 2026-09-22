@@ -221,7 +221,7 @@ public sealed class ProductionMetricInputAggregationCompositionTests
                     ["ProductionProcessing:SiteId"] = "SITE-1",
                     ["ProductionProcessing:ProductionLineId"] = "LINE-1",
                     ["ProductionProcessing:Contexts:0:AssignmentId"] = "CTX-1",
-                    ["ProductionProcessing:Contexts:0:EffectiveFromUtc"] =
+                    ["ProductionProcessing:Contexts:0:EffectiveFrom"] =
                         "2026-01-01T00:00:00+00:00",
                     ["ProductionProcessing:QuantityStreamKey"] =
                         "production-quantity",
