@@ -113,7 +113,7 @@ public sealed class EdgePersistenceCompositionTests
     }
 
     [Fact]
-    public void SqlServerFullCapabilitySelectionFailsDuringPersistenceFinalization()
+    public void SqlServerFullCapabilitySelectionUsesRegisteredSqlCapabilities()
     {
         var configuration = CreateConfiguration(
             new Dictionary<string, string?>
@@ -124,13 +124,33 @@ public sealed class EdgePersistenceCompositionTests
             });
         var services = new ServiceCollection();
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            services.AddFactoryConnectEdgePersistence(
-                configuration,
-                PersistenceProviderCapabilities.All));
+        services.AddFactoryConnectEdgePersistence(
+            configuration,
+            PersistenceProviderCapabilities.All);
 
-        Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("OperationalMetricProjectionStorage", exception.Message, StringComparison.Ordinal);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerMetricAggregationStore",
+            provider.GetRequiredService<IMetricAggregationStore>().GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerMetricAggregationStore",
+            provider.GetRequiredService<IMetricAggregationRevisionReader>().GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerMetricAggregationStore",
+            provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>().GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerOperationalMetricProjectionStore",
+            provider.GetRequiredService<IOperationalMetricProjectionStore>().GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerOperationalMetricProjectionQueryReader",
+            provider.GetRequiredService<IOperationalMetricProjectionQueryReader>().GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerOperationalMetricReportingQueryProvider",
+            provider.GetRequiredService<IOperationalMetricReportingQueryProvider>().GetType().FullName);
+        Assert.Equal(
+            "FactoryConnect.Persistence.SqlServer.SqlServerMachineShiftOccurrenceRosterStore",
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>().GetType().FullName);
     }
 
     private static IConfiguration CreateConfiguration(

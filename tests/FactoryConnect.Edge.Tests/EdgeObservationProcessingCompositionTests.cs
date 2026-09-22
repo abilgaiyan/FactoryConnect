@@ -3,6 +3,7 @@ using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
+using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -187,7 +188,7 @@ public sealed class EdgeObservationProcessingCompositionTests
     }
 
     [Fact]
-    public void ProviderWithoutProcessingCapabilitiesFailsClearly()
+    public void SqlServerProviderComposesDurableObservationProcessingPipeline()
     {
         var machineId = MachineId.New();
         var streamId = new ObservationStreamId(machineId, "modbus:line-1");
@@ -203,6 +204,41 @@ public sealed class EdgeObservationProcessingCompositionTests
 
         using var provider = services.BuildServiceProvider();
 
+        Assert.NotNull(
+            provider.GetRequiredService<
+                DurableObservationProcessingPipeline>());
+    }
+
+    [Fact]
+    public void ProviderWithoutProcessingCapabilitiesFailsClearly()
+    {
+        var machineId = MachineId.New();
+        var streamId = new ObservationStreamId(machineId, "modbus:line-1");
+        var configuration = Configuration("Limited");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPersistenceProvider(
+            new PersistenceProviderRegistration(
+                "Limited",
+                PersistenceProviderCapabilities.Core,
+                static _ =>
+                {
+                    var productionContext =
+                        new InMemoryProductionContextProcessingStore();
+
+                    return new PersistenceProviderServices(
+                        new NonDurableObservationIngestionStore(),
+                        productionContext,
+                        productionContext,
+                        new InMemoryMetricAggregationStore());
+                }));
+        services.AddFactoryConnectPersistence(configuration);
+        services.AddFactoryConnectObservationProcessing(
+            configuration,
+            streamId);
+
+        using var provider = services.BuildServiceProvider();
+
         var exception = Assert.Throws<InvalidOperationException>(
             () => provider.GetRequiredService<
                 DurableObservationProcessingPipeline>());
@@ -211,6 +247,38 @@ public sealed class EdgeObservationProcessingCompositionTests
             nameof(IDurableObservationReader),
             exception.Message,
             StringComparison.Ordinal);
+    }
+
+    private sealed class NonDurableObservationIngestionStore :
+        IObservationIngestionStore
+    {
+        public ValueTask<ObservationCheckpoint?> ReadCheckpointAsync(
+            ObservationStreamId streamId,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(streamId);
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<ObservationCheckpoint?>(null);
+        }
+
+        public ValueTask<AcquisitionContactAuthority?>
+            ReadAcquisitionContactAuthorityAsync(
+                ObservationStreamId streamId,
+                CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(streamId);
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult<AcquisitionContactAuthority?>(null);
+        }
+
+        public ValueTask CommitAsync(
+            ObservationIngestionBatch batch,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(batch);
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static ObservationIngestionBatch Batch(
