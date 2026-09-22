@@ -34,8 +34,9 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
             (schemaBlockerConnection, schemaBlockerTransaction) =
                 await AcquireMigration003SchemaBlockerAsync(database.ConnectionString);
 
-            var winner = CreateLabelledMigrationOperation(database.ConnectionString, winningLabel);
-            var waiter = CreateLabelledMigrationOperation(database.ConnectionString, waitingLabel);
+            var winner = CreateLabelledMigrationOperation(
+                database.ConnectionString,
+                winningLabel);
 
             winnerTask = winner.MigrationTask;
             var winnerSessionId = await winner.MigrationSessionId.Task.WaitAsync(ObservationTimeout);
@@ -48,6 +49,10 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
                 winnerTask,
                 expectIncomplete: true,
                 ObservationTimeout);
+
+            var waiter = CreateLabelledMigrationOperation(
+                database.ConnectionString,
+                waitingLabel);
 
             waiterTask = waiter.MigrationTask;
             var waiterSessionId = await waiter.MigrationSessionId.Task.WaitAsync(ObservationTimeout);
