@@ -16,10 +16,16 @@ public sealed class SqlPersistenceStartupRealSqlSuccessIntegrationTests
     [InlineData(InitialDatabaseState.PrefixThrough001)]
     [InlineData(InitialDatabaseState.PrefixThrough002)]
     [InlineData(InitialDatabaseState.PrefixThrough003)]
-    public async Task RealStartupConvergesSupportedStatesToExactCurrent(InitialDatabaseState initialState)
+    public async Task ExplicitMigrationThenRuntimeReadinessProducesExactCurrent(InitialDatabaseState initialState)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await SeedAsync(database.ConnectionString, initialState);
+
+        // Arrange through the explicit operator migration authority. Runtime readiness is exercised separately below.
+        await SqlServerMigrationOperation.ApplyAsync(
+            database.ConnectionString,
+            LockTimeout,
+            CancellationToken.None);
 
         var gate = new SqlServerPersistenceStartupGate(
             database.ConnectionString,
