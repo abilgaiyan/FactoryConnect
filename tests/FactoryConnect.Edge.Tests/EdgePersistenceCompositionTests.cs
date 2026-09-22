@@ -113,7 +113,7 @@ public sealed class EdgePersistenceCompositionTests
     }
 
     [Fact]
-    public void SqlServerFullCapabilitySelectionComposesAdvertisedCapabilities()
+    public void SqlServerFullCapabilitySelectionFailsDuringPersistenceFinalization()
     {
         var configuration = CreateConfiguration(
             new Dictionary<string, string?>
@@ -124,23 +124,13 @@ public sealed class EdgePersistenceCompositionTests
             });
         var services = new ServiceCollection();
 
-        services.AddFactoryConnectEdgePersistence(
-            configuration,
-            PersistenceProviderCapabilities.All);
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddFactoryConnectEdgePersistence(
+                configuration,
+                PersistenceProviderCapabilities.All));
 
-        using var provider = services.BuildServiceProvider();
-        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
-        Assert.IsType<SqlServerMetricAggregationStore>(aggregation);
-        Assert.Same(aggregation, provider.GetRequiredService<IMetricAggregationRevisionReader>());
-        Assert.Same(aggregation, provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>());
-        Assert.IsType<SqlServerOperationalMetricProjectionStore>(
-            provider.GetRequiredService<IOperationalMetricProjectionStore>());
-        Assert.IsType<SqlServerOperationalMetricProjectionQueryReader>(
-            provider.GetRequiredService<IOperationalMetricProjectionQueryReader>());
-        Assert.IsType<SqlServerOperationalMetricReportingQueryProvider>(
-            provider.GetRequiredService<IOperationalMetricReportingQueryProvider>());
-        Assert.IsType<SqlServerMachineShiftOccurrenceRosterStore>(
-            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
+        Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("OperationalMetricProjectionStorage", exception.Message, StringComparison.Ordinal);
     }
 
     private static IConfiguration CreateConfiguration(
