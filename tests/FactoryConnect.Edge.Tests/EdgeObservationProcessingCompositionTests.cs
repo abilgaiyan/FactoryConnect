@@ -3,6 +3,7 @@ using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
+using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -187,7 +188,7 @@ public sealed class EdgeObservationProcessingCompositionTests
     }
 
     [Fact]
-    public void ProviderWithoutProcessingCapabilitiesFailsClearly()
+    public void SqlServerProviderComposesObservationProcessingCapabilities()
     {
         var machineId = MachineId.New();
         var streamId = new ObservationStreamId(machineId, "modbus:line-1");
