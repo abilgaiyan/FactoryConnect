@@ -126,21 +126,31 @@ public sealed class ProductionActivityAssociationRegistrationConformanceTests
                     ["ProductionProcessing:CompanyId"] = "COMP-1",
                     ["ProductionProcessing:SiteId"] = "SITE-1",
                     ["ProductionProcessing:ProductionLineId"] = "LINE-1",
-                    ["ProductionProcessing:ContextAssignmentId"] = "CTX-1",
-                    ["ProductionProcessing:ContextEffectiveFromUtc"] =
+                    ["ProductionProcessing:Contexts:0:AssignmentId"] = "CTX-1",
+                    ["ProductionProcessing:Contexts:0:EffectiveFrom"] =
                         "2026-01-01T00:00:00+00:00",
                     ["ProductionProcessing:QuantityStreamKey"] =
                         "production-quantity",
-                    ["ProductionProcessing:Shift:AssignmentId"] =
+                    ["ProductionProcessing:ShiftSchedules:0:CompanyId"] = "COMP-1",
+                    ["ProductionProcessing:ShiftSchedules:0:SiteId"] = "SITE-1",
+                    ["ProductionProcessing:ShiftSchedules:0:ProductionLineId"] = "LINE-1",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:0"] = "Monday",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:1"] = "Tuesday",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:2"] = "Wednesday",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:3"] = "Thursday",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:4"] = "Friday",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:5"] = "Saturday",
+                    ["ProductionProcessing:ShiftSchedules:0:ActiveDays:6"] = "Sunday",
+                    ["ProductionProcessing:ShiftSchedules:0:AssignmentId"] =
                         "SHIFT-SCHEDULE-1",
-                    ["ProductionProcessing:Shift:ShiftId"] = "SHIFT-1",
-                    ["ProductionProcessing:Shift:Name"] = "Shift 1",
-                    ["ProductionProcessing:Shift:TimeZoneId"] = "UTC",
-                    ["ProductionProcessing:Shift:StartsAtLocal"] =
+                    ["ProductionProcessing:ShiftSchedules:0:ShiftId"] = "SHIFT-1",
+                    ["ProductionProcessing:ShiftSchedules:0:Name"] = "Shift 1",
+                    ["ProductionProcessing:ShiftSchedules:0:TimeZoneId"] = "UTC",
+                    ["ProductionProcessing:ShiftSchedules:0:StartsAtLocal"] =
                         "06:00:00",
-                    ["ProductionProcessing:Shift:EndsAtLocal"] =
+                    ["ProductionProcessing:ShiftSchedules:0:EndsAtLocal"] =
                         "14:00:00",
-                    ["ProductionProcessing:Shift:EffectiveFrom"] =
+                    ["ProductionProcessing:ShiftSchedules:0:EffectiveFrom"] =
                         "2026-01-01",
                     ["ProductionProcessing:PlannedProduction:AssignmentId"] =
                         "POT-1",
