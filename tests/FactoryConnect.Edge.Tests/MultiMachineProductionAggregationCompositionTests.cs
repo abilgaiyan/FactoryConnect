@@ -342,7 +342,7 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         values[$"{prefix}:SiteId"] = "SITE-1";
         values[$"{prefix}:ProductionLineId"] = lineId;
         values[$"{prefix}:Contexts:0:AssignmentId"] = contextId;
-        values[$"{prefix}:Contexts:0:EffectiveFromUtc"] = "2026-01-01T00:00:00+00:00";
+        values[$"{prefix}:Contexts:0:EffectiveFrom"] = "2026-01-01T00:00:00+00:00";
         values[$"{prefix}:PlannedProduction:AssignmentId"] = plannedAssignmentId;
         values[$"{prefix}:PlannedProduction:TimeZoneId"] = "UTC";
         values[$"{prefix}:PlannedProduction:StartsAtLocal"] = "18:30:00";
