@@ -25,6 +25,8 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
 
         SqlConnection? schemaBlockerConnection = null;
         SqlTransaction? schemaBlockerTransaction = null;
+        Task? winnerTask = null;
+        Task? waiterTask = null;
         Exception? primaryFailure = null;
 
         try
@@ -35,7 +37,7 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
             var winner = CreateLabelledMigrationOperation(database.ConnectionString, winningLabel);
             var waiter = CreateLabelledMigrationOperation(database.ConnectionString, waitingLabel);
 
-            var winnerTask = winner.MigrationTask;
+            winnerTask = winner.MigrationTask;
             var winnerSessionId = await winner.MigrationSessionId.Task.WaitAsync(ObservationTimeout);
 
             await AssertApplicationLockAsync(
@@ -47,7 +49,7 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
                 expectIncomplete: true,
                 ObservationTimeout);
 
-            var waiterTask = waiter.MigrationTask;
+            waiterTask = waiter.MigrationTask;
             var waiterSessionId = await waiter.MigrationSessionId.Task.WaitAsync(ObservationTimeout);
 
             Assert.NotEqual(winnerSessionId, waiterSessionId);
@@ -93,6 +95,10 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
             await CleanupBlockerAsync(
                 schemaBlockerConnection,
                 schemaBlockerTransaction,
+                primaryFailure);
+            await DrainMigrationTasksAsync(
+                winnerTask,
+                waiterTask,
                 primaryFailure);
         }
     }
@@ -167,6 +173,15 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
         {
             while (!timeoutSource.IsCancellationRequested)
             {
+                if (startupTask.IsCompleted)
+                {
+                    await startupTask;
+                    throw new InvalidOperationException(
+                        $"SQL session {sessionId} completed before " +
+                        $"{expectedStatus}/{expectedMode} on the migration " +
+                        "APPLICATION lock could be observed.");
+                }
+
                 await using var command = observer.CreateCommand();
                 command.CommandText = """
                     SELECT TOP (1)
@@ -206,8 +221,48 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
             // Normalize observer cancellation to one deterministic timeout below.
         }
 
+        var diagnostics = await ReadSessionLockDiagnosticsAsync(
+            observer,
+            sessionId);
+
         throw new TimeoutException(
-            $"SQL session {sessionId} was not observed with {expectedStatus}/{expectedMode} on the migration APPLICATION lock.");
+            $"SQL session {sessionId} was not observed with " +
+            $"{expectedStatus}/{expectedMode} on the migration APPLICATION lock. " +
+            $"TaskStatus={startupTask.Status}. Locks={diagnostics}");
+    }
+
+    private static async Task<string> ReadSessionLockDiagnosticsAsync(
+        SqlConnection observer,
+        int sessionId)
+    {
+        await using var command = observer.CreateCommand();
+        command.CommandTimeout = 5;
+        command.CommandText = """
+            SELECT
+                resource_type,
+                request_status,
+                request_mode,
+                request_owner_type
+            FROM sys.dm_tran_locks
+            WHERE request_session_id = @SessionId
+            ORDER BY resource_type, request_status, request_mode;
+            """;
+        command.Parameters.AddWithValue("@SessionId", sessionId);
+
+        List<string> locks = [];
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            locks.Add(
+                $"{reader.GetString(0)}:" +
+                $"{reader.GetString(1)}:" +
+                $"{reader.GetString(2)}:" +
+                $"{reader.GetString(3)}");
+        }
+
+        return locks.Count == 0
+            ? "<none>"
+            : string.Join(",", locks);
     }
 
     private static async Task<int> ReadSessionIdAsync(
@@ -300,6 +355,48 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
         {
             await transaction.RollbackAsync();
         }
+    }
+
+    private static async Task DrainMigrationTasksAsync(
+        Task? winnerTask,
+        Task? waiterTask,
+        Exception? primaryFailure)
+    {
+        List<Exception>? drainFailures = null;
+
+        foreach (var task in new[] { winnerTask, waiterTask })
+        {
+            if (task is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                await task.WaitAsync(CompletionTimeout);
+            }
+            catch (Exception exception)
+            {
+                (drainFailures ??= []).Add(exception);
+            }
+        }
+
+        if (drainFailures is null)
+        {
+            return;
+        }
+
+        var drainFailure = new AggregateException(
+            "SQL migration task drain failed.",
+            drainFailures);
+
+        if (primaryFailure is not null)
+        {
+            primaryFailure.Data["MigrationTaskDrainFailure"] = drainFailure;
+            return;
+        }
+
+        throw drainFailure;
     }
 
     private static async Task CleanupBlockerAsync(
