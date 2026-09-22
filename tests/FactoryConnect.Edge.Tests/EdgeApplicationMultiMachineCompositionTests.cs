@@ -165,13 +165,6 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         values[$"{productionPrefix}:Contexts:0:AssignmentId"] = contextId;
         values[$"{productionPrefix}:Contexts:0:EffectiveFrom"] =
             "2026-01-01T00:00:00+00:00";
-        values[$"{productionPrefix}:ShiftSchedules:0:AssignmentId"] = $"SHIFT-{index}";
-        values[$"{productionPrefix}:ShiftSchedules:0:ShiftId"] = "SHIFT-1";
-        values[$"{productionPrefix}:ShiftSchedules:0:Name"] = "Shift 1";
-        values[$"{productionPrefix}:ShiftSchedules:0:TimeZoneId"] = "UTC";
-        values[$"{productionPrefix}:ShiftSchedules:0:StartsAtLocal"] = "06:00:00";
-        values[$"{productionPrefix}:ShiftSchedules:0:EndsAtLocal"] = "14:00:00";
-        values[$"{productionPrefix}:ShiftSchedules:0:EffectiveFrom"] = "2026-01-01";
         values[$"{productionPrefix}:PlannedProduction:AssignmentId"] =
             $"POT-{index}";
         values[$"{productionPrefix}:PlannedProduction:TimeZoneId"] = "UTC";
