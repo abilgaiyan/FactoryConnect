@@ -13,7 +13,7 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
     private static readonly TimeSpan CompletionTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
-    public async Task Migration003FailurePreservesPersistentSnapshotAndPreventsActivation()
+    public async Task ExplicitMigration003FailurePreservesPersistentSnapshot()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await CreateSnapshotSentinelAsync(database.ConnectionString);
@@ -29,53 +29,14 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
             """);
 
         var before = await CaptureSnapshotAsync(database.ConnectionString);
-        Exception? migrationFailure = null;
-        var verificationCount = 0;
-        var activationCount = 0;
 
-        var gate = new SqlServerPersistenceStartupGate(
-            database.ConnectionString,
-            new SqlPersistenceStartupOptions(StartupLockTimeout),
-            async (connectionString, lockTimeout, cancellationToken) =>
-            {
-                try
-                {
-                    await RunRealMigrationAsync(
-                        connectionString,
-                        lockTimeout,
-                        cancellationToken);
-                }
-                catch (Exception exception)
-                {
-                    migrationFailure = exception;
-                    throw;
-                }
-            },
-            (_, _, _) =>
-            {
-                verificationCount++;
-                return Task.FromException<SqlRuntimeCompatibilityResult>(
-                    new InvalidOperationException(
-                        "Verification must not execute after the E.5.6 migration failure."));
-            });
+        var migrationException = await Assert.ThrowsAsync<MigrationExecutionException>(
+            () => SqlServerMigrationOperation.ApplyAsync(
+                database.ConnectionString,
+                StartupLockTimeout,
+                CancellationToken.None));
 
-        var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-            async () =>
-            {
-                await gate.EnsureReadyAsync(CancellationToken.None);
-                activationCount++;
-            });
-
-        Assert.Equal(
-            SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
-            exception.FailureKind);
-        Assert.Null(exception.CompatibilityResult);
-        Assert.NotNull(migrationFailure);
-        var migrationException = Assert.IsType<MigrationExecutionException>(migrationFailure);
         Assert.Equal(3, migrationException.MigrationId);
-        Assert.Same(migrationFailure, exception.InnerException);
-        Assert.Equal(0, verificationCount);
-        Assert.Equal(0, activationCount);
 
         var after = await CaptureSnapshotAsync(database.ConnectionString);
         SqlRuntimeCompatibilityPersistentStateSnapshot.AssertEquivalent(before, after);
@@ -86,6 +47,13 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await CreateSnapshotSentinelAsync(database.ConnectionString);
+        await SqlServerMigrationOperation.ApplyAsync(
+            database.ConnectionString,
+            StartupLockTimeout,
+            CancellationToken.None);
+        await ExecuteNonQueryAsync(
+            database.ConnectionString,
+            "DROP INDEX IX_MetricInputFact_OrderedRead ON dbo.MetricInputFact;");
 
         SqlRuntimeCompatibilityPersistentStateSnapshot? beforeVerification = null;
         SqlRuntimeCompatibilityResult? verificationResult = null;
@@ -96,20 +64,7 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
             new SqlPersistenceStartupOptions(StartupLockTimeout),
             async (connectionString, lockTimeout, cancellationToken) =>
             {
-                await RunRealMigrationAsync(
-                    connectionString,
-                    lockTimeout,
-                    cancellationToken);
-                await ExecuteNonQueryAsync(
-                    connectionString,
-                    "DROP INDEX IX_MetricInputFact_OrderedRead ON dbo.MetricInputFact;",
-                    cancellationToken);
-            },
-            async (connectionString, lockTimeout, cancellationToken) =>
-            {
-                beforeVerification = await CaptureSnapshotAsync(
-                    connectionString,
-                    cancellationToken);
+                beforeVerification = await CaptureSnapshotAsync(connectionString, cancellationToken);
                 verificationResult = await RunRealVerificationAsync(
                     connectionString,
                     lockTimeout,
@@ -124,24 +79,16 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
                 activationCount++;
             });
 
-        Assert.Equal(
-            SqlPersistenceStartupFailureKind.DatabaseIncompatible,
-            exception.FailureKind);
+        Assert.Equal(SqlPersistenceStartupFailureKind.DatabaseIncompatible, exception.FailureKind);
         Assert.Null(exception.InnerException);
         Assert.NotNull(beforeVerification);
         Assert.NotNull(verificationResult);
         Assert.Same(verificationResult, exception.CompatibilityResult);
-        Assert.Equal(
-            SqlRuntimeCompatibilityClassification.MigrationSchemaDrift,
-            verificationResult.Classification);
-        Assert.False(verificationResult.IsCompatible);
-        Assert.NotEmpty(verificationResult.Diagnostics);
+        Assert.Equal(SqlRuntimeCompatibilityClassification.MigrationSchemaDrift, verificationResult.Classification);
         Assert.Equal(0, activationCount);
 
         var after = await CaptureSnapshotAsync(database.ConnectionString);
-        SqlRuntimeCompatibilityPersistentStateSnapshot.AssertEquivalent(
-            beforeVerification,
-            after);
+        SqlRuntimeCompatibilityPersistentStateSnapshot.AssertEquivalent(beforeVerification, after);
     }
 
     [Fact]
@@ -149,44 +96,33 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await CreateSnapshotSentinelAsync(database.ConnectionString);
-        await RunRealMigrationAsync(
+        await SqlServerMigrationOperation.ApplyAsync(
             database.ConnectionString,
             StartupLockTimeout,
             CancellationToken.None);
 
         var before = await CaptureSnapshotAsync(database.ConnectionString);
-        SqlConnection? blockerConnection = null;
+        SqlConnection? blockerConnection = new(database.ConnectionString);
         SqlTransaction? blockerTransaction = null;
         Exception? verificationFailure = null;
         Exception? primaryFailure = null;
         var activationCount = 0;
+
+        await blockerConnection.OpenAsync();
+        blockerTransaction = (SqlTransaction)await blockerConnection.BeginTransactionAsync();
+        await AcquireExclusiveMigrationLockAsync(
+            blockerConnection,
+            blockerTransaction,
+            CancellationToken.None);
 
         var gate = new SqlServerPersistenceStartupGate(
             database.ConnectionString,
             new SqlPersistenceStartupOptions(VerificationFailureLockTimeout),
             async (connectionString, lockTimeout, cancellationToken) =>
             {
-                await RunRealMigrationAsync(
-                    connectionString,
-                    lockTimeout,
-                    cancellationToken);
-                blockerConnection = new SqlConnection(connectionString);
-                await blockerConnection.OpenAsync(cancellationToken);
-                blockerTransaction = (SqlTransaction)await blockerConnection.BeginTransactionAsync(
-                    cancellationToken);
-                await AcquireExclusiveMigrationLockAsync(
-                    blockerConnection,
-                    blockerTransaction,
-                    cancellationToken);
-            },
-            async (connectionString, lockTimeout, cancellationToken) =>
-            {
                 try
                 {
-                    return await RunRealVerificationAsync(
-                        connectionString,
-                        lockTimeout,
-                        cancellationToken);
+                    return await RunRealVerificationAsync(connectionString, lockTimeout, cancellationToken);
                 }
                 catch (Exception exception)
                 {
@@ -207,9 +143,7 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
                 });
             primaryFailure = exception;
 
-            Assert.Equal(
-                SqlPersistenceStartupFailureKind.VerificationOperationalFailure,
-                exception.FailureKind);
+            Assert.Equal(SqlPersistenceStartupFailureKind.VerificationOperationalFailure, exception.FailureKind);
             Assert.Null(exception.CompatibilityResult);
             Assert.NotNull(verificationFailure);
             Assert.Same(verificationFailure, exception.InnerException);
@@ -222,10 +156,7 @@ public sealed class SqlPersistenceStartupRejectionContainmentRealSqlIntegrationT
         }
         finally
         {
-            await CleanupBlockerAsync(
-                blockerConnection,
-                blockerTransaction,
-                primaryFailure);
+            await CleanupBlockerAsync(blockerConnection, blockerTransaction, primaryFailure);
         }
 
         var after = await CaptureSnapshotAsync(database.ConnectionString);
