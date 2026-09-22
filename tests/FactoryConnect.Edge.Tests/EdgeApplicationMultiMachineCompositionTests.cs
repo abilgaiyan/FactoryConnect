@@ -124,6 +124,8 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
 
         AddMachine(values, 0, machineA, "CNC-A", "LINE-A", "CTX-A");
         AddMachine(values, 1, machineB, "CNC-B", "LINE-B", "CTX-B");
+        AddSharedShift(values, 0, "LINE-A");
+        AddSharedShift(values, 1, "LINE-B");
 
         return new ConfigurationBuilder()
             .AddInMemoryCollection(values)
@@ -160,16 +162,9 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         values[$"{productionPrefix}:CompanyId"] = "COMP-1";
         values[$"{productionPrefix}:SiteId"] = "SITE-1";
         values[$"{productionPrefix}:ProductionLineId"] = lineId;
-        values[$"{productionPrefix}:ContextAssignmentId"] = contextId;
-        values[$"{productionPrefix}:ContextEffectiveFromUtc"] =
+        values[$"{productionPrefix}:Contexts:0:AssignmentId"] = contextId;
+        values[$"{productionPrefix}:Contexts:0:EffectiveFrom"] =
             "2026-01-01T00:00:00+00:00";
-        values[$"{productionPrefix}:Shift:AssignmentId"] = $"SHIFT-{index}";
-        values[$"{productionPrefix}:Shift:ShiftId"] = "SHIFT-1";
-        values[$"{productionPrefix}:Shift:Name"] = "Shift 1";
-        values[$"{productionPrefix}:Shift:TimeZoneId"] = "UTC";
-        values[$"{productionPrefix}:Shift:StartsAtLocal"] = "06:00:00";
-        values[$"{productionPrefix}:Shift:EndsAtLocal"] = "14:00:00";
-        values[$"{productionPrefix}:Shift:EffectiveFrom"] = "2026-01-01";
         values[$"{productionPrefix}:PlannedProduction:AssignmentId"] =
             $"POT-{index}";
         values[$"{productionPrefix}:PlannedProduction:TimeZoneId"] = "UTC";
@@ -177,4 +172,27 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         values[$"{productionPrefix}:PlannedProduction:EndsAtLocal"] = "14:00:00";
         values[$"{productionPrefix}:PlannedProduction:EffectiveFrom"] = "2026-01-01";
     }
+    private static void AddSharedShift(
+        Dictionary<string, string?> values,
+        int index,
+        string lineId)
+    {
+        var prefix = $"ProductionProcessing:ShiftSchedules:{index}";
+        values[$"{prefix}:AssignmentId"] = $"SHIFT-{index}";
+        values[$"{prefix}:CompanyId"] = "COMP-1";
+        values[$"{prefix}:SiteId"] = "SITE-1";
+        values[$"{prefix}:ProductionLineId"] = lineId;
+        values[$"{prefix}:ShiftId"] = "SHIFT-1";
+        values[$"{prefix}:Name"] = "Shift 1";
+        values[$"{prefix}:TimeZoneId"] = "UTC";
+        values[$"{prefix}:StartsAtLocal"] = "06:00:00";
+        values[$"{prefix}:EndsAtLocal"] = "14:00:00";
+        values[$"{prefix}:EffectiveFrom"] = "2026-01-01";
+        var days = Enum.GetNames<DayOfWeek>();
+        for (var day = 0; day < days.Length; day++)
+        {
+            values[$"{prefix}:ActiveDays:{day}"] = days[day];
+        }
+    }
+
 }
