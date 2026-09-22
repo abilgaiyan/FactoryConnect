@@ -204,14 +204,10 @@ public sealed class EdgeObservationProcessingCompositionTests
 
         using var provider = services.BuildServiceProvider();
 
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => provider.GetRequiredService<
-                DurableObservationProcessingPipeline>());
-
-        Assert.Contains(
-            nameof(IDurableObservationReader),
-            exception.Message,
-            StringComparison.Ordinal);
+        Assert.NotNull(
+            provider.GetRequiredService<DurableObservationProcessingPipeline>());
+        Assert.IsType<SqlServerObservationIngestionStore>(
+            provider.GetRequiredService<IObservationIngestionStore>());
     }
 
     private static ObservationIngestionBatch Batch(
