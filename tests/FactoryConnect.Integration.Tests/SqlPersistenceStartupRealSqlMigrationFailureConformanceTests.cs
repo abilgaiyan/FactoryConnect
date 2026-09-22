@@ -63,8 +63,10 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureConformanceTests
                 migrationTask,
                 ObservationTimeout);
 
-            await Assert.ThrowsAnyAsync<Exception>(
+            var exception = await Assert.ThrowsAsync<SqlMigrationLockAcquisitionException>(
                 () => migrationTask.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.NotNull(exception.ReturnCode);
+            Assert.True(exception.ReturnCode < 0);
         }
         finally
         {
