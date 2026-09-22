@@ -16,7 +16,7 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
     [Theory]
     [InlineData("API", "Edge")]
     [InlineData("Edge", "API")]
-    public async Task ConcurrentLabelledGatesSerializeThroughRealMigrationLockAndConverge(
+    public async Task ConcurrentExplicitMigrationsSerializeThroughRealMigrationLockAndConvergeBeforeRuntimeReadiness(
         string winningLabel,
         string waitingLabel)
     {
@@ -32,10 +32,10 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
             (schemaBlockerConnection, schemaBlockerTransaction) =
                 await AcquireMigration003SchemaBlockerAsync(database.ConnectionString);
 
-            var winner = CreateLabelledGate(database.ConnectionString, winningLabel);
-            var waiter = CreateLabelledGate(database.ConnectionString, waitingLabel);
+            var winner = CreateLabelledMigrationOperation(database.ConnectionString, winningLabel);
+            var waiter = CreateLabelledMigrationOperation(database.ConnectionString, waitingLabel);
 
-            var winnerTask = RunAndActivateAsync(winner);
+            var winnerTask = winner.MigrationTask;
             var winnerSessionId = await winner.MigrationSessionId.Task.WaitAsync(ObservationTimeout);
 
             await AssertApplicationLockAsync(
@@ -47,7 +47,7 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
                 expectIncomplete: true,
                 ObservationTimeout);
 
-            var waiterTask = RunAndActivateAsync(waiter);
+            var waiterTask = waiter.MigrationTask;
             var waiterSessionId = await waiter.MigrationSessionId.Task.WaitAsync(ObservationTimeout);
 
             Assert.NotEqual(winnerSessionId, waiterSessionId);
@@ -71,22 +71,15 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
                 winnerTask.WaitAsync(CompletionTimeout),
                 waiterTask.WaitAsync(CompletionTimeout));
 
-            Assert.Equal(1, winner.ActivationCount);
-            Assert.Equal(1, waiter.ActivationCount);
-            Assert.Equal(1, winner.VerificationCount);
-            Assert.Equal(1, waiter.VerificationCount);
-            Assert.NotNull(winner.VerificationResult);
-            Assert.NotNull(waiter.VerificationResult);
-            Assert.Equal(
-                SqlRuntimeCompatibilityClassification.Compatible,
-                winner.VerificationResult.Classification);
-            Assert.Equal(
-                SqlRuntimeCompatibilityClassification.Compatible,
-                waiter.VerificationResult.Classification);
-            Assert.True(winner.VerificationResult.IsCompatible);
-            Assert.True(waiter.VerificationResult.IsCompatible);
-            Assert.Empty(winner.VerificationResult.Diagnostics);
-            Assert.Empty(waiter.VerificationResult.Diagnostics);
+            var winnerGate = new SqlServerPersistenceStartupGate(
+                database.ConnectionString,
+                new SqlPersistenceStartupOptions(StartupLockTimeout));
+            var waiterGate = new SqlServerPersistenceStartupGate(
+                database.ConnectionString,
+                new SqlPersistenceStartupOptions(StartupLockTimeout));
+            await Task.WhenAll(
+                winnerGate.EnsureReadyAsync(CancellationToken.None).AsTask(),
+                waiterGate.EnsureReadyAsync(CancellationToken.None).AsTask());
 
             await AssertExactCurrentStateAsync(database.ConnectionString);
         }
@@ -104,44 +97,25 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
         }
     }
 
-    private static LabelledStartupGate CreateLabelledGate(
+    private static LabelledStartupGate CreateLabelledMigrationOperation(
         string connectionString,
         string label)
     {
         var state = new LabelledStartupGate(label);
-        state.Gate = new SqlServerPersistenceStartupGate(
-            connectionString,
-            new SqlPersistenceStartupOptions(StartupLockTimeout),
-            async (stageConnectionString, lockTimeout, cancellationToken) =>
-            {
-                await using var connection = new SqlConnection(stageConnectionString);
-                await connection.OpenAsync(cancellationToken);
-                state.MigrationSessionId.TrySetResult(
-                    await ReadSessionIdAsync(connection, cancellationToken));
-                await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
-                    connection,
-                    lockTimeout,
-                    cancellationToken);
-            },
-            async (stageConnectionString, lockTimeout, cancellationToken) =>
-            {
-                state.VerificationCount++;
-                await using var connection = new SqlConnection(stageConnectionString);
-                await connection.OpenAsync(cancellationToken);
-                state.VerificationResult =
-                    await SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault().VerifyAsync(
-                        connection,
-                        lockTimeout,
-                        cancellationToken);
-                return state.VerificationResult;
-            });
+        state.MigrationTask = RunAsync();
         return state;
-    }
 
-    private static async Task RunAndActivateAsync(LabelledStartupGate state)
-    {
-        await state.Gate.EnsureReadyAsync(CancellationToken.None);
-        state.ActivationCount++;
+        async Task RunAsync()
+        {
+            await using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+            state.MigrationSessionId.TrySetResult(
+                await ReadSessionIdAsync(connection, CancellationToken.None));
+            await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
+                connection,
+                StartupLockTimeout,
+                CancellationToken.None);
+        }
     }
 
     private static async Task<(SqlConnection Connection, SqlTransaction Transaction)>
@@ -394,15 +368,9 @@ public sealed class SqlPersistenceStartupConcurrentRealSqlIntegrationTests
 
         public string Label { get; }
 
-        public SqlServerPersistenceStartupGate Gate { get; set; } = null!;
+        public Task MigrationTask { get; set; } = Task.CompletedTask;
 
         public TaskCompletionSource<int> MigrationSessionId { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public int ActivationCount { get; set; }
-
-        public int VerificationCount { get; set; }
-
-        public SqlRuntimeCompatibilityResult? VerificationResult { get; set; }
     }
 }
