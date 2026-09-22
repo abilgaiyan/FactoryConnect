@@ -13,7 +13,7 @@ public sealed class SqlPersistenceRuntimeCompatibilityOnlyIntegrationTests
     public async Task ExistingEmptyDatabaseIsUninitializedAndRuntimeCreatesNoSchema()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
-        var before = await CaptureSnapshotAsync(database.ConnectionString);
+        var before = await CaptureFactoryConnectSchemaPresenceAsync(database.ConnectionString);
         var gate = CreateGate(database.ConnectionString);
 
         var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
@@ -25,14 +25,17 @@ public sealed class SqlPersistenceRuntimeCompatibilityOnlyIntegrationTests
             SqlRuntimeCompatibilityClassification.DatabaseUninitialized,
             exception.CompatibilityResult.Classification);
 
-        var after = await CaptureSnapshotAsync(database.ConnectionString);
-        SqlRuntimeCompatibilityPersistentStateSnapshot.AssertEquivalent(before, after);
+        var after = await CaptureFactoryConnectSchemaPresenceAsync(database.ConnectionString);
+        Assert.Equal(before, after);
+        Assert.False(after.HasMigrationLedger);
+        Assert.Equal(0, after.FactoryConnectOwnedTableCount);
     }
 
     [Fact]
     public async Task PendingMigrationIsRejectedAndPersistentStateIsUnchanged()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await CreateSnapshotSentinelAsync(database.ConnectionString);
         await SeedPrefixAsync(database.ConnectionString, prefixLength: 1);
         var before = await CaptureSnapshotAsync(database.ConnectionString);
         var gate = CreateGate(database.ConnectionString);
@@ -54,6 +57,7 @@ public sealed class SqlPersistenceRuntimeCompatibilityOnlyIntegrationTests
     public async Task CurrentDatabaseSucceedsAndPersistentStateIsUnchanged()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await CreateSnapshotSentinelAsync(database.ConnectionString);
         await SqlServerMigrationOperation.ApplyAsync(
             database.ConnectionString,
             LockTimeout,
@@ -113,6 +117,56 @@ public sealed class SqlPersistenceRuntimeCompatibilityOnlyIntegrationTests
     private static SqlServerPersistenceStartupGate CreateGate(string connectionString) =>
         new(connectionString, new SqlPersistenceStartupOptions(LockTimeout));
 
+    private static async Task CreateSnapshotSentinelAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            CREATE TABLE dbo.D5UnrelatedSentinel
+            (
+                Id int NOT NULL CONSTRAINT PK_D5UnrelatedSentinel PRIMARY KEY,
+                Marker int NOT NULL
+            );
+            INSERT INTO dbo.D5UnrelatedSentinel (Id, Marker) VALUES (1, 314159);
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<FactoryConnectSchemaPresence> CaptureFactoryConnectSchemaPresenceAsync(
+        string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                CASE
+                    WHEN OBJECT_ID(N'dbo.FactoryConnectMigrationHistory', N'U') IS NULL THEN CAST(0 AS bit)
+                    ELSE CAST(1 AS bit)
+                END,
+                COUNT(*)
+            FROM sys.tables
+            WHERE schema_id = SCHEMA_ID(N'dbo')
+              AND name IN
+              (
+                  N'RawObservation',
+                  N'MetricInputStream',
+                  N'MetricInputFact',
+                  N'ProductionContextProcessor',
+                  N'MachineStateActivityAuthority',
+                  N'MachineStateChangeHistory',
+                  N'MachineActivityPeriodHistory'
+              );
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new FactoryConnectSchemaPresence(
+            reader.GetBoolean(0),
+            reader.GetInt32(1));
+    }
+
     private static async Task<SqlRuntimeCompatibilityPersistentStateSnapshot> CaptureSnapshotAsync(
         string connectionString)
     {
@@ -122,6 +176,10 @@ public sealed class SqlPersistenceRuntimeCompatibilityOnlyIntegrationTests
             connection,
             CancellationToken.None);
     }
+
+    private readonly record struct FactoryConnectSchemaPresence(
+        bool HasMigrationLedger,
+        int FactoryConnectOwnedTableCount);
 
     private static async Task SeedPrefixAsync(string connectionString, int prefixLength)
     {
