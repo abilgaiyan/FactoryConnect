@@ -124,13 +124,23 @@ public sealed class EdgePersistenceCompositionTests
             });
         var services = new ServiceCollection();
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            services.AddFactoryConnectEdgePersistence(
-                configuration,
-                PersistenceProviderCapabilities.All));
+        services.AddFactoryConnectEdgePersistence(
+            configuration,
+            PersistenceProviderCapabilities.All);
 
-        Assert.Contains("SQLSERVER", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("OperationalMetricProjectionStorage", exception.Message, StringComparison.Ordinal);
+        using var provider = services.BuildServiceProvider();
+        var aggregation = provider.GetRequiredService<IMetricAggregationStore>();
+        Assert.IsType<SqlServerMetricAggregationStore>(aggregation);
+        Assert.Same(aggregation, provider.GetRequiredService<IMetricAggregationRevisionReader>());
+        Assert.Same(aggregation, provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>());
+        Assert.IsType<SqlServerOperationalMetricProjectionStore>(
+            provider.GetRequiredService<IOperationalMetricProjectionStore>());
+        Assert.IsType<SqlServerOperationalMetricProjectionQueryReader>(
+            provider.GetRequiredService<IOperationalMetricProjectionQueryReader>());
+        Assert.IsType<SqlServerOperationalMetricReportingQueryProvider>(
+            provider.GetRequiredService<IOperationalMetricReportingQueryProvider>());
+        Assert.IsType<SqlServerMachineShiftOccurrenceRosterStore>(
+            provider.GetRequiredService<IMachineShiftOccurrenceRosterStore>());
     }
 
     private static IConfiguration CreateConfiguration(
