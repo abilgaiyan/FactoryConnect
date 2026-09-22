@@ -4,6 +4,8 @@
 
 This document defines the production-LAN deployment boundary for `FactoryConnect.Dashboard`, including the FC-029 reporting surfaces and FC-031 current-state consumption.
 
+The governing factory-demo deployment authority is [`FC-032.4 — Factory Demo Deployment Contract`](../features/FC-032.4-factory-demo-deployment-contract.md). This guide supplies Dashboard-specific deployment detail and must not override FC-032.4 machine identity, release-manifest, startup, stop/recovery, or target-input rules.
+
 The dashboard is a presentation host. It serves the React production assets, exposes browser-safe runtime configuration, and forwards only the explicitly mapped reporting and current-state operations through a same-origin gateway. It does not read FactoryConnect persistence directly, calculate factory metrics, or derive current machine state.
 
 ```text
@@ -92,19 +94,27 @@ The following is a shape example only. Replace every machine, processor, site, p
     "ReportingApiBaseAddress": "http://factory-reporting.internal:5080/factoryconnect/",
     "RequestTimeout": "00:00:30",
     "Sources": [
-      { "MachineId": "00000000-0000-0000-0000-000000000001", "ProcessorId": "operational-metrics-1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 1", "DisplayOrder": 0 },
-      { "MachineId": "00000000-0000-0000-0000-000000000002", "ProcessorId": "operational-metrics-2", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 2", "DisplayOrder": 1 },
-      { "MachineId": "00000000-0000-0000-0000-000000000003", "ProcessorId": "operational-metrics-3", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 3", "DisplayOrder": 2 },
-      { "MachineId": "00000000-0000-0000-0000-000000000004", "ProcessorId": "operational-metrics-4", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 4", "DisplayOrder": 3 },
-      { "MachineId": "00000000-0000-0000-0000-000000000005", "ProcessorId": "operational-metrics-5", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 5", "DisplayOrder": 4 },
-      { "MachineId": "00000000-0000-0000-0000-000000000006", "ProcessorId": "operational-metrics-6", "SiteId": "site-1", "ProductionLineId": "line-2", "DisplayName": "Machine 6", "DisplayOrder": 5 },
-      { "MachineId": "00000000-0000-0000-0000-000000000007", "ProcessorId": "operational-metrics-7", "SiteId": "site-1", "ProductionLineId": "line-2", "DisplayName": "Machine 7", "DisplayOrder": 6 }
+      { "MachineId": "00000000-0000-0000-0000-000000000001", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000001:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 1", "DisplayOrder": 0 },
+      { "MachineId": "00000000-0000-0000-0000-000000000002", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000002:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 2", "DisplayOrder": 1 },
+      { "MachineId": "00000000-0000-0000-0000-000000000003", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000003:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 3", "DisplayOrder": 2 },
+      { "MachineId": "00000000-0000-0000-0000-000000000004", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000004:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 4", "DisplayOrder": 3 },
+      { "MachineId": "00000000-0000-0000-0000-000000000005", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000005:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-1", "DisplayName": "Machine 5", "DisplayOrder": 4 },
+      { "MachineId": "00000000-0000-0000-0000-000000000006", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000006:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-2", "DisplayName": "Machine 6", "DisplayOrder": 5 },
+      { "MachineId": "00000000-0000-0000-0000-000000000007", "ProcessorId": "operational-metrics:00000000-0000-0000-0000-000000000007:builtins-v1", "SiteId": "site-1", "ProductionLineId": "line-2", "DisplayName": "Machine 7", "DisplayOrder": 6 }
     ]
   }
 }
 ```
 
 Source identity is exactly `(MachineId, ProcessorId)`. `DisplayName` is presentation metadata only.
+
+The ProcessorId in the fixture follows the production Edge authority exactly:
+
+```text
+operational-metrics:<MachineId-guid>:builtins-v1
+```
+
+The GUIDs, hostnames, ports, site/line identifiers, and display names in this fixture remain examples only. Numbered aliases such as `operational-metrics-1` through `operational-metrics-7` are not valid runtime processor identities and must not be used for commissioning.
 
 ## Gateway restriction
 
