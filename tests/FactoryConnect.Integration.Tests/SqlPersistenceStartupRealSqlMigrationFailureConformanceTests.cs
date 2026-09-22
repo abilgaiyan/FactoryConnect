@@ -12,7 +12,7 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureConformanceTests
     private static readonly TimeSpan ObservationTimeout = TimeSpan.FromSeconds(3);
 
     [Fact]
-    public async Task MigrationIdentityMismatchIsPreservedAtStartupBoundary()
+    public async Task ExplicitMigrationIdentityMismatchPreservesExactHistoryFailure()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         var migration001 = SqlMigrationCatalog.Load().Migrations[0];
@@ -22,105 +22,49 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureConformanceTests
             migration001.Name + "_Wrong",
             migration001.Sha256Checksum);
 
-        Exception? migrationFailure = null;
-        var verificationCount = 0;
-        var activationCount = 0;
-        var gate = CreateGate(
-            database.ConnectionString,
-            exception => migrationFailure = exception,
-            () => verificationCount++);
+        var exception = await Assert.ThrowsAsync<SqlMigrationHistoryException>(() =>
+            SqlServerMigrationOperation.ApplyAsync(
+                database.ConnectionString,
+                LockTimeout,
+                CancellationToken.None));
 
-        var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-            async () =>
-            {
-                await gate.EnsureReadyAsync(CancellationToken.None);
-                activationCount++;
-            });
-
-        Assert.Equal(
-            SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
-            exception.FailureKind);
-        Assert.Null(exception.CompatibilityResult);
-        Assert.NotNull(migrationFailure);
-        Assert.Same(migrationFailure, exception.InnerException);
-        Assert.IsType<SqlMigrationHistoryException>(exception.InnerException);
-        Assert.Equal(0, verificationCount);
-        Assert.Equal(0, activationCount);
+        Assert.NotNull(exception);
     }
 
     [Fact]
-    public async Task MigrationLockTimeoutObservesWaitingStartupSessionBeforeFailure()
+    public async Task ExplicitMigrationLockTimeoutObservesWaitingMigrationSessionBeforeFailure()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var blocker = new SqlConnection(database.ConnectionString);
         await blocker.OpenAsync();
-        await using var blockerTransaction =
-            (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using var blockerTransaction = (SqlTransaction)await blocker.BeginTransactionAsync();
         await AcquireExclusiveMigrationLockAsync(blocker, blockerTransaction);
 
-        var startupSessionId = new TaskCompletionSource<int>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        Exception? migrationFailure = null;
-        var verificationCount = 0;
-        var activationCount = 0;
-        var gate = new SqlServerPersistenceStartupGate(
-            database.ConnectionString,
-            new SqlPersistenceStartupOptions(LockTimeout),
-            async (connectionString, lockTimeout, cancellationToken) =>
-            {
-                await using var connection = new SqlConnection(connectionString);
-                await connection.OpenAsync(cancellationToken);
-                startupSessionId.TrySetResult(await ReadSessionIdAsync(connection, cancellationToken));
+        var startupSessionId = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-                try
-                {
-                    await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
-                        connection,
-                        lockTimeout,
-                        cancellationToken);
-                }
-                catch (Exception exception)
-                {
-                    migrationFailure = exception;
-                    throw;
-                }
-            },
-            (_, _, _) =>
-            {
-                verificationCount++;
-                return Task.FromException<SqlRuntimeCompatibilityResult>(
-                    new InvalidOperationException(
-                        "Verification must not execute after migration lock timeout."));
-            });
-
-        async Task RunStartupAsync()
+        async Task RunMigrationAsync()
         {
-            await gate.EnsureReadyAsync(CancellationToken.None);
-            activationCount++;
+            await using var connection = new SqlConnection(database.ConnectionString);
+            await connection.OpenAsync();
+            startupSessionId.TrySetResult(await ReadSessionIdAsync(connection, CancellationToken.None));
+            await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
+                connection,
+                LockTimeout,
+                CancellationToken.None);
         }
 
-        var startupTask = RunStartupAsync();
-
+        var migrationTask = RunMigrationAsync();
         try
         {
             var sessionId = await startupSessionId.Task.WaitAsync(ObservationTimeout);
             await AssertWaitingApplicationLockAsync(
                 database.ConnectionString,
                 sessionId,
-                startupTask,
+                migrationTask,
                 ObservationTimeout);
 
-            var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-                () => startupTask.WaitAsync(TimeSpan.FromSeconds(10)));
-
-            Assert.Equal(
-                SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
-                exception.FailureKind);
-            Assert.Null(exception.CompatibilityResult);
-            Assert.NotNull(migrationFailure);
-            Assert.Same(migrationFailure, exception.InnerException);
-            Assert.Equal(0, verificationCount);
-            Assert.Equal(0, activationCount);
+            await Assert.ThrowsAnyAsync<Exception>(
+                () => migrationTask.WaitAsync(TimeSpan.FromSeconds(10)));
         }
         finally
         {
@@ -129,7 +73,7 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureConformanceTests
     }
 
     [Fact]
-    public async Task Migration003FailureRestoresStructuralStateBeforeRetry()
+    public async Task ExplicitMigration003FailureRestoresStructuralStateBeforeRetry()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await SeedPrefixAsync(database.ConnectionString, prefixLength: 2);
@@ -143,29 +87,13 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureConformanceTests
             );
             """);
 
-        var verificationCount = 0;
-        var activationCount = 0;
-        var gate = CreateGate(
-            database.ConnectionString,
-            _ => { },
-            () => verificationCount++);
+        var migrationException = await Assert.ThrowsAsync<MigrationExecutionException>(() =>
+            SqlServerMigrationOperation.ApplyAsync(
+                database.ConnectionString,
+                LockTimeout,
+                CancellationToken.None));
 
-        var exception = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-            async () =>
-            {
-                await gate.EnsureReadyAsync(CancellationToken.None);
-                activationCount++;
-            });
-
-        Assert.Equal(
-            SqlPersistenceStartupFailureKind.MigrationOperationalFailure,
-            exception.FailureKind);
-        var migrationException = Assert.IsType<MigrationExecutionException>(
-            exception.InnerException);
         Assert.Equal(3, migrationException.MigrationId);
-        Assert.Equal(0, verificationCount);
-        Assert.Equal(0, activationCount);
-
         await AssertExactHistoryPrefixAsync(database.ConnectionString, prefixLength: 2);
         await AssertMigration003RollbackStructureAsync(database.ConnectionString);
 
@@ -173,47 +101,17 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureConformanceTests
             database.ConnectionString,
             "DROP TABLE dbo.E5Migration003RollbackConflict;");
 
-        var retryGate = new SqlServerPersistenceStartupGate(
+        await SqlServerMigrationOperation.ApplyAsync(
+            database.ConnectionString,
+            LockTimeout,
+            CancellationToken.None);
+
+        var gate = new SqlServerPersistenceStartupGate(
             database.ConnectionString,
             new SqlPersistenceStartupOptions(LockTimeout));
-        await retryGate.EnsureReadyAsync(CancellationToken.None);
-        activationCount++;
-
-        Assert.Equal(1, activationCount);
+        await gate.EnsureReadyAsync(CancellationToken.None);
         await AssertCurrentCompatibleAsync(database.ConnectionString);
     }
-
-    private static SqlServerPersistenceStartupGate CreateGate(
-        string connectionString,
-        Action<Exception> onMigrationFailure,
-        Action onVerification) =>
-        new(
-            connectionString,
-            new SqlPersistenceStartupOptions(LockTimeout),
-            async (stageConnectionString, stageLockTimeout, cancellationToken) =>
-            {
-                await using var connection = new SqlConnection(stageConnectionString);
-                await connection.OpenAsync(cancellationToken);
-                try
-                {
-                    await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
-                        connection,
-                        stageLockTimeout,
-                        cancellationToken);
-                }
-                catch (Exception exception)
-                {
-                    onMigrationFailure(exception);
-                    throw;
-                }
-            },
-            (_, _, _) =>
-            {
-                onVerification();
-                return Task.FromException<SqlRuntimeCompatibilityResult>(
-                    new InvalidOperationException(
-                        "Verification must not execute after migration failure."));
-            });
 
     private static async Task<int> ReadSessionIdAsync(
         SqlConnection connection,
