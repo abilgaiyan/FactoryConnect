@@ -114,7 +114,7 @@ The ProcessorId in the fixture follows the production Edge authority exactly:
 operational-metrics:<MachineId-guid>:builtins-v1
 ```
 
-The GUIDs, hostnames, ports, site/line identifiers, and display names in this fixture remain examples only. Numbered aliases such as `operational-metrics-1` through `operational-metrics-7` are not valid runtime processor identities and must not be used for commissioning.
+The GUIDs, hostnames, ports, site/line identifiers, and display names in this fixture remain examples only. Numbered ProcessorId aliases are not valid runtime processor identities and must not be used for commissioning.
 
 ## Gateway restriction
 
