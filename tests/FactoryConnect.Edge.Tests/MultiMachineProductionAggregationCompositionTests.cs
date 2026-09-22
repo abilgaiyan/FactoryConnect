@@ -272,8 +272,10 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         };
         AddObservationStream(values, 0, machineA, "activity-a", "DI1");
         AddObservationStream(values, 1, machineB, "activity-b", "DI2");
-        AddMachine(values, 0, machineA, "activity-a", "quantity-a", "LINE-A", "CTX-A", "SHIFT-A", "POT-A");
-        AddMachine(values, 1, machineB, "activity-b", "quantity-b", "LINE-B", "CTX-B", "SHIFT-B", "POT-B");
+        AddShift(values, 0, "LINE-A", "SHIFT-A");
+        AddShift(values, 1, "LINE-B", "SHIFT-B");
+        AddMachine(values, 0, machineA, "activity-a", "quantity-a", "LINE-A", "CTX-A", "POT-A");
+        AddMachine(values, 1, machineB, "activity-b", "quantity-b", "LINE-B", "CTX-B", "POT-B");
 
         return new ConfigurationBuilder()
             .AddInMemoryCollection(values)
@@ -296,6 +298,32 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         values[$"{prefix}:Mappings:0:Type"] = "Digital";
     }
 
+    private static void AddShift(
+        Dictionary<string, string?> values,
+        int index,
+        string lineId,
+        string assignmentId)
+    {
+        var prefix = $"ProductionProcessing:ShiftSchedules:{index}";
+        values[$"{prefix}:AssignmentId"] = assignmentId;
+        values[$"{prefix}:CompanyId"] = "COMP-1";
+        values[$"{prefix}:SiteId"] = "SITE-1";
+        values[$"{prefix}:ProductionLineId"] = lineId;
+        values[$"{prefix}:ShiftId"] = "NIGHT";
+        values[$"{prefix}:Name"] = "Night Shift";
+        values[$"{prefix}:TimeZoneId"] = "UTC";
+        values[$"{prefix}:StartsAtLocal"] = "18:30:00";
+        values[$"{prefix}:EndsAtLocal"] = "02:30:00";
+        values[$"{prefix}:ActiveDays:0"] = "Monday";
+        values[$"{prefix}:ActiveDays:1"] = "Tuesday";
+        values[$"{prefix}:ActiveDays:2"] = "Wednesday";
+        values[$"{prefix}:ActiveDays:3"] = "Thursday";
+        values[$"{prefix}:ActiveDays:4"] = "Friday";
+        values[$"{prefix}:ActiveDays:5"] = "Saturday";
+        values[$"{prefix}:ActiveDays:6"] = "Sunday";
+        values[$"{prefix}:EffectiveFrom"] = "2026-01-01";
+    }
+
     private static void AddMachine(
         Dictionary<string, string?> values,
         int index,
@@ -304,7 +332,6 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         string quantityStreamKey,
         string lineId,
         string contextId,
-        string shiftAssignmentId,
         string plannedAssignmentId)
     {
         var prefix = $"ProductionProcessing:Machines:{index}";
@@ -314,15 +341,8 @@ public sealed class MultiMachineProductionAggregationCompositionTests
         values[$"{prefix}:CompanyId"] = "COMP-1";
         values[$"{prefix}:SiteId"] = "SITE-1";
         values[$"{prefix}:ProductionLineId"] = lineId;
-        values[$"{prefix}:ContextAssignmentId"] = contextId;
-        values[$"{prefix}:ContextEffectiveFromUtc"] = "2026-01-01T00:00:00+00:00";
-        values[$"{prefix}:Shift:AssignmentId"] = shiftAssignmentId;
-        values[$"{prefix}:Shift:ShiftId"] = "NIGHT";
-        values[$"{prefix}:Shift:Name"] = "Night Shift";
-        values[$"{prefix}:Shift:TimeZoneId"] = "UTC";
-        values[$"{prefix}:Shift:StartsAtLocal"] = "18:30:00";
-        values[$"{prefix}:Shift:EndsAtLocal"] = "02:30:00";
-        values[$"{prefix}:Shift:EffectiveFrom"] = "2026-01-01";
+        values[$"{prefix}:Contexts:0:AssignmentId"] = contextId;
+        values[$"{prefix}:Contexts:0:EffectiveFromUtc"] = "2026-01-01T00:00:00+00:00";
         values[$"{prefix}:PlannedProduction:AssignmentId"] = plannedAssignmentId;
         values[$"{prefix}:PlannedProduction:TimeZoneId"] = "UTC";
         values[$"{prefix}:PlannedProduction:StartsAtLocal"] = "18:30:00";
