@@ -160,16 +160,16 @@ public sealed class EdgeApplicationMultiMachineCompositionTests
         values[$"{productionPrefix}:CompanyId"] = "COMP-1";
         values[$"{productionPrefix}:SiteId"] = "SITE-1";
         values[$"{productionPrefix}:ProductionLineId"] = lineId;
-        values[$"{productionPrefix}:ContextAssignmentId"] = contextId;
-        values[$"{productionPrefix}:ContextEffectiveFromUtc"] =
+        values[$"{productionPrefix}:Contexts:0:AssignmentId"] = contextId;
+        values[$"{productionPrefix}:Contexts:0:EffectiveFrom"] =
             "2026-01-01T00:00:00+00:00";
-        values[$"{productionPrefix}:Shift:AssignmentId"] = $"SHIFT-{index}";
-        values[$"{productionPrefix}:Shift:ShiftId"] = "SHIFT-1";
-        values[$"{productionPrefix}:Shift:Name"] = "Shift 1";
-        values[$"{productionPrefix}:Shift:TimeZoneId"] = "UTC";
-        values[$"{productionPrefix}:Shift:StartsAtLocal"] = "06:00:00";
-        values[$"{productionPrefix}:Shift:EndsAtLocal"] = "14:00:00";
-        values[$"{productionPrefix}:Shift:EffectiveFrom"] = "2026-01-01";
+        values[$"{productionPrefix}:ShiftSchedules:0:AssignmentId"] = $"SHIFT-{index}";
+        values[$"{productionPrefix}:ShiftSchedules:0:ShiftId"] = "SHIFT-1";
+        values[$"{productionPrefix}:ShiftSchedules:0:Name"] = "Shift 1";
+        values[$"{productionPrefix}:ShiftSchedules:0:TimeZoneId"] = "UTC";
+        values[$"{productionPrefix}:ShiftSchedules:0:StartsAtLocal"] = "06:00:00";
+        values[$"{productionPrefix}:ShiftSchedules:0:EndsAtLocal"] = "14:00:00";
+        values[$"{productionPrefix}:ShiftSchedules:0:EffectiveFrom"] = "2026-01-01";
         values[$"{productionPrefix}:PlannedProduction:AssignmentId"] =
             $"POT-{index}";
         values[$"{productionPrefix}:PlannedProduction:TimeZoneId"] = "UTC";
