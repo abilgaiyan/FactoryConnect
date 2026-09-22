@@ -8,5 +8,8 @@
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
+
+    <!-- Central repository-owned build and publish workspace. -->
+    <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>
   </PropertyGroup>
 </Project>
