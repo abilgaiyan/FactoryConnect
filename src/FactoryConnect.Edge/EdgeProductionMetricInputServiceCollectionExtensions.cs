@@ -84,6 +84,8 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             .ToArray();
         var planned = configurations.Select(static item => item.Planned).ToArray();
 
+        EnsureSchedulesExistForMachines(configurations, shifts);
+
         services.AddSingleton(
             new InMemoryProductionContextReader(contexts));
         services.AddSingleton<IProductionContextReader>(
@@ -364,17 +366,22 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             SiteId = siteId,
             ProductionLineId = lineId,
             MachineId = machineId,
-            ProductionOrderId = Optional(section, "ProductionOrderId", static value => new ProductionOrderId(value)),
-            OperationId = Optional(section, "OperationId", static value => new OperationId(value)),
-            PartId = Optional(section, "PartId", static value => new PartId(value)),
-            OperatorId = Optional(section, "OperatorId", static value => new OperatorId(value)),
+            ProductionOrderId = Optional(section, "ProductionOrderId") is { } productionOrderId
+                ? new ProductionOrderId(productionOrderId)
+                : null,
+            OperationId = Optional(section, "OperationId") is { } operationId
+                ? new OperationId(operationId)
+                : null,
+            PartId = Optional(section, "PartId") is { } partId
+                ? new PartId(partId)
+                : null,
+            OperatorId = Optional(section, "OperatorId") is { } operatorId
+                ? new OperatorId(operatorId)
+                : null,
             EffectiveFrom = DateTimeOffset.Parse(
-                Required(section, "EffectiveFromUtc"),
+                Required(section, "EffectiveFrom"),
                 CultureInfo.InvariantCulture),
-            EffectiveTo = Optional(
-                section,
-                "EffectiveToUtc",
-                static value => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture)),
+            EffectiveTo = ParseOptionalDateTimeOffset(section, "EffectiveTo"),
         };
         assignment.Validate();
         return assignment;
@@ -408,13 +415,18 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                 $"{section.Path}:ActiveDays must contain at least one day.");
         }
 
+        var timeZoneId = Required(section, "TimeZoneId");
+        _ = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+
         var assignment = new ShiftScheduleAssignment
         {
             Id = new ShiftScheduleAssignmentId(Required(section, "AssignmentId")),
             CompanyId = new CompanyId(Required(section, "CompanyId")),
             SiteId = new SiteId(Required(section, "SiteId")),
-            ProductionLineId = new ProductionLineId(Required(section, "ProductionLineId")),
-            TimeZoneId = new FactoryTimeZoneId(Required(section, "TimeZoneId")),
+            ProductionLineId = Optional(section, "ProductionLineId") is { } lineId
+                ? new ProductionLineId(lineId)
+                : null,
+            TimeZoneId = new FactoryTimeZoneId(timeZoneId),
             ShiftId = new ShiftId(Required(section, "ShiftId")),
             Name = Required(section, "Name"),
             StartsAtLocal = TimeOnly.Parse(
@@ -427,10 +439,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             EffectiveFrom = DateOnly.Parse(
                 Required(section, "EffectiveFrom"),
                 CultureInfo.InvariantCulture),
-            EffectiveTo = Optional(
-                section,
-                "EffectiveTo",
-                static value => DateOnly.Parse(value, CultureInfo.InvariantCulture)),
+            EffectiveTo = ParseOptionalDateOnly(section, "EffectiveTo"),
         };
         assignment.Validate();
         return assignment;
@@ -445,15 +454,60 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             throw new InvalidOperationException(
                 "Legacy ProductionProcessing:Shift and ProductionProcessing:Machines[n]:Shift configuration is not supported. Use ProductionProcessing:ShiftSchedules.");
         }
+
+        if (section["ContextAssignmentId"] is not null ||
+            section["ContextEffectiveFromUtc"] is not null ||
+            section.GetSection("Machines").GetChildren().Any(
+                static machine =>
+                    machine["ContextAssignmentId"] is not null ||
+                    machine["ContextEffectiveFromUtc"] is not null))
+        {
+            throw new InvalidOperationException(
+                "Legacy production-context properties are not supported. Configure assignments under ProductionProcessing:Machines[n]:Contexts.");
+        }
     }
 
-    private static T? Optional<T>(
+    private static void EnsureSchedulesExistForMachines(
+        IReadOnlyList<MachineProductionConfiguration> machines,
+        IReadOnlyList<ShiftScheduleAssignment> schedules)
+    {
+        foreach (var machine in machines)
+        {
+            var scope = machine.Scope;
+            if (schedules.Any(schedule =>
+                    schedule.CompanyId == scope.CompanyId &&
+                    schedule.SiteId == scope.SiteId &&
+                    (schedule.ProductionLineId is null ||
+                        schedule.ProductionLineId == scope.ProductionLineId)))
+            {
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                $"No shift schedule is configured for machine '{scope.MachineId}' in company '{scope.CompanyId}', site '{scope.SiteId}', and line '{scope.ProductionLineId}'.");
+        }
+    }
+
+    private static DateOnly? ParseOptionalDateOnly(
         IConfigurationSection section,
-        string key,
-        Func<string, T> factory)
+        string key) =>
+        Optional(section, key) is { } value
+            ? DateOnly.Parse(value, CultureInfo.InvariantCulture)
+            : null;
+
+    private static DateTimeOffset? ParseOptionalDateTimeOffset(
+        IConfigurationSection section,
+        string key) =>
+        Optional(section, key) is { } value
+            ? DateTimeOffset.Parse(value, CultureInfo.InvariantCulture)
+            : null;
+
+    private static string? Optional(
+        IConfigurationSection section,
+        string key)
     {
         var value = section[key];
-        return string.IsNullOrWhiteSpace(value) ? default : factory(value);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static string Required(
