@@ -15,6 +15,11 @@ public sealed class SqlServerProductionReportingEndToEndIntegrationTests
     public async Task PersistedProductionReportingSurvivesSqlReportingRecomposition()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        // Arrange the database through the explicit operator migration authority before runtime readiness.
+        await SqlServerMigrationOperation.ApplyAsync(
+            database.ConnectionString,
+            TimeSpan.FromSeconds(30),
+            CancellationToken.None);
         var configuration = BuildConfiguration(database.ConnectionString);
 
         var machineId = new MachineId(Guid.NewGuid());
