@@ -3,7 +3,6 @@ using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
-using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -188,7 +187,7 @@ public sealed class EdgeObservationProcessingCompositionTests
     }
 
     [Fact]
-    public void SqlServerProviderComposesObservationProcessingCapabilities()
+    public void ProviderWithoutProcessingCapabilitiesFailsClearly()
     {
         var machineId = MachineId.New();
         var streamId = new ObservationStreamId(machineId, "modbus:line-1");
@@ -204,10 +203,14 @@ public sealed class EdgeObservationProcessingCompositionTests
 
         using var provider = services.BuildServiceProvider();
 
-        Assert.NotNull(
-            provider.GetRequiredService<DurableObservationProcessingPipeline>());
-        Assert.IsType<SqlServerObservationIngestionStore>(
-            provider.GetRequiredService<IObservationIngestionStore>());
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => provider.GetRequiredService<
+                DurableObservationProcessingPipeline>());
+
+        Assert.Contains(
+            nameof(IDurableObservationReader),
+            exception.Message,
+            StringComparison.Ordinal);
     }
 
     private static ObservationIngestionBatch Batch(
