@@ -43,6 +43,58 @@ public sealed class ProductionConfigurationCompositionTests
         Assert.Equal("PART-A", contexts[0].PartId?.Value);
         Assert.Equal("OPERATOR-1", contexts[0].OperatorId?.Value);
         Assert.True(contexts[0].EffectiveFrom < contexts[1].EffectiveFrom);
+        Assert.Null(contexts[1].EffectiveTo);
+    }
+
+
+    [Fact]
+    public void SiteLevelScheduleServesLineScopedMachine()
+    {
+        var values = BaseValues();
+        values.Remove("ProductionProcessing:ShiftSchedules:0:ProductionLineId");
+
+        using var provider = Compose(values);
+        Assert.NotNull(provider.GetRequiredService<IShiftScheduleReader>());
+    }
+
+    [Fact]
+    public void LegacyScalarContextIsRejectedAlongsideContextsCollection()
+    {
+        var values = BaseValues();
+        values["ProductionProcessing:ContextAssignmentId"] = "LEGACY-CTX";
+        values["ProductionProcessing:ContextEffectiveFromUtc"] =
+            "2026-01-01T00:00:00+00:00";
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => Compose(values));
+
+        Assert.Contains("Legacy", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DuplicateContextIdsAreRejected()
+    {
+        var values = BaseValues();
+        values["ProductionProcessing:Contexts:0:EffectiveTo"] =
+            "2026-08-28T00:00:00+00:00";
+        values["ProductionProcessing:Contexts:1:AssignmentId"] = "CTX-1";
+        values["ProductionProcessing:Contexts:1:EffectiveFrom"] =
+            "2026-08-28T00:00:00+00:00";
+
+        Assert.Throws<InvalidOperationException>(() => Compose(values));
+    }
+
+    [Fact]
+    public void OverlappingContextRangesAreRejected()
+    {
+        var values = BaseValues();
+        values["ProductionProcessing:Contexts:0:EffectiveTo"] =
+            "2026-08-29T00:00:00+00:00";
+        values["ProductionProcessing:Contexts:1:AssignmentId"] = "CTX-2";
+        values["ProductionProcessing:Contexts:1:EffectiveFrom"] =
+            "2026-08-28T00:00:00+00:00";
+
+        Assert.Throws<InvalidOperationException>(() => Compose(values));
     }
 
     [Fact]
