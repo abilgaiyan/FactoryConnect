@@ -67,6 +67,8 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         var rosterMaterializationEnabled = services.Any(descriptor =>
             descriptor.ServiceType == typeof(IMachineShiftOccurrenceRosterStore));
 
+        RejectLegacyShiftConfiguration(section);
+        var shifts = ReadShiftScheduleAssignments(section);
         var configurations = ReadMachineConfigurations(
             section,
             activityStreamIds);
@@ -77,8 +79,9 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                 scope.SiteId,
                 scope.ProductionLineId))
             .ToArray();
-        var contexts = configurations.Select(static item => item.Context).ToArray();
-        var shifts = configurations.Select(static item => item.Shift).ToArray();
+        var contexts = configurations
+            .SelectMany(static item => item.Contexts)
+            .ToArray();
         var planned = configurations.Select(static item => item.Planned).ToArray();
 
         services.AddSingleton(
@@ -292,41 +295,21 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         };
         scope.Validate();
 
-        var contextAssignment = new ProductionContextAssignment
+        var contextSections = section.GetSection("Contexts").GetChildren().ToArray();
+        if (contextSections.Length == 0)
         {
-            Id = new ProductionContextAssignmentId(
-                Required(section, "ContextAssignmentId")),
-            CompanyId = companyId,
-            SiteId = siteId,
-            ProductionLineId = lineId,
-            MachineId = machineId,
-            EffectiveFrom = DateTimeOffset.Parse(
-                Required(section, "ContextEffectiveFromUtc"),
-                CultureInfo.InvariantCulture),
-        };
+            throw new InvalidOperationException(
+                $"{section.Path}:Contexts must contain at least one production context.");
+        }
 
-        var shiftSection = section.GetRequiredSection("Shift");
-        var shiftAssignment = new ShiftScheduleAssignment
-        {
-            Id = new ShiftScheduleAssignmentId(
-                Required(shiftSection, "AssignmentId")),
-            CompanyId = companyId,
-            SiteId = siteId,
-            ProductionLineId = lineId,
-            TimeZoneId = new FactoryTimeZoneId(
-                Required(shiftSection, "TimeZoneId")),
-            ShiftId = new ShiftId(Required(shiftSection, "ShiftId")),
-            Name = Required(shiftSection, "Name"),
-            StartsAtLocal = TimeOnly.Parse(
-                Required(shiftSection, "StartsAtLocal"),
-                CultureInfo.InvariantCulture),
-            EndsAtLocal = TimeOnly.Parse(
-                Required(shiftSection, "EndsAtLocal"),
-                CultureInfo.InvariantCulture),
-            EffectiveFrom = DateOnly.Parse(
-                Required(shiftSection, "EffectiveFrom"),
-                CultureInfo.InvariantCulture),
-        };
+        var contexts = contextSections
+            .Select(contextSection => ReadProductionContextAssignment(
+                contextSection,
+                companyId,
+                siteId,
+                lineId,
+                machineId))
+            .ToArray();
 
         var plannedSection = section.GetRequiredSection("PlannedProduction");
         var plannedAssignment = new PlannedProductionScheduleAssignment
@@ -362,9 +345,115 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         return new MachineProductionConfiguration(
             scope,
             quantityStreamId,
-            contextAssignment,
-            shiftAssignment,
+            contexts,
             plannedAssignment);
+    }
+
+    private static ProductionContextAssignment ReadProductionContextAssignment(
+        IConfigurationSection section,
+        CompanyId companyId,
+        SiteId siteId,
+        ProductionLineId lineId,
+        MachineId machineId)
+    {
+        var assignment = new ProductionContextAssignment
+        {
+            Id = new ProductionContextAssignmentId(
+                Required(section, "AssignmentId")),
+            CompanyId = companyId,
+            SiteId = siteId,
+            ProductionLineId = lineId,
+            MachineId = machineId,
+            ProductionOrderId = Optional(section, "ProductionOrderId", static value => new ProductionOrderId(value)),
+            OperationId = Optional(section, "OperationId", static value => new OperationId(value)),
+            PartId = Optional(section, "PartId", static value => new PartId(value)),
+            OperatorId = Optional(section, "OperatorId", static value => new OperatorId(value)),
+            EffectiveFrom = DateTimeOffset.Parse(
+                Required(section, "EffectiveFromUtc"),
+                CultureInfo.InvariantCulture),
+            EffectiveTo = Optional(
+                section,
+                "EffectiveToUtc",
+                static value => DateTimeOffset.Parse(value, CultureInfo.InvariantCulture)),
+        };
+        assignment.Validate();
+        return assignment;
+    }
+
+    private static ShiftScheduleAssignment[] ReadShiftScheduleAssignments(
+        IConfigurationSection section)
+    {
+        var scheduleSections = section.GetSection("ShiftSchedules").GetChildren().ToArray();
+        if (scheduleSections.Length == 0)
+        {
+            throw new InvalidOperationException(
+                "ProductionProcessing:ShiftSchedules must contain at least one shared shift schedule.");
+        }
+
+        var assignments = scheduleSections.Select(ReadShiftScheduleAssignment).ToArray();
+        _ = new InMemoryShiftScheduleReader(assignments);
+        return assignments;
+    }
+
+    private static ShiftScheduleAssignment ReadShiftScheduleAssignment(
+        IConfigurationSection section)
+    {
+        var activeDays = section.GetSection("ActiveDays")
+            .GetChildren()
+            .Select(day => Enum.Parse<DayOfWeek>(day.Value!, ignoreCase: true))
+            .ToHashSet();
+        if (activeDays.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{section.Path}:ActiveDays must contain at least one day.");
+        }
+
+        var assignment = new ShiftScheduleAssignment
+        {
+            Id = new ShiftScheduleAssignmentId(Required(section, "AssignmentId")),
+            CompanyId = new CompanyId(Required(section, "CompanyId")),
+            SiteId = new SiteId(Required(section, "SiteId")),
+            ProductionLineId = new ProductionLineId(Required(section, "ProductionLineId")),
+            TimeZoneId = new FactoryTimeZoneId(Required(section, "TimeZoneId")),
+            ShiftId = new ShiftId(Required(section, "ShiftId")),
+            Name = Required(section, "Name"),
+            StartsAtLocal = TimeOnly.Parse(
+                Required(section, "StartsAtLocal"),
+                CultureInfo.InvariantCulture),
+            EndsAtLocal = TimeOnly.Parse(
+                Required(section, "EndsAtLocal"),
+                CultureInfo.InvariantCulture),
+            ActiveDays = activeDays,
+            EffectiveFrom = DateOnly.Parse(
+                Required(section, "EffectiveFrom"),
+                CultureInfo.InvariantCulture),
+            EffectiveTo = Optional(
+                section,
+                "EffectiveTo",
+                static value => DateOnly.Parse(value, CultureInfo.InvariantCulture)),
+        };
+        assignment.Validate();
+        return assignment;
+    }
+
+    private static void RejectLegacyShiftConfiguration(IConfigurationSection section)
+    {
+        if (section.GetSection("Shift").Exists() ||
+            section.GetSection("Machines").GetChildren().Any(
+                static machine => machine.GetSection("Shift").Exists()))
+        {
+            throw new InvalidOperationException(
+                "Legacy ProductionProcessing:Shift and ProductionProcessing:Machines[n]:Shift configuration is not supported. Use ProductionProcessing:ShiftSchedules.");
+        }
+    }
+
+    private static T? Optional<T>(
+        IConfigurationSection section,
+        string key,
+        Func<string, T> factory)
+    {
+        var value = section[key];
+        return string.IsNullOrWhiteSpace(value) ? default : factory(value);
     }
 
     private static string Required(
@@ -376,7 +465,6 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
     private sealed record MachineProductionConfiguration(
         ProductionContextProcessingScope Scope,
         ObservationStreamId QuantityStreamId,
-        ProductionContextAssignment Context,
-        ShiftScheduleAssignment Shift,
+        IReadOnlyList<ProductionContextAssignment> Contexts,
         PlannedProductionScheduleAssignment Planned);
 }
