@@ -61,9 +61,9 @@ public sealed class SqlPersistenceStartupGateCompositionTests
     }
 
     [Fact]
-    public async Task SqlGateRunsMigrationThenVerificationWithSameConfiguredTimeout()
+    public async Task SqlGateRunsVerificationOnlyWithExactConfiguredArguments()
     {
-        var order = new List<string>();
+        var invocationCount = 0;
         var timeout = TimeSpan.FromMilliseconds(1234);
         var gate = new SqlServerPersistenceStartupGate(
             "Server=unused;Database=unused",
@@ -73,64 +73,20 @@ public sealed class SqlPersistenceStartupGateCompositionTests
                 Assert.Equal("Server=unused;Database=unused", connectionString);
                 Assert.Equal(timeout, actualTimeout);
                 Assert.False(cancellationToken.IsCancellationRequested);
-                order.Add("migration");
-                return Task.CompletedTask;
-            },
-            (connectionString, actualTimeout, cancellationToken) =>
-            {
-                Assert.Equal("Server=unused;Database=unused", connectionString);
-                Assert.Equal(timeout, actualTimeout);
-                Assert.False(cancellationToken.IsCancellationRequested);
-                order.Add("verification");
+                invocationCount++;
                 return Task.FromResult(CreateCompatibleResult());
             });
 
         await gate.EnsureReadyAsync(CancellationToken.None);
 
-        Assert.Equal(["migration", "verification"], order);
+        Assert.Equal(1, invocationCount);
     }
 
     [Fact]
-    public async Task MigrationFailureIsTranslatedAndVerificationIsNotInvoked()
-    {
-        var cause = new InvalidOperationException("migration failure");
-        var verificationInvoked = false;
-        var gate = CreateGate(
-            (_, _, _) => Task.FromException(cause),
-            (_, _, _) =>
-            {
-                verificationInvoked = true;
-                return Task.FromResult(CreateCompatibleResult());
-            });
-
-        var failure = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
-            async () => await gate.EnsureReadyAsync(CancellationToken.None));
-
-        Assert.Equal(SqlPersistenceStartupFailureKind.MigrationOperationalFailure, failure.FailureKind);
-        Assert.Same(cause, failure.InnerException);
-        Assert.False(verificationInvoked);
-    }
-
-    [Fact]
-    public async Task MigrationCancellationPropagatesUnchanged()
-    {
-        var cancellation = new OperationCanceledException("migration cancellation");
-        var gate = CreateGate(
-            (_, _, _) => Task.FromException(cancellation),
-            (_, _, _) => Task.FromResult(CreateCompatibleResult()));
-
-        var actual = await Assert.ThrowsAsync<OperationCanceledException>(
-            async () => await gate.EnsureReadyAsync(CancellationToken.None));
-
-        Assert.Same(cancellation, actual);
-    }
-
-    [Fact]
-    public async Task VerificationFailureIsTranslatedAfterMigrationSuccess()
+    public async Task VerificationFailureIsTranslatedExactly()
     {
         var cause = new InvalidOperationException("verification failure");
         var gate = CreateGate(
-            (_, _, _) => Task.CompletedTask,
             (_, _, _) => Task.FromException<SqlRuntimeCompatibilityResult>(cause));
 
         var failure = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
@@ -138,6 +94,7 @@ public sealed class SqlPersistenceStartupGateCompositionTests
 
         Assert.Equal(SqlPersistenceStartupFailureKind.VerificationOperationalFailure, failure.FailureKind);
         Assert.Same(cause, failure.InnerException);
+        Assert.Null(failure.CompatibilityResult);
     }
 
     [Fact]
@@ -145,7 +102,6 @@ public sealed class SqlPersistenceStartupGateCompositionTests
     {
         var cancellation = new OperationCanceledException("verification cancellation");
         var gate = CreateGate(
-            (_, _, _) => Task.CompletedTask,
             (_, _, _) => Task.FromException<SqlRuntimeCompatibilityResult>(cancellation));
 
         var actual = await Assert.ThrowsAsync<OperationCanceledException>(
@@ -155,11 +111,29 @@ public sealed class SqlPersistenceStartupGateCompositionTests
     }
 
     [Fact]
+    public async Task PreCancellationPreventsVerificationInvocation()
+    {
+        var verificationInvoked = false;
+        var gate = CreateGate(
+            (_, _, _) =>
+            {
+                verificationInvoked = true;
+                return Task.FromResult(CreateCompatibleResult());
+            });
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await gate.EnsureReadyAsync(cancellation.Token));
+
+        Assert.False(verificationInvoked);
+    }
+
+    [Fact]
     public async Task NonCompatibleVerificationResultIsPreservedExactly()
     {
         var incompatible = CreateIncompatibleResult();
         var gate = CreateGate(
-            (_, _, _) => Task.CompletedTask,
             (_, _, _) => Task.FromResult(incompatible));
 
         var failure = await Assert.ThrowsAsync<SqlPersistenceStartupException>(
@@ -215,12 +189,10 @@ public sealed class SqlPersistenceStartupGateCompositionTests
     }
 
     private static SqlServerPersistenceStartupGate CreateGate(
-        Func<string, TimeSpan, CancellationToken, Task> migration,
         Func<string, TimeSpan, CancellationToken, Task<SqlRuntimeCompatibilityResult>> verification) =>
         new(
             "Server=unused;Database=unused",
             new SqlPersistenceStartupOptions(TimeSpan.FromSeconds(1)),
-            migration,
             verification);
 
     private static PersistenceProviderRegistration CreateRegistration(
