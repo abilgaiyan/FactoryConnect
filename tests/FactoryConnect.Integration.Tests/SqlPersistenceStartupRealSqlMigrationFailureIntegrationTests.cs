@@ -10,21 +10,25 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureIntegrationTests
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
 
     [Theory]
-    [InlineData(MigrationFailureState.LedgerOccupiedByView)]
-    [InlineData(MigrationFailureState.InvalidLedgerStructure)]
-    [InlineData(MigrationFailureState.MalformedHistory)]
-    [InlineData(MigrationFailureState.UnledgeredPartialSchema)]
-    [InlineData(MigrationFailureState.ChecksumMismatch)]
-    public async Task ExplicitMigrationOperationPreservesRealMigrationRejection(MigrationFailureState initialState)
+    [InlineData(MigrationFailureState.LedgerOccupiedByView, typeof(SqlMigrationLedgerSchemaException))]
+    [InlineData(MigrationFailureState.InvalidLedgerStructure, typeof(SqlMigrationLedgerSchemaException))]
+    [InlineData(MigrationFailureState.MalformedHistory, typeof(SqlMigrationHistoryException))]
+    [InlineData(MigrationFailureState.UnledgeredPartialSchema, typeof(UnledgeredSchemaIncompatibleException))]
+    [InlineData(MigrationFailureState.ChecksumMismatch, typeof(SqlMigrationHistoryException))]
+    public async Task ExplicitMigrationOperationPreservesRealMigrationRejection(
+        MigrationFailureState initialState,
+        Type expectedExceptionType)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await SeedFailureStateAsync(database.ConnectionString, initialState);
 
-        await Assert.ThrowsAnyAsync<Exception>(() =>
+        var exception = await Record.ExceptionAsync(() =>
             SqlServerMigrationOperation.ApplyAsync(
                 database.ConnectionString,
                 LockTimeout,
                 CancellationToken.None));
+
+        Assert.IsType(expectedExceptionType, exception);
     }
 
     [Fact]
@@ -38,11 +42,14 @@ public sealed class SqlPersistenceStartupRealSqlMigrationFailureIntegrationTests
 
         try
         {
-            await Assert.ThrowsAnyAsync<Exception>(() =>
+            var exception = await Assert.ThrowsAsync<SqlMigrationLockAcquisitionException>(() =>
                 SqlServerMigrationOperation.ApplyAsync(
                     database.ConnectionString,
                     TimeSpan.Zero,
                     CancellationToken.None));
+
+            Assert.NotNull(exception.ReturnCode);
+            Assert.True(exception.ReturnCode < 0);
         }
         finally
         {
