@@ -2,6 +2,102 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'DemoCandidate.Common.ps1')
 
+if (-not ('FactoryConnect.Rehearsal.ManagedProcessStreamCapture' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
+
+namespace FactoryConnect.Rehearsal
+{
+    public sealed class ManagedProcessStreamCapture : IDisposable
+    {
+        private readonly FileStream _standardOutput;
+        private readonly FileStream _standardError;
+        private Task _standardOutputPump;
+        private Task _standardErrorPump;
+        private bool _completed;
+        private bool _disposed;
+
+        public ManagedProcessStreamCapture(string standardOutputPath, string standardErrorPath)
+        {
+            if (standardOutputPath == null) throw new ArgumentNullException("standardOutputPath");
+            if (standardErrorPath == null) throw new ArgumentNullException("standardErrorPath");
+
+            _standardOutput = new FileStream(
+                standardOutputPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.Read,
+                81920,
+                true);
+
+            try
+            {
+                _standardError = new FileStream(
+                    standardErrorPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.Read,
+                    81920,
+                    true);
+            }
+            catch
+            {
+                _standardOutput.Dispose();
+                throw;
+            }
+        }
+
+        public Task StandardOutputPump { get { return _standardOutputPump; } }
+        public Task StandardErrorPump { get { return _standardErrorPump; } }
+
+        public void Begin(Process process)
+        {
+            if (process == null) throw new ArgumentNullException("process");
+            if (_standardOutputPump != null || _standardErrorPump != null)
+            {
+                throw new InvalidOperationException("Rehearsal process stream capture was already started.");
+            }
+
+            _standardOutputPump = process.StandardOutput.BaseStream.CopyToAsync(_standardOutput);
+            _standardErrorPump = process.StandardError.BaseStream.CopyToAsync(_standardError);
+        }
+
+        public void Complete()
+        {
+            if (_completed) return;
+            if (_standardOutputPump == null || _standardErrorPump == null)
+            {
+                throw new InvalidOperationException("Rehearsal process stream capture was not started.");
+            }
+
+            try
+            {
+                Task.WhenAll(_standardOutputPump, _standardErrorPump).GetAwaiter().GetResult();
+                _standardOutput.Flush();
+                _standardError.Flush();
+                _completed = true;
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException("Rehearsal process output capture failed.", exception);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _standardOutput.Dispose();
+            _standardError.Dispose();
+        }
+    }
+}
+'@
+}
+
 function ConvertTo-RehearsalRedactedText {
     param([AllowNull()][string]$Text)
 
@@ -300,26 +396,43 @@ function Start-RehearsalProcess {
         $start.Environment[[string]$entry.Key] = [string]$entry.Value
     }
 
+    $capture = [FactoryConnect.Rehearsal.ManagedProcessStreamCapture]::new($StdOutPath, $StdErrPath)
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $start
-    if (-not $process.Start()) {
-        throw "Failed to start rehearsal process '$Role'."
-    }
+    try {
+        if (-not $process.Start()) {
+            throw "Failed to start rehearsal process '$Role'."
+        }
 
-    $processStartTimeUtc = $process.StartTime.ToUniversalTime()
-    $stdout = [System.IO.StreamWriter]::new($StdOutPath, $false, [System.Text.UTF8Encoding]::new($false))
-    $stderr = [System.IO.StreamWriter]::new($StdErrPath, $false, [System.Text.UTF8Encoding]::new($false))
-    $process.add_OutputDataReceived({ param($sender, $args) if ($null -ne $args.Data) { $stdout.WriteLine($args.Data); $stdout.Flush() } })
-    $process.add_ErrorDataReceived({ param($sender, $args) if ($null -ne $args.Data) { $stderr.WriteLine($args.Data); $stderr.Flush() } })
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
+        $processStartTimeUtc = $process.StartTime.ToUniversalTime()
+        try {
+            $capture.Begin($process)
+        }
+        catch {
+            $failedOwned = [pscustomobject]@{
+                Role = $Role
+                Process = $process
+                ProcessStartTimeUtc = $processStartTimeUtc
+                StartedAtUtc = [DateTimeOffset]::UtcNow
+                StoppedAtUtc = $null
+                TerminationReason = $null
+                ExitCode = $null
+            }
+            try { [void](Stop-RehearsalProcess -OwnedProcess $failedOwned -GraceSeconds 0) } catch {}
+            throw
+        }
+    }
+    catch {
+        $capture.Dispose()
+        $process.Dispose()
+        throw
+    }
 
     [pscustomobject]@{
         Role = $Role
         Process = $process
         ProcessStartTimeUtc = $processStartTimeUtc
-        StdOutWriter = $stdout
-        StdErrWriter = $stderr
+        StreamCapture = $capture
         StdOutPath = $StdOutPath
         StdErrPath = $StdErrPath
         StartedAtUtc = [DateTimeOffset]::UtcNow
@@ -419,6 +532,10 @@ function Close-RehearsalProcessStreams {
             $OwnedProcess.ExitCode = $OwnedProcess.Process.ExitCode
         }
 
+        if ($null -ne $OwnedProcess.PSObject.Properties['StreamCapture'] -and $null -ne $OwnedProcess.StreamCapture) {
+            $OwnedProcess.StreamCapture.Complete()
+        }
+
         if (-not $OwnedProcess.Journaled) {
             $stdoutPath = Get-RehearsalContainedRelativePath -Root $RepoRoot -Target $OwnedProcess.StdOutPath
             $stderrPath = Get-RehearsalContainedRelativePath -Root $RepoRoot -Target $OwnedProcess.StdErrPath
@@ -437,8 +554,12 @@ function Close-RehearsalProcessStreams {
         }
     }
     finally {
-        try { $OwnedProcess.StdOutWriter.Dispose() } catch {}
-        try { $OwnedProcess.StdErrWriter.Dispose() } catch {}
+        try {
+            if ($null -ne $OwnedProcess.PSObject.Properties['StreamCapture'] -and $null -ne $OwnedProcess.StreamCapture) {
+                $OwnedProcess.StreamCapture.Dispose()
+            }
+        }
+        catch {}
         try { $OwnedProcess.Process.Dispose() } catch {}
     }
 }
