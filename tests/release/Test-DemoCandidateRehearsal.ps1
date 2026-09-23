@@ -13,6 +13,18 @@ function Assert-Throws {
     }
 }
 
+function Assert-Equal {
+    param(
+        [Parameter(Mandatory = $true)]$Actual,
+        [Parameter(Mandatory = $true)]$Expected,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    if ($Actual -cne $Expected) {
+        throw "$Name expected '$Expected' but observed '$Actual'."
+    }
+    Write-Host "PASS: $Name"
+}
+
 $templateText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'config/rehearsal/demo.rehearsal.template.json')
 $templateText = $templateText.Replace('__FIXTURE_LISTEN_ADDRESS__', 'rehearsal-host.local')
 $templateText = $templateText.Replace('__API_LISTEN_ADDRESS__', 'rehearsal-host.local')
@@ -31,6 +43,79 @@ Write-Host 'PASS: non-secret configuration projection is deterministic.'
 $redacted = ConvertTo-RehearsalRedactedText 'Login failed; Server=db;Database=FactoryConnect;User ID=sa;Password=VerySecret;'
 if ($redacted -match 'VerySecret|User ID=sa|Password=') { throw 'Failure-message redaction did not remove protected SQL material.' }
 Write-Host 'PASS: protected failure text is redacted.'
+
+$serverAdmission = Resolve-RehearsalDatabaseAdmission `
+    -ConnectionString 'Server=(localdb)\MSSQLLocalDB;Database=FactoryConnect;Integrated Security=True' `
+    -DatabaseName 'FactoryConnect_Rehearsal_20260923_02'
+Assert-Equal -Actual $serverAdmission.Server -Expected '(localdb)\MSSQLLocalDB' -Name 'Server alias admitted'
+Assert-Equal -Actual ([string]$serverAdmission.IntegratedSecurity) -Expected 'True' -Name 'Integrated Security admitted'
+
+$dataSourceAdmission = Resolve-RehearsalDatabaseAdmission `
+    -ConnectionString 'Data Source=sql-rehearsal.local;Database=FactoryConnect;Integrated Security=True' `
+    -DatabaseName 'FactoryConnect_Rehearsal_20260923_02'
+Assert-Equal -Actual $dataSourceAdmission.Server -Expected 'sql-rehearsal.local' -Name 'Data Source alias admitted'
+
+$mixedCaseAdmission = Resolve-RehearsalDatabaseAdmission `
+    -ConnectionString 'dAtA sOuRcE=sql-mixed.local;Database=FactoryConnect;Integrated Security=True' `
+    -DatabaseName 'FactoryConnect_Rehearsal_20260923_02'
+Assert-Equal -Actual $mixedCaseAdmission.Server -Expected 'sql-mixed.local' -Name 'mixed-case alias admitted'
+
+Assert-Throws -Name 'missing SQL server alias' -Action {
+    Resolve-RehearsalDatabaseAdmission `
+        -ConnectionString 'Database=FactoryConnect;Integrated Security=True' `
+        -DatabaseName 'FactoryConnect_Rehearsal_20260923_02' | Out-Null
+}
+Assert-Throws -Name 'empty SQL server identity' -Action {
+    Resolve-RehearsalDatabaseAdmission `
+        -ConnectionString 'Server=;Database=FactoryConnect;Integrated Security=True' `
+        -DatabaseName 'FactoryConnect_Rehearsal_20260923_02' | Out-Null
+}
+Assert-Throws -Name 'whitespace SQL server identity' -Action {
+    Resolve-RehearsalDatabaseAdmission `
+        -ConnectionString 'Server=   ;Database=FactoryConnect;Integrated Security=True' `
+        -DatabaseName 'FactoryConnect_Rehearsal_20260923_02' | Out-Null
+}
+
+$phaseExpectations = [ordered]@{
+    CandidatePreVerification = 'Verification'
+    ConfigurationAdmission = 'Configuration'
+    DatabaseProvisioning = 'Infrastructure'
+    FixtureStartup = 'Dependency'
+    MigrationExecution = 'Application'
+    RuntimeStartupAcceptance = 'Application'
+    CandidatePostVerification = 'Verification'
+    EvidenceFinalization = 'Verification'
+}
+foreach ($entry in $phaseExpectations.GetEnumerator()) {
+    Assert-Equal `
+        -Actual (Get-RehearsalFailureClassification -Phase ([string]$entry.Key)) `
+        -Expected ([string]$entry.Value) `
+        -Name "phase $($entry.Key) classification"
+}
+
+$runnerText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'scripts/release/Invoke-DemoCandidateRehearsal.ps1')
+$admissionIndex = $runnerText.IndexOf('Resolve-RehearsalDatabaseAdmission')
+$provisioningIndex = $runnerText.IndexOf('Invoke-RehearsalDatabaseProvisioning `', $admissionIndex)
+$fixtureIndex = $runnerText.IndexOf("-Role 'Fixture'", $provisioningIndex)
+$migrationIndex = $runnerText.IndexOf("-Role 'Migrations'", $fixtureIndex)
+$edgeIndex = $runnerText.IndexOf("-Role 'Edge'", $migrationIndex)
+$apiIndex = $runnerText.IndexOf("-Role 'Api'", $edgeIndex)
+$dashboardIndex = $runnerText.IndexOf("-Role 'Dashboard'", $apiIndex)
+if ($admissionIndex -lt 0 -or $provisioningIndex -lt 0 -or $fixtureIndex -lt 0 -or
+    -not ($admissionIndex -lt $provisioningIndex -and $provisioningIndex -lt $fixtureIndex -and
+          $fixtureIndex -lt $migrationIndex -and $migrationIndex -lt $edgeIndex -and
+          $edgeIndex -lt $apiIndex -and $apiIndex -lt $dashboardIndex)) {
+    throw 'Rehearsal launch suppression ordering is not structurally preserved.'
+}
+Write-Host 'PASS: configuration/provisioning precede every rehearsal process launch.'
+
+$finallyIndex = $runnerText.IndexOf('finally {')
+$postVerificationPhaseIndex = $runnerText.IndexOf("`$currentPhase = 'CandidatePostVerification'", $finallyIndex)
+$evidencePhaseIndex = $runnerText.IndexOf("`$currentPhase = 'EvidenceFinalization'", $postVerificationPhaseIndex)
+if ($finallyIndex -lt 0 -or $postVerificationPhaseIndex -lt $finallyIndex -or $evidencePhaseIndex -lt $postVerificationPhaseIndex) {
+    throw 'Terminal post-verification/evidence-finalization ordering is not preserved.'
+}
+Write-Host 'PASS: terminal post-verification precedes evidence finalization.'
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("FactoryConnect-RehearsalEvidence-" + [Guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
@@ -57,10 +142,18 @@ try {
         restartProof = [ordered]@{ performed = $true; passed = $true }
     }
     $text = (($evidence | ConvertTo-Json -Depth 30) -replace "`r`n", "`n") + "`n"
-    $jsonPath = Join-Path $tempRoot 'rehearsal.json'
-    Write-DemoCandidateUtf8NoBom -Path $jsonPath -Text $text
-    $sha = Get-DemoCandidateSha256 -Path $jsonPath
-    Write-DemoCandidateUtf8NoBom -Path (Join-Path $tempRoot 'rehearsal.json.sha256') -Text "$sha  rehearsal.json`n"
+    $published = Publish-RehearsalTerminalEvidence -EvidenceRoot $tempRoot -EvidenceText $text
+    if (-not (Test-Path -LiteralPath $published.EvidencePath)) { throw 'Canonical rehearsal evidence was not promoted.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $tempRoot 'rehearsal.json.sha256'))) { throw 'Detached evidence checksum was not promoted.' }
+    if (Test-Path -LiteralPath (Join-Path $tempRoot '.rehearsal.json.tmp')) { throw 'Temporary evidence JSON remained after promotion.' }
+    if (Test-Path -LiteralPath (Join-Path $tempRoot '.rehearsal.json.sha256.tmp')) { throw 'Temporary evidence checksum remained after promotion.' }
+    Write-Host 'PASS: terminal evidence staged and promoted as a complete pair.'
+
+    $originalSha = Get-DemoCandidateSha256 -Path $published.EvidencePath
+    Assert-Throws -Name 'terminal evidence overwrite prohibited' -Action {
+        Publish-RehearsalTerminalEvidence -EvidenceRoot $tempRoot -EvidenceText $text | Out-Null
+    }
+    Assert-Equal -Actual (Get-DemoCandidateSha256 -Path $published.EvidencePath) -Expected $originalSha -Name 'existing terminal evidence preserved after reuse rejection'
 
     & (Join-Path $repoRoot 'scripts/release/Test-DemoCandidateRehearsalEvidence.ps1') `
         -EvidenceAttemptPath $tempRoot `
@@ -71,7 +164,7 @@ try {
         -ExpectedRehearsalToolSourceCommit 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' | Out-Null
     Write-Host 'PASS: untouched rehearsal evidence verified.'
 
-    [System.IO.File]::AppendAllText($jsonPath, " ")
+    [System.IO.File]::AppendAllText($published.EvidencePath, " ")
     Assert-Throws -Name 'evidence bytes changed' -Action {
         & (Join-Path $repoRoot 'scripts/release/Test-DemoCandidateRehearsalEvidence.ps1') `
             -EvidenceAttemptPath $tempRoot `
