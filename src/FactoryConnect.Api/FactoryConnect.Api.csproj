@@ -15,7 +15,7 @@
     <PackageReference Include="Microsoft.OpenApi" />
     <ProjectReference Include="../FactoryConnect.Abstractions/FactoryConnect.Abstractions.csproj" />
     <ProjectReference Include="../FactoryConnect.Core/FactoryConnect.Core.csproj" />
-    <ProjectReference Include="../FactoryConnect.Edge/FactoryConnect.Edge.csproj" />
+    <ProjectReference Include="../FactoryConnect.Edge/FactoryConnect.Edge.csproj" AdditionalProperties="FactoryConnectSuppressHostContent=true" />
     <ProjectReference Include="../FactoryConnect.Infrastructure/FactoryConnect.Infrastructure.csproj" />
     <ProjectReference Include="../FactoryConnect.Persistence/FactoryConnect.Persistence.csproj" />
   </ItemGroup>
