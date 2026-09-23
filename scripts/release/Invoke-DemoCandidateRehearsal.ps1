@@ -102,30 +102,22 @@ function Add-RehearsalProductionEnvironment {
 
 function Invoke-RehearsalDatabaseProvisioning {
     param(
-        [Parameter(Mandatory = $true)][string]$ConnectionString,
+        [Parameter(Mandatory = $true)]$Admission,
         [Parameter(Mandatory = $true)][string]$DatabaseName
     )
 
     if (-not $ProvisionDatabase) { return }
 
     $sqlcmd = Get-Command sqlcmd -ErrorAction Stop
-    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-    $builder.ConnectionString = $ConnectionString
-    $server = if ($builder.ContainsKey('Server')) { [string]$builder['Server'] } else { [string]$builder['Data Source'] }
-    if ([string]::IsNullOrWhiteSpace($server)) { throw 'SQL Server identity could not be resolved for provisioning.' }
-    if ($DatabaseName -notmatch '^[A-Za-z0-9_-]+$') { throw 'Rehearsal database name contains unsupported characters.' }
-
-    $arguments = @('-S', $server, '-d', 'master', '-b', '-Q', "IF DB_ID(N'$DatabaseName') IS NULL CREATE DATABASE [$DatabaseName]")
-    $integrated = $builder.ContainsKey('Integrated Security') -and [bool]$builder['Integrated Security']
-    if ($integrated) {
+    $arguments = @('-S', [string]$Admission.Server, '-d', 'master', '-b', '-Q', "IF DB_ID(N'$DatabaseName') IS NULL CREATE DATABASE [$DatabaseName]")
+    if ([bool]$Admission.IntegratedSecurity) {
         $arguments += '-E'
     }
-    elseif ($builder.ContainsKey('User ID')) {
-        $arguments += @('-U', [string]$builder['User ID'])
-        if ($builder.ContainsKey('Password')) { $env:SQLCMDPASSWORD = [string]$builder['Password'] }
-    }
     else {
-        throw 'Rehearsal database provisioning requires Integrated Security or explicit User ID.'
+        $arguments += @('-U', [string]$Admission.UserId)
+        if (-not [string]::IsNullOrEmpty([string]$Admission.Password)) {
+            $env:SQLCMDPASSWORD = [string]$Admission.Password
+        }
     }
 
     try {
@@ -179,6 +171,7 @@ $startedAtUtc = [DateTimeOffset]::UtcNow
 $outcome = 'Failed'
 $failureClassification = $null
 $failureMessage = $null
+$currentPhase = 'CandidatePreVerification'
 $ownedProcesses = [System.Collections.Generic.List[object]]::new()
 $processEvidence = [System.Collections.Generic.List[object]]::new()
 $checks = [System.Collections.Generic.List[object]]::new()
@@ -188,12 +181,15 @@ $restartPerformed = $false
 $restartPassed = $false
 $migrationExitCode = $null
 $repositoryCurrent = $false
+$databaseAdmission = $null
+$publishedEvidence = $null
 
 $fixtureBaseAddress = "http://${fixtureHost}:$([int]$configuration.fixture.port)"
 $apiBaseAddress = "http://${apiHost}:$([int]$configuration.api.port)"
 $dashboardBaseAddress = "http://${dashboardHost}:$([int]$configuration.dashboard.port)"
 
 try {
+    $currentPhase = 'CandidatePreVerification'
     $beforeVerification = & (Join-Path $PSScriptRoot 'Test-DemoCandidate.ps1') `
         -CandidatePath $candidateRoot `
         -ExpectedCandidateId $candidateId `
@@ -201,9 +197,18 @@ try {
         -ExpectedDeploymentContractCommit $ExpectedDeploymentContractCommit
     $checks.Add([ordered]@{ id = 'candidate-pre-verification'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = $beforeVerification.ManifestSha256 })
 
-    Invoke-RehearsalDatabaseProvisioning -ConnectionString $SqlConnectionString -DatabaseName ([string]$configuration.database.databaseName)
+    $currentPhase = 'ConfigurationAdmission'
+    $databaseAdmission = Resolve-RehearsalDatabaseAdmission `
+        -ConnectionString $SqlConnectionString `
+        -DatabaseName ([string]$configuration.database.databaseName)
+
+    $currentPhase = 'DatabaseProvisioning'
+    Invoke-RehearsalDatabaseProvisioning `
+        -Admission $databaseAdmission `
+        -DatabaseName ([string]$configuration.database.databaseName)
 
     $logs = Join-Path $workspaceRoot 'logs'
+    $currentPhase = 'FixtureStartup'
     $fixture = Start-RehearsalProcess `
         -Role 'Fixture' `
         -FilePath (Resolve-Path -LiteralPath $FixtureExecutablePath).Path `
@@ -215,6 +220,7 @@ try {
     [void](Wait-RehearsalHttp200 -Uri ([Uri]"$fixtureBaseAddress/health") -TimeoutSeconds $StartupTimeoutSeconds)
     $checks.Add([ordered]@{ id = 'fixture-health'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'seven-machine fixture ready' })
 
+    $currentPhase = 'MigrationExecution'
     $migrationEnvironment = @{
         DOTNET_ENVIRONMENT = 'Production'
         PersistenceProviders__SqlServer__ConnectionString = $SqlConnectionString
@@ -233,6 +239,7 @@ try {
     $checks.Add([ordered]@{ id = 'migration-repository-current'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'exit code 0' })
     Close-RehearsalProcessStreams -OwnedProcess $migration
 
+    $currentPhase = 'RuntimeStartupAcceptance'
     $edgeEnvironment = @{
         DOTNET_ENVIRONMENT = 'Production'
         Persistence__Provider = 'SqlServer'
@@ -351,7 +358,6 @@ try {
     }
 
     $restartPerformed = $true
-    # Restart proof is deliberately bounded to startup/readiness using the same candidate/configuration.
     $edge2 = Start-RehearsalProcess -Role 'Edge-Restart' -FilePath (Join-Path $candidateRoot 'edge/FactoryConnect.Edge.exe') -WorkingDirectory (Join-Path $candidateRoot 'edge') -StdOutPath (Join-Path $logs 'edge.restart.stdout.log') -StdErrPath (Join-Path $logs 'edge.restart.stderr.log') -Environment $edgeEnvironment
     $ownedProcesses.Add($edge2)
     $api2 = Start-RehearsalProcess -Role 'Api-Restart' -FilePath (Join-Path $candidateRoot 'api/FactoryConnect.Api.exe') -WorkingDirectory (Join-Path $candidateRoot 'api') -StdOutPath (Join-Path $logs 'api.restart.stdout.log') -StdErrPath (Join-Path $logs 'api.restart.stderr.log') -Environment $apiEnvironment
@@ -367,12 +373,12 @@ try {
 }
 catch [System.OperationCanceledException] {
     $outcome = 'Canceled'
-    $failureClassification = 'Infrastructure'
+    $failureClassification = Get-RehearsalFailureClassification -Phase $currentPhase
     $failureMessage = ConvertTo-RehearsalRedactedText $_.Exception.Message
 }
 catch {
     $outcome = 'Failed'
-    $failureClassification = if ($null -eq $beforeVerification) { 'Verification' } else { 'Application' }
+    $failureClassification = Get-RehearsalFailureClassification -Phase $currentPhase
     $failureMessage = ConvertTo-RehearsalRedactedText $_.Exception.Message
 }
 finally {
@@ -402,6 +408,7 @@ finally {
         Close-RehearsalProcessStreams -OwnedProcess $owned
     }
 
+    $currentPhase = 'CandidatePostVerification'
     try {
         $afterVerification = & (Join-Path $PSScriptRoot 'Test-DemoCandidate.ps1') `
             -CandidatePath $candidateRoot `
@@ -412,7 +419,7 @@ finally {
     }
     catch {
         $outcome = 'Failed'
-        $failureClassification = 'Verification'
+        $failureClassification = Get-RehearsalFailureClassification -Phase $currentPhase
         $failureMessage = ConvertTo-RehearsalRedactedText $_.Exception.Message
     }
 
@@ -461,11 +468,11 @@ finally {
         }
     }
 
+    $currentPhase = 'EvidenceFinalization'
     $evidenceText = (($evidence | ConvertTo-Json -Depth 30) -replace "`r`n", "`n") + "`n"
-    $evidencePath = Join-Path $evidenceRoot 'rehearsal.json'
-    Write-DemoCandidateUtf8NoBom -Path $evidencePath -Text $evidenceText
-    $evidenceSha256 = Get-DemoCandidateSha256 -Path $evidencePath
-    Write-DemoCandidateUtf8NoBom -Path (Join-Path $evidenceRoot 'rehearsal.json.sha256') -Text "$evidenceSha256  rehearsal.json`n"
+    $publishedEvidence = Publish-RehearsalTerminalEvidence `
+        -EvidenceRoot $evidenceRoot `
+        -EvidenceText $evidenceText
 }
 
 [pscustomobject]@{
@@ -473,8 +480,8 @@ finally {
     AttemptId = $AttemptId
     Outcome = $outcome
     FailureClassification = $failureClassification
-    EvidencePath = Join-Path $evidenceRoot 'rehearsal.json'
-    EvidenceSha256 = Get-DemoCandidateSha256 -Path (Join-Path $evidenceRoot 'rehearsal.json')
+    EvidencePath = $publishedEvidence.EvidencePath
+    EvidenceSha256 = $publishedEvidence.EvidenceSha256
     RehearsalConfigurationSha256 = $configurationSha256
 }
 

@@ -85,6 +85,96 @@ function Get-RehearsalProjectionSha256 {
     return ([System.BitConverter]::ToString($sha)).Replace('-', '').ToLowerInvariant()
 }
 
+function Resolve-RehearsalDatabaseAdmission {
+    param(
+        [Parameter(Mandatory = $true)][string]$ConnectionString,
+        [Parameter(Mandatory = $true)][string]$DatabaseName
+    )
+
+    try {
+        $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new([string]$ConnectionString)
+    }
+    catch {
+        throw "Rehearsal SQL connection string is invalid: $($_.Exception.Message)"
+    }
+
+    $server = [string]$builder.DataSource
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw 'Rehearsal SQL configuration must contain Server or Data Source with a non-empty value.'
+    }
+    if ($DatabaseName -notmatch '^[A-Za-z0-9_-]+$') {
+        throw 'Rehearsal database name contains unsupported characters.'
+    }
+
+    $integrated = [bool]$builder.IntegratedSecurity
+    $userId = [string]$builder.UserID
+    $password = [string]$builder.Password
+
+    if (-not $integrated -and [string]::IsNullOrWhiteSpace($userId)) {
+        throw 'Rehearsal database provisioning requires Integrated Security or explicit User ID.'
+    }
+
+    [pscustomobject]@{
+        Server = $server
+        IntegratedSecurity = $integrated
+        UserId = if ([string]::IsNullOrWhiteSpace($userId)) { $null } else { $userId }
+        Password = if ([string]::IsNullOrEmpty($password)) { $null } else { $password }
+    }
+}
+
+function Get-RehearsalFailureClassification {
+    param([Parameter(Mandatory = $true)][string]$Phase)
+
+    switch ($Phase) {
+        'CandidatePreVerification' { return 'Verification' }
+        'ConfigurationAdmission' { return 'Configuration' }
+        'DatabaseProvisioning' { return 'Infrastructure' }
+        'FixtureStartup' { return 'Dependency' }
+        'MigrationExecution' { return 'Application' }
+        'RuntimeStartupAcceptance' { return 'Application' }
+        'CandidatePostVerification' { return 'Verification' }
+        'EvidenceFinalization' { return 'Verification' }
+        default { throw "Unknown rehearsal phase '$Phase'." }
+    }
+}
+
+function Publish-RehearsalTerminalEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [Parameter(Mandatory = $true)][string]$EvidenceText
+    )
+
+    $jsonPath = Join-Path $EvidenceRoot 'rehearsal.json'
+    $checksumPath = Join-Path $EvidenceRoot 'rehearsal.json.sha256'
+    $jsonTempPath = Join-Path $EvidenceRoot '.rehearsal.json.tmp'
+    $checksumTempPath = Join-Path $EvidenceRoot '.rehearsal.json.sha256.tmp'
+
+    foreach ($path in @($jsonPath, $checksumPath, $jsonTempPath, $checksumTempPath)) {
+        if (Test-Path -LiteralPath $path) {
+            throw "Rehearsal evidence finalization refuses to overwrite existing content: '$path'."
+        }
+    }
+
+    Write-DemoCandidateUtf8NoBom -Path $jsonTempPath -Text $EvidenceText
+    $evidenceSha256 = Get-DemoCandidateSha256 -Path $jsonTempPath
+    $checksumText = "$evidenceSha256  rehearsal.json`n"
+    Write-DemoCandidateUtf8NoBom -Path $checksumTempPath -Text $checksumText
+
+    $verifiedSha256 = Get-DemoCandidateSha256 -Path $jsonTempPath
+    $verifiedChecksum = Get-Content -Raw -LiteralPath $checksumTempPath
+    if ($verifiedSha256 -cne $evidenceSha256 -or $verifiedChecksum -cne $checksumText) {
+        throw 'Rehearsal evidence temporary files failed internal consistency verification.'
+    }
+
+    [System.IO.File]::Move($checksumTempPath, $checksumPath)
+    [System.IO.File]::Move($jsonTempPath, $jsonPath)
+
+    [pscustomobject]@{
+        EvidencePath = $jsonPath
+        EvidenceSha256 = $evidenceSha256
+    }
+}
+
 function Start-RehearsalProcess {
     param(
         [Parameter(Mandatory = $true)][string]$Role,
