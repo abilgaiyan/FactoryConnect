@@ -1,0 +1,24 @@
+{
+  "Persistence": {
+    "Provider": "SqlServer"
+  },
+  "PersistenceProviders": {
+    "SqlServer": {
+      "ConnectionString": "__PROTECTED_SQLSERVER_CONNECTION_STRING__"
+    }
+  },
+  "MTConnect": {
+    "Machines": [
+      {
+        "BaseUri": "__MTCONNECT_BASE_URI__",
+        "MachineId": "__MACHINE_ID__",
+        "DeviceKey": "__DEVICE_KEY__"
+      }
+    ]
+  },
+  "CurrentState": {
+    "Freshness": {
+      "MaximumCurrentAge": "00:00:30"
+    }
+  }
+}
