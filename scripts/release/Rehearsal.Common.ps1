@@ -113,17 +113,23 @@ function Start-RehearsalProcess {
 
     $stdout = [System.IO.StreamWriter]::new($StdOutPath, $false, [System.Text.UTF8Encoding]::new($false))
     $stderr = [System.IO.StreamWriter]::new($StdErrPath, $false, [System.Text.UTF8Encoding]::new($false))
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
     $process.add_OutputDataReceived({ param($sender, $args) if ($null -ne $args.Data) { $stdout.WriteLine($args.Data); $stdout.Flush() } })
     $process.add_ErrorDataReceived({ param($sender, $args) if ($null -ne $args.Data) { $stderr.WriteLine($args.Data); $stderr.Flush() } })
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
 
     [pscustomobject]@{
         Role = $Role
         Process = $process
         StdOutWriter = $stdout
         StdErrWriter = $stderr
+        StdOutPath = $StdOutPath
+        StdErrPath = $StdErrPath
         StartedAtUtc = [DateTimeOffset]::UtcNow
+        StoppedAtUtc = $null
+        TerminationReason = $null
+        ExitCode = $null
+        Journaled = $false
         FilePath = $FilePath
         WorkingDirectory = $WorkingDirectory
     }
@@ -137,13 +143,19 @@ function Stop-RehearsalProcess {
 
     $process = $OwnedProcess.Process
     if ($process.HasExited) {
-        return 'Exited'
+        $OwnedProcess.TerminationReason = 'Exited'
+        $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+        $OwnedProcess.ExitCode = $process.ExitCode
+        return $OwnedProcess.TerminationReason
     }
 
     try {
         $process.CloseMainWindow() | Out-Null
         if ($process.WaitForExit($GraceSeconds * 1000)) {
-            return 'GracefulStop'
+            $OwnedProcess.TerminationReason = 'GracefulStop'
+            $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+            $OwnedProcess.ExitCode = $process.ExitCode
+            return $OwnedProcess.TerminationReason
         }
     }
     catch {
@@ -151,11 +163,43 @@ function Stop-RehearsalProcess {
 
     $process.Kill($true)
     $process.WaitForExit()
-    return 'ForcedStop'
+    $OwnedProcess.TerminationReason = 'ForcedStop'
+    $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+    $OwnedProcess.ExitCode = $process.ExitCode
+    return $OwnedProcess.TerminationReason
 }
 
 function Close-RehearsalProcessStreams {
     param([Parameter(Mandatory = $true)]$OwnedProcess)
+
+    if (-not $OwnedProcess.Process.HasExited) {
+        [void](Stop-RehearsalProcess -OwnedProcess $OwnedProcess)
+    }
+    elseif ($null -eq $OwnedProcess.TerminationReason) {
+        $OwnedProcess.TerminationReason = 'Exited'
+        $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+        $OwnedProcess.ExitCode = $OwnedProcess.Process.ExitCode
+    }
+
+    $journalVariable = Get-Variable -Name processEvidence -Scope 1 -ErrorAction SilentlyContinue
+    $repoRootVariable = Get-Variable -Name repoRoot -Scope 1 -ErrorAction SilentlyContinue
+    if (-not $OwnedProcess.Journaled -and $null -ne $journalVariable) {
+        $repoRootValue = if ($null -ne $repoRootVariable) { [string]$repoRootVariable.Value } else { $null }
+        $stdoutPath = if ([string]::IsNullOrWhiteSpace($repoRootValue)) { $OwnedProcess.StdOutPath } else { [System.IO.Path]::GetRelativePath($repoRootValue, $OwnedProcess.StdOutPath).Replace('\','/') }
+        $stderrPath = if ([string]::IsNullOrWhiteSpace($repoRootValue)) { $OwnedProcess.StdErrPath } else { [System.IO.Path]::GetRelativePath($repoRootValue, $OwnedProcess.StdErrPath).Replace('\','/') }
+        $journalVariable.Value.Add([ordered]@{
+            role = $OwnedProcess.Role
+            pid = $OwnedProcess.Process.Id
+            executable = $OwnedProcess.FilePath
+            startedAtUtc = $OwnedProcess.StartedAtUtc.ToString('O')
+            stoppedAtUtc = $OwnedProcess.StoppedAtUtc.ToString('O')
+            exitCode = $OwnedProcess.ExitCode
+            terminationReason = $OwnedProcess.TerminationReason
+            stdoutLog = $stdoutPath
+            stderrLog = $stderrPath
+        })
+        $OwnedProcess.Journaled = $true
+    }
 
     try { $OwnedProcess.StdOutWriter.Dispose() } catch {}
     try { $OwnedProcess.StdErrWriter.Dispose() } catch {}
