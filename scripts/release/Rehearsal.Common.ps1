@@ -92,8 +92,7 @@ function Resolve-RehearsalDatabaseAdmission {
     )
 
     try {
-        $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
-        $builder.ConnectionString = $ConnectionString
+        $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new([string]$ConnectionString)
     }
     catch {
         throw "Rehearsal SQL connection string is invalid: $($_.Exception.Message)"
