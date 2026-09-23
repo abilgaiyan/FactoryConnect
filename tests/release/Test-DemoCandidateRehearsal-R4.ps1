@@ -54,40 +54,84 @@ if ($env:OS -ne 'Windows_NT') {
     return
 }
 
-$powershellExe = Join-Path $PSHOME 'powershell.exe'
-if (-not (Test-Path -LiteralPath $powershellExe)) {
-    $powershellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
-}
-
 $proofRoot = Join-Path $repoRoot ('artifacts/release/r4-process-capture-proof/' + [Guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($proofRoot) | Out-Null
 
 try {
+    $childExe = Join-Path $proofRoot 'FactoryConnect.R4.ProcessCaptureChild.exe'
+    $childSource = @'
+using System;
+using System.Threading;
+
+public static class Program
+{
+    public static int Main()
+    {
+        string mode = Environment.GetEnvironmentVariable("FACTORYCONNECT_R4_CHILD_MODE") ?? string.Empty;
+
+        if (string.Equals(mode, "natural", StringComparison.Ordinal))
+        {
+            for (int i = 1; i <= 400; i++)
+            {
+                Console.Out.WriteLine("NATURAL-OUT-" + i);
+                Console.Error.WriteLine("NATURAL-ERR-" + i);
+            }
+
+            Console.Out.WriteLine("NATURAL-FINAL-STDOUT");
+            Console.Error.WriteLine("NATURAL-FINAL-STDERR");
+            Console.Out.Flush();
+            Console.Error.Flush();
+            return 0;
+        }
+
+        if (string.Equals(mode, "forced", StringComparison.Ordinal))
+        {
+            Console.Out.WriteLine("FORCED-STDOUT-BEGIN");
+            Console.Error.WriteLine("FORCED-STDERR-BEGIN");
+            Console.Out.Flush();
+            Console.Error.Flush();
+
+            int i = 0;
+            while (true)
+            {
+                i++;
+                Console.Out.WriteLine("FORCED-OUT-" + i);
+                Console.Error.WriteLine("FORCED-ERR-" + i);
+                Console.Out.Flush();
+                Console.Error.Flush();
+                Thread.Sleep(25);
+            }
+        }
+
+        Console.Error.WriteLine("Unknown R4 child mode.");
+        return 3;
+    }
+}
+'@
+
+    Add-Type `
+        -TypeDefinition $childSource `
+        -Language CSharp `
+        -OutputAssembly $childExe `
+        -OutputType ConsoleApplication
+
+    Assert-True -Condition (Test-Path -LiteralPath $childExe) -Name 'R4 managed proof child compiled for Windows PowerShell 5.1'
+
     Write-Host '=== R4 natural-exit proof ==='
-    $naturalScript = Join-Path $proofRoot 'natural-child.ps1'
     $naturalStdOut = Join-Path $proofRoot 'natural.stdout.log'
     $naturalStdErr = Join-Path $proofRoot 'natural.stderr.log'
-    @'
-Set-StrictMode -Version Latest
-for ($i = 1; $i -le 400; $i++) {
-    [Console]::Out.WriteLine("NATURAL-OUT-$i")
-    [Console]::Error.WriteLine("NATURAL-ERR-$i")
-}
-[Console]::Out.WriteLine('NATURAL-FINAL-STDOUT')
-[Console]::Error.WriteLine('NATURAL-FINAL-STDERR')
-[Console]::Out.Flush()
-[Console]::Error.Flush()
-'@ | Set-Content -LiteralPath $naturalScript -Encoding UTF8
 
     $natural = Start-RehearsalProcess `
         -Role 'R4-NaturalExit' `
-        -FilePath $powershellExe `
+        -FilePath $childExe `
         -WorkingDirectory $proofRoot `
         -StdOutPath $naturalStdOut `
         -StdErrPath $naturalStdErr `
-        -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $naturalScript)
+        -Environment @{ FACTORYCONNECT_R4_CHILD_MODE = 'natural' }
 
     $natural.Process.WaitForExit()
+    Assert-True -Condition ($natural.Process.ExitCode -eq 0) -Name 'natural-exit child completed successfully'
+
     $naturalJournal = [System.Collections.Generic.List[object]]::new()
     Close-RehearsalProcessStreams `
         -OwnedProcess $natural `
@@ -104,33 +148,16 @@ for ($i = 1; $i -le 400; $i++) {
     Write-Host 'PASS: natural exit settles both pumps, preserves complete logs, journals, and caller survives.'
 
     Write-Host '=== R4 forced-stop proof ==='
-    $forcedScript = Join-Path $proofRoot 'forced-child.ps1'
     $forcedStdOut = Join-Path $proofRoot 'forced.stdout.log'
     $forcedStdErr = Join-Path $proofRoot 'forced.stderr.log'
-    @'
-Set-StrictMode -Version Latest
-[Console]::Out.WriteLine('FORCED-STDOUT-BEGIN')
-[Console]::Error.WriteLine('FORCED-STDERR-BEGIN')
-[Console]::Out.Flush()
-[Console]::Error.Flush()
-$i = 0
-while ($true) {
-    $i++
-    [Console]::Out.WriteLine("FORCED-OUT-$i")
-    [Console]::Error.WriteLine("FORCED-ERR-$i")
-    [Console]::Out.Flush()
-    [Console]::Error.Flush()
-    Start-Sleep -Milliseconds 25
-}
-'@ | Set-Content -LiteralPath $forcedScript -Encoding UTF8
 
     $forced = Start-RehearsalProcess `
         -Role 'R4-ForcedStop' `
-        -FilePath $powershellExe `
+        -FilePath $childExe `
         -WorkingDirectory $proofRoot `
         -StdOutPath $forcedStdOut `
         -StdErrPath $forcedStdErr `
-        -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $forcedScript)
+        -Environment @{ FACTORYCONNECT_R4_CHILD_MODE = 'forced' }
 
     Start-Sleep -Milliseconds 750
     $termination = Stop-RehearsalProcess -OwnedProcess $forced -GraceSeconds 0
