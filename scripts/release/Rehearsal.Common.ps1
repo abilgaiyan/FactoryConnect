@@ -93,7 +93,12 @@ function Resolve-RehearsalDatabaseAdmission {
 
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
     $builder.ConnectionString = $ConnectionString
-    $entries = @($builder.GetEnumerator())
+
+    $entries = [System.Collections.Generic.List[object]]::new()
+    $enumerator = $builder.GetEnumerator()
+    while ($enumerator.MoveNext()) {
+        $entries.Add($enumerator.Current)
+    }
 
     function Find-ConnectionStringEntry {
         param([Parameter(Mandatory = $true)][string[]]$Aliases)
