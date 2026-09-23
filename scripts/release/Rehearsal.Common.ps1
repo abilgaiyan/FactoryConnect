@@ -305,9 +305,6 @@ function Stop-RehearsalProcess {
     if (-not $process.HasExited) {
         throw "Forced rehearsal cleanup did not terminate role '$($OwnedProcess.Role)' (PID $capturedPid); taskkill exit code $taskkillExitCode."
     }
-    if ($taskkillExitCode -ne 0) {
-        throw "taskkill reported exit code $taskkillExitCode while terminating rehearsal role '$($OwnedProcess.Role)' (PID $capturedPid)."
-    }
 
     $OwnedProcess.TerminationReason = 'ForcedStop'
     $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
