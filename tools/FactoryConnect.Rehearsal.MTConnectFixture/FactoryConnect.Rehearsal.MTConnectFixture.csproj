@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>FactoryConnect.Rehearsal.MTConnectFixture</RootNamespace>
+    <AssemblyName>FactoryConnect.Rehearsal.MTConnectFixture</AssemblyName>
+  </PropertyGroup>
+</Project>

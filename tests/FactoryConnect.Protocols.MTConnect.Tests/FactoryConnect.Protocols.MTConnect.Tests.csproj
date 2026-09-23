@@ -8,5 +8,6 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/FactoryConnect.Protocols.MTConnect/FactoryConnect.Protocols.MTConnect.csproj" />
+    <ProjectReference Include="../../tools/FactoryConnect.Rehearsal.MTConnectFixture/FactoryConnect.Rehearsal.MTConnectFixture.csproj" />
   </ItemGroup>
 </Project>
