@@ -95,7 +95,8 @@ function Resolve-RehearsalDatabaseAdmission {
     $builder.ConnectionString = $ConnectionString
 
     $entries = [System.Collections.Generic.List[object]]::new()
-    $enumerator = $builder.GetEnumerator()
+    $dictionary = [System.Collections.IDictionary]$builder
+    $enumerator = $dictionary.GetEnumerator()
     while ($enumerator.MoveNext()) {
         $entries.Add($enumerator.Current)
     }
