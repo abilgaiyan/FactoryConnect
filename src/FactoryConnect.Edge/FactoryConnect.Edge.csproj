@@ -15,7 +15,4 @@
     <ProjectReference Include="../FactoryConnect.Protocols.Modbus/FactoryConnect.Protocols.Modbus.csproj" />
     <ProjectReference Include="../FactoryConnect.Protocols.MTConnect/FactoryConnect.Protocols.MTConnect.csproj" />
   </ItemGroup>
-  <ItemGroup Condition="'$(FactoryConnectSuppressHostContent)' == 'true'">
-    <Content Update="appsettings.json" CopyToPublishDirectory="Never" />
-  </ItemGroup>
 </Project>
