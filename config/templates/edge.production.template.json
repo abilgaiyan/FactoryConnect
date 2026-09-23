@@ -1,0 +1,34 @@
+{
+  "Persistence": {
+    "Provider": "SqlServer"
+  },
+  "PersistenceProviders": {
+    "SqlServer": {
+      "ConnectionString": "__PROTECTED_SQLSERVER_CONNECTION_STRING__"
+    }
+  },
+  "MTConnect": {
+    "Machines": [
+      {
+        "BaseUri": "__MTCONNECT_BASE_URI__",
+        "MachineId": "__MACHINE_ID__",
+        "DeviceKey": "__DEVICE_KEY__",
+        "FromSequence": "1",
+        "PollingInterval": "00:00:01"
+      }
+    ]
+  },
+  "ProductionProcessing": {
+    "Machines": [
+      {
+        "MachineId": "__MACHINE_ID__",
+        "ActivityStreamKey": "__ACTIVITY_STREAM_KEY__",
+        "QuantityStreamKey": "__QUANTITY_STREAM_KEY__",
+        "CompanyId": "__COMPANY_ID__",
+        "SiteId": "__SITE_ID__",
+        "ProductionLineId": "__PRODUCTION_LINE_ID__"
+      }
+    ],
+    "ShiftSchedules": []
+  }
+}
