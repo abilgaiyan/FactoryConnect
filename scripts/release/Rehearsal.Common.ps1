@@ -94,20 +94,15 @@ function Resolve-RehearsalDatabaseAdmission {
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
     $builder.ConnectionString = $ConnectionString
 
-    $entries = [System.Collections.Generic.List[object]]::new()
-    $dictionary = [System.Collections.IDictionary]$builder
-    $enumerator = $dictionary.GetEnumerator()
-    while ($enumerator.MoveNext()) {
-        $entries.Add($enumerator.Current)
-    }
-
-    function Find-ConnectionStringEntry {
+    function Try-GetConnectionStringValue {
         param([Parameter(Mandatory = $true)][string[]]$Aliases)
 
-        foreach ($entry in $entries) {
-            foreach ($alias in $Aliases) {
-                if ([string]::Equals([string]$entry.Key, $alias, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    return $entry
+        foreach ($alias in $Aliases) {
+            $value = $null
+            if ($builder.TryGetValue($alias, [ref]$value)) {
+                return [pscustomobject]@{
+                    Alias = $alias
+                    Value = $value
                 }
             }
         }
@@ -115,7 +110,7 @@ function Resolve-RehearsalDatabaseAdmission {
         return $null
     }
 
-    $serverEntry = Find-ConnectionStringEntry -Aliases @('Server', 'Data Source')
+    $serverEntry = Try-GetConnectionStringValue -Aliases @('Server', 'server', 'Data Source', 'data source')
     if ($null -eq $serverEntry) {
         throw 'Rehearsal SQL configuration must contain Server or Data Source.'
     }
@@ -128,7 +123,7 @@ function Resolve-RehearsalDatabaseAdmission {
         throw 'Rehearsal database name contains unsupported characters.'
     }
 
-    $integratedEntry = Find-ConnectionStringEntry -Aliases @('Integrated Security')
+    $integratedEntry = Try-GetConnectionStringValue -Aliases @('Integrated Security', 'integrated security')
     $integrated = $false
     if ($null -ne $integratedEntry) {
         $integratedText = ([string]$integratedEntry.Value).Trim()
@@ -144,8 +139,8 @@ function Resolve-RehearsalDatabaseAdmission {
         }
     }
 
-    $userIdEntry = Find-ConnectionStringEntry -Aliases @('User ID')
-    $passwordEntry = Find-ConnectionStringEntry -Aliases @('Password')
+    $userIdEntry = Try-GetConnectionStringValue -Aliases @('User ID', 'user id')
+    $passwordEntry = Try-GetConnectionStringValue -Aliases @('Password', 'password')
     $userId = if ($null -eq $userIdEntry) { $null } else { [string]$userIdEntry.Value }
     $password = if ($null -eq $passwordEntry) { $null } else { [string]$passwordEntry.Value }
 
