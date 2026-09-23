@@ -91,58 +91,25 @@ function Resolve-RehearsalDatabaseAdmission {
         [Parameter(Mandatory = $true)][string]$DatabaseName
     )
 
-    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-    $builder.ConnectionString = $ConnectionString
-
-    function Try-GetConnectionStringValue {
-        param([Parameter(Mandatory = $true)][string[]]$Aliases)
-
-        foreach ($alias in $Aliases) {
-            $value = $null
-            if ($builder.TryGetValue($alias, [ref]$value)) {
-                return [pscustomobject]@{
-                    Alias = $alias
-                    Value = $value
-                }
-            }
-        }
-
-        return $null
+    try {
+        $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
+        $builder.ConnectionString = $ConnectionString
+    }
+    catch {
+        throw "Rehearsal SQL connection string is invalid: $($_.Exception.Message)"
     }
 
-    $serverEntry = Try-GetConnectionStringValue -Aliases @('Server', 'server', 'Data Source', 'data source')
-    if ($null -eq $serverEntry) {
-        throw 'Rehearsal SQL configuration must contain Server or Data Source.'
-    }
-
-    $server = [string]$serverEntry.Value
+    $server = [string]$builder.DataSource
     if ([string]::IsNullOrWhiteSpace($server)) {
-        throw 'Rehearsal SQL Server identity must not be empty or whitespace.'
+        throw 'Rehearsal SQL configuration must contain Server or Data Source with a non-empty value.'
     }
     if ($DatabaseName -notmatch '^[A-Za-z0-9_-]+$') {
         throw 'Rehearsal database name contains unsupported characters.'
     }
 
-    $integratedEntry = Try-GetConnectionStringValue -Aliases @('Integrated Security', 'integrated security')
-    $integrated = $false
-    if ($null -ne $integratedEntry) {
-        $integratedText = ([string]$integratedEntry.Value).Trim()
-        if ([string]::Equals($integratedText, 'SSPI', [System.StringComparison]::OrdinalIgnoreCase)) {
-            $integrated = $true
-        }
-        else {
-            $parsedIntegrated = $false
-            if (-not [bool]::TryParse($integratedText, [ref]$parsedIntegrated)) {
-                throw 'Rehearsal Integrated Security value must be True, False, or SSPI.'
-            }
-            $integrated = $parsedIntegrated
-        }
-    }
-
-    $userIdEntry = Try-GetConnectionStringValue -Aliases @('User ID', 'user id')
-    $passwordEntry = Try-GetConnectionStringValue -Aliases @('Password', 'password')
-    $userId = if ($null -eq $userIdEntry) { $null } else { [string]$userIdEntry.Value }
-    $password = if ($null -eq $passwordEntry) { $null } else { [string]$passwordEntry.Value }
+    $integrated = [bool]$builder.IntegratedSecurity
+    $userId = [string]$builder.UserID
+    $password = [string]$builder.Password
 
     if (-not $integrated -and [string]::IsNullOrWhiteSpace($userId)) {
         throw 'Rehearsal database provisioning requires Integrated Security or explicit User ID.'
@@ -151,8 +118,8 @@ function Resolve-RehearsalDatabaseAdmission {
     [pscustomobject]@{
         Server = $server
         IntegratedSecurity = $integrated
-        UserId = $userId
-        Password = $password
+        UserId = if ([string]::IsNullOrWhiteSpace($userId)) { $null } else { $userId }
+        Password = if ([string]::IsNullOrEmpty($password)) { $null } else { $password }
     }
 }
 
