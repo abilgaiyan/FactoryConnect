@@ -1,0 +1,17 @@
+{
+  "Dashboard": {
+    "ReportingApiBaseAddress": "__REPORTING_API_BASE_ADDRESS__",
+    "RequestTimeout": "00:00:30",
+    "Sources": [
+      {
+        "MachineId": "__MACHINE_ID__",
+        "ProcessorId": "__PROCESSOR_ID__",
+        "SiteId": "__SITE_ID__",
+        "ProductionLineId": "__PRODUCTION_LINE_ID__",
+        "DisplayName": "__DISPLAY_NAME__",
+        "GroupName": "__GROUP_NAME__",
+        "DisplayOrder": 0
+      }
+    ]
+  }
+}
