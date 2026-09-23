@@ -175,6 +175,23 @@ function Publish-RehearsalTerminalEvidence {
     }
 }
 
+function Get-RehearsalContainedRelativePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Target
+    )
+
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $targetFull = [System.IO.Path]::GetFullPath($Target)
+    $rootPrefix = $rootFull + [System.IO.Path]::DirectorySeparatorChar
+
+    if (-not $targetFull.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Rehearsal evidence path '$targetFull' is outside repository root '$rootFull'."
+    }
+
+    return $targetFull.Substring($rootPrefix.Length).Replace('\', '/')
+}
+
 function Start-RehearsalProcess {
     param(
         [Parameter(Mandatory = $true)][string]$Role,
@@ -207,6 +224,7 @@ function Start-RehearsalProcess {
         throw "Failed to start rehearsal process '$Role'."
     }
 
+    $processStartTimeUtc = $process.StartTime.ToUniversalTime()
     $stdout = [System.IO.StreamWriter]::new($StdOutPath, $false, [System.Text.UTF8Encoding]::new($false))
     $stderr = [System.IO.StreamWriter]::new($StdErrPath, $false, [System.Text.UTF8Encoding]::new($false))
     $process.add_OutputDataReceived({ param($sender, $args) if ($null -ne $args.Data) { $stdout.WriteLine($args.Data); $stdout.Flush() } })
@@ -217,6 +235,7 @@ function Start-RehearsalProcess {
     [pscustomobject]@{
         Role = $Role
         Process = $process
+        ProcessStartTimeUtc = $processStartTimeUtc
         StdOutWriter = $stdout
         StdErrWriter = $stderr
         StdOutPath = $StdOutPath
@@ -257,8 +276,36 @@ function Stop-RehearsalProcess {
     catch {
     }
 
-    $process.Kill($true)
-    $process.WaitForExit()
+    $process.Refresh()
+    if ($process.HasExited) {
+        $OwnedProcess.TerminationReason = 'GracefulStop'
+        $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+        $OwnedProcess.ExitCode = $process.ExitCode
+        return $OwnedProcess.TerminationReason
+    }
+
+    $capturedPid = [int]$process.Id
+    $capturedStartTimeUtc = if ($null -ne $OwnedProcess.PSObject.Properties['ProcessStartTimeUtc']) {
+        [DateTime]$OwnedProcess.ProcessStartTimeUtc
+    }
+    else {
+        $process.StartTime.ToUniversalTime()
+    }
+    $observedStartTimeUtc = $process.StartTime.ToUniversalTime()
+    if ($observedStartTimeUtc.Ticks -ne $capturedStartTimeUtc.Ticks) {
+        throw "Rehearsal process identity changed before forced cleanup for role '$($OwnedProcess.Role)' (PID $capturedPid)."
+    }
+
+    $taskkill = Get-Command taskkill.exe -ErrorAction Stop
+    & $taskkill.Source /PID ([string]$capturedPid) /T /F | Out-Null
+    $taskkillExitCode = $LASTEXITCODE
+
+    try { [void]$process.WaitForExit(5000) } catch {}
+    $process.Refresh()
+    if (-not $process.HasExited) {
+        throw "Forced rehearsal cleanup did not terminate role '$($OwnedProcess.Role)' (PID $capturedPid); taskkill exit code $taskkillExitCode."
+    }
+
     $OwnedProcess.TerminationReason = 'ForcedStop'
     $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
     $OwnedProcess.ExitCode = $process.ExitCode
@@ -266,38 +313,55 @@ function Stop-RehearsalProcess {
 }
 
 function Close-RehearsalProcessStreams {
-    param([Parameter(Mandatory = $true)]$OwnedProcess)
+    param(
+        [Parameter(Mandatory = $true)]$OwnedProcess,
+        [Parameter()][switch]$SkipStop
+    )
 
-    if (-not $OwnedProcess.Process.HasExited) {
-        [void](Stop-RehearsalProcess -OwnedProcess $OwnedProcess)
-    }
-    elseif ($null -eq $OwnedProcess.TerminationReason) {
-        $OwnedProcess.TerminationReason = 'Exited'
-        $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
-        $OwnedProcess.ExitCode = $OwnedProcess.Process.ExitCode
-    }
+    try {
+        if (-not $SkipStop -and -not $OwnedProcess.Process.HasExited) {
+            [void](Stop-RehearsalProcess -OwnedProcess $OwnedProcess)
+        }
+        elseif ($OwnedProcess.Process.HasExited -and $null -eq $OwnedProcess.TerminationReason) {
+            $OwnedProcess.TerminationReason = 'Exited'
+            $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+            $OwnedProcess.ExitCode = $OwnedProcess.Process.ExitCode
+        }
 
-    $journalVariable = Get-Variable -Name processEvidence -Scope 1 -ErrorAction SilentlyContinue
-    $repoRootVariable = Get-Variable -Name repoRoot -Scope 1 -ErrorAction SilentlyContinue
-    if (-not $OwnedProcess.Journaled -and $null -ne $journalVariable) {
-        $repoRootValue = if ($null -ne $repoRootVariable) { [string]$repoRootVariable.Value } else { $null }
-        $stdoutPath = if ([string]::IsNullOrWhiteSpace($repoRootValue)) { $OwnedProcess.StdOutPath } else { [System.IO.Path]::GetRelativePath($repoRootValue, $OwnedProcess.StdOutPath).Replace('\','/') }
-        $stderrPath = if ([string]::IsNullOrWhiteSpace($repoRootValue)) { $OwnedProcess.StdErrPath } else { [System.IO.Path]::GetRelativePath($repoRootValue, $OwnedProcess.StdErrPath).Replace('\','/') }
-        $journalVariable.Value.Add([ordered]@{
-            role = $OwnedProcess.Role
-            pid = $OwnedProcess.Process.Id
-            executable = $OwnedProcess.FilePath
-            startedAtUtc = $OwnedProcess.StartedAtUtc.ToString('O')
-            stoppedAtUtc = $OwnedProcess.StoppedAtUtc.ToString('O')
-            exitCode = $OwnedProcess.ExitCode
-            terminationReason = $OwnedProcess.TerminationReason
-            stdoutLog = $stdoutPath
-            stderrLog = $stderrPath
-        })
-        $OwnedProcess.Journaled = $true
-    }
+        if ($null -eq $OwnedProcess.StoppedAtUtc) {
+            $OwnedProcess.StoppedAtUtc = [DateTimeOffset]::UtcNow
+        }
+        if ($OwnedProcess.Process.HasExited -and $null -eq $OwnedProcess.ExitCode) {
+            $OwnedProcess.ExitCode = $OwnedProcess.Process.ExitCode
+        }
 
-    try { $OwnedProcess.StdOutWriter.Dispose() } catch {}
-    try { $OwnedProcess.StdErrWriter.Dispose() } catch {}
-    try { $OwnedProcess.Process.Dispose() } catch {}
+        $journalVariable = Get-Variable -Name processEvidence -Scope 1 -ErrorAction SilentlyContinue
+        $repoRootVariable = Get-Variable -Name repoRoot -Scope 1 -ErrorAction SilentlyContinue
+        if (-not $OwnedProcess.Journaled -and $null -ne $journalVariable) {
+            if ($null -eq $repoRootVariable -or [string]::IsNullOrWhiteSpace([string]$repoRootVariable.Value)) {
+                throw 'Repository root is required for rehearsal process evidence journaling.'
+            }
+
+            $repoRootValue = [string]$repoRootVariable.Value
+            $stdoutPath = Get-RehearsalContainedRelativePath -Root $repoRootValue -Target $OwnedProcess.StdOutPath
+            $stderrPath = Get-RehearsalContainedRelativePath -Root $repoRootValue -Target $OwnedProcess.StdErrPath
+            $journalVariable.Value.Add([ordered]@{
+                role = $OwnedProcess.Role
+                pid = $OwnedProcess.Process.Id
+                executable = $OwnedProcess.FilePath
+                startedAtUtc = $OwnedProcess.StartedAtUtc.ToString('O')
+                stoppedAtUtc = $OwnedProcess.StoppedAtUtc.ToString('O')
+                exitCode = $OwnedProcess.ExitCode
+                terminationReason = $OwnedProcess.TerminationReason
+                stdoutLog = $stdoutPath
+                stderrLog = $stderrPath
+            })
+            $OwnedProcess.Journaled = $true
+        }
+    }
+    finally {
+        try { $OwnedProcess.StdOutWriter.Dispose() } catch {}
+        try { $OwnedProcess.StdErrWriter.Dispose() } catch {}
+        try { $OwnedProcess.Process.Dispose() } catch {}
+    }
 }

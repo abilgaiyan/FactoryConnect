@@ -93,7 +93,51 @@ foreach ($entry in $phaseExpectations.GetEnumerator()) {
         -Name "phase $($entry.Key) classification"
 }
 
-$runnerText = Get-Content -Raw -LiteralPath (Join-Path $repoRoot 'scripts/release/Invoke-DemoCandidateRehearsal.ps1')
+$relativeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('FactoryConnect-RehearsalPaths-' + [Guid]::NewGuid().ToString('N'))
+$relativeTarget = Join-Path $relativeRoot 'logs\edge.stdout.log'
+[System.IO.Directory]::CreateDirectory((Split-Path -Parent $relativeTarget)) | Out-Null
+try {
+    [System.IO.File]::WriteAllText($relativeTarget, '')
+    Assert-Equal `
+        -Actual (Get-RehearsalContainedRelativePath -Root $relativeRoot -Target $relativeTarget) `
+        -Expected 'logs/edge.stdout.log' `
+        -Name 'contained evidence path normalized'
+
+    $outsideTarget = Join-Path ([System.IO.Path]::GetTempPath()) ('outside-' + [Guid]::NewGuid().ToString('N') + '.log')
+    [System.IO.File]::WriteAllText($outsideTarget, '')
+    try {
+        Assert-Throws -Name 'external evidence path rejected' -Action {
+            Get-RehearsalContainedRelativePath -Root $relativeRoot -Target $outsideTarget | Out-Null
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $outsideTarget -Force -ErrorAction SilentlyContinue
+    }
+}
+finally {
+    Remove-Item -LiteralPath $relativeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$runnerPath = Join-Path $repoRoot 'scripts/release/Invoke-DemoCandidateRehearsal.ps1'
+$commonPath = Join-Path $repoRoot 'scripts/release/Rehearsal.Common.ps1'
+$runnerText = Get-Content -Raw -LiteralPath $runnerPath
+$commonText = Get-Content -Raw -LiteralPath $commonPath
+
+if ($runnerText -match '\[System\.IO\.Path\]::GetRelativePath' -or $commonText -match '\[System\.IO\.Path\]::GetRelativePath') {
+    throw 'Unsupported Path.GetRelativePath dependency remains in rehearsal tooling.'
+}
+if ($runnerText -match '\.Kill\(\$true\)' -or $commonText -match '\.Kill\(\$true\)') {
+    throw 'Unsupported Process.Kill(Boolean) dependency remains in rehearsal tooling.'
+}
+if ($commonText -notmatch 'taskkill\.exe' -or $commonText -notmatch '/T /F') {
+    throw 'Windows-compatible process-tree forced cleanup is not structurally present.'
+}
+if ($commonText -notmatch 'ProcessStartTimeUtc') {
+    throw 'Forced cleanup process-identity revalidation is not structurally present.'
+}
+Write-Host 'PASS: unsupported Windows PowerShell cleanup APIs are absent.'
+Write-Host 'PASS: taskkill process-tree cleanup and process identity revalidation are present.'
+
 $admissionIndex = $runnerText.IndexOf('Resolve-RehearsalDatabaseAdmission')
 $provisioningIndex = $runnerText.IndexOf('Invoke-RehearsalDatabaseProvisioning `', $admissionIndex)
 $fixtureIndex = $runnerText.IndexOf("-Role 'Fixture'", $provisioningIndex)
@@ -110,12 +154,54 @@ if ($admissionIndex -lt 0 -or $provisioningIndex -lt 0 -or $fixtureIndex -lt 0 -
 Write-Host 'PASS: configuration/provisioning precede every rehearsal process launch.'
 
 $finallyIndex = $runnerText.IndexOf('finally {')
+$cleanupIndex = $runnerText.IndexOf('$cleanupFailures.Add', $finallyIndex)
 $postVerificationPhaseIndex = $runnerText.IndexOf("`$currentPhase = 'CandidatePostVerification'", $finallyIndex)
+$cleanupOutcomeIndex = $runnerText.IndexOf("`$failureClassification = 'Verification'", $postVerificationPhaseIndex)
 $evidencePhaseIndex = $runnerText.IndexOf("`$currentPhase = 'EvidenceFinalization'", $postVerificationPhaseIndex)
-if ($finallyIndex -lt 0 -or $postVerificationPhaseIndex -lt $finallyIndex -or $evidencePhaseIndex -lt $postVerificationPhaseIndex) {
-    throw 'Terminal post-verification/evidence-finalization ordering is not preserved.'
+if ($finallyIndex -lt 0 -or $cleanupIndex -lt $finallyIndex -or
+    $postVerificationPhaseIndex -lt $cleanupIndex -or $cleanupOutcomeIndex -lt $postVerificationPhaseIndex -or
+    $evidencePhaseIndex -lt $cleanupOutcomeIndex) {
+    throw 'R2 cleanup/post-verification/evidence-finalization ordering is not preserved.'
 }
-Write-Host 'PASS: terminal post-verification precedes evidence finalization.'
+Write-Host 'PASS: cleanup failures are aggregated before post-verification and classified Verification before evidence finalization.'
+
+if ($env:OS -eq 'Windows_NT') {
+    $powershellExe = Join-Path $PSHOME 'powershell.exe'
+    if (-not (Test-Path -LiteralPath $powershellExe)) {
+        $powershellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
+    }
+
+    $probeProcess = Start-Process `
+        -FilePath $powershellExe `
+        -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') `
+        -WindowStyle Hidden `
+        -PassThru
+    try {
+        Start-Sleep -Milliseconds 250
+        $ownedProbe = [pscustomobject]@{
+            Role = 'R2-ForcedCleanupProbe'
+            Process = $probeProcess
+            ProcessStartTimeUtc = $probeProcess.StartTime.ToUniversalTime()
+            StartedAtUtc = [DateTimeOffset]::UtcNow
+            StoppedAtUtc = $null
+            TerminationReason = $null
+            ExitCode = $null
+        }
+        $termination = Stop-RehearsalProcess -OwnedProcess $ownedProbe -GraceSeconds 0
+        Assert-Equal -Actual $termination -Expected 'ForcedStop' -Name 'Windows forced cleanup termination reason'
+        if (-not $probeProcess.HasExited) { throw 'Windows forced cleanup left the owned probe process active.' }
+        Write-Host 'PASS: Windows forced cleanup terminates an owned process without Kill(Boolean).'
+    }
+    finally {
+        if (-not $probeProcess.HasExited) {
+            Stop-Process -Id $probeProcess.Id -Force -ErrorAction SilentlyContinue
+        }
+        $probeProcess.Dispose()
+    }
+}
+else {
+    Write-Host 'SKIP: Windows forced cleanup runtime probe (non-Windows host).'
+}
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("FactoryConnect-RehearsalEvidence-" + [Guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null

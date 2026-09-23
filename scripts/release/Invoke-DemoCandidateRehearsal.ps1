@@ -175,6 +175,7 @@ $currentPhase = 'CandidatePreVerification'
 $ownedProcesses = [System.Collections.Generic.List[object]]::new()
 $processEvidence = [System.Collections.Generic.List[object]]::new()
 $checks = [System.Collections.Generic.List[object]]::new()
+$cleanupFailures = [System.Collections.Generic.List[string]]::new()
 $beforeVerification = $null
 $afterVerification = $null
 $restartPerformed = $false
@@ -384,28 +385,21 @@ catch {
 finally {
     for ($index = $ownedProcesses.Count - 1; $index -ge 0; $index--) {
         $owned = $ownedProcesses[$index]
-        $terminationReason = 'NotStarted'
-        $exitCode = $null
         try {
-            $terminationReason = Stop-RehearsalProcess -OwnedProcess $owned
-            if ($owned.Process.HasExited) { $exitCode = $owned.Process.ExitCode }
+            [void](Stop-RehearsalProcess -OwnedProcess $owned)
         }
         catch {
-            $terminationReason = 'ForcedStop'
+            $owned.TerminationReason = 'CleanupFailed'
+            $owned.StoppedAtUtc = [DateTimeOffset]::UtcNow
+            $cleanupFailures.Add("$($owned.Role): $(ConvertTo-RehearsalRedactedText $_.Exception.Message)")
         }
 
-        $processEvidence.Add([ordered]@{
-            role = $owned.Role
-            pid = $owned.Process.Id
-            executable = $owned.FilePath
-            startedAtUtc = $owned.StartedAtUtc.ToString('O')
-            stoppedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-            exitCode = $exitCode
-            terminationReason = $terminationReason
-            stdoutLog = [System.IO.Path]::GetRelativePath($repoRoot, (Join-Path $workspaceRoot "logs/$($owned.Role.ToLowerInvariant()).stdout.log")).Replace('\','/')
-            stderrLog = [System.IO.Path]::GetRelativePath($repoRoot, (Join-Path $workspaceRoot "logs/$($owned.Role.ToLowerInvariant()).stderr.log")).Replace('\','/')
-        })
-        Close-RehearsalProcessStreams -OwnedProcess $owned
+        try {
+            Close-RehearsalProcessStreams -OwnedProcess $owned -SkipStop
+        }
+        catch {
+            $cleanupFailures.Add("$($owned.Role) evidence: $(ConvertTo-RehearsalRedactedText $_.Exception.Message)")
+        }
     }
 
     $currentPhase = 'CandidatePostVerification'
@@ -428,6 +422,22 @@ finally {
         $outcome = 'Failed'
         $failureClassification = 'Verification'
         if ([string]::IsNullOrWhiteSpace($failureMessage)) { $failureMessage = 'Candidate pre/post manifest identity did not match.' }
+    }
+
+    if ($cleanupFailures.Count -gt 0) {
+        $outcome = 'Failed'
+        $failureClassification = 'Verification'
+        $cleanupFailureMessage = 'Rehearsal cleanup verification failed: ' + ($cleanupFailures -join ' | ')
+        if ([string]::IsNullOrWhiteSpace($failureMessage)) {
+            $failureMessage = $cleanupFailureMessage
+        }
+        else {
+            $failureMessage = ConvertTo-RehearsalRedactedText "$failureMessage | $cleanupFailureMessage"
+        }
+        $checks.Add([ordered]@{ id = 'process-cleanup'; outcome = 'Failed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'one or more owned processes could not be cleanly verified' })
+    }
+    else {
+        $checks.Add([ordered]@{ id = 'process-cleanup'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'all owned processes cleaned and journaled' })
     }
 
     $completedAtUtc = [DateTimeOffset]::UtcNow
