@@ -18,14 +18,34 @@ function ConvertTo-DemoCandidateJsonString {
 
     foreach ($character in $Value.ToCharArray()) {
         $code = [int][char]$character
-        switch ($character) {
-            '"' { [void]$builder.Append('\"'); continue }
-            '\' { [void]$builder.Append('\\'); continue }
-            "`b" { [void]$builder.Append('\b'); continue }
-            "`f" { [void]$builder.Append('\f'); continue }
-            "`n" { [void]$builder.Append('\n'); continue }
-            "`r" { [void]$builder.Append('\r'); continue }
-            "`t" { [void]$builder.Append('\t'); continue }
+
+        if ($character -eq '"') {
+            [void]$builder.Append('\"')
+            continue
+        }
+        if ($character -eq '\') {
+            [void]$builder.Append('\\')
+            continue
+        }
+        if ($character -eq "`b") {
+            [void]$builder.Append('\b')
+            continue
+        }
+        if ($character -eq "`f") {
+            [void]$builder.Append('\f')
+            continue
+        }
+        if ($character -eq "`n") {
+            [void]$builder.Append('\n')
+            continue
+        }
+        if ($character -eq "`r") {
+            [void]$builder.Append('\r')
+            continue
+        }
+        if ($character -eq "`t") {
+            [void]$builder.Append('\t')
+            continue
         }
 
         if ($code -lt 0x20) {
