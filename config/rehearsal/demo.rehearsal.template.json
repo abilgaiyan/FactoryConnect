@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "siteId": "GAJRA-NEW",
+  "timeZoneId": "India Standard Time",
+  "fixture": {
+    "listenAddress": "__FIXTURE_LISTEN_ADDRESS__",
+    "port": 5010
+  },
+  "api": {
+    "listenAddress": "__API_LISTEN_ADDRESS__",
+    "port": 5080
+  },
+  "dashboard": {
+    "listenAddress": "__DASHBOARD_LISTEN_ADDRESS__",
+    "port": 5090
+  },
+  "database": {
+    "serverIdentity": "__SQLSERVER_NON_SECRET_IDENTITY__",
+    "databaseName": "__REHEARSAL_DATABASE_NAME__"
+  },
+  "shifts": [
+    { "shiftId": "SHIFT-1", "startsAtLocal": "06:00:00", "endsAtLocal": "14:00:00" },
+    { "shiftId": "SHIFT-2", "startsAtLocal": "14:00:00", "endsAtLocal": "22:00:00" },
+    { "shiftId": "SHIFT-3", "startsAtLocal": "22:00:00", "endsAtLocal": "06:00:00" }
+  ],
+  "machines": [
+    { "machineId": "11111111-1111-1111-1111-111111111101", "deviceKey": "CNC-01", "basePath": "/mtconnect/cnc-01/", "streamIdentity": "mtconnect:CNC-01", "processorId": "processor-cnc-01", "productionLineId": "LINE-1" },
+    { "machineId": "11111111-1111-1111-1111-111111111102", "deviceKey": "CNC-02", "basePath": "/mtconnect/cnc-02/", "streamIdentity": "mtconnect:CNC-02", "processorId": "processor-cnc-02", "productionLineId": "LINE-1" },
+    { "machineId": "11111111-1111-1111-1111-111111111103", "deviceKey": "CNC-03", "basePath": "/mtconnect/cnc-03/", "streamIdentity": "mtconnect:CNC-03", "processorId": "processor-cnc-03", "productionLineId": "LINE-1" },
+    { "machineId": "11111111-1111-1111-1111-111111111104", "deviceKey": "CNC-04", "basePath": "/mtconnect/cnc-04/", "streamIdentity": "mtconnect:CNC-04", "processorId": "processor-cnc-04", "productionLineId": "LINE-1" },
+    { "machineId": "11111111-1111-1111-1111-111111111105", "deviceKey": "CNC-05", "basePath": "/mtconnect/cnc-05/", "streamIdentity": "mtconnect:CNC-05", "processorId": "processor-cnc-05", "productionLineId": "LINE-1" },
+    { "machineId": "11111111-1111-1111-1111-111111111106", "deviceKey": "CNC-06", "basePath": "/mtconnect/cnc-06/", "streamIdentity": "mtconnect:CNC-06", "processorId": "processor-cnc-06", "productionLineId": "LINE-2" },
+    { "machineId": "11111111-1111-1111-1111-111111111107", "deviceKey": "CNC-07", "basePath": "/mtconnect/cnc-07/", "streamIdentity": "mtconnect:CNC-07", "processorId": "processor-cnc-07", "productionLineId": "LINE-2" }
+  ]
+}
