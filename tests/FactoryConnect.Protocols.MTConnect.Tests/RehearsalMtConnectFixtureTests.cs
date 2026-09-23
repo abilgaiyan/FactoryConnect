@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Rehearsal.MTConnectFixture;
@@ -35,10 +36,10 @@ public sealed class RehearsalMtConnectFixtureTests
         foreach (var machine in RehearsalFixtureTopology.Machines)
         {
             var endpoint = new MtConnectEndpoint(new Uri(httpClient.BaseAddress, machine.BasePath));
-            var machineId = MachineId.Parse(machine.MachineId);
+            var machineId = new MachineId(Guid.Parse(machine.MachineId));
 
             var discovered = await discovery.DiscoverAsync(endpoint);
-            Assert.Equal(RehearsalFixtureTopology.InstanceId.ToString(), discovered.AgentInstanceId);
+            Assert.Equal(RehearsalFixtureTopology.InstanceId.ToString(CultureInfo.InvariantCulture), discovered.AgentInstanceId);
             var device = Assert.Single(discovered.Devices);
             Assert.Equal(machine.DeviceKey, device.Name);
             Assert.Equal(machine.DeviceUuid, device.Uuid);
@@ -73,7 +74,7 @@ public sealed class RehearsalMtConnectFixtureTests
         var sample = new MtConnectSampleClient(httpClient);
         var machine = RehearsalFixtureTopology.Machines[0];
         var endpoint = new MtConnectEndpoint(new Uri("http://fixture.invalid" + machine.BasePath));
-        var machineId = MachineId.Parse(machine.MachineId);
+        var machineId = new MachineId(Guid.Parse(machine.MachineId));
 
         var first = await sample.AcquireAsync(endpoint, machineId, machine.DeviceKey, 1);
         var second = await sample.AcquireAsync(endpoint, machineId, machine.DeviceKey, first.NextSequence);
@@ -111,8 +112,14 @@ public sealed class RehearsalMtConnectFixtureTests
             }
             else if (path.EndsWith("/sample", StringComparison.Ordinal))
             {
-                var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri.Query);
-                if (!ulong.TryParse(query["from"], out var from))
+                const string prefix = "?from=";
+                var query = request.RequestUri.Query;
+                if (!query.StartsWith(prefix, StringComparison.Ordinal) ||
+                    !ulong.TryParse(
+                        query[prefix.Length..],
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out var from))
                 {
                     return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
                 }
