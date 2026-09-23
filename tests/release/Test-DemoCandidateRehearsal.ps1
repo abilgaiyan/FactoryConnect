@@ -40,6 +40,13 @@ if ($firstHash -cne $secondHash -or $firstHash -notmatch '^[0-9a-f]{64}$') { thr
 if ($projectionText -match '(?i)password|connectionstring|token|secret') { throw 'Non-secret rehearsal projection contains protected field names.' }
 Write-Host 'PASS: non-secret configuration projection is deterministic.'
 
+$nonce1 = New-RehearsalInvocationNonce
+$nonce2 = New-RehearsalInvocationNonce
+if ($nonce1 -notmatch '^[0-9a-f]{64}$' -or $nonce2 -notmatch '^[0-9a-f]{64}$' -or $nonce1 -ceq $nonce2) {
+    throw 'Rehearsal invocation nonce generation is not cryptographically shaped and unique.'
+}
+Write-Host 'PASS: invocation nonce is 256-bit lowercase hexadecimal and varies by invocation.'
+
 $redacted = ConvertTo-RehearsalRedactedText 'Login failed; Server=db;Database=FactoryConnect;User ID=sa;Password=VerySecret;'
 if ($redacted -match 'VerySecret|User ID=sa|Password=') { throw 'Failure-message redaction did not remove protected SQL material.' }
 Write-Host 'PASS: protected failure text is redacted.'
@@ -120,8 +127,10 @@ finally {
 
 $runnerPath = Join-Path $repoRoot 'scripts/release/Invoke-DemoCandidateRehearsal.ps1'
 $commonPath = Join-Path $repoRoot 'scripts/release/Rehearsal.Common.ps1'
+$fixtureProgramPath = Join-Path $repoRoot 'tools/FactoryConnect.Rehearsal.MTConnectFixture/Program.cs'
 $runnerText = Get-Content -Raw -LiteralPath $runnerPath
 $commonText = Get-Content -Raw -LiteralPath $commonPath
+$fixtureProgramText = Get-Content -Raw -LiteralPath $fixtureProgramPath
 
 if ($runnerText -match '\[System\.IO\.Path\]::GetRelativePath' -or $commonText -match '\[System\.IO\.Path\]::GetRelativePath') {
     throw 'Unsupported Path.GetRelativePath dependency remains in rehearsal tooling.'
@@ -138,34 +147,121 @@ if ($commonText -notmatch 'ProcessStartTimeUtc') {
 Write-Host 'PASS: unsupported Windows PowerShell cleanup APIs are absent.'
 Write-Host 'PASS: taskkill process-tree cleanup and process identity revalidation are present.'
 
+if ($commonText -match 'Get-Variable\s+-Name\s+processEvidence' -or $commonText -match 'Get-Variable\s+-Name\s+repoRoot') {
+    throw 'Process evidence journaling still depends on caller-scope variable discovery.'
+}
+if ($commonText -notmatch '\[Parameter\(Mandatory = \$true\)\]\[string\]\$RepoRoot' -or
+    $commonText -notmatch '\[Parameter\(Mandatory = \$true\)\]\$ProcessEvidence') {
+    throw 'Process evidence dependencies are not explicit parameters.'
+}
+Write-Host 'PASS: process evidence dependencies are explicit.'
+
+if ($fixtureProgramText -notmatch 'FACTORYCONNECT_REHEARSAL_INVOCATION_NONCE' -or
+    $fixtureProgramText -notmatch 'invocationNonce') {
+    throw 'Rehearsal fixture does not expose the invocation-specific health identity.'
+}
+if ($runnerText -notmatch 'FACTORYCONNECT_REHEARSAL_INVOCATION_NONCE' -or
+    $runnerText -notmatch 'Wait-RehearsalFixtureReadiness') {
+    throw 'Rehearsal runner does not pass and verify the invocation-specific fixture identity.'
+}
+Write-Host 'PASS: fixture health carries invocation-specific identity.'
+
 $admissionIndex = $runnerText.IndexOf('Resolve-RehearsalDatabaseAdmission')
 $provisioningIndex = $runnerText.IndexOf('Invoke-RehearsalDatabaseProvisioning `', $admissionIndex)
-$fixtureIndex = $runnerText.IndexOf("-Role 'Fixture'", $provisioningIndex)
-$migrationIndex = $runnerText.IndexOf("-Role 'Migrations'", $fixtureIndex)
+$portAdmissionIndex = $runnerText.IndexOf('Assert-RehearsalPortAvailable', $provisioningIndex)
+$fixtureIndex = $runnerText.IndexOf("-Role 'Fixture'", $portAdmissionIndex)
+$ownedReadinessIndex = $runnerText.IndexOf('Wait-RehearsalFixtureReadiness', $fixtureIndex)
+$migrationIndex = $runnerText.IndexOf("-Role 'Migrations'", $ownedReadinessIndex)
 $edgeIndex = $runnerText.IndexOf("-Role 'Edge'", $migrationIndex)
 $apiIndex = $runnerText.IndexOf("-Role 'Api'", $edgeIndex)
 $dashboardIndex = $runnerText.IndexOf("-Role 'Dashboard'", $apiIndex)
-if ($admissionIndex -lt 0 -or $provisioningIndex -lt 0 -or $fixtureIndex -lt 0 -or
-    -not ($admissionIndex -lt $provisioningIndex -and $provisioningIndex -lt $fixtureIndex -and
-          $fixtureIndex -lt $migrationIndex -and $migrationIndex -lt $edgeIndex -and
+if ($admissionIndex -lt 0 -or $provisioningIndex -lt 0 -or $portAdmissionIndex -lt 0 -or
+    $fixtureIndex -lt 0 -or $ownedReadinessIndex -lt 0 -or $migrationIndex -lt 0 -or
+    -not ($admissionIndex -lt $provisioningIndex -and $provisioningIndex -lt $portAdmissionIndex -and
+          $portAdmissionIndex -lt $fixtureIndex -and $fixtureIndex -lt $ownedReadinessIndex -and
+          $ownedReadinessIndex -lt $migrationIndex -and $migrationIndex -lt $edgeIndex -and
           $edgeIndex -lt $apiIndex -and $apiIndex -lt $dashboardIndex)) {
-    throw 'Rehearsal launch suppression ordering is not structurally preserved.'
+    throw 'R3 fixture admission/readiness ordering is not structurally preserved.'
 }
-Write-Host 'PASS: configuration/provisioning precede every rehearsal process launch.'
+Write-Host 'PASS: port-free and attributable fixture readiness precede migration.'
+
+$migrationOwnershipIndex = $runnerText.IndexOf('$ownedProcesses.Add($migration)', $migrationIndex)
+if ($migrationOwnershipIndex -lt $migrationIndex) {
+    throw 'Migration process is not registered as invocation-owned immediately after launch.'
+}
+Write-Host 'PASS: migration process participates in invocation-owned cleanup.'
+
+if ($runnerText -match '(?m)^\s*exit(?:\s|$)') {
+    throw 'Reusable rehearsal operation still terminates the caller PowerShell host.'
+}
+if ($runnerText -notmatch 'Outcome = \$outcome' -or $runnerText -notmatch 'EvidenceSha256 = \$publishedEvidence\.EvidenceSha256') {
+    throw 'Reusable rehearsal operation does not return a structured terminal result.'
+}
+Write-Host 'PASS: reusable rehearsal operation returns without exit.'
 
 $finallyIndex = $runnerText.IndexOf('finally {')
 $cleanupIndex = $runnerText.IndexOf('$cleanupFailures.Add', $finallyIndex)
 $postVerificationPhaseIndex = $runnerText.IndexOf("`$currentPhase = 'CandidatePostVerification'", $finallyIndex)
-$cleanupOutcomeIndex = $runnerText.IndexOf("`$failureClassification = 'Verification'", $postVerificationPhaseIndex)
-$evidencePhaseIndex = $runnerText.IndexOf("`$currentPhase = 'EvidenceFinalization'", $postVerificationPhaseIndex)
+$evidenceModelIndex = $runnerText.IndexOf('$evidenceText = $null', $postVerificationPhaseIndex)
+$evidencePhaseIndex = $runnerText.IndexOf("`$currentPhase = 'EvidenceFinalization'", $evidenceModelIndex)
+$publishIndex = $runnerText.IndexOf('Publish-RehearsalTerminalEvidence', $evidencePhaseIndex)
 if ($finallyIndex -lt 0 -or $cleanupIndex -lt $finallyIndex -or
-    $postVerificationPhaseIndex -lt $cleanupIndex -or $cleanupOutcomeIndex -lt $postVerificationPhaseIndex -or
-    $evidencePhaseIndex -lt $cleanupOutcomeIndex) {
-    throw 'R2 cleanup/post-verification/evidence-finalization ordering is not preserved.'
+    $postVerificationPhaseIndex -lt $cleanupIndex -or $evidenceModelIndex -lt $postVerificationPhaseIndex -or
+    $evidencePhaseIndex -lt $evidenceModelIndex -or $publishIndex -lt $evidencePhaseIndex) {
+    throw 'R3 cleanup/post-verification/evidence-terminalization ordering is not preserved.'
 }
-Write-Host 'PASS: cleanup failures are aggregated before post-verification and classified Verification before evidence finalization.'
+Write-Host 'PASS: cleanup, journaling, post-verification, evidence modeling, and publication remain independently ordered.'
 
 if ($env:OS -eq 'Windows_NT') {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try {
+        $occupiedPort = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+        Assert-Throws -Name 'pre-existing fixture listener rejected' -Action {
+            Assert-RehearsalPortAvailable -Port $occupiedPort
+        }
+
+        $powershellExe = Join-Path $PSHOME 'powershell.exe'
+        if (-not (Test-Path -LiteralPath $powershellExe)) {
+            $powershellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
+        }
+        $probeProcess = Start-Process `
+            -FilePath $powershellExe `
+            -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') `
+            -WindowStyle Hidden `
+            -PassThru
+        try {
+            Start-Sleep -Milliseconds 250
+            $ownedProbe = [pscustomobject]@{
+                Role = 'R3-UnrelatedEndpointProbe'
+                Process = $probeProcess
+                ProcessStartTimeUtc = $probeProcess.StartTime.ToUniversalTime()
+                StartedAtUtc = [DateTimeOffset]::UtcNow
+                StoppedAtUtc = $null
+                TerminationReason = $null
+                ExitCode = $null
+            }
+            Assert-Throws -Name 'unrelated listener cannot satisfy fixture readiness' -Action {
+                Wait-RehearsalFixtureReadiness `
+                    -OwnedProcess $ownedProbe `
+                    -HealthUri ([Uri]"http://127.0.0.1:$occupiedPort/health") `
+                    -Port $occupiedPort `
+                    -ExpectedInvocationNonce $nonce1 `
+                    -TimeoutSeconds 1 | Out-Null
+            }
+        }
+        finally {
+            if (-not $probeProcess.HasExited) {
+                Stop-Process -Id $probeProcess.Id -Force -ErrorAction SilentlyContinue
+            }
+            $probeProcess.Dispose()
+        }
+    }
+    finally {
+        $listener.Stop()
+    }
+    Write-Host 'PASS: stale/unrelated endpoint readiness is rejected by listener ownership.'
+
     $powershellExe = Join-Path $PSHOME 'powershell.exe'
     if (-not (Test-Path -LiteralPath $powershellExe)) {
         $powershellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
@@ -200,7 +296,7 @@ if ($env:OS -eq 'Windows_NT') {
     }
 }
 else {
-    Write-Host 'SKIP: Windows forced cleanup runtime probe (non-Windows host).'
+    Write-Host 'SKIP: Windows listener ownership and forced cleanup runtime probes (non-Windows host).'
 }
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("FactoryConnect-RehearsalEvidence-" + [Guid]::NewGuid().ToString('N'))

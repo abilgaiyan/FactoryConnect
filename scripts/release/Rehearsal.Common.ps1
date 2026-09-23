@@ -85,6 +85,88 @@ function Get-RehearsalProjectionSha256 {
     return ([System.BitConverter]::ToString($sha)).Replace('-', '').ToLowerInvariant()
 }
 
+function New-RehearsalInvocationNonce {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
+    return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
+}
+
+function Get-RehearsalListeningProcessIds {
+    param([Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$Port)
+
+    if ($env:OS -ne 'Windows_NT') {
+        throw 'Rehearsal listener ownership verification currently requires Windows.'
+    }
+
+    $command = Get-Command Get-NetTCPConnection -ErrorAction Stop
+    return @(& $command -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique |
+        ForEach-Object { [int]$_ })
+}
+
+function Assert-RehearsalPortAvailable {
+    param([Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$Port)
+
+    $owners = @(Get-RehearsalListeningProcessIds -Port $Port)
+    if ($owners.Count -gt 0) {
+        throw "Rehearsal fixture port $Port already has a listener owned by PID(s): $($owners -join ', ')."
+    }
+}
+
+function Wait-RehearsalFixtureReadiness {
+    param(
+        [Parameter(Mandatory = $true)]$OwnedProcess,
+        [Parameter(Mandatory = $true)][Uri]$HealthUri,
+        [Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$Port,
+        [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedInvocationNonce,
+        [Parameter(Mandatory = $true)][int]$TimeoutSeconds
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        $process = $OwnedProcess.Process
+        $process.Refresh()
+        if ($process.HasExited) {
+            throw "Rehearsal fixture process exited before attributable readiness with code $($process.ExitCode)."
+        }
+
+        $owners = @(Get-RehearsalListeningProcessIds -Port $Port)
+        if ($owners.Count -gt 0 -and -not ($owners -contains [int]$process.Id)) {
+            throw "Rehearsal fixture port $Port is owned by unrelated PID(s): $($owners -join ', '); expected PID $($process.Id)."
+        }
+
+        if ($owners -contains [int]$process.Id) {
+            try {
+                $health = Invoke-RestMethod -Uri $HealthUri -Method Get -TimeoutSec 5
+                if ([string]$health.invocationNonce -cne $ExpectedInvocationNonce) {
+                    throw 'Rehearsal fixture health identity did not match the current invocation.'
+                }
+
+                return [pscustomobject]@{
+                    ProcessId = [int]$process.Id
+                    InvocationIdentityMatched = $true
+                }
+            }
+            catch {
+                if ($_.Exception.Message -eq 'Rehearsal fixture health identity did not match the current invocation.') {
+                    throw
+                }
+            }
+        }
+
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+
+    throw "Timed out waiting for attributable rehearsal fixture readiness from '$HealthUri'."
+}
+
 function Resolve-RehearsalDatabaseAdmission {
     param(
         [Parameter(Mandatory = $true)][string]$ConnectionString,
@@ -315,6 +397,8 @@ function Stop-RehearsalProcess {
 function Close-RehearsalProcessStreams {
     param(
         [Parameter(Mandatory = $true)]$OwnedProcess,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)]$ProcessEvidence,
         [Parameter()][switch]$SkipStop
     )
 
@@ -335,17 +419,10 @@ function Close-RehearsalProcessStreams {
             $OwnedProcess.ExitCode = $OwnedProcess.Process.ExitCode
         }
 
-        $journalVariable = Get-Variable -Name processEvidence -Scope 1 -ErrorAction SilentlyContinue
-        $repoRootVariable = Get-Variable -Name repoRoot -Scope 1 -ErrorAction SilentlyContinue
-        if (-not $OwnedProcess.Journaled -and $null -ne $journalVariable) {
-            if ($null -eq $repoRootVariable -or [string]::IsNullOrWhiteSpace([string]$repoRootVariable.Value)) {
-                throw 'Repository root is required for rehearsal process evidence journaling.'
-            }
-
-            $repoRootValue = [string]$repoRootVariable.Value
-            $stdoutPath = Get-RehearsalContainedRelativePath -Root $repoRootValue -Target $OwnedProcess.StdOutPath
-            $stderrPath = Get-RehearsalContainedRelativePath -Root $repoRootValue -Target $OwnedProcess.StdErrPath
-            $journalVariable.Value.Add([ordered]@{
+        if (-not $OwnedProcess.Journaled) {
+            $stdoutPath = Get-RehearsalContainedRelativePath -Root $RepoRoot -Target $OwnedProcess.StdOutPath
+            $stderrPath = Get-RehearsalContainedRelativePath -Root $RepoRoot -Target $OwnedProcess.StdErrPath
+            $ProcessEvidence.Add([ordered]@{
                 role = $OwnedProcess.Role
                 pid = $OwnedProcess.Process.Id
                 executable = $OwnedProcess.FilePath

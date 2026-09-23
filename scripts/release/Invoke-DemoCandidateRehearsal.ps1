@@ -184,6 +184,7 @@ $migrationExitCode = $null
 $repositoryCurrent = $false
 $databaseAdmission = $null
 $publishedEvidence = $null
+$fixtureInvocationNonce = $null
 
 $fixtureBaseAddress = "http://${fixtureHost}:$([int]$configuration.fixture.port)"
 $apiBaseAddress = "http://${apiHost}:$([int]$configuration.api.port)"
@@ -210,16 +211,27 @@ try {
 
     $logs = Join-Path $workspaceRoot 'logs'
     $currentPhase = 'FixtureStartup'
+    Assert-RehearsalPortAvailable -Port ([int]$configuration.fixture.port)
+    $fixtureInvocationNonce = New-RehearsalInvocationNonce
     $fixture = Start-RehearsalProcess `
         -Role 'Fixture' `
         -FilePath (Resolve-Path -LiteralPath $FixtureExecutablePath).Path `
         -WorkingDirectory (Split-Path -Parent (Resolve-Path -LiteralPath $FixtureExecutablePath).Path) `
         -StdOutPath (Join-Path $logs 'fixture.stdout.log') `
         -StdErrPath (Join-Path $logs 'fixture.stderr.log') `
-        -Environment @{ ASPNETCORE_ENVIRONMENT = 'Production'; ASPNETCORE_URLS = "http://0.0.0.0:$([int]$configuration.fixture.port)" }
+        -Environment @{
+            ASPNETCORE_ENVIRONMENT = 'Production'
+            ASPNETCORE_URLS = "http://0.0.0.0:$([int]$configuration.fixture.port)"
+            FACTORYCONNECT_REHEARSAL_INVOCATION_NONCE = $fixtureInvocationNonce
+        }
     $ownedProcesses.Add($fixture)
-    [void](Wait-RehearsalHttp200 -Uri ([Uri]"$fixtureBaseAddress/health") -TimeoutSeconds $StartupTimeoutSeconds)
-    $checks.Add([ordered]@{ id = 'fixture-health'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'seven-machine fixture ready' })
+    [void](Wait-RehearsalFixtureReadiness `
+        -OwnedProcess $fixture `
+        -HealthUri ([Uri]"$fixtureBaseAddress/health") `
+        -Port ([int]$configuration.fixture.port) `
+        -ExpectedInvocationNonce $fixtureInvocationNonce `
+        -TimeoutSeconds $StartupTimeoutSeconds)
+    $checks.Add([ordered]@{ id = 'fixture-health'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'owned listener PID and invocation identity matched' })
 
     $currentPhase = 'MigrationExecution'
     $migrationEnvironment = @{
@@ -233,12 +245,14 @@ try {
         -StdOutPath (Join-Path $logs 'migrations.stdout.log') `
         -StdErrPath (Join-Path $logs 'migrations.stderr.log') `
         -Environment $migrationEnvironment
+    $ownedProcesses.Add($migration)
     $migration.Process.WaitForExit()
     $migrationExitCode = $migration.Process.ExitCode
     $repositoryCurrent = $migrationExitCode -eq 0
     if (-not $repositoryCurrent) { throw "FactoryConnect.Migrations exited with code $migrationExitCode." }
     $checks.Add([ordered]@{ id = 'migration-repository-current'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'exit code 0' })
-    Close-RehearsalProcessStreams -OwnedProcess $migration
+    Close-RehearsalProcessStreams -OwnedProcess $migration -RepoRoot $repoRoot -ProcessEvidence $processEvidence
+    [void]$ownedProcesses.Remove($migration)
 
     $currentPhase = 'RuntimeStartupAcceptance'
     $edgeEnvironment = @{
@@ -354,7 +368,7 @@ try {
 
     foreach ($service in @($dashboard, $api, $edge)) {
         [void](Stop-RehearsalProcess -OwnedProcess $service)
-        Close-RehearsalProcessStreams -OwnedProcess $service
+        Close-RehearsalProcessStreams -OwnedProcess $service -RepoRoot $repoRoot -ProcessEvidence $processEvidence
         [void]$ownedProcesses.Remove($service)
     }
 
@@ -395,7 +409,11 @@ finally {
         }
 
         try {
-            Close-RehearsalProcessStreams -OwnedProcess $owned -SkipStop
+            Close-RehearsalProcessStreams `
+                -OwnedProcess $owned `
+                -RepoRoot $repoRoot `
+                -ProcessEvidence $processEvidence `
+                -SkipStop
         }
         catch {
             $cleanupFailures.Add("$($owned.Role) evidence: $(ConvertTo-RehearsalRedactedText $_.Exception.Message)")
@@ -413,11 +431,18 @@ finally {
     }
     catch {
         $outcome = 'Failed'
-        $failureClassification = Get-RehearsalFailureClassification -Phase $currentPhase
+        $failureClassification = 'Verification'
         $failureMessage = ConvertTo-RehearsalRedactedText $_.Exception.Message
+        $checks.Add([ordered]@{ id = 'candidate-post-verification'; outcome = 'Failed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'candidate post-verification failed' })
     }
 
-    $candidateUnchanged = $null -ne $beforeVerification -and $null -ne $afterVerification -and $beforeVerification.ManifestSha256 -eq $afterVerification.ManifestSha256
+    $candidateUnchanged = $false
+    try {
+        $candidateUnchanged = $null -ne $beforeVerification -and $null -ne $afterVerification -and $beforeVerification.ManifestSha256 -eq $afterVerification.ManifestSha256
+    }
+    catch {
+        $candidateUnchanged = $false
+    }
     if (-not $candidateUnchanged) {
         $outcome = 'Failed'
         $failureClassification = 'Verification'
@@ -441,45 +466,85 @@ finally {
     }
 
     $completedAtUtc = [DateTimeOffset]::UtcNow
-    $evidence = [ordered]@{
-        schemaVersion = '1.0'
-        candidateId = $candidateId
-        attemptId = $AttemptId
-        candidateManifestSha256 = if ($null -ne $beforeVerification) { $beforeVerification.ManifestSha256 } else { $null }
-        applicationSourceCommit = $ExpectedSourceCommit.ToLowerInvariant()
-        deploymentContractCommit = $ExpectedDeploymentContractCommit.ToLowerInvariant()
-        rehearsalToolSourceCommit = $RehearsalToolSourceCommit.ToLowerInvariant()
-        startedAtUtc = $startedAtUtc.ToString('O')
-        completedAtUtc = $completedAtUtc.ToString('O')
-        outcome = $outcome
-        failureClassification = $failureClassification
-        failureMessage = $failureMessage
-        rehearsalConfigurationSha256 = $configurationSha256
-        database = [ordered]@{
-            serverIdentity = [string]$configuration.database.serverIdentity
-            databaseName = [string]$configuration.database.databaseName
-            migrationExitCode = $migrationExitCode
-            repositoryCurrent = $repositoryCurrent
+    $evidenceText = $null
+    try {
+        $evidence = [ordered]@{
+            schemaVersion = '1.0'
+            candidateId = $candidateId
+            attemptId = $AttemptId
+            candidateManifestSha256 = if ($null -ne $beforeVerification) { $beforeVerification.ManifestSha256 } else { $null }
+            applicationSourceCommit = $ExpectedSourceCommit.ToLowerInvariant()
+            deploymentContractCommit = $ExpectedDeploymentContractCommit.ToLowerInvariant()
+            rehearsalToolSourceCommit = $RehearsalToolSourceCommit.ToLowerInvariant()
+            startedAtUtc = $startedAtUtc.ToString('O')
+            completedAtUtc = $completedAtUtc.ToString('O')
+            outcome = $outcome
+            failureClassification = $failureClassification
+            failureMessage = $failureMessage
+            rehearsalConfigurationSha256 = $configurationSha256
+            database = [ordered]@{
+                serverIdentity = [string]$configuration.database.serverIdentity
+                databaseName = [string]$configuration.database.databaseName
+                migrationExitCode = $migrationExitCode
+                repositoryCurrent = $repositoryCurrent
+            }
+            processes = @($processEvidence)
+            checks = @($checks)
+            candidateVerification = [ordered]@{
+                beforeManifestSha256 = if ($null -ne $beforeVerification) { $beforeVerification.ManifestSha256 } else { $null }
+                afterManifestSha256 = if ($null -ne $afterVerification) { $afterVerification.ManifestSha256 } else { $null }
+                unchanged = $candidateUnchanged
+            }
+            sevenSourceProof = [ordered]@{
+                configured = $configuration.machines.Count
+                observed = if (@($checks.id) -contains 'seven-source-current-state') { 7 } else { 0 }
+            }
+            restartProof = [ordered]@{
+                performed = $restartPerformed
+                passed = $restartPassed
+            }
         }
-        processes = @($processEvidence)
-        checks = @($checks)
-        candidateVerification = [ordered]@{
-            beforeManifestSha256 = if ($null -ne $beforeVerification) { $beforeVerification.ManifestSha256 } else { $null }
-            afterManifestSha256 = if ($null -ne $afterVerification) { $afterVerification.ManifestSha256 } else { $null }
-            unchanged = $candidateUnchanged
+
+        $evidenceText = (($evidence | ConvertTo-Json -Depth 30) -replace "`r`n", "`n") + "`n"
+    }
+    catch {
+        $outcome = 'Failed'
+        $failureClassification = 'Verification'
+        $failureMessage = 'Terminal rehearsal evidence model construction failed.'
+        $fallbackEvidence = [ordered]@{
+            schemaVersion = '1.0'
+            candidateId = $candidateId
+            attemptId = $AttemptId
+            candidateManifestSha256 = if ($null -ne $beforeVerification) { [string]$beforeVerification.ManifestSha256 } else { $null }
+            applicationSourceCommit = $ExpectedSourceCommit.ToLowerInvariant()
+            deploymentContractCommit = $ExpectedDeploymentContractCommit.ToLowerInvariant()
+            rehearsalToolSourceCommit = $RehearsalToolSourceCommit.ToLowerInvariant()
+            startedAtUtc = $startedAtUtc.ToString('O')
+            completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            outcome = 'Failed'
+            failureClassification = 'Verification'
+            failureMessage = $failureMessage
+            rehearsalConfigurationSha256 = $configurationSha256
+            database = [ordered]@{
+                serverIdentity = [string]$configuration.database.serverIdentity
+                databaseName = [string]$configuration.database.databaseName
+                migrationExitCode = $migrationExitCode
+                repositoryCurrent = $repositoryCurrent
+            }
+            processes = @()
+            checks = @()
+            candidateVerification = [ordered]@{
+                beforeManifestSha256 = if ($null -ne $beforeVerification) { [string]$beforeVerification.ManifestSha256 } else { $null }
+                afterManifestSha256 = if ($null -ne $afterVerification) { [string]$afterVerification.ManifestSha256 } else { $null }
+                unchanged = $candidateUnchanged
+            }
+            sevenSourceProof = [ordered]@{ configured = 7; observed = 0 }
+            restartProof = [ordered]@{ performed = $restartPerformed; passed = $restartPassed }
         }
-        sevenSourceProof = [ordered]@{
-            configured = $configuration.machines.Count
-            observed = if (@($checks.id) -contains 'seven-source-current-state') { 7 } else { 0 }
-        }
-        restartProof = [ordered]@{
-            performed = $restartPerformed
-            passed = $restartPassed
-        }
+        $evidenceText = (($fallbackEvidence | ConvertTo-Json -Depth 20) -replace "`r`n", "`n") + "`n"
     }
 
     $currentPhase = 'EvidenceFinalization'
-    $evidenceText = (($evidence | ConvertTo-Json -Depth 30) -replace "`r`n", "`n") + "`n"
     $publishedEvidence = Publish-RehearsalTerminalEvidence `
         -EvidenceRoot $evidenceRoot `
         -EvidenceText $evidenceText
@@ -494,5 +559,3 @@ finally {
     EvidenceSha256 = $publishedEvidence.EvidenceSha256
     RehearsalConfigurationSha256 = $configurationSha256
 }
-
-if ($outcome -ne 'Passed') { exit 1 }
