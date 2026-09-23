@@ -85,6 +85,127 @@ function Get-RehearsalProjectionSha256 {
     return ([System.BitConverter]::ToString($sha)).Replace('-', '').ToLowerInvariant()
 }
 
+function Resolve-RehearsalDatabaseAdmission {
+    param(
+        [Parameter(Mandatory = $true)][string]$ConnectionString,
+        [Parameter(Mandatory = $true)][string]$DatabaseName
+    )
+
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    $builder.ConnectionString = $ConnectionString
+    $keys = @($builder.Keys | ForEach-Object { [string]$_ })
+
+    $serverKey = $keys | Where-Object {
+        [string]::Equals($_, 'Server', [System.StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($_, 'Data Source', [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($serverKey)) {
+        throw 'Rehearsal SQL configuration must contain Server or Data Source.'
+    }
+
+    $server = [string]$builder[$serverKey]
+    if ([string]::IsNullOrWhiteSpace($server)) {
+        throw 'Rehearsal SQL Server identity must not be empty or whitespace.'
+    }
+    if ($DatabaseName -notmatch '^[A-Za-z0-9_-]+$') {
+        throw 'Rehearsal database name contains unsupported characters.'
+    }
+
+    $integratedKey = $keys | Where-Object {
+        [string]::Equals($_, 'Integrated Security', [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1
+
+    $integrated = $false
+    if (-not [string]::IsNullOrWhiteSpace($integratedKey)) {
+        $integratedText = ([string]$builder[$integratedKey]).Trim()
+        if ([string]::Equals($integratedText, 'SSPI', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $integrated = $true
+        }
+        else {
+            $parsedIntegrated = $false
+            if (-not [bool]::TryParse($integratedText, [ref]$parsedIntegrated)) {
+                throw 'Rehearsal Integrated Security value must be True, False, or SSPI.'
+            }
+            $integrated = $parsedIntegrated
+        }
+    }
+
+    $userIdKey = $keys | Where-Object {
+        [string]::Equals($_, 'User ID', [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1
+    $passwordKey = $keys | Where-Object {
+        [string]::Equals($_, 'Password', [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1
+
+    $userId = if ([string]::IsNullOrWhiteSpace($userIdKey)) { $null } else { [string]$builder[$userIdKey] }
+    $password = if ([string]::IsNullOrWhiteSpace($passwordKey)) { $null } else { [string]$builder[$passwordKey] }
+
+    if (-not $integrated -and [string]::IsNullOrWhiteSpace($userId)) {
+        throw 'Rehearsal database provisioning requires Integrated Security or explicit User ID.'
+    }
+
+    [pscustomobject]@{
+        Server = $server
+        IntegratedSecurity = $integrated
+        UserId = $userId
+        Password = $password
+    }
+}
+
+function Get-RehearsalFailureClassification {
+    param([Parameter(Mandatory = $true)][string]$Phase)
+
+    switch ($Phase) {
+        'CandidatePreVerification' { return 'Verification' }
+        'ConfigurationAdmission' { return 'Configuration' }
+        'DatabaseProvisioning' { return 'Infrastructure' }
+        'FixtureStartup' { return 'Dependency' }
+        'MigrationExecution' { return 'Application' }
+        'RuntimeStartupAcceptance' { return 'Application' }
+        'CandidatePostVerification' { return 'Verification' }
+        'EvidenceFinalization' { return 'Verification' }
+        default { throw "Unknown rehearsal phase '$Phase'." }
+    }
+}
+
+function Publish-RehearsalTerminalEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$EvidenceRoot,
+        [Parameter(Mandatory = $true)][string]$EvidenceText
+    )
+
+    $jsonPath = Join-Path $EvidenceRoot 'rehearsal.json'
+    $checksumPath = Join-Path $EvidenceRoot 'rehearsal.json.sha256'
+    $jsonTempPath = Join-Path $EvidenceRoot '.rehearsal.json.tmp'
+    $checksumTempPath = Join-Path $EvidenceRoot '.rehearsal.json.sha256.tmp'
+
+    foreach ($path in @($jsonPath, $checksumPath, $jsonTempPath, $checksumTempPath)) {
+        if (Test-Path -LiteralPath $path) {
+            throw "Rehearsal evidence finalization refuses to overwrite existing content: '$path'."
+        }
+    }
+
+    Write-DemoCandidateUtf8NoBom -Path $jsonTempPath -Text $EvidenceText
+    $evidenceSha256 = Get-DemoCandidateSha256 -Path $jsonTempPath
+    $checksumText = "$evidenceSha256  rehearsal.json`n"
+    Write-DemoCandidateUtf8NoBom -Path $checksumTempPath -Text $checksumText
+
+    $verifiedSha256 = Get-DemoCandidateSha256 -Path $jsonTempPath
+    $verifiedChecksum = Get-Content -Raw -LiteralPath $checksumTempPath
+    if ($verifiedSha256 -cne $evidenceSha256 -or $verifiedChecksum -cne $checksumText) {
+        throw 'Rehearsal evidence temporary files failed internal consistency verification.'
+    }
+
+    [System.IO.File]::Move($checksumTempPath, $checksumPath, $false)
+    [System.IO.File]::Move($jsonTempPath, $jsonPath, $false)
+
+    [pscustomobject]@{
+        EvidencePath = $jsonPath
+        EvidenceSha256 = $evidenceSha256
+    }
+}
+
 function Start-RehearsalProcess {
     param(
         [Parameter(Mandatory = $true)][string]$Role,
