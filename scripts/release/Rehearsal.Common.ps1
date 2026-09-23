@@ -197,8 +197,8 @@ function Publish-RehearsalTerminalEvidence {
         throw 'Rehearsal evidence temporary files failed internal consistency verification.'
     }
 
-    [System.IO.File]::Move($checksumTempPath, $checksumPath, $false)
-    [System.IO.File]::Move($jsonTempPath, $jsonPath, $false)
+    [System.IO.File]::Move($checksumTempPath, $checksumPath)
+    [System.IO.File]::Move($jsonTempPath, $jsonPath)
 
     [pscustomobject]@{
         EvidencePath = $jsonPath
