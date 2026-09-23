@@ -1,0 +1,22 @@
+{
+  "CompanyId": "__COMPANY_ID__",
+  "SiteId": "__SITE_ID__",
+  "ProductionLines": [
+    {
+      "ProductionLineId": "__PRODUCTION_LINE_ID__",
+      "Machines": [
+        {
+          "MachineId": "__MACHINE_ID__",
+          "DeviceKey": "__DEVICE_KEY__",
+          "MtConnectBaseUri": "__MTCONNECT_BASE_URI__"
+        }
+      ]
+    }
+  ],
+  "RuntimeHosts": {
+    "Migrations": "__MIGRATIONS_HOST__",
+    "Edge": "__EDGE_HOST__",
+    "Api": "__API_HOST__",
+    "Dashboard": "__DASHBOARD_HOST__"
+  }
+}
