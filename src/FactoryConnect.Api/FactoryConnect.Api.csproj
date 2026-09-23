@@ -21,8 +21,13 @@
   </ItemGroup>
   <Target Name="RemoveReferencedEdgeHostConfigurationFromPublish"
           AfterTargets="ComputeFilesToPublish">
+    <PropertyGroup>
+      <_FactoryConnectEdgeHostConfigurationPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\FactoryConnect.Edge\appsettings.json'))</_FactoryConnectEdgeHostConfigurationPath>
+    </PropertyGroup>
     <ItemGroup>
-      <ResolvedFileToPublish Remove="$(MSBuildThisFileDirectory)..\FactoryConnect.Edge\appsettings.json" />
+      <ResolvedFileToPublish
+          Remove="@(ResolvedFileToPublish)"
+          Condition="'%(ResolvedFileToPublish.FullPath)' == '$(_FactoryConnectEdgeHostConfigurationPath)'" />
     </ItemGroup>
   </Target>
 </Project>
