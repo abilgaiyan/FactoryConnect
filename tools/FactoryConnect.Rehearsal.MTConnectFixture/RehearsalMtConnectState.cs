@@ -46,8 +46,9 @@ public sealed class RehearsalMtConnectState
         var state = GetState(machine);
         lock (state.Gate)
         {
-            var sequence = state.NextSequence++;
-            return BuildStreamsDocument(machine, sequence, sequence);
+            var first = state.NextSequence++;
+            var last = state.NextSequence++;
+            return BuildStreamsDocument(machine, first, last);
         }
     }
 
@@ -56,9 +57,9 @@ public sealed class RehearsalMtConnectState
         var state = GetState(machine);
         lock (state.Gate)
         {
-            if (fromSequence >= state.NextSequence)
+            if (fromSequence > state.NextSequence)
             {
-                state.NextSequence = fromSequence + 1;
+                state.NextSequence = fromSequence;
             }
 
             var first = state.NextSequence++;
@@ -75,24 +76,16 @@ public sealed class RehearsalMtConnectState
         ulong firstObservationSequence,
         ulong lastObservationSequence)
     {
-        var firstSequence = 1UL;
         var nextSequence = checked(lastObservationSequence + 1);
         var running = lastObservationSequence % 4 is 1 or 2;
         var execution = running ? "ACTIVE" : "READY";
         var partCount = lastObservationSequence / 2;
         var timestamp = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
 
-        var secondObservation = lastObservationSequence == firstObservationSequence
-            ? string.Empty
-            : $"""
-
-                        <PartCount dataItemId="part_count" timestamp="{timestamp}" sequence="{lastObservationSequence}">{partCount}</PartCount>
-              """;
-
         return $"""
             <MTConnectStreams xmlns="urn:mtconnect.org:MTConnectStreams:2.5">
               <Header instanceId="{RehearsalFixtureTopology.InstanceId}"
-                      firstSequence="{firstSequence}"
+                      firstSequence="1"
                       lastSequence="{lastObservationSequence}"
                       nextSequence="{nextSequence}" />
               <Streams>
@@ -100,9 +93,9 @@ public sealed class RehearsalMtConnectState
                   <ComponentStream component="Controller" componentId="controller-{machine.Ordinal}">
                     <Events>
                       <Execution dataItemId="exec" timestamp="{timestamp}" sequence="{firstObservationSequence}">{execution}</Execution>
-                      <Availability dataItemId="avail" timestamp="{timestamp}" sequence="{firstObservationSequence}">AVAILABLE</Availability>
                     </Events>
-                    <Samples>{secondObservation}
+                    <Samples>
+                      <PartCount dataItemId="part_count" timestamp="{timestamp}" sequence="{lastObservationSequence}">{partCount}</PartCount>
                     </Samples>
                   </ComponentStream>
                 </DeviceStream>
