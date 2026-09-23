@@ -86,27 +86,26 @@ function Get-DemoCandidateCanonicalManifestText {
     param([Parameter(Mandatory = $true)]$Manifest)
 
     $lines = [System.Collections.Generic.List[string]]::new()
-    $q = ${function:ConvertTo-DemoCandidateJsonString}
 
     $lines.Add('{')
-    $lines.Add("  `"schemaVersion`": $(& $q ([string]$Manifest.schemaVersion)),")
-    $lines.Add("  `"candidateId`": $(& $q ([string]$Manifest.candidateId)),")
-    $lines.Add("  `"applicationSourceCommit`": $(& $q ([string]$Manifest.applicationSourceCommit)),")
-    $lines.Add("  `"deploymentContractCommit`": $(& $q ([string]$Manifest.deploymentContractCommit)),")
-    $lines.Add("  `"repositoryUrl`": $(& $q ([string]$Manifest.repositoryUrl)),")
-    $lines.Add("  `"createdAtUtc`": $(& $q ([string]$Manifest.createdAtUtc)),")
+    $lines.Add("  `"schemaVersion`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.schemaVersion)),")
+    $lines.Add("  `"candidateId`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.candidateId)),")
+    $lines.Add("  `"applicationSourceCommit`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.applicationSourceCommit)),")
+    $lines.Add("  `"deploymentContractCommit`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.deploymentContractCommit)),")
+    $lines.Add("  `"repositoryUrl`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.repositoryUrl)),")
+    $lines.Add("  `"createdAtUtc`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.createdAtUtc)),")
     $lines.Add('  "publishProfile": {')
-    $lines.Add("    `"configuration`": $(& $q ([string]$Manifest.publishProfile.configuration)),")
-    $lines.Add("    `"targetFramework`": $(& $q ([string]$Manifest.publishProfile.targetFramework)),")
-    $lines.Add("    `"runtimeIdentifier`": $(& $q ([string]$Manifest.publishProfile.runtimeIdentifier)),")
+    $lines.Add("    `"configuration`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.publishProfile.configuration)),")
+    $lines.Add("    `"targetFramework`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.publishProfile.targetFramework)),")
+    $lines.Add("    `"runtimeIdentifier`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.publishProfile.runtimeIdentifier)),")
     $selfContained = if ([bool]$Manifest.publishProfile.selfContained) { 'true' } else { 'false' }
     $lines.Add("    `"selfContained`": $selfContained")
     $lines.Add('  },')
     $lines.Add('  "toolchain": {')
-    $lines.Add("    `"dotNetSdkVersion`": $(& $q ([string]$Manifest.toolchain.dotNetSdkVersion)),")
-    $lines.Add("    `"nodeVersion`": $(& $q ([string]$Manifest.toolchain.nodeVersion)),")
-    $lines.Add("    `"npmVersion`": $(& $q ([string]$Manifest.toolchain.npmVersion)),")
-    $lines.Add("    `"packageLockSha256`": $(& $q ([string]$Manifest.toolchain.packageLockSha256))")
+    $lines.Add("    `"dotNetSdkVersion`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.toolchain.dotNetSdkVersion)),")
+    $lines.Add("    `"nodeVersion`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.toolchain.nodeVersion)),")
+    $lines.Add("    `"npmVersion`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.toolchain.npmVersion)),")
+    $lines.Add("    `"packageLockSha256`": $(ConvertTo-DemoCandidateJsonString ([string]$Manifest.toolchain.packageLockSha256))")
     $lines.Add('  },')
     $lines.Add('  "submodules": [')
 
@@ -115,8 +114,8 @@ function Get-DemoCandidateCanonicalManifestText {
         $item = $submodules[$index]
         $suffix = if ($index -lt ($submodules.Count - 1)) { ',' } else { '' }
         $lines.Add('    {')
-        $lines.Add("      `"commit`": $(& $q ([string]$item.commit)),")
-        $lines.Add("      `"path`": $(& $q ([string]$item.path))")
+        $lines.Add("      `"commit`": $(ConvertTo-DemoCandidateJsonString ([string]$item.commit)),")
+        $lines.Add("      `"path`": $(ConvertTo-DemoCandidateJsonString ([string]$item.path))")
         $lines.Add("    }$suffix")
     }
 
@@ -128,9 +127,9 @@ function Get-DemoCandidateCanonicalManifestText {
         $item = $artifacts[$index]
         $suffix = if ($index -lt ($artifacts.Count - 1)) { ',' } else { '' }
         $lines.Add('    {')
-        $lines.Add("      `"path`": $(& $q ([string]$item.path)),")
+        $lines.Add("      `"path`": $(ConvertTo-DemoCandidateJsonString ([string]$item.path)),")
         $lines.Add("      `"length`": $([long]$item.length),")
-        $lines.Add("      `"sha256`": $(& $q ([string]$item.sha256))")
+        $lines.Add("      `"sha256`": $(ConvertTo-DemoCandidateJsonString ([string]$item.sha256))")
         $lines.Add("    }$suffix")
     }
 
@@ -176,5 +175,12 @@ function Get-DemoCandidatePayloadInventory {
         })
     }
 
-    return @($records | Sort-Object -Property @{ Expression = { $_.path }; Ascending = $true })
+    $records.Sort([System.Comparison[object]]{
+        param($left, $right)
+        return [System.StringComparer]::Ordinal.Compare(
+            [string]$left.path,
+            [string]$right.path)
+    })
+
+    return @($records.ToArray())
 }
