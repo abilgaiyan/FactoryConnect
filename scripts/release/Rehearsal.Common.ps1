@@ -93,18 +93,28 @@ function Resolve-RehearsalDatabaseAdmission {
 
     $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
     $builder.ConnectionString = $ConnectionString
-    $keys = @($builder.Keys | ForEach-Object { [string]$_ })
+    $entries = @($builder.GetEnumerator())
 
-    $serverKey = $keys | Where-Object {
-        [string]::Equals($_, 'Server', [System.StringComparison]::OrdinalIgnoreCase) -or
-        [string]::Equals($_, 'Data Source', [System.StringComparison]::OrdinalIgnoreCase)
-    } | Select-Object -First 1
+    function Find-ConnectionStringEntry {
+        param([Parameter(Mandatory = $true)][string[]]$Aliases)
 
-    if ([string]::IsNullOrWhiteSpace($serverKey)) {
+        foreach ($entry in $entries) {
+            foreach ($alias in $Aliases) {
+                if ([string]::Equals([string]$entry.Key, $alias, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $entry
+                }
+            }
+        }
+
+        return $null
+    }
+
+    $serverEntry = Find-ConnectionStringEntry -Aliases @('Server', 'Data Source')
+    if ($null -eq $serverEntry) {
         throw 'Rehearsal SQL configuration must contain Server or Data Source.'
     }
 
-    $server = [string]$builder[$serverKey]
+    $server = [string]$serverEntry.Value
     if ([string]::IsNullOrWhiteSpace($server)) {
         throw 'Rehearsal SQL Server identity must not be empty or whitespace.'
     }
@@ -112,13 +122,10 @@ function Resolve-RehearsalDatabaseAdmission {
         throw 'Rehearsal database name contains unsupported characters.'
     }
 
-    $integratedKey = $keys | Where-Object {
-        [string]::Equals($_, 'Integrated Security', [System.StringComparison]::OrdinalIgnoreCase)
-    } | Select-Object -First 1
-
+    $integratedEntry = Find-ConnectionStringEntry -Aliases @('Integrated Security')
     $integrated = $false
-    if (-not [string]::IsNullOrWhiteSpace($integratedKey)) {
-        $integratedText = ([string]$builder[$integratedKey]).Trim()
+    if ($null -ne $integratedEntry) {
+        $integratedText = ([string]$integratedEntry.Value).Trim()
         if ([string]::Equals($integratedText, 'SSPI', [System.StringComparison]::OrdinalIgnoreCase)) {
             $integrated = $true
         }
@@ -131,15 +138,10 @@ function Resolve-RehearsalDatabaseAdmission {
         }
     }
 
-    $userIdKey = $keys | Where-Object {
-        [string]::Equals($_, 'User ID', [System.StringComparison]::OrdinalIgnoreCase)
-    } | Select-Object -First 1
-    $passwordKey = $keys | Where-Object {
-        [string]::Equals($_, 'Password', [System.StringComparison]::OrdinalIgnoreCase)
-    } | Select-Object -First 1
-
-    $userId = if ([string]::IsNullOrWhiteSpace($userIdKey)) { $null } else { [string]$builder[$userIdKey] }
-    $password = if ([string]::IsNullOrWhiteSpace($passwordKey)) { $null } else { [string]$builder[$passwordKey] }
+    $userIdEntry = Find-ConnectionStringEntry -Aliases @('User ID')
+    $passwordEntry = Find-ConnectionStringEntry -Aliases @('Password')
+    $userId = if ($null -eq $userIdEntry) { $null } else { [string]$userIdEntry.Value }
+    $password = if ($null -eq $passwordEntry) { $null } else { [string]$passwordEntry.Value }
 
     if (-not $integrated -and [string]::IsNullOrWhiteSpace($userId)) {
         throw 'Rehearsal database provisioning requires Integrated Security or explicit User ID.'
