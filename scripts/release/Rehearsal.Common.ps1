@@ -75,8 +75,14 @@ function Get-RehearsalProjectionSha256 {
     $json = ($Projection | ConvertTo-Json -Depth 20)
     $normalized = ($json -replace "`r`n", "`n") + "`n"
     $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($normalized)
-    $sha = [System.Security.Cryptography.SHA256]::HashData($bytes)
-    return ([Convert]::ToHexString($sha)).ToLowerInvariant()
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $sha = $sha256.ComputeHash($bytes)
+    }
+    finally {
+        $sha256.Dispose()
+    }
+    return ([System.BitConverter]::ToString($sha)).Replace('-', '').ToLowerInvariant()
 }
 
 function Start-RehearsalProcess {
