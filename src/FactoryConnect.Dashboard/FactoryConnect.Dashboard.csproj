@@ -3,17 +3,21 @@
     <RootNamespace>FactoryConnect.Dashboard</RootNamespace>
     <AssemblyName>FactoryConnect.Dashboard</AssemblyName>
     <DashboardClientDirectory>$(MSBuildProjectDirectory)/ClientApp</DashboardClientDirectory>
+    <DashboardClientOutputDirectory Condition="'$(DashboardClientOutputDirectory)' == ''">$(MSBuildProjectDirectory)/wwwroot</DashboardClientOutputDirectory>
     <BuildDashboardClient Condition="'$(BuildDashboardClient)' == ''">true</BuildDashboardClient>
   </PropertyGroup>
 
   <Target Name="BuildDashboardClientAssets" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true' and '$(BuildDashboardClient)' == 'true'">
     <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm ci" />
-    <Exec WorkingDirectory="$(DashboardClientDirectory)" Command="npm run build" />
+    <Exec
+      WorkingDirectory="$(DashboardClientDirectory)"
+      Command="npm run build"
+      EnvironmentVariables="FACTORYCONNECT_DASHBOARD_OUT_DIR=$(DashboardClientOutputDirectory)" />
   </Target>
 
   <Target Name="CopyDashboardClientToPublish" AfterTargets="Publish" Condition="'$(DesignTimeBuild)' != 'true'">
     <ItemGroup>
-      <DashboardPublishedAsset Include="$(MSBuildProjectDirectory)/wwwroot/**/*" />
+      <DashboardPublishedAsset Include="$(DashboardClientOutputDirectory)/**/*" />
     </ItemGroup>
     <Copy
       SourceFiles="@(DashboardPublishedAsset)"

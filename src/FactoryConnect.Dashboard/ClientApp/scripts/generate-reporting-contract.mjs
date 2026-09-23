@@ -10,6 +10,7 @@ const generatedMarker =
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const clientDirectory = resolve(scriptDirectory, "..");
+const repositoryRoot = resolve(clientDirectory, "..", "..", "..");
 const apiProject = resolve(
   clientDirectory,
   "..",
@@ -17,29 +18,40 @@ const apiProject = resolve(
   "FactoryConnect.Api",
   "FactoryConnect.Api.csproj",
 );
-const openApiDocument = resolve(
-  clientDirectory,
-  "..",
-  "..",
-  "FactoryConnect.Api",
-  "obj",
+const openApiDirectory = resolve(
+  repositoryRoot,
+  "artifacts",
   "openapi",
+  "contract-generation",
+);
+const openApiDocument = resolve(
+  openApiDirectory,
   "factoryconnect-api-v1.json",
 );
 const generatedDirectory = resolve(clientDirectory, "src", "api", "generated");
 const generatedContract = resolve(generatedDirectory, "reporting-contract.ts");
 
+await mkdir(openApiDirectory, { recursive: true });
 await unlink(openApiDocument).catch((error) => {
   if (error?.code !== "ENOENT") {
     throw error;
   }
 });
 
-const build = spawnSync("dotnet", ["build", apiProject, "--no-incremental"], {
-  cwd: clientDirectory,
-  stdio: "inherit",
-  shell: false,
-});
+const build = spawnSync(
+  "dotnet",
+  [
+    "build",
+    apiProject,
+    "--no-incremental",
+    `-p:OpenApiDocumentsDirectory=${openApiDirectory}`,
+  ],
+  {
+    cwd: clientDirectory,
+    stdio: "inherit",
+    shell: false,
+  },
+);
 
 if (build.error) {
   throw build.error;
