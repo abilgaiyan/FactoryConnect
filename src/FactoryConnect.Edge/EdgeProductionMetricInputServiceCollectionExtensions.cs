@@ -130,11 +130,17 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                 services,
                 activityReaderDescriptor));
         services.AddSingleton<InMemoryMachineStateActivityAuthorityStore>(
-            static provider => provider.GetRequiredService<
-                ProductionActivityAssociation>().StateActivityStore);
+            static provider =>
+                provider.GetRequiredService<ProductionActivityAssociation>()
+                    .StateActivityStore as InMemoryMachineStateActivityAuthorityStore
+                ?? throw new InvalidOperationException(
+                    "The selected production state/activity store is not the InMemory compatibility store."));
         services.AddSingleton<JointProductionContextActivityReader>(
-            static provider => provider.GetRequiredService<
-                ProductionActivityAssociation>().ActivityReader);
+            static provider =>
+                provider.GetRequiredService<ProductionActivityAssociation>()
+                    .ActivityReader as JointProductionContextActivityReader
+                ?? throw new InvalidOperationException(
+                    "The selected production activity reader is not the InMemory compatibility reader."));
         services.Add(activityReaderDescriptor);
         services.AddSingleton<InMemoryProductionQuantityEvidenceReader>();
         services.AddSingleton<IProductionQuantityEvidenceReader>(
