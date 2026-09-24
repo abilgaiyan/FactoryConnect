@@ -188,29 +188,44 @@ Invoke-Proof 'D11' 'Startup failure is wired to cleanup every owned process' {
 }
 
 Invoke-Proof 'D12' 'Ctrl+C pipeline-stop semantics route through cleanup every owned process' {
-    $script:cleanupRoles = [System.Collections.Generic.List[string]]::new()
-    $original = ${function:Close-DemoOwnedProcess}
+    $proofRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('FactoryConnect-DemoPipelineStop-' + [Guid]::NewGuid().ToString('N'))
+    [System.IO.Directory]::CreateDirectory($proofRoot) | Out-Null
+    $proofScript = Join-Path $proofRoot 'pipeline-stop-proof.ps1'
+    $evidencePath = Join-Path $proofRoot 'cleanup-roles.txt'
+    $childPowerShell = (Get-Process -Id $PID).Path
+    $proofText = @'
+param(
+    [Parameter(Mandatory = $true)][string]$CommonPath,
+    [Parameter(Mandatory = $true)][string]$EvidencePath
+)
+$ErrorActionPreference = 'Stop'
+. $CommonPath
+function Close-DemoOwnedProcess {
+    param($OwnedProcess)
+    Add-Content -LiteralPath $EvidencePath -Value ([string]$OwnedProcess.Role) -Encoding UTF8
+}
+$owned = [System.Collections.Generic.List[object]]::new()
+foreach ($role in @('Fixture','Edge','Api','Dashboard')) {
+    $owned.Add([pscustomobject]@{ Role = $role })
+}
+try {
+    throw [System.Management.Automation.PipelineStoppedException]::new()
+}
+finally {
+    Stop-DemoOwnedProcesses -OwnedProcesses $owned
+}
+'@
+
     try {
-        ${function:Close-DemoOwnedProcess} = {
-            param($OwnedProcess)
-            $script:cleanupRoles.Add([string]$OwnedProcess.Role)
-        }
-        $owned = [System.Collections.Generic.List[object]]::new()
-        foreach ($role in @('Fixture','Edge','Api','Dashboard')) { $owned.Add([pscustomobject]@{ Role = $role }) }
-        try {
-            throw [System.Management.Automation.PipelineStoppedException]::new()
-        }
-        finally {
-            Stop-DemoOwnedProcesses -OwnedProcesses $owned
-        }
-    }
-    catch [System.Management.Automation.PipelineStoppedException] {
+        Set-Content -LiteralPath $proofScript -Value $proofText -Encoding UTF8
+        & $childPowerShell -NoProfile -ExecutionPolicy Bypass -File $proofScript -CommonPath $commonPath -EvidencePath $evidencePath *> $null
+        Assert-True (Test-Path -LiteralPath $evidencePath) 'Pipeline-stop child did not execute cleanup evidence.'
+        $cleanupRoles = @((Get-Content -LiteralPath $evidencePath) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        Assert-True (($cleanupRoles -join ',') -ceq 'Dashboard,Api,Edge,Fixture') 'Pipeline-stop cleanup did not cover every owned process in reverse ownership order.'
     }
     finally {
-        ${function:Close-DemoOwnedProcess} = $original
+        Remove-Item -LiteralPath $proofRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-
-    Assert-True (($script:cleanupRoles -join ',') -ceq 'Dashboard,Api,Edge,Fixture') 'Pipeline-stop cleanup did not cover every owned process.'
 }
 
 Invoke-Proof 'D13' 'Reset drops/recreates only demo DB and leaves migration authority to next start' {
