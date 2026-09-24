@@ -135,6 +135,7 @@ try {
         DOTNET_ENVIRONMENT = 'Production'
         Persistence__Provider = 'SqlServer'
         PersistenceProviders__SqlServer__ConnectionString = $SqlConnectionString
+        CurrentState__Freshness__MaximumCurrentAge = '00:00:30'
     }
     Add-DemoMachineEnvironment -Environment $edgeEnvironment -Configuration $configuration -FixturePublicBaseAddress $fixtureBaseAddress
     Add-DemoObservationProcessingEnvironment -Environment $edgeEnvironment -Configuration $configuration
