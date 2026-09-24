@@ -271,6 +271,20 @@ Invoke-Proof 'D12B' 'Schedules cover every configured production line and shift'
     }
 }
 
+Invoke-Proof 'D12C' 'Local Dashboard uses Development with explicit demo API and sources' {
+    $text = Get-Content -Raw -LiteralPath $startPath
+    $dashboardMarker = '$dashboardEnvironment = @{'
+    $dashboardStart = $text.IndexOf($dashboardMarker, [System.StringComparison]::Ordinal)
+    Assert-True ($dashboardStart -ge 0) 'Dashboard child environment is missing.'
+    $dashboardEnd = $text.IndexOf("    }", $dashboardStart, [System.StringComparison]::Ordinal)
+    Assert-True ($dashboardEnd -gt $dashboardStart) 'Dashboard child environment does not close.'
+    $dashboardBlock = $text.Substring($dashboardStart, $dashboardEnd - $dashboardStart)
+    Assert-True ($dashboardBlock.Contains("ASPNETCORE_ENVIRONMENT = 'Development'")) 'Local Dashboard is not in Development.'
+    Assert-True ($dashboardBlock.Contains('Dashboard__ReportingApiBaseAddress = $apiBaseAddress')) 'Demo API base address is not projected.'
+    Assert-True ($text.Contains('$dashboardEnvironment["${prefix}__MachineId"]')) 'Demo machine sources are not projected.'
+    Assert-True ($text.Contains('$dashboardEnvironment["${prefix}__ProductionLineId"]')) 'Demo line sources are not projected.'
+}
+
 Invoke-Proof 'D13' 'Reset drops/recreates only demo DB and leaves migration authority to next start' {
     $text = Get-Content -Raw -LiteralPath $resetPath
     Assert-True ($text -match 'DROP DATABASE') 'Reset does not drop the demo database.'

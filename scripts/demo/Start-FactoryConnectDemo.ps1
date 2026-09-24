@@ -175,7 +175,7 @@ try {
     Assert-DemoOwnedProcessAlive -OwnedProcess $edge
 
     $dashboardEnvironment = @{
-        ASPNETCORE_ENVIRONMENT = 'Production'
+        ASPNETCORE_ENVIRONMENT = 'Development'
         ASPNETCORE_URLS = "http://0.0.0.0:$([int]$configuration.dashboard.port)"
         Dashboard__ReportingApiBaseAddress = $apiBaseAddress
         Dashboard__RequestTimeout = '00:00:30'
