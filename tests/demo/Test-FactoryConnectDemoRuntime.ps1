@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -75,8 +75,14 @@ Invoke-Proof 'D02' 'Candidate approval is explicit and deployment contract stays
     Assert-True ($contract.DatabaseName -ceq 'FactoryConnect_Demo') 'Demo database drifted.'
     Assert-True (-not ($contract.PSObject.Properties.Name -contains 'CandidateId')) 'Candidate ID is still pinned in the contract.'
     $startText = Get-Content -Raw -LiteralPath $startPath
-    foreach ($parameter in @('ExpectedCandidateId','ExpectedManifestSha256','ExpectedSourceCommit')) {
-        Assert-True ($startText.Contains(('[string]) "Launcher does not require $parameter."
+
+    foreach ($parameter in @(
+        'ExpectedCandidateId',
+        'ExpectedManifestSha256',
+        'ExpectedSourceCommit'
+    )) {
+        $needle = '[string]$' + $parameter
+        Assert-True ($startText.Contains($needle)) "Launcher does not require $parameter."
     }
     $commonText = Get-Content -Raw -LiteralPath $commonPath
     Assert-True ($commonText.Contains('-ExpectedSourceCommit $ExpectedSourceCommit')) 'Source approval is not passed to the release verifier.'
