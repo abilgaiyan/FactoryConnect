@@ -36,7 +36,7 @@ public sealed class ProductionActivityProviderPairingTests
             () => provider.GetRequiredService<ObservationAuthorityStoreGraph>());
 
         Assert.Contains(
-            "production activity reader without the matching state/activity authority store",
+            "supplies a production activity reader without the matching machine state/activity authority graph",
             exception.Message,
             StringComparison.Ordinal);
     }
