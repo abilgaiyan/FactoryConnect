@@ -154,7 +154,7 @@ public sealed class SqlServerEdgeProductionActivityHandoffIntegrationTests :
         }
     }
 
-    private ServiceProvider BuildProvider(
+    private static ServiceProvider BuildProvider(
         IConfiguration configuration,
         ObservationStreamId activityStream)
     {
