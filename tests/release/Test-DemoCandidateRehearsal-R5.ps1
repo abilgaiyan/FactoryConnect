@@ -184,7 +184,8 @@ public static class Program
         -StdErrPath (Join-Path $proofRoot 'failed.stderr.log') `
         -Environment @{ FACTORYCONNECT_R5_CHILD_MODE = 'fail' }
 
-    Start-Sleep -Milliseconds 300
+    Assert-True -Condition $failed.Process.WaitForExit(5000) -Name 'failed Edge proof child exits within bounded wait'
+    Assert-True -Condition ($failed.Process.ExitCode -eq 7) -Name 'failed Edge proof child exposes expected exit code'
     $failure = $null
     try {
         Assert-RehearsalOwnedProcessAlive -OwnedProcess $failed
