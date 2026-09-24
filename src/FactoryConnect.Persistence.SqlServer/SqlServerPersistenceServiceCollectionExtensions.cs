@@ -47,6 +47,11 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                     var stateActivityStore = currentStateRequested
                         ? new SqlServerMachineStateActivityAuthorityStore(connectionString)
                         : null;
+                    var productionContextActivityReader = currentStateRequested
+                        ? new SqlServerProductionContextActivityReader(
+                            connectionString,
+                            new ObservationProcessorId("machine-state-activity"))
+                        : null;
                     var authorityCutProvider = currentStateRequested
                         ? new SqlServerCurrentStateAuthorityCutProvider(connectionString)
                         : null;
@@ -71,7 +76,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                             new SqlServerMachineShiftOccurrenceRosterStore(connectionString),
                         currentStateAuthorityCutProvider: authorityCutProvider,
                         mappingCoverageAuthorityStore: mappingStore,
-                        machineStateActivityAuthorityStore: stateActivityStore);
+                        machineStateActivityAuthorityStore: stateActivityStore,
+                        productionContextActivityReader:
+                            productionContextActivityReader);
                 },
                 _ =>
                 {
