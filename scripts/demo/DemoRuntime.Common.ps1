@@ -2,17 +2,11 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot '../release/Rehearsal.Common.ps1')
 
-$script:DemoCandidateId = 'demo-candidate-20260923-02'
-$script:DemoCandidateManifestSha256 = '88d5fdb73c04f916692c1819f9adffe38d838c071f5b1f34a8f94ead018dcb76'
-$script:DemoApplicationSourceCommit = '6bdb89d87d013c177297a7e2d029fed63a2e2b60'
 $script:DemoDeploymentContractCommit = '9ff9c4d6abaa696b8daf25eff6a724bacd0ba5fc'
 $script:DemoDatabaseName = 'FactoryConnect_Demo'
 
 function Get-DemoContract {
     [pscustomobject]@{
-        CandidateId = $script:DemoCandidateId
-        CandidateManifestSha256 = $script:DemoCandidateManifestSha256
-        ApplicationSourceCommit = $script:DemoApplicationSourceCommit
         DeploymentContractCommit = $script:DemoDeploymentContractCommit
         DatabaseName = $script:DemoDatabaseName
     }
@@ -148,24 +142,63 @@ function Open-DemoSupervisorLease {
     return $stream
 }
 
+function Assert-DemoCandidateApproval {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExpectedCandidateId,
+        [Parameter(Mandatory = $true)][string]$ExpectedManifestSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedSourceCommit
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedCandidateId) -or
+        $ExpectedCandidateId -notmatch '^demo-candidate-[0-9]{8}-[0-9]{2}$') {
+        throw 'ExpectedCandidateId must be an explicit demo candidate ID.'
+    }
+    if ($ExpectedManifestSha256 -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'ExpectedManifestSha256 must be a lowercase 64-character SHA-256 value.'
+    }
+    if ($ExpectedSourceCommit -cnotmatch '^[0-9a-f]{40}$') {
+        throw 'ExpectedSourceCommit must be a lowercase 40-character commit SHA.'
+    }
+}
+
+function Assert-DemoCandidateManifestApproval {
+    param(
+        [Parameter(Mandatory = $true)][string]$ActualManifestSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedManifestSha256
+    )
+
+    if ($ActualManifestSha256 -cne $ExpectedManifestSha256) {
+        throw "Interactive demo candidate manifest SHA-256 '$ActualManifestSha256' does not match approved SHA-256 '$ExpectedManifestSha256'."
+    }
+}
+
 function Assert-DemoCandidate {
-    param([Parameter(Mandatory = $true)][string]$CandidatePath)
+    param(
+        [Parameter(Mandatory = $true)][string]$CandidatePath,
+        [Parameter(Mandatory = $true)][string]$ExpectedCandidateId,
+        [Parameter(Mandatory = $true)][string]$ExpectedManifestSha256,
+        [Parameter(Mandatory = $true)][string]$ExpectedSourceCommit
+    )
+
+    Assert-DemoCandidateApproval -ExpectedCandidateId $ExpectedCandidateId `
+        -ExpectedManifestSha256 $ExpectedManifestSha256 `
+        -ExpectedSourceCommit $ExpectedSourceCommit
 
     $candidateRoot = (Resolve-Path -LiteralPath $CandidatePath).Path
     $candidateId = Split-Path -Leaf $candidateRoot
-    if ($candidateId -cne $script:DemoCandidateId) {
-        throw "Interactive demo requires immutable candidate '$script:DemoCandidateId'; received '$candidateId'."
+    if ($candidateId -cne $ExpectedCandidateId) {
+        throw "Interactive demo requires approved candidate '$ExpectedCandidateId'; received '$candidateId'."
     }
 
     $verification = & (Join-Path $PSScriptRoot '../release/Test-DemoCandidate.ps1') `
         -CandidatePath $candidateRoot `
-        -ExpectedCandidateId $script:DemoCandidateId `
-        -ExpectedSourceCommit $script:DemoApplicationSourceCommit `
+        -ExpectedCandidateId $ExpectedCandidateId `
+        -ExpectedSourceCommit $ExpectedSourceCommit `
         -ExpectedDeploymentContractCommit $script:DemoDeploymentContractCommit
 
-    if ([string]$verification.ManifestSha256 -cne $script:DemoCandidateManifestSha256) {
-        throw "Interactive demo candidate manifest SHA-256 '$($verification.ManifestSha256)' does not match the frozen candidate '$script:DemoCandidateManifestSha256'."
-    }
+    Assert-DemoCandidateManifestApproval `
+        -ActualManifestSha256 ([string]$verification.ManifestSha256) `
+        -ExpectedManifestSha256 $ExpectedManifestSha256
 
     return [pscustomobject]@{
         CandidateRoot = $candidateRoot
@@ -330,6 +363,7 @@ function Wait-DemoHttp200 {
 function Write-DemoRuntimeState {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$CandidateId,
         [Parameter(Mandatory = $true)][System.Collections.IEnumerable]$OwnedProcesses,
         [Parameter(Mandatory = $true)][string]$Phase,
         [Parameter()][string]$DashboardUrl
@@ -337,7 +371,7 @@ function Write-DemoRuntimeState {
 
     $document = [ordered]@{
         schemaVersion = '1.0'
-        candidateId = $script:DemoCandidateId
+        candidateId = $CandidateId
         databaseName = $script:DemoDatabaseName
         supervisorPid = $PID
         phase = $Phase
