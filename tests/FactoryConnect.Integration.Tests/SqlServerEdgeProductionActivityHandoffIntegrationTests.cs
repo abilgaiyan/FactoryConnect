@@ -30,7 +30,7 @@ public sealed class SqlServerEdgeProductionActivityHandoffIntegrationTests :
     public async Task SqlOwnedActivityReaderDrivesProductionAndRestoresProgressAcrossRestart()
     {
         var machineId = new MachineId(Guid.NewGuid());
-        var activityStream = new ObservationStreamId(machineId, $"activity-{Guid.NewGuid():N}");
+        var activityStream = new ObservationStreamId(machineId, "activity");
         var configuration = CreateConfiguration(_fixture.ConnectionString, machineId);
         await SeedObservationStreamCheckpointAsync(activityStream);
 
@@ -86,7 +86,7 @@ public sealed class SqlServerEdgeProductionActivityHandoffIntegrationTests :
                     CancellationToken.None);
             Assert.Single(
                 firstBatch.Facts,
-                static item => item.Fact.Key == "duration.running");
+                static item => item.Fact.Key == MetricInputFactKeys.RunningDuration);
         }
 
         await using (var restartedProvider = BuildProvider(configuration, activityStream))
@@ -143,13 +143,14 @@ public sealed class SqlServerEdgeProductionActivityHandoffIntegrationTests :
             Assert.Equal(
                 2,
                 batch.Facts.Count(item =>
-                    item.Fact.Key is "duration.running" or "duration.idle"));
+                    item.Fact.Key is MetricInputFactKeys.RunningDuration or
+                        MetricInputFactKeys.IdleDuration));
             Assert.Contains(
                 batch.Facts,
-                static item => item.Fact.Key == "duration.running");
+                static item => item.Fact.Key == MetricInputFactKeys.RunningDuration);
             Assert.Contains(
                 batch.Facts,
-                static item => item.Fact.Key == "duration.idle");
+                static item => item.Fact.Key == MetricInputFactKeys.IdleDuration);
         }
     }
 
