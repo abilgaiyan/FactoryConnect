@@ -59,7 +59,13 @@ function Import-RunnerFunction {
         throw "Runner function '$Name' was not found."
     }
 
-    Invoke-Expression $functionAst.Extent.Text
+    $bodyText = $functionAst.Body.Extent.Text
+    if ($bodyText.Length -lt 2 -or $bodyText[0] -ne '{' -or $bodyText[$bodyText.Length - 1] -ne '}') {
+        throw "Runner function '$Name' body shape was unexpected."
+    }
+
+    $body = [scriptblock]::Create($bodyText.Substring(1, $bodyText.Length - 2))
+    Set-Item -Path ("Function:\script:{0}" -f $Name) -Value $body
 }
 
 $runnerText = Get-Content -Raw -LiteralPath $runnerPath
@@ -70,7 +76,7 @@ Assert-Contains -Text $runnerText -Expected 'ObservationProcessing__Streams__${i
 Assert-Contains -Text $runnerText -Expected '[string]$machine.streamIdentity' -Name 'observation StreamKey projects authoritative StreamIdentity'
 Assert-Contains -Text $runnerText -Expected 'Wait-RehearsalOwnedProcessStability -OwnedProcess $edge -Seconds 2' -Name 'initial Edge uses bounded stabilization survival'
 Assert-Contains -Text $runnerText -Expected 'Wait-RehearsalOwnedProcessStability -OwnedProcess $edge2 -Seconds 2' -Name 'restart Edge uses the same stabilization authority'
-Assert-Contains -Text $runnerText -Expected "throw \"Rehearsal process '$($OwnedProcess.Role)' exited$detail.\"" -Name 'owned-process failure reports role and exit detail'
+Assert-Contains -Text $runnerText -Expected 'throw "Rehearsal process ''$($OwnedProcess.Role)'' exited$detail."' -Name 'owned-process failure reports role and exit detail'
 
 $restartAssertIndex = $runnerText.IndexOf('Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge2', [System.StringComparison]::Ordinal)
 $restartPassedIndex = $runnerText.IndexOf('$restartPassed = $true', [System.StringComparison]::Ordinal)
