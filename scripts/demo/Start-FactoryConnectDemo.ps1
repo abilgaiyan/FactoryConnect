@@ -19,6 +19,7 @@ $ownedProcesses = [System.Collections.Generic.List[object]]::new()
 $runtimeStatePath = Join-Path $repoRoot 'artifacts/demo/runtime.json'
 $dashboardUrl = $null
 $cleanupError = $null
+$primaryError = $null
 
 try {
     $supervisorLease = Open-DemoSupervisorLease -RepoRoot $repoRoot -Purpose Supervisor
@@ -28,6 +29,31 @@ try {
 
     $configuration = Get-Content -Raw -LiteralPath $DemoConfigurationPath | ConvertFrom-Json
     Assert-DemoSevenMachineConfiguration -Configuration $configuration
+
+    $expectedMachines = @(
+        @('11111111-1111-1111-1111-111111111101','CNC-01','/mtconnect/cnc-01/','mtconnect:CNC-01','processor-cnc-01','LINE-1'),
+        @('11111111-1111-1111-1111-111111111102','CNC-02','/mtconnect/cnc-02/','mtconnect:CNC-02','processor-cnc-02','LINE-1'),
+        @('11111111-1111-1111-1111-111111111103','CNC-03','/mtconnect/cnc-03/','mtconnect:CNC-03','processor-cnc-03','LINE-1'),
+        @('11111111-1111-1111-1111-111111111104','CNC-04','/mtconnect/cnc-04/','mtconnect:CNC-04','processor-cnc-04','LINE-1'),
+        @('11111111-1111-1111-1111-111111111105','CNC-05','/mtconnect/cnc-05/','mtconnect:CNC-05','processor-cnc-05','LINE-1'),
+        @('11111111-1111-1111-1111-111111111106','CNC-06','/mtconnect/cnc-06/','mtconnect:CNC-06','processor-cnc-06','LINE-2'),
+        @('11111111-1111-1111-1111-111111111107','CNC-07','/mtconnect/cnc-07/','mtconnect:CNC-07','processor-cnc-07','LINE-2')
+    )
+    for ($index = 0; $index -lt $expectedMachines.Count; $index++) {
+        $machine = $configuration.machines[$index]
+        $expected = $expectedMachines[$index]
+        $actual = @(
+            [string]$machine.machineId,
+            [string]$machine.deviceKey,
+            [string]$machine.basePath,
+            [string]$machine.streamIdentity,
+            [string]$machine.processorId,
+            [string]$machine.productionLineId
+        )
+        if (($actual -join '|') -cne ($expected -join '|')) {
+            throw "Interactive demo machine entry $index does not match the frozen R5 seven-machine topology."
+        }
+    }
 
     if ([string]$configuration.database.databaseName -cne $contract.DatabaseName) {
         throw "Interactive demo configuration database is '$([string]$configuration.database.databaseName)'; expected exactly '$($contract.DatabaseName)'."
@@ -202,6 +228,10 @@ try {
         Start-Sleep -Seconds 1
     }
 }
+catch {
+    $primaryError = $_.Exception
+    throw
+}
 finally {
     try {
         if ($ownedProcesses.Count -gt 0) {
@@ -219,6 +249,11 @@ finally {
     }
 
     if ($null -ne $cleanupError) {
-        throw $cleanupError
+        if ($null -ne $primaryError) {
+            Write-Warning "Interactive demo cleanup also failed: $($cleanupError.Message)"
+        }
+        else {
+            throw $cleanupError
+        }
     }
 }
