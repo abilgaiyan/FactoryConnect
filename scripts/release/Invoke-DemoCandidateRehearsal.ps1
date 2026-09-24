@@ -38,6 +38,34 @@ function Wait-RehearsalHttp200 {
     throw "Timed out waiting for HTTP 200 from '$Uri'."
 }
 
+function Assert-RehearsalOwnedProcessAlive {
+    param([Parameter(Mandatory = $true)]$OwnedProcess)
+
+    $process = $OwnedProcess.Process
+    $process.Refresh()
+    if (-not $process.HasExited) { return }
+
+    $exitCode = $null
+    try { $exitCode = $process.ExitCode } catch {}
+    $detail = if ($null -ne $exitCode) { " with exit code $exitCode" } else { '' }
+    throw "Rehearsal process '$($OwnedProcess.Role)' exited$detail."
+}
+
+function Wait-RehearsalOwnedProcessStability {
+    param(
+        [Parameter(Mandatory = $true)]$OwnedProcess,
+        [Parameter()][ValidateRange(1, 300)][int]$Seconds = 2
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Seconds)
+    do {
+        Assert-RehearsalOwnedProcessAlive -OwnedProcess $OwnedProcess
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $OwnedProcess
+}
+
 function Add-RehearsalMachineEnvironment {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Environment,
@@ -53,6 +81,20 @@ function Add-RehearsalMachineEnvironment {
         $Environment["${prefix}__DeviceKey"] = [string]$machine.deviceKey
         $Environment["${prefix}__FromSequence"] = '1'
         $Environment["${prefix}__PollingInterval"] = '00:00:00.250'
+    }
+}
+
+function Add-RehearsalObservationProcessingEnvironment {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Environment,
+        [Parameter(Mandatory = $true)]$Configuration
+    )
+
+    for ($index = 0; $index -lt $Configuration.machines.Count; $index++) {
+        $machine = $Configuration.machines[$index]
+        $prefix = "ObservationProcessing__Streams__${index}"
+        $Environment["${prefix}__MachineId"] = [string]$machine.machineId
+        $Environment["${prefix}__StreamKey"] = [string]$machine.streamIdentity
     }
 }
 
@@ -137,6 +179,13 @@ $configuration = Get-Content -Raw -LiteralPath $RehearsalConfigurationPath | Con
 if ($configuration.machines.Count -ne 7) { throw 'Rehearsal configuration must contain exactly seven machines.' }
 if ((@($configuration.machines.machineId | Sort-Object -Unique)).Count -ne 7) { throw 'Rehearsal MachineIds must be unique.' }
 if ((@($configuration.machines.deviceKey | Sort-Object -Unique)).Count -ne 7) { throw 'Rehearsal DeviceKeys must be unique.' }
+if ((@($configuration.machines.streamIdentity | Sort-Object -Unique)).Count -ne 7) { throw 'Rehearsal StreamIdentities must be unique.' }
+foreach ($machine in $configuration.machines) {
+    $expectedStreamIdentity = "mtconnect:$([string]$machine.deviceKey)"
+    if ([string]$machine.streamIdentity -cne $expectedStreamIdentity) {
+        throw "Rehearsal stream identity '$([string]$machine.streamIdentity)' does not match authoritative MTConnect identity '$expectedStreamIdentity'."
+    }
+}
 
 $attemptMatch = [regex]::Match($AttemptId, '^rehearsal-(?<date>\d{8})-(?<sequence>\d{2})$')
 if (-not $attemptMatch.Success -or $attemptMatch.Groups['date'].Value -ne [DateTime]::UtcNow.ToString('yyyyMMdd')) {
@@ -261,6 +310,7 @@ try {
         PersistenceProviders__SqlServer__ConnectionString = $SqlConnectionString
     }
     Add-RehearsalMachineEnvironment -Environment $edgeEnvironment -Configuration $configuration -FixturePublicBaseAddress $fixtureBaseAddress
+    Add-RehearsalObservationProcessingEnvironment -Environment $edgeEnvironment -Configuration $configuration
     Add-RehearsalProductionEnvironment -Environment $edgeEnvironment -Configuration $configuration
 
     $edge = Start-RehearsalProcess `
@@ -271,10 +321,10 @@ try {
         -StdErrPath (Join-Path $logs 'edge.stderr.log') `
         -Environment $edgeEnvironment
     $ownedProcesses.Add($edge)
-    Start-Sleep -Seconds 2
-    if ($edge.Process.HasExited) { throw "Edge exited during startup with code $($edge.Process.ExitCode)." }
-    $checks.Add([ordered]@{ id = 'edge-startup'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'process remained active' })
+    Wait-RehearsalOwnedProcessStability -OwnedProcess $edge -Seconds 2
+    $checks.Add([ordered]@{ id = 'edge-startup'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'owned Edge process survived the stabilization window' })
 
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $apiEnvironment = @{
         ASPNETCORE_ENVIRONMENT = 'Production'
         ASPNETCORE_URLS = "http://0.0.0.0:$([int]$configuration.api.port)"
@@ -294,6 +344,7 @@ try {
     [void](Wait-RehearsalHttp200 -Uri ([Uri]"$apiBaseAddress/health") -TimeoutSeconds $StartupTimeoutSeconds)
     $checks.Add([ordered]@{ id = 'api-health'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'HTTP 200' })
 
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $dashboardEnvironment = @{
         ASPNETCORE_ENVIRONMENT = 'Production'
         ASPNETCORE_URLS = "http://0.0.0.0:$([int]$configuration.dashboard.port)"
@@ -324,10 +375,12 @@ try {
     [void](Wait-RehearsalHttp200 -Uri ([Uri]"$dashboardBaseAddress/health/ready") -TimeoutSeconds $StartupTimeoutSeconds)
     $checks.Add([ordered]@{ id = 'dashboard-ready'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'live + ready HTTP 200' })
 
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $runtimeConfig = Invoke-RestMethod -Uri "$dashboardBaseAddress/dashboard/config" -Method Get -TimeoutSec 10
     if ($runtimeConfig.sources.Count -ne 7) { throw "Dashboard runtime source count was $($runtimeConfig.sources.Count), expected 7." }
     $checks.Add([ordered]@{ id = 'seven-source-configuration'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = '7 sources' })
 
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $currentStateDeadline = [DateTimeOffset]::UtcNow.AddSeconds($ObservationTimeoutSeconds)
     foreach ($machine in $configuration.machines) {
         $observed = $false
@@ -343,6 +396,7 @@ try {
     }
     $checks.Add([ordered]@{ id = 'seven-source-current-state'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'HTTP 200 for all seven machines' })
 
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $today = [DateTime]::UtcNow.Date
     $reportBody = [ordered]@{
         sources = @($configuration.machines | ForEach-Object { [ordered]@{ machineId = [string]$_.machineId; processorId = [string]$_.processorId } })
@@ -351,7 +405,7 @@ try {
         metrics = $null
         context = $null
         statuses = $null
-        order = 'Ascending'
+        order = 'period-ascending'
         pageSize = 100
         continuationToken = $null
     } | ConvertTo-Json -Depth 10
@@ -375,14 +429,20 @@ try {
     $restartPerformed = $true
     $edge2 = Start-RehearsalProcess -Role 'Edge-Restart' -FilePath (Join-Path $candidateRoot 'edge/FactoryConnect.Edge.exe') -WorkingDirectory (Join-Path $candidateRoot 'edge') -StdOutPath (Join-Path $logs 'edge.restart.stdout.log') -StdErrPath (Join-Path $logs 'edge.restart.stderr.log') -Environment $edgeEnvironment
     $ownedProcesses.Add($edge2)
+    Wait-RehearsalOwnedProcessStability -OwnedProcess $edge2 -Seconds 2
+
     $api2 = Start-RehearsalProcess -Role 'Api-Restart' -FilePath (Join-Path $candidateRoot 'api/FactoryConnect.Api.exe') -WorkingDirectory (Join-Path $candidateRoot 'api') -StdOutPath (Join-Path $logs 'api.restart.stdout.log') -StdErrPath (Join-Path $logs 'api.restart.stderr.log') -Environment $apiEnvironment
     $ownedProcesses.Add($api2)
     [void](Wait-RehearsalHttp200 -Uri ([Uri]"$apiBaseAddress/health") -TimeoutSeconds $StartupTimeoutSeconds)
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge2
+
     $dashboard2 = Start-RehearsalProcess -Role 'Dashboard-Restart' -FilePath (Join-Path $candidateRoot 'dashboard/FactoryConnect.Dashboard.exe') -WorkingDirectory (Join-Path $candidateRoot 'dashboard') -StdOutPath (Join-Path $logs 'dashboard.restart.stdout.log') -StdErrPath (Join-Path $logs 'dashboard.restart.stderr.log') -Environment $dashboardEnvironment
     $ownedProcesses.Add($dashboard2)
     [void](Wait-RehearsalHttp200 -Uri ([Uri]"$dashboardBaseAddress/health/ready") -TimeoutSeconds $StartupTimeoutSeconds)
+    Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge2
+
     $restartPassed = $true
-    $checks.Add([ordered]@{ id = 'same-candidate-restart'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'Edge/API/Dashboard regained readiness' })
+    $checks.Add([ordered]@{ id = 'same-candidate-restart'; outcome = 'Passed'; observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O'); detail = 'Edge/API/Dashboard regained readiness with restarted Edge alive' })
 
     $outcome = 'Passed'
 }
