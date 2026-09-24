@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Core;
 using FactoryConnect.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -6,11 +7,13 @@ namespace FactoryConnect.Edge;
 
 internal sealed class ProductionActivityAssociation
 {
+    private static readonly ObservationProcessorId StateActivityProcessorId =
+        new("machine-state-activity");
+
     private readonly IServiceProvider _provider;
     private readonly IServiceCollection _services;
     private readonly ServiceDescriptor _activityReaderDescriptor;
-    private readonly Lazy<InMemoryMachineStateActivityAuthorityStore> _stateActivityStore;
-    private readonly Lazy<JointProductionContextActivityReader> _activityReader;
+    private readonly Lazy<Association> _association;
 
     public ProductionActivityAssociation(
         IServiceProvider provider,
@@ -24,19 +27,45 @@ internal sealed class ProductionActivityAssociation
         _provider = provider;
         _services = services;
         _activityReaderDescriptor = activityReaderDescriptor;
-        _stateActivityStore = new Lazy<InMemoryMachineStateActivityAuthorityStore>(
-            ResolveStateActivityStore);
-        _activityReader = new Lazy<JointProductionContextActivityReader>(
-            CreateActivityReader);
+        _association = new Lazy<Association>(
+            CreateAssociation,
+            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
-    public InMemoryMachineStateActivityAuthorityStore StateActivityStore =>
-        _stateActivityStore.Value;
+    public IMachineStateActivityAuthorityStore StateActivityStore =>
+        _association.Value.StateActivityStore;
 
-    public JointProductionContextActivityReader ActivityReader =>
-        _activityReader.Value;
+    public IProductionContextActivityReader ActivityReader
+    {
+        get
+        {
+            EnsureAuthoritativeReaderRegistration();
+            return _association.Value.ActivityReader;
+        }
+    }
 
-    private JointProductionContextActivityReader CreateActivityReader()
+    private Association CreateAssociation()
+    {
+        var observationGraph =
+            _provider.GetService<ObservationAuthorityStoreGraph>();
+
+        if (observationGraph is not null)
+        {
+            return new Association(
+                observationGraph.StateActivityStore,
+                observationGraph.ProductionActivityReader);
+        }
+
+        var stateActivityStore =
+            new InMemoryMachineStateActivityAuthorityStore();
+        return new Association(
+            stateActivityStore,
+            new JointProductionContextActivityReader(
+                stateActivityStore,
+                StateActivityProcessorId));
+    }
+
+    private void EnsureAuthoritativeReaderRegistration()
     {
         var effectiveDescriptor = _services.LastOrDefault(
             static descriptor =>
@@ -48,27 +77,9 @@ internal sealed class ProductionActivityAssociation
                 "The FactoryConnect IProductionContextActivityReader registration " +
                 "was displaced in the completed service graph.");
         }
-
-        return new JointProductionContextActivityReader(
-            _stateActivityStore.Value,
-            new ObservationProcessorId("machine-state-activity"));
     }
 
-    private InMemoryMachineStateActivityAuthorityStore ResolveStateActivityStore()
-    {
-        var observationGraph =
-            _provider.GetService<ObservationAuthorityStoreGraph>();
-
-        if (observationGraph is null)
-        {
-            return new InMemoryMachineStateActivityAuthorityStore();
-        }
-
-        return observationGraph.StateActivityStore as
-            InMemoryMachineStateActivityAuthorityStore ??
-            throw new InvalidOperationException(
-                "The selected observation state/activity authority store does " +
-                "not expose the activity-history capability required by " +
-                "production processing.");
-    }
+    private sealed record Association(
+        IMachineStateActivityAuthorityStore StateActivityStore,
+        IProductionContextActivityReader ActivityReader);
 }
