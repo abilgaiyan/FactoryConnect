@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$CandidatePath,
+    [Parameter(Mandatory = $true)][string]$ExpectedCandidateId,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{64}$')][string]$ExpectedManifestSha256,
+    [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$ExpectedSourceCommit,
     [Parameter(Mandatory = $true)][string]$DemoConfigurationPath,
     [Parameter(Mandatory = $true)][string]$SqlConnectionString,
     [Parameter(Mandatory = $true)][string]$FixtureExecutablePath,
@@ -24,7 +27,10 @@ $primaryError = $null
 try {
     $supervisorLease = Open-DemoSupervisorLease -RepoRoot $repoRoot -Purpose Supervisor
 
-    $candidate = Assert-DemoCandidate -CandidatePath $CandidatePath
+    $candidate = Assert-DemoCandidate -CandidatePath $CandidatePath `
+        -ExpectedCandidateId $ExpectedCandidateId `
+        -ExpectedManifestSha256 $ExpectedManifestSha256 `
+        -ExpectedSourceCommit $ExpectedSourceCommit
     $candidateRoot = $candidate.CandidateRoot
 
     $configuration = Get-Content -Raw -LiteralPath $DemoConfigurationPath | ConvertFrom-Json
@@ -80,14 +86,14 @@ try {
     [System.IO.Directory]::CreateDirectory($logs) | Out-Null
 
     Write-Host "FactoryConnect interactive demo"
-    Write-Host "Candidate : $($contract.CandidateId)"
+    Write-Host "Candidate : $($ExpectedCandidateId)"
     Write-Host "Database  : $($contract.DatabaseName)"
     Write-Host "Session   : $sessionRoot"
 
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'DatabaseProvisioning'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'DatabaseProvisioning'
     Ensure-DemoDatabaseExists -DatabaseTarget $databaseTarget
 
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'FixtureStartup'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'FixtureStartup'
     Assert-RehearsalPortAvailable -Port ([int]$configuration.fixture.port)
     $fixtureInvocationNonce = New-RehearsalInvocationNonce
     $fixtureExecutable = (Resolve-Path -LiteralPath $FixtureExecutablePath).Path
@@ -103,7 +109,7 @@ try {
             FACTORYCONNECT_REHEARSAL_INVOCATION_NONCE = $fixtureInvocationNonce
         }
     $ownedProcesses.Add($fixture)
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'FixtureReadiness'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'FixtureReadiness'
     [void](Wait-RehearsalFixtureReadiness `
         -OwnedProcess $fixture `
         -HealthUri ([Uri]"$fixtureBaseAddress/health") `
@@ -111,7 +117,7 @@ try {
         -ExpectedInvocationNonce $fixtureInvocationNonce `
         -TimeoutSeconds $StartupTimeoutSeconds)
 
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'MigrationExecution'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'MigrationExecution'
     $migration = Start-RehearsalProcess `
         -Role 'Migrations' `
         -FilePath (Join-Path $candidateRoot 'migrations/FactoryConnect.Migrations.exe') `
@@ -123,7 +129,7 @@ try {
             PersistenceProviders__SqlServer__ConnectionString = $SqlConnectionString
         }
     $ownedProcesses.Add($migration)
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'MigrationExecution'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'MigrationExecution'
     $migration.Process.WaitForExit()
     if ($migration.Process.ExitCode -ne 0) {
         throw "FactoryConnect.Migrations exited with code $($migration.Process.ExitCode)."
@@ -141,7 +147,7 @@ try {
     Add-DemoObservationProcessingEnvironment -Environment $edgeEnvironment -Configuration $configuration
     Add-DemoProductionEnvironment -Environment $edgeEnvironment -Configuration $configuration
 
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'EdgeStartup'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'EdgeStartup'
     $edge = Start-RehearsalProcess `
         -Role 'Edge' `
         -FilePath (Join-Path $candidateRoot 'edge/FactoryConnect.Edge.exe') `
@@ -150,7 +156,7 @@ try {
         -StdErrPath (Join-Path $logs 'edge.stderr.log') `
         -Environment $edgeEnvironment
     $ownedProcesses.Add($edge)
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'EdgeStability'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'EdgeStability'
     Wait-DemoOwnedProcessStability -OwnedProcess $edge -Seconds 2
 
     $apiEnvironment = @{
@@ -161,7 +167,7 @@ try {
     }
     Add-DemoMachineEnvironment -Environment $apiEnvironment -Configuration $configuration -FixturePublicBaseAddress $fixtureBaseAddress
 
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'ApiStartup'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'ApiStartup'
     $api = Start-RehearsalProcess `
         -Role 'Api' `
         -FilePath (Join-Path $candidateRoot 'api/FactoryConnect.Api.exe') `
@@ -170,7 +176,7 @@ try {
         -StdErrPath (Join-Path $logs 'api.stderr.log') `
         -Environment $apiEnvironment
     $ownedProcesses.Add($api)
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'ApiReadiness'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'ApiReadiness'
     [void](Wait-DemoHttp200 -Uri ([Uri]"$apiBaseAddress/health") -OwnedProcess $api -TimeoutSeconds $StartupTimeoutSeconds)
     Assert-DemoOwnedProcessAlive -OwnedProcess $edge
 
@@ -192,7 +198,7 @@ try {
         $dashboardEnvironment["${prefix}__DisplayOrder"] = [string]$index
     }
 
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'DashboardStartup'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'DashboardStartup'
     $dashboard = Start-RehearsalProcess `
         -Role 'Dashboard' `
         -FilePath (Join-Path $candidateRoot 'dashboard/FactoryConnect.Dashboard.exe') `
@@ -201,7 +207,7 @@ try {
         -StdErrPath (Join-Path $logs 'dashboard.stderr.log') `
         -Environment $dashboardEnvironment
     $ownedProcesses.Add($dashboard)
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'DashboardReadiness'
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'DashboardReadiness'
     [void](Wait-DemoHttp200 -Uri ([Uri]"$dashboardBaseAddress/health/live") -OwnedProcess $dashboard -TimeoutSeconds $StartupTimeoutSeconds)
     [void](Wait-DemoHttp200 -Uri ([Uri]"$dashboardBaseAddress/health/ready") -OwnedProcess $dashboard -TimeoutSeconds $StartupTimeoutSeconds)
 
@@ -215,7 +221,7 @@ try {
     }
 
     $dashboardUrl = "$dashboardBaseAddress/"
-    Write-DemoRuntimeState -Path $runtimeStatePath -OwnedProcesses $ownedProcesses -Phase 'Running' -DashboardUrl $dashboardUrl
+    Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'Running' -DashboardUrl $dashboardUrl
 
     Write-Host ''
     Write-Host 'FactoryConnect demo is ready.'

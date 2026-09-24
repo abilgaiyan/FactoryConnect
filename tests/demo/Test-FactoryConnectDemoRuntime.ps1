@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -8,7 +8,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $commonPath = Join-Path $repoRoot 'scripts/demo/DemoRuntime.Common.ps1'
 $startPath = Join-Path $repoRoot 'scripts/demo/Start-FactoryConnectDemo.ps1'
 $resetPath = Join-Path $repoRoot 'scripts/demo/Reset-FactoryConnectDemo.ps1'
-$baseline = '37d342e84d3ea79b6282c898d5425d9ee2e8867f'
+$baseline = 'd341d082bd50e2ad516da15b6159001774a0ac42'
 
 . $commonPath
 
@@ -69,12 +69,67 @@ Invoke-Proof 'D01' 'PowerShell sources parse cleanly' {
     [void](Get-ScriptAst -Path $resetPath)
 }
 
-Invoke-Proof 'D02' 'Frozen candidate identity is exact' {
+Invoke-Proof 'D02' 'Candidate approval is explicit and deployment contract stays frozen' {
     $contract = Get-DemoContract
-    Assert-True ($contract.CandidateId -ceq 'demo-candidate-20260923-02') 'Candidate ID drifted.'
-    Assert-True ($contract.CandidateManifestSha256 -ceq '88d5fdb73c04f916692c1819f9adffe38d838c071f5b1f34a8f94ead018dcb76') 'Candidate manifest drifted.'
-    Assert-True ($contract.ApplicationSourceCommit -ceq '6bdb89d87d013c177297a7e2d029fed63a2e2b60') 'Application source commit drifted.'
-    Assert-True ($contract.DeploymentContractCommit -ceq '9ff9c4d6abaa696b8daf25eff6a724bacd0ba5fc') 'Deployment contract commit drifted.'
+    Assert-True ($contract.DeploymentContractCommit -ceq '9ff9c4d6abaa696b8daf25eff6a724bacd0ba5fc') 'Deployment contract drifted.'
+    Assert-True ($contract.DatabaseName -ceq 'FactoryConnect_Demo') 'Demo database drifted.'
+    Assert-True (-not ($contract.PSObject.Properties.Name -contains 'CandidateId')) 'Candidate ID is still pinned in the contract.'
+    $startText = Get-Content -Raw -LiteralPath $startPath
+
+    foreach ($parameter in @(
+        'ExpectedCandidateId',
+        'ExpectedManifestSha256',
+        'ExpectedSourceCommit'
+    )) {
+        $needle = '[string]$' + $parameter
+        Assert-True ($startText.Contains($needle)) "Launcher does not require $parameter."
+    }
+    $commonText = Get-Content -Raw -LiteralPath $commonPath
+    Assert-True ($commonText.Contains('-ExpectedSourceCommit $ExpectedSourceCommit')) 'Source approval is not passed to the release verifier.'
+    Assert-True ($commonText.Contains('-ExpectedDeploymentContractCommit $script:DemoDeploymentContractCommit')) 'Frozen deployment contract is not passed to the verifier.'
+    Assert-True ($commonText.Contains('candidateId = $CandidateId')) 'Runtime state does not record the selected candidate.'
+}
+
+Invoke-Proof 'D02A' 'Candidate approval rejects malformed or missing identities' {
+    $valid = @{
+        ExpectedCandidateId = 'demo-candidate-20260924-01'
+        ExpectedManifestSha256 = ('a' * 64)
+        ExpectedSourceCommit = ('b' * 40)
+    }
+    Assert-DemoCandidateApproval @valid
+    foreach ($badId in @('', 'demo-candidate-20260924-02/other')) {
+        $invalid = $valid.Clone()
+        $invalid.ExpectedCandidateId = $badId
+        Assert-Throws -MessagePattern '*ExpectedCandidateId*' -Body { Assert-DemoCandidateApproval @invalid }
+    }
+    $invalid = $valid.Clone()
+    $invalid.ExpectedManifestSha256 = 'A' * 64
+    Assert-Throws -MessagePattern '*ExpectedManifestSha256*' -Body { Assert-DemoCandidateApproval @invalid }
+    $invalid = $valid.Clone()
+    $invalid.ExpectedSourceCommit = 'not-a-commit'
+    Assert-Throws -MessagePattern '*ExpectedSourceCommit*' -Body { Assert-DemoCandidateApproval @invalid }
+}
+
+Invoke-Proof 'D02B' 'Candidate ID and manifest mismatches fail closed' {
+    $proofRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('FactoryConnect-DemoCandidate-' + [Guid]::NewGuid().ToString('N'))
+    $candidateRoot = Join-Path $proofRoot 'demo-candidate-20260924-01'
+    [System.IO.Directory]::CreateDirectory($candidateRoot) | Out-Null
+    try {
+        Assert-Throws -MessagePattern '*requires approved candidate*' -Body {
+            Assert-DemoCandidate -CandidatePath $candidateRoot `
+                -ExpectedCandidateId 'demo-candidate-20260924-02' `
+                -ExpectedManifestSha256 ('a' * 64) `
+                -ExpectedSourceCommit ('b' * 40)
+        }
+        Assert-Throws -MessagePattern '*does not match approved SHA-256*' -Body {
+            Assert-DemoCandidateManifestApproval `
+                -ActualManifestSha256 ('c' * 64) `
+                -ExpectedManifestSha256 ('a' * 64)
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $proofRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Invoke-Proof 'D03' 'Exact explicit FactoryConnect_Demo database is admitted' {
@@ -297,13 +352,12 @@ Invoke-Proof 'D14' 'Candidate rehearsal evidence and workspaces are not deletion
     Assert-True (-not ($text -match 'Remove-Item[^\r\n]*(candidate|rehearsal|evidence)')) 'Demo tooling deletes protected candidate/rehearsal/evidence content.'
 }
 
-Invoke-Proof 'D15' 'FC-034.1 changed-path boundary is exact' {
+Invoke-Proof 'D15' 'Candidate authority correction changed-path boundary is exact' {
     $git = Get-Command git -ErrorAction Stop
     $paths = @(& $git.Source -C $repoRoot diff --name-only "$baseline...HEAD")
     if ($LASTEXITCODE -ne 0) { throw 'git diff --name-only failed.' }
     $expected = @(
         'scripts/demo/DemoRuntime.Common.ps1',
-        'scripts/demo/Reset-FactoryConnectDemo.ps1',
         'scripts/demo/Start-FactoryConnectDemo.ps1',
         'tests/demo/Test-FactoryConnectDemoRuntime.ps1'
     )
