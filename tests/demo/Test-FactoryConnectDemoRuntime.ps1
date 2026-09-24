@@ -152,7 +152,8 @@ Invoke-Proof 'D10' 'Supervisor remains foreground and continuously checks owned 
     $text = Get-Content -Raw -LiteralPath $startPath
     Assert-True ($text -match 'while \(\$true\)') 'Foreground supervisor loop is missing.'
     foreach ($role in @('fixture','edge','api','dashboard')) {
-        Assert-True ($text -match "Assert-DemoOwnedProcessAlive -OwnedProcess \$$role") "Foreground liveness check is missing for $role."
+        $needle = 'Assert-DemoOwnedProcessAlive -OwnedProcess $' + $role
+        Assert-True ($text.IndexOf($needle, [System.StringComparison]::Ordinal) -ge 0) "Foreground liveness check is missing for $role."
     }
 }
 
