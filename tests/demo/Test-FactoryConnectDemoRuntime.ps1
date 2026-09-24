@@ -230,7 +230,7 @@ finally {
 
 Invoke-Proof 'D12A' 'Edge projects CurrentState freshness' {
     $text = Get-Content -Raw -LiteralPath $startPath
-    Assert-True ($text -match "CurrentState__Freshness__MaximumCurrentAge\\s*=\\s*'00:00:30'") 'Edge freshness setting is absent or incorrect.'
+    Assert-True ($text -match "CurrentState__Freshness__MaximumCurrentAge\s*=\s*'00:00:30'") 'Edge freshness setting is absent or incorrect.'
 }
 
 Invoke-Proof 'D12B' 'Schedules cover every configured production line and shift' {
