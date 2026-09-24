@@ -1,3 +1,4 @@
+using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +32,10 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                         new InMemoryMappingCoverageAuthorityStore();
                     var machineStateActivityAuthorityStore =
                         new InMemoryMachineStateActivityAuthorityStore();
+                    var productionContextActivityReader =
+                        new JointProductionContextActivityReader(
+                            machineStateActivityAuthorityStore,
+                            new ObservationProcessorId("machine-state-activity"));
                     var currentStateAuthorityCutProvider =
                         new InMemoryCurrentStateAuthorityCutProvider(
                             observationStore,
@@ -52,7 +57,9 @@ public static class InMemoryPersistenceServiceCollectionExtensions
                             currentStateAuthorityCutProvider,
                         mappingCoverageAuthorityStore: mappingCoverageAuthorityStore,
                         machineStateActivityAuthorityStore:
-                            machineStateActivityAuthorityStore);
+                            machineStateActivityAuthorityStore,
+                        productionContextActivityReader:
+                            productionContextActivityReader);
                 }));
     }
 }
