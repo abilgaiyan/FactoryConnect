@@ -253,22 +253,26 @@ function Add-DemoProductionEnvironment {
         $Environment["${prefix}__Contexts__0__EffectiveFrom"] = '2026-01-01T00:00:00+00:00'
     }
 
-    for ($index = 0; $index -lt $Configuration.shifts.Count; $index++) {
-        $shift = $Configuration.shifts[$index]
-        $prefix = "ProductionProcessing__ShiftSchedules__${index}"
-        $Environment["${prefix}__AssignmentId"] = "SHIFT-SCHEDULE-$($index + 1)"
-        $Environment["${prefix}__CompanyId"] = 'GAJRA'
-        $Environment["${prefix}__SiteId"] = [string]$Configuration.siteId
-        $Environment["${prefix}__ProductionLineId"] = 'LINE-1'
-        $Environment["${prefix}__ShiftId"] = [string]$shift.shiftId
-        $Environment["${prefix}__Name"] = [string]$shift.shiftId
-        $Environment["${prefix}__TimeZoneId"] = [string]$Configuration.timeZoneId
-        $Environment["${prefix}__StartsAtLocal"] = [string]$shift.startsAtLocal
-        $Environment["${prefix}__EndsAtLocal"] = [string]$shift.endsAtLocal
-        $Environment["${prefix}__EffectiveFrom"] = '2026-01-01'
-        @('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday') | ForEach-Object -Begin { $day = 0 } -Process {
-            $Environment["${prefix}__ActiveDays__${day}"] = $_
-            $day++
+    $productionLines = @($Configuration.machines.productionLineId | Sort-Object -Unique)
+    $scheduleIndex = 0
+    foreach ($productionLineId in $productionLines) {
+        foreach ($shift in $Configuration.shifts) {
+            $prefix = "ProductionProcessing__ShiftSchedules__${scheduleIndex}"
+            $Environment["${prefix}__AssignmentId"] = "SHIFT-SCHEDULE-$productionLineId-$($shift.shiftId)"
+            $Environment["${prefix}__CompanyId"] = 'GAJRA'
+            $Environment["${prefix}__SiteId"] = [string]$Configuration.siteId
+            $Environment["${prefix}__ProductionLineId"] = [string]$productionLineId
+            $Environment["${prefix}__ShiftId"] = [string]$shift.shiftId
+            $Environment["${prefix}__Name"] = [string]$shift.shiftId
+            $Environment["${prefix}__TimeZoneId"] = [string]$Configuration.timeZoneId
+            $Environment["${prefix}__StartsAtLocal"] = [string]$shift.startsAtLocal
+            $Environment["${prefix}__EndsAtLocal"] = [string]$shift.endsAtLocal
+            $Environment["${prefix}__EffectiveFrom"] = '2026-01-01'
+            @('Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday') | ForEach-Object -Begin { $day = 0 } -Process {
+                $Environment["${prefix}__ActiveDays__${day}"] = $_
+                $day++
+            }
+            $scheduleIndex++
         }
     }
 }
