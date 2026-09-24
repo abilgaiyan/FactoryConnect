@@ -228,6 +228,49 @@ finally {
     }
 }
 
+Invoke-Proof 'D12A' 'Edge projects CurrentState freshness' {
+    $text = Get-Content -Raw -LiteralPath $startPath
+    Assert-True ($text -match "CurrentState__Freshness__MaximumCurrentAge\s*=\s*'00:00:30'") 'Edge freshness setting is absent or incorrect.'
+}
+
+Invoke-Proof 'D12B' 'Schedules cover every configured production line and shift' {
+    $configuration = [pscustomobject]@{
+        siteId = 'SITE-1'
+        timeZoneId = 'India Standard Time'
+        machines = @(
+            [pscustomobject]@{ machineId = 'M1'; streamIdentity = 'mtconnect:CNC-01'; productionLineId = 'LINE-1' },
+            [pscustomobject]@{ machineId = 'M2'; streamIdentity = 'mtconnect:CNC-06'; productionLineId = 'LINE-2' },
+            [pscustomobject]@{ machineId = 'M3'; streamIdentity = 'mtconnect:CNC-07'; productionLineId = 'LINE-2' }
+        )
+        shifts = @(
+            [pscustomobject]@{ shiftId = 'SHIFT-1'; startsAtLocal = '06:00:00'; endsAtLocal = '14:00:00' },
+            [pscustomobject]@{ shiftId = 'SHIFT-2'; startsAtLocal = '14:00:00'; endsAtLocal = '22:00:00' },
+            [pscustomobject]@{ shiftId = 'SHIFT-3'; startsAtLocal = '22:00:00'; endsAtLocal = '06:00:00' }
+        )
+    }
+    $environment = @{}
+    Add-DemoProductionEnvironment -Environment $environment -Configuration $configuration
+
+    $actual = @{}
+    for ($index = 0; $index -lt 6; $index++) {
+        $prefix = "ProductionProcessing__ShiftSchedules__${index}"
+        $line = [string]$environment["${prefix}__ProductionLineId"]
+        $shift = [string]$environment["${prefix}__ShiftId"]
+        $assignment = [string]$environment["${prefix}__AssignmentId"]
+        Assert-True (-not [string]::IsNullOrWhiteSpace($line)) "Schedule $index has no production line."
+        Assert-True ($assignment -ceq "SHIFT-SCHEDULE-$line-$shift") "Schedule $index assignment is incorrect."
+        Assert-True ($environment["${prefix}__ActiveDays__6"] -ceq 'Saturday') "Schedule $index omits an active day."
+        $actual["$line/$shift"] = $true
+    }
+    Assert-True (-not $environment.ContainsKey('ProductionProcessing__ShiftSchedules__6__ShiftId')) 'Unexpected seventh schedule.'
+    Assert-True ($actual.Count -eq 6) 'Schedule line/shift pairs are duplicated.'
+    foreach ($line in @('LINE-1','LINE-2')) {
+        foreach ($shift in @('SHIFT-1','SHIFT-2','SHIFT-3')) {
+            Assert-True ($actual.ContainsKey("$line/$shift")) "Missing schedule $line/$shift."
+        }
+    }
+}
+
 Invoke-Proof 'D13' 'Reset drops/recreates only demo DB and leaves migration authority to next start' {
     $text = Get-Content -Raw -LiteralPath $resetPath
     Assert-True ($text -match 'DROP DATABASE') 'Reset does not drop the demo database.'
