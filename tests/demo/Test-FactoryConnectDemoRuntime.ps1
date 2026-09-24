@@ -150,11 +150,12 @@ Invoke-Proof 'D09' 'Seven-machine R5 stream projection is reused without mapping
 
 Invoke-Proof 'D10' 'Supervisor remains foreground and continuously checks owned services' {
     $text = Get-Content -Raw -LiteralPath $startPath
-    Assert-True ($text -match 'while \(\$true\)') 'Foreground supervisor loop is missing.'
-    foreach ($role in @('fixture','edge','api','dashboard')) {
-        $needle = 'Assert-DemoOwnedProcessAlive -OwnedProcess $' + $role
-        Assert-True ($text.IndexOf($needle, [System.StringComparison]::Ordinal) -ge 0) "Foreground liveness check is missing for $role."
-    }
+    $whileMarker = 'while ($true)'
+    $whileIndex = $text.IndexOf($whileMarker, [System.StringComparison]::Ordinal)
+    Assert-True ($whileIndex -ge 0) 'Foreground supervisor loop is missing.'
+    $loopText = $text.Substring($whileIndex)
+    Assert-True ($loopText.IndexOf('foreach ($owned in @($fixture, $edge, $api, $dashboard))', [System.StringComparison]::Ordinal) -ge 0) 'Foreground supervisor loop does not enumerate fixture, edge, api, and dashboard.'
+    Assert-True ($loopText.IndexOf('Assert-DemoOwnedProcessAlive -OwnedProcess $owned', [System.StringComparison]::Ordinal) -ge 0) 'Foreground supervisor loop does not liveness-check each owned service.'
 }
 
 Invoke-Proof 'D11' 'Startup failure is wired to cleanup every owned process' {
