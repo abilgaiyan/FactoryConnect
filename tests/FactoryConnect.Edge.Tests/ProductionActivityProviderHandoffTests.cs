@@ -123,6 +123,8 @@ public sealed class ProductionActivityProviderHandoffTests
             ["ProductionProcessing:PlannedProduction:StartsAtLocal"] = "06:00:00",
             ["ProductionProcessing:PlannedProduction:EndsAtLocal"] = "14:00:00",
             ["ProductionProcessing:PlannedProduction:EffectiveFrom"] = "2026-01-01",
+            ["ProductionProcessing:RosterMaterialization:FromProductionDayInclusive"] = "2026-01-01",
+            ["ProductionProcessing:RosterMaterialization:ToProductionDayExclusive"] = "2026-01-02",
         };
 
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
