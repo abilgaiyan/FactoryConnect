@@ -361,7 +361,7 @@ try {
         $machine = $configuration.machines[$index]
         $prefix = "Dashboard__Sources__${index}"
         $dashboardEnvironment["${prefix}__MachineId"] = [string]$machine.machineId
-        $dashboardEnvironment["${prefix}__ProcessorId"] = [string]$machine.processorId
+        $dashboardEnvironment["${prefix}__ProcessorId"] = "operational-metrics:$([string]$machine.machineId):builtins-v1"
         $dashboardEnvironment["${prefix}__SiteId"] = [string]$configuration.siteId
         $dashboardEnvironment["${prefix}__ProductionLineId"] = [string]$machine.productionLineId
         $dashboardEnvironment["${prefix}__DisplayName"] = [string]$machine.deviceKey
@@ -405,7 +405,7 @@ try {
     Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $today = [DateTime]::UtcNow.Date
     $reportBody = [ordered]@{
-        sources = @($configuration.machines | ForEach-Object { [ordered]@{ machineId = [string]$_.machineId; processorId = [string]$_.processorId } })
+        sources = @($configuration.machines | ForEach-Object { [ordered]@{ machineId = [string]$_.machineId; processorId = "operational-metrics:$([string]$_.machineId):builtins-v1" } })
         fromInclusive = $today.ToString('yyyy-MM-dd')
         toExclusive = $today.AddDays(1).ToString('yyyy-MM-dd')
         metrics = $null
