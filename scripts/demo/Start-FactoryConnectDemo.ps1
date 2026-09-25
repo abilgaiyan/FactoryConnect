@@ -190,7 +190,7 @@ try {
         $machine = $configuration.machines[$index]
         $prefix = "Dashboard__Sources__${index}"
         $dashboardEnvironment["${prefix}__MachineId"] = [string]$machine.machineId
-        $dashboardEnvironment["${prefix}__ProcessorId"] = [string]$machine.processorId
+        $dashboardEnvironment["${prefix}__ProcessorId"] = "operational-metrics:$([string]$machine.machineId):builtins-v1"
         $dashboardEnvironment["${prefix}__SiteId"] = [string]$configuration.siteId
         $dashboardEnvironment["${prefix}__ProductionLineId"] = [string]$machine.productionLineId
         $dashboardEnvironment["${prefix}__DisplayName"] = [string]$machine.deviceKey
