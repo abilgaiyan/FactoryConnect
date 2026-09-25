@@ -47,7 +47,7 @@ app.MapGet("/dashboard/config", (IOptions<DashboardOptions> options) =>
         .ThenBy(static source => source.ProcessorId, StringComparer.Ordinal)
         .Select(static source => new DashboardRuntimeSource(
             source.MachineId,
-            ReportingProjectionProcessorId(source.MachineId),
+            source.ProcessorId,
             source.SiteId,
             source.ProductionLineId,
             source.DisplayName,
@@ -107,9 +107,6 @@ app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment
 });
 
 app.Run();
-
-static string ReportingProjectionProcessorId(Guid machineId) =>
-    $"operational-metrics:{machineId:D}:builtins-v1";
 
 static async Task ForwardExactReportingRouteAsync(
     HttpContext context,
