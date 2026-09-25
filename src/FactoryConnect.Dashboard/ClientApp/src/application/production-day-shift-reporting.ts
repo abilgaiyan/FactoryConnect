@@ -15,7 +15,6 @@ const pageSize = 200;
 const maximumPageCount = 100;
 const successfulResponseStatus = 200;
 
-
 type UnpartitionedContextRequest = NonNullable<ProductionDayShiftQueryRequest["context"]> & {
   unpartitionedOnly: boolean;
 };
@@ -62,9 +61,9 @@ export function buildProductionDayShiftQueryRequest(
   };
 
   return {
-    sources: sources.map(({ machineId, siteId }) => ({
+    sources: sources.map(({ machineId, processorId, siteId }) => ({
       machineId,
-      processorId: `operational-metrics:${machineId}:builtins-v1`,
+      processorId,
       siteId,
       businessDate: productionDay,
     })),
@@ -102,11 +101,7 @@ export async function queryAuthoritativeProductionDayShifts(
       throw traversalProtocolFailure("page-limit-exceeded");
     }
 
-    const request = buildProductionDayShiftQueryRequest(
-      productionDay,
-      sources,
-      continuationToken,
-    );
+    const request = buildProductionDayShiftQueryRequest(productionDay, sources, continuationToken);
     const page = await reportingClient.queryProductionDayShiftMetrics(request, options);
     pagesRead += 1;
     items.push(...page.items);
@@ -116,7 +111,6 @@ export async function queryAuthoritativeProductionDayShifts(
       if (seenContinuationTokens.has(nextToken)) {
         throw traversalProtocolFailure("continuation-cycle");
       }
-
       seenContinuationTokens.add(nextToken);
     }
 
@@ -127,9 +121,7 @@ export async function queryAuthoritativeProductionDayShifts(
 }
 
 export function isProductionDayIdentity(value: string): boolean {
-  if (!productionDayPattern.test(value)
-    || value < firstProductionDay
-    || value > lastProductionDay) {
+  if (!productionDayPattern.test(value) || value < firstProductionDay || value > lastProductionDay) {
     return false;
   }
 
@@ -138,19 +130,12 @@ export function isProductionDayIdentity(value: string): boolean {
   const month = Number(monthText);
   const day = Number(dayText);
   const daysInMonth = monthLength(year, month);
-
   return daysInMonth !== null && day >= 1 && day <= daysInMonth;
 }
 
-function traversalProtocolFailure(
-  reason: ProductionDayShiftReportingTraversalFailureReason,
-): ReportingProtocolFailure {
+function traversalProtocolFailure(reason: ProductionDayShiftReportingTraversalFailureReason): ReportingProtocolFailure {
   const cause = new ProductionDayShiftReportingTraversalFailure(reason);
-  return new ReportingProtocolFailure(
-    successfulResponseStatus,
-    cause.message,
-    cause,
-  );
+  return new ReportingProtocolFailure(successfulResponseStatus, cause.message, cause);
 }
 
 function monthLength(year: number, month: number): number | null {
