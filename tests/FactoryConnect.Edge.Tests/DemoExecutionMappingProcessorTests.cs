@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Edge;
+using Xunit;
 
 namespace FactoryConnect.Edge.Tests;
 
