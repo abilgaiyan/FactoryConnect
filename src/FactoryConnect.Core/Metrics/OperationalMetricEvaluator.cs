@@ -84,13 +84,16 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
 
         foreach (var component in session.Snapshot.Components)
         {
-            if (!requirements.TryGetValue(component.SourceIdentity.ComponentKey, out var requirement))
+            if (!requirements.TryGetValue(
+                    OperationalMetricComponentKeyMapping.ComponentKey(component.SourceIdentity.ComponentKey),
+                    out var requirement))
             {
                 throw new InvalidDataException(
                     $"Snapshot returned unexpected component '{component.SourceIdentity.ComponentKey}'.");
             }
 
             if (!string.Equals(component.OperandName, requirement.ComponentKey, StringComparison.Ordinal) ||
+                !OperationalMetricComponentKeyMapping.Matches(requirement.ComponentKey, component.SourceIdentity.ComponentKey) ||
                 component.SourceIdentity.ProcessorId != session.Snapshot.Revision.ProcessorId ||
                 component.SourceIdentity.MachineId != session.Plan.RootKey.MachineId ||
                 component.SourceIdentity.PeriodId != session.Plan.RootKey.PeriodId ||
@@ -116,7 +119,7 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
 
         var evaluationKey = DependencyKey(session.Plan.RootKey, definition.Id);
         var componentsByKey = session.Snapshot.Components.ToDictionary(
-            component => component.SourceIdentity.ComponentKey,
+            component => OperationalMetricComponentKeyMapping.ComponentKey(component.SourceIdentity.ComponentKey),
             StringComparer.Ordinal);
         var operandsByName = definition.Operands.ToDictionary(
             operand => operand.OperandName,
@@ -325,7 +328,7 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
         MetricAggregationCheckpoint revision)
     {
         if (operand.Source is not OperationalMetricOperandSource.Component source ||
-            !string.Equals(source.ComponentKey, component.SourceIdentity.ComponentKey, StringComparison.Ordinal) ||
+            !OperationalMetricComponentKeyMapping.Matches(source.ComponentKey, component.SourceIdentity.ComponentKey) ||
             component.SourceIdentity.ProcessorId != revision.ProcessorId ||
             component.SourceIdentity.MachineId != revision.StreamId.MachineId ||
             component.Dimension != operand.RequiredDimension ||

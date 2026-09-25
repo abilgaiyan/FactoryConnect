@@ -63,7 +63,13 @@ internal sealed partial class SqlServerMetricAggregationStore
             var aggregate = ReadHistoricalAggregate(
                 contributionSet,
                 request.EvaluationKey,
-                source.ComponentKey);
+                OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey));
+            var aggregateKey = OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey);
+            if (aggregate is null && aggregateKey != source.ComponentKey)
+            {
+                aggregate = ReadHistoricalAggregate(contributionSet, request.EvaluationKey, source.ComponentKey);
+                aggregateKey = source.ComponentKey;
+            }
             if (aggregate is null)
             {
                 continue;
@@ -75,7 +81,7 @@ internal sealed partial class SqlServerMetricAggregationStore
                     request.ProcessorId,
                     request.EvaluationKey.MachineId,
                     request.EvaluationKey.PeriodId,
-                    source.ComponentKey),
+                    aggregateKey),
                 operand.RequiredDimension,
                 aggregate));
         }

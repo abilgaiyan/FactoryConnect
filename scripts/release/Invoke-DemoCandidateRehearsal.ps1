@@ -119,7 +119,7 @@ function Add-RehearsalProductionEnvironment {
         $Environment["${prefix}__CompanyId"] = 'GAJRA'
         $Environment["${prefix}__SiteId"] = [string]$Configuration.siteId
         $Environment["${prefix}__ProductionLineId"] = [string]$machine.productionLineId
-        $Environment["${prefix}__PlannedProduction__AssignmentId"] = "POT-$($index + 1)"
+        $Environment["${prefix}__PlannedProduction__AssignmentId"] = "POT-$($machine.productionLineId)"
         $Environment["${prefix}__PlannedProduction__TimeZoneId"] = [string]$Configuration.timeZoneId
         $Environment["${prefix}__PlannedProduction__StartsAtLocal"] = '00:00:00'
         $Environment["${prefix}__PlannedProduction__EndsAtLocal"] = '23:59:59'

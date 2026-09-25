@@ -138,7 +138,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
         ValidateUnionSnapshot(snapshot, snapshotOperands, revision);
 
         var componentsByKey = snapshot.Components.ToDictionary(
-            component => component.SourceIdentity.ComponentKey,
+            component => OperationalMetricComponentKeyMapping.ComponentKey(component.SourceIdentity.ComponentKey),
             StringComparer.Ordinal);
         var evaluations = new List<OperationalMetricEvaluation>(plans.Length);
 
@@ -214,7 +214,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
 
         foreach (var component in snapshot.Components)
         {
-            var componentKey = component.SourceIdentity.ComponentKey;
+            var componentKey = OperationalMetricComponentKeyMapping.ComponentKey(component.SourceIdentity.ComponentKey);
             if (!seen.Add(componentKey))
             {
                 throw new InvalidDataException(
@@ -228,6 +228,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
             }
 
             if (!string.Equals(component.OperandName, componentKey, StringComparison.Ordinal) ||
+                !OperationalMetricComponentKeyMapping.Matches(componentKey, component.SourceIdentity.ComponentKey) ||
                 component.SourceIdentity.ProcessorId != revision.ProcessorId ||
                 component.SourceIdentity.MachineId != revision.StreamId.MachineId ||
                 component.SourceIdentity.PeriodId != snapshot.EvaluationKey.PeriodId ||

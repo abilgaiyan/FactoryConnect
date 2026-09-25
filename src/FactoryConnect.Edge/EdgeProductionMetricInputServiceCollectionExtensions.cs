@@ -82,7 +82,29 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         var contexts = configurations
             .SelectMany(static item => item.Contexts)
             .ToArray();
-        var planned = configurations.Select(static item => item.Planned).ToArray();
+        var planned = configurations.Select(static item => item.Planned)
+            .GroupBy(static assignment => assignment.Id)
+            .Select(static group =>
+            {
+                var first = group.First();
+                if (group.Skip(1).Any(other =>
+                    other.CompanyId != first.CompanyId ||
+                    other.SiteId != first.SiteId ||
+                    other.ProductionLineId != first.ProductionLineId ||
+                    other.TimeZoneId != first.TimeZoneId ||
+                    other.EffectiveFrom != first.EffectiveFrom ||
+                    other.EffectiveTo != first.EffectiveTo ||
+                    !other.ActiveDays.SetEquals(first.ActiveDays) ||
+                    !other.PlannedWindows.SequenceEqual(first.PlannedWindows) ||
+                    !other.BreakWindows.SequenceEqual(first.BreakWindows)))
+                {
+                    throw new InvalidOperationException(
+                        $"Planned production assignment '{first.Id}' has conflicting machine configurations.");
+                }
+
+                return first;
+            })
+            .ToArray();
         var demoCanonicalInputs = bool.TryParse(
             configuration["DemoCanonicalInputs:Enabled"], out var demoEnabled) && demoEnabled;
         if (demoCanonicalInputs &&
