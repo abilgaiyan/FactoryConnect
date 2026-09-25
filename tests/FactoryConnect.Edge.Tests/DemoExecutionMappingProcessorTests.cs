@@ -9,7 +9,7 @@ public sealed class DemoExecutionMappingProcessorTests
     [Theory]
     [InlineData("ACTIVE", true)]
     [InlineData("READY", false)]
-    public async Task ProcessAsync_NormalizesFixtureExecutionToDigitalRunning(
+    public async Task ProcessAsyncNormalizesFixtureExecutionToDigitalRunning(
         string value,
         bool expected)
     {
@@ -32,7 +32,7 @@ public sealed class DemoExecutionMappingProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_BadQualityExecutionDoesNotManufactureBooleanState()
+    public async Task ProcessAsyncBadQualityExecutionDoesNotManufactureBooleanState()
     {
         var inner = new CapturingProcessor();
         var sut = new DemoExecutionMappingProcessor(inner);
@@ -47,7 +47,7 @@ public sealed class DemoExecutionMappingProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_UnexpectedGoodExecutionFailsClosed()
+    public async Task ProcessAsyncUnexpectedGoodExecutionFailsClosed()
     {
         var sut = new DemoExecutionMappingProcessor(new CapturingProcessor());
         var source = CreateObservation("STOPPED");
@@ -57,7 +57,7 @@ public sealed class DemoExecutionMappingProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_NonFixtureObservationPassesThroughUnchanged()
+    public async Task ProcessAsyncNonFixtureObservationPassesThroughUnchanged()
     {
         var inner = new CapturingProcessor();
         var sut = new DemoExecutionMappingProcessor(inner);
@@ -85,7 +85,7 @@ public sealed class DemoExecutionMappingProcessorTests
     }
 
     [Fact]
-    public void ProcessorId_IsOwnedByInnerProcessor()
+    public void ProcessorIdIsOwnedByInnerProcessor()
     {
         var inner = new CapturingProcessor();
         var sut = new DemoExecutionMappingProcessor(inner);
