@@ -64,7 +64,7 @@ export function buildProductionDayQueryRequest(
     sources: sources.map(({ machineId, processorId }) => ({ machineId, processorId })),
     fromInclusive: productionDay,
     toExclusive: nextProductionDay(productionDay),
-    metrics: overviewMetrics,
+    metrics: overviewMetrics.map(({ metricKey, version }) => ({ metricKey, version })),
     context,
     statuses: null,
     order: "period-ascending",
