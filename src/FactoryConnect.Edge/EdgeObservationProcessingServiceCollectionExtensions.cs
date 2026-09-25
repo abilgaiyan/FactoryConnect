@@ -63,6 +63,17 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             batchSize,
             pollingInterval);
         var mappings = ReadMappingConfigurations(section, streams);
+        var demoCanonicalInputs = bool.TryParse(
+            configuration["DemoCanonicalInputs:Enabled"], out var demoEnabled) && demoEnabled;
+        if (demoCanonicalInputs && mappings.Values.Any(mapping =>
+            mapping.Mappings.Count != 1 ||
+            !string.Equals(mapping.Mappings.Single().Source, "mtconnect", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(mapping.Mappings.Single().Address, "exec", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(mapping.Mappings.Single().SignalKey, CanonicalSignalKeys.Running, StringComparison.Ordinal) ||
+            mapping.Mappings.Single().Type != SignalType.Digital))
+        {
+            throw new InvalidOperationException("Demo canonical inputs require exactly one exec to state.running Digital mapping per stream.");
+        }
 
         services.AddSingleton(options);
         services.AddSingleton<InMemoryMappedMachineObservationSink>();
@@ -151,11 +162,15 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
 
                 foreach (var streamId in streams)
                 {
-                    var mappingProcessor = new MachineSignalMappingProcessor(
+                    IObservationProcessor mappingProcessor = new MachineSignalMappingProcessor(
                         new ObservationProcessorId("canonical-mapping"),
                         mappings[streamId],
                         mappedSink,
                         authorityGraph.MappingStore);
+                    if (demoCanonicalInputs)
+                    {
+                        mappingProcessor = new DemoExecutionMappingProcessor(mappingProcessor);
+                    }
 
                     pipelines.Add(
                         new DurableObservationProcessingPipeline(

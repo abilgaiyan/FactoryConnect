@@ -259,7 +259,13 @@ function Add-DemoObservationProcessingEnvironment {
         $prefix = "ObservationProcessing__Streams__${index}"
         $Environment["${prefix}__MachineId"] = [string]$machine.machineId
         $Environment["${prefix}__StreamKey"] = [string]$machine.streamIdentity
+        $Environment["${prefix}__Mappings__0__Source"] = 'mtconnect'
+        $Environment["${prefix}__Mappings__0__Address"] = 'exec'
+        $Environment["${prefix}__Mappings__0__SignalKey"] = 'state.running'
+        $Environment["${prefix}__Mappings__0__Type"] = 'Digital'
     }
+    $Environment['DemoCanonicalInputs__Enabled'] = 'true'
+    $Environment['DemoCanonicalInputs__SyntheticGoodQuantity'] = 'true'
 }
 
 function Add-DemoProductionEnvironment {
