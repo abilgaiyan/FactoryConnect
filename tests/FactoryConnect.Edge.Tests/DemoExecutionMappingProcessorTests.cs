@@ -60,15 +60,23 @@ public sealed class DemoExecutionMappingProcessorTests
     {
         var inner = new CapturingProcessor();
         var sut = new DemoExecutionMappingProcessor(inner);
-        var source = CreateObservation("ACTIVE") with
-        {
-            Observation = CreateObservation("ACTIVE").Observation with
+        var machineId = new MachineId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var streamId = new ObservationStreamId(machineId, "mtconnect:CNC-01");
+        var source = new DurableMachineObservation(
+            new ObservationPosition(17),
+            streamId,
+            23,
+            41,
+            new MachineObservation
             {
+                MachineId = machineId,
+                Source = "mtconnect",
                 Address = "part_count",
                 Type = SignalType.Numeric,
                 Value = 12m,
-            },
-        };
+                Quality = ObservationQuality.Good,
+                Timestamp = new DateTimeOffset(2026, 9, 25, 8, 30, 0, TimeSpan.Zero),
+            });
 
         await sut.ProcessAsync([source]);
 
