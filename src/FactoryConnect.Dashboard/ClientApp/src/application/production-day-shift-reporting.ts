@@ -62,9 +62,9 @@ export function buildProductionDayShiftQueryRequest(
   };
 
   return {
-    sources: sources.map(({ machineId, processorId, siteId }) => ({
+    sources: sources.map(({ machineId, siteId }) => ({
       machineId,
-      processorId,
+      processorId: `operational-metrics:${machineId}:builtins-v1`,
       siteId,
       businessDate: productionDay,
     })),

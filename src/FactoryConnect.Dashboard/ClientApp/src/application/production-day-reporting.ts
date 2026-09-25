@@ -56,7 +56,10 @@ export function buildProductionDayQueryRequest(
   };
 
   return {
-    sources: sources.map(({ machineId, processorId }) => ({ machineId, processorId })),
+    sources: sources.map(({ machineId }) => ({
+      machineId,
+      processorId: `operational-metrics:${machineId}:builtins-v1`,
+    })),
     fromInclusive: productionDay,
     toExclusive: nextProductionDay(productionDay),
     metrics: overviewMetricDefinitions.map(({ metricKey, version }) => ({ metricKey, version })),
