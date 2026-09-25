@@ -1,7 +1,5 @@
 import type { OperationalMetricPage } from "../api/reporting/index.ts";
 import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
-import { overviewMetricDefinitions, type OverviewMetricKey } from "./operational-metric-identities.ts";
-export type { OverviewMetricKey } from "./operational-metric-identities.ts";
 import {
   isProductionDaySelection,
   type AuthoritativeProductionDayResult,
@@ -10,7 +8,7 @@ import {
 type OperationalMetricItem = OperationalMetricPage["items"][number];
 export type MetricValue = Exclude<OperationalMetricItem["value"], null>;
 export type MetricSourceRevision = OperationalMetricItem["sourceRevision"];
-
+export type OverviewMetricKey = "availability" | "utilization.elr" | "performance" | "quality" | "oee";
 
 export type ProductionDayPresentationFailureReason =
   | "duplicate-result"
@@ -103,9 +101,13 @@ export class ProductionDayPresentationFailure extends Error {
   }
 }
 
-const overviewMetricKeys = new Set<OverviewMetricKey>(
-  overviewMetricDefinitions.map(metric => metric.metricKey),
-);
+const overviewMetricKeys = new Set<OverviewMetricKey>([
+  "availability",
+  "utilization.elr",
+  "performance",
+  "quality",
+  "oee",
+]);
 
 const jsonNumberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
