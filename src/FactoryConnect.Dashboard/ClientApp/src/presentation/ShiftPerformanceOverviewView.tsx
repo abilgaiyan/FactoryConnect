@@ -1,4 +1,3 @@
-import { overviewMetricLabel } from "../application/operational-metric-identities.ts";
 import type {
   PresentedMetric,
   ShiftPerformanceGroup,
@@ -89,7 +88,7 @@ function ShiftOccurrenceView({ shift }: { readonly shift: ShiftPerformanceShift 
 
 function PresentedMetricValue({ metric }: { readonly metric: PresentedMetric }) {
   const text = formatPresentedMetric(metric);
-  const missingLabel = metric.state === "missing" ? `${overviewMetricLabel(metric.metricKey)} missing` : undefined;
+  const missingLabel = metric.state === "missing" ? `${metricLabel(metric.metricKey)} missing` : undefined;
 
   return (
     <td aria-label={missingLabel}>
@@ -99,4 +98,19 @@ function PresentedMetricValue({ metric }: { readonly metric: PresentedMetric }) 
       {text.evidence === null ? null : <span> — {text.evidence}</span>}
     </td>
   );
+}
+
+function metricLabel(metricKey: PresentedMetric["metricKey"]): string {
+  switch (metricKey) {
+    case "availability":
+      return "Availability";
+    case "utilization.elr":
+      return "Utilization";
+    case "performance":
+      return "Performance";
+    case "quality":
+      return "Quality";
+    case "oee":
+      return "OEE";
+  }
 }
