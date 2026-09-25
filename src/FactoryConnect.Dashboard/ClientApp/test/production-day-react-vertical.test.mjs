@@ -132,14 +132,14 @@ test("production-day route change aborts prior query and late obsolete response 
     assert.equal(binding.state.kind, "loading");
     assert.equal(renders.some((render) => render.endsWith(":success")), false);
 
-    second.resolve(page("Availability"));
+    second.resolve(page("availability"));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
     assert.equal(binding.state.kind, "success");
-    assert.equal(binding.state.data.items[0].metricKey, "Availability");
+    assert.equal(binding.state.data.items[0].metricKey, "availability");
 
     const third = deferred();
     runtime.reportingClient.queryProductionDayMetrics = (request, options) => {

@@ -64,7 +64,7 @@ function shiftItem(overrides = {}) {
       partId: null,
       operatorId: null,
     },
-    metricKey: "Availability",
+    metricKey: "availability",
     definitionVersion: "1.0",
     status: "calculated",
     value: 0.75,
@@ -153,7 +153,7 @@ test("public production-day query uses the production-day operation and decodes 
 
 test("public composition preserves exact request serialization", async () => {
   const request = shiftRequest({
-    metrics: [{ metricKey: "OEE", version: "1.0" }],
+    metrics: [{ metricKey: "oee", version: "1.0" }],
     statuses: ["calculated", "unavailable"],
     continuationToken: "opaque+/=token",
   });

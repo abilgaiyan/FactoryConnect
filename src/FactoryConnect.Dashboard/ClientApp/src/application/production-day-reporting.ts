@@ -6,6 +6,7 @@ import type {
 } from "../api/reporting/index.ts";
 import { ReportingProtocolFailure } from "../api/reporting/index.ts";
 import type { DashboardRuntimeSource } from "./runtime-configuration.ts";
+import { overviewMetricDefinitions } from "./operational-metric-identities.ts";
 
 const productionDayPattern = /^\d{4}-\d{2}-\d{2}$/;
 const firstQueryableProductionDay = "0001-01-01";
@@ -14,13 +15,6 @@ const pageSize = 200;
 const maximumPageCount = 100;
 const successfulResponseStatus = 200;
 
-const overviewMetrics = [
-  { metricKey: "Availability", version: "1.0" },
-  { metricKey: "Utilization", version: "1.0" },
-  { metricKey: "Performance", version: "1.0" },
-  { metricKey: "Quality", version: "1.0" },
-  { metricKey: "OEE", version: "1.0" },
-] as const;
 
 type UnpartitionedContextRequest = NonNullable<ProductionDayQueryRequest["context"]> & {
   unpartitionedOnly: boolean;
@@ -65,7 +59,7 @@ export function buildProductionDayQueryRequest(
     sources: sources.map(({ machineId, processorId }) => ({ machineId, processorId })),
     fromInclusive: productionDay,
     toExclusive: nextProductionDay(productionDay),
-    metrics: overviewMetrics.map(({ metricKey, version }) => ({ metricKey, version })),
+    metrics: overviewMetricDefinitions.map(({ metricKey, version }) => ({ metricKey, version })),
     context,
     statuses: null,
     order: "period-ascending",

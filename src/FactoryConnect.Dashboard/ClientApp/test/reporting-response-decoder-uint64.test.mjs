@@ -24,7 +24,7 @@ function pageWithPosition(position) {
         partId: null,
         operatorId: null,
       },
-      metricKey: "Availability",
+      metricKey: "availability",
       definitionVersion: "1.0",
       status: "calculated",
       value: 1,

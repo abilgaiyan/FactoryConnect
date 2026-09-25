@@ -87,7 +87,7 @@ test("zero configured machines has a distinct empty-factory state", () => {
 
 test("presentation failures are contained instead of escaping rendering", () => {
   const machineId = "11111111-1111-1111-1111-111111111111";
-  const duplicate = calculatedItem(machineId, "OEE", "0.37");
+  const duplicate = calculatedItem(machineId, "oee", "0.37");
   const state = derive(
     { kind: "success", data: { items: [duplicate, duplicate] } },
     [source(machineId, "Machine 1")],
@@ -143,8 +143,8 @@ test("calculated numeric strings and zero render as authoritative values", () =>
     kind: "success",
     data: {
       items: [
-        calculatedItem(machineId, "Availability", "0.8000000000000000001"),
-        calculatedItem(machineId, "Utilization", 0),
+        calculatedItem(machineId, "availability", "0.8000000000000000001"),
+        calculatedItem(machineId, "utilization.elr", 0),
       ],
     },
   }, [source(machineId, "Machine 1")]);
@@ -161,8 +161,8 @@ test("missing unavailable and insufficient evidence render distinctly with visib
     kind: "success",
     data: {
       items: [
-        nonCalculatedItem(machineId, "Availability", "unavailable", "no-planned-time", "PlannedOperatingTime"),
-        nonCalculatedItem(machineId, "Performance", "insufficient-evidence", "missing-reference-time"),
+        nonCalculatedItem(machineId, "availability", "unavailable", "no-planned-time", "PlannedOperatingTime"),
+        nonCalculatedItem(machineId, "performance", "insufficient-evidence", "missing-reference-time"),
       ],
     },
   }, [source(machineId, "Machine 1")]);
@@ -183,10 +183,10 @@ test("authoritative OEE is rendered and never recomputed from component metrics"
     kind: "success",
     data: {
       items: [
-        calculatedItem(machineId, "Availability", "0.80"),
-        calculatedItem(machineId, "Performance", "0.50"),
-        calculatedItem(machineId, "Quality", "0.90"),
-        calculatedItem(machineId, "OEE", "0.37"),
+        calculatedItem(machineId, "availability", "0.80"),
+        calculatedItem(machineId, "performance", "0.50"),
+        calculatedItem(machineId, "quality", "0.90"),
+        calculatedItem(machineId, "oee", "0.37"),
       ],
     },
   }, [source(machineId, "Machine 1")]);

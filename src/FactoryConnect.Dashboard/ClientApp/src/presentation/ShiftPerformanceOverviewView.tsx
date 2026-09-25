@@ -1,3 +1,4 @@
+import { overviewMetricLabel } from "../application/operational-metric-identities.ts";
 import type {
   PresentedMetric,
   ShiftPerformanceGroup,
@@ -88,7 +89,7 @@ function ShiftOccurrenceView({ shift }: { readonly shift: ShiftPerformanceShift 
 
 function PresentedMetricValue({ metric }: { readonly metric: PresentedMetric }) {
   const text = formatPresentedMetric(metric);
-  const missingLabel = metric.state === "missing" ? `${metric.metricKey} missing` : undefined;
+  const missingLabel = metric.state === "missing" ? `${overviewMetricLabel(metric.metricKey)} missing` : undefined;
 
   return (
     <td aria-label={missingLabel}>

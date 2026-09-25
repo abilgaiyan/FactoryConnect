@@ -14,7 +14,7 @@ function source(machineId, processorId, siteId, productionLineId) {
 
 function metric(overrides = {}) {
   return {
-    metricKey: "Availability",
+    metricKey: "availability",
     definitionVersion: "1.0",
     status: "calculated",
     value: "0.8",

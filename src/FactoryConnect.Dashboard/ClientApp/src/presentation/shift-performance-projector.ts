@@ -14,11 +14,11 @@ type ShiftReport = ProductionDayShiftPage["items"][number];
 type ShiftMetric = ShiftReport["metrics"][number];
 
 const metricDefinitions = [
-  ["Availability", "availability"],
-  ["Utilization", "utilization"],
-  ["Performance", "performance"],
-  ["Quality", "quality"],
-  ["OEE", "oee"],
+  ["availability", "availability"],
+  ["utilization.elr", "utilization"],
+  ["performance", "performance"],
+  ["quality", "quality"],
+  ["oee", "oee"],
 ] as const satisfies readonly (readonly [ShiftOverviewMetricKey, keyof Pick<ShiftPerformanceShift, "availability" | "utilization" | "performance" | "quality" | "oee">])[];
 
 export function mapShiftPerformanceOverview(

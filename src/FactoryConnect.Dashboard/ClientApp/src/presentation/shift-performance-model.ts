@@ -1,4 +1,5 @@
 import type { ProductionDayShiftPage } from "../api/reporting/index.ts";
+import type { OverviewMetricKey } from "../application/operational-metric-identities.ts";
 
 export type MetricSourceRevision = NonNullable<
   ProductionDayShiftPage["items"][number]["sourceRevision"]
@@ -12,12 +13,7 @@ export type MetricValue = Exclude<
   null
 >;
 
-export type ShiftOverviewMetricKey =
-  | "Availability"
-  | "Utilization"
-  | "Performance"
-  | "Quality"
-  | "OEE";
+export type ShiftOverviewMetricKey = OverviewMetricKey;
 
 interface PresentedMetricIdentity {
   readonly metricKey: ShiftOverviewMetricKey;

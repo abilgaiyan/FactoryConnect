@@ -130,7 +130,7 @@ test("preserves null revision distinctly while manufacturing five missing slots"
   const projected = mapShiftPerformanceOverview(day, [m1], { items: [item] }).groups[0].machines[0].shifts[0];
 
   assert.equal(projected.sourceRevision, null);
-  for (const [property, metricKey] of [["availability", "Availability"], ["utilization", "Utilization"], ["performance", "Performance"], ["quality", "Quality"], ["oee", "OEE"]]) {
+  for (const [property, metricKey] of [["availability", "availability"], ["utilization", "utilization.elr"], ["performance", "performance"], ["quality", "quality"], ["oee", "oee"]]) {
     assert.deepEqual(projected[property], { metricKey, version: "1.0", state: "missing" });
   }
 });
@@ -138,26 +138,26 @@ test("preserves null revision distinctly while manufacturing five missing slots"
 test("maps partial metric evidence and manufactures only absent requested slots", () => {
   const m1 = source("M1", "P1", "Line A", 0);
   const item = report(m1, "Shift A", "2026-09-02T00:00:00Z", [
-    metric("Availability", "calculated", { value: "0.80" }),
-    metric("Performance", "unavailable", { reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" }),
-    metric("Quality", "insufficient-evidence", { reasonCode: "missing-counts", reasonOperandName: null }),
+    metric("availability", "calculated", { value: "0.80" }),
+    metric("performance", "unavailable", { reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" }),
+    metric("quality", "insufficient-evidence", { reasonCode: "missing-counts", reasonOperandName: null }),
   ]);
   const projected = mapShiftPerformanceOverview(day, [m1], { items: [item] }).groups[0].machines[0].shifts[0];
 
-  assert.deepEqual(projected.availability, { metricKey: "Availability", version: "1.0", state: "calculated", value: "0.80", unit: "Ratio" });
-  assert.deepEqual(projected.performance, { metricKey: "Performance", version: "1.0", state: "unavailable", reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" });
-  assert.deepEqual(projected.quality, { metricKey: "Quality", version: "1.0", state: "insufficient-evidence", reasonCode: "missing-counts", reasonOperandName: null });
-  assert.deepEqual(projected.utilization, { metricKey: "Utilization", version: "1.0", state: "missing" });
-  assert.deepEqual(projected.oee, { metricKey: "OEE", version: "1.0", state: "missing" });
+  assert.deepEqual(projected.availability, { metricKey: "availability", version: "1.0", state: "calculated", value: "0.80", unit: "Ratio" });
+  assert.deepEqual(projected.performance, { metricKey: "performance", version: "1.0", state: "unavailable", reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" });
+  assert.deepEqual(projected.quality, { metricKey: "quality", version: "1.0", state: "insufficient-evidence", reasonCode: "missing-counts", reasonOperandName: null });
+  assert.deepEqual(projected.utilization, { metricKey: "utilization.elr", version: "1.0", state: "missing" });
+  assert.deepEqual(projected.oee, { metricKey: "oee", version: "1.0", state: "missing" });
 });
 
 test("preserves authoritative OEE instead of recalculating it", () => {
   const m1 = source("M1", "P1", "Line A", 0);
   const item = report(m1, "Shift A", "2026-09-02T00:00:00Z", [
-    metric("Availability", "calculated", { value: "0.80" }),
-    metric("Performance", "calculated", { value: "0.50" }),
-    metric("Quality", "calculated", { value: "0.90" }),
-    metric("OEE", "calculated", { value: "0.37" }),
+    metric("availability", "calculated", { value: "0.80" }),
+    metric("performance", "calculated", { value: "0.50" }),
+    metric("quality", "calculated", { value: "0.90" }),
+    metric("oee", "calculated", { value: "0.37" }),
   ]);
   const projected = mapShiftPerformanceOverview(day, [m1], { items: [item] }).groups[0].machines[0].shifts[0];
   assert.equal(projected.oee.value, "0.37");

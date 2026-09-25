@@ -14,8 +14,8 @@ after(async () => vite.close());
 
 const source = { machineId: "11111111-1111-1111-1111-111111111111", processorId: "operational-metrics", siteId: "factory-1", productionLineId: "line-1", displayName: "Machine 1", groupName: "Line 1", displayOrder: 10 };
 const expectedMetrics = [
-  { metricKey: "Availability", version: "1.0" }, { metricKey: "Utilization", version: "1.0" },
-  { metricKey: "Performance", version: "1.0" }, { metricKey: "Quality", version: "1.0" }, { metricKey: "OEE", version: "1.0" },
+  { metricKey: "availability", version: "1.0" }, { metricKey: "utilization.elr", version: "1.0" },
+  { metricKey: "performance", version: "1.0" }, { metricKey: "quality", version: "1.0" }, { metricKey: "oee", version: "1.0" },
 ];
 
 function createRuntime({ sources = [source], queryProductionDayShiftMetrics } = {}) {
@@ -44,7 +44,7 @@ function assertOnlyProductionDayShiftReporting(calls) { assert.equal(calls.produ
 function assertConfiguredMachineWithZeroOccurrences(document) { assert.match(text(document), /Machine 1/); assert.match(text(document), /No authoritative shift occurrences returned\./i); }
 function report(day, { line = source.productionLineId, shiftId = "Shift A", metrics = [] } = {}) { return { processorId: source.processorId, machineId: source.machineId, productionDay: { siteId: source.siteId, businessDate: day }, productionLineId: line, shift: { siteId: source.siteId, shiftScheduleAssignmentId: "assignment-a", shiftId, startsAtUtc: `${day}T00:00:00Z`, endsAtUtc: `${day}T08:00:00Z` }, context: { productionOrderId: null, operationId: null, partId: null, operatorId: null }, sourceRevision: null, metrics }; }
 function metric(metricKey, value) { return { metricKey, definitionVersion: "1.0", status: "calculated", value, unit: "Ratio", reasonCode: null, reasonOperandName: null }; }
-function authoritative(day, shiftId = "Shift A", oee = "0.37") { return { items: [report(day, { shiftId, metrics: [metric("Availability", "0.80"), metric("Utilization", "0.70"), metric("Performance", "0.50"), metric("Quality", "0.90"), metric("OEE", oee)] })], continuationToken: null }; }
+function authoritative(day, shiftId = "Shift A", oee = "0.37") { return { items: [report(day, { shiftId, metrics: [metric("availability", "0.80"), metric("utilization.elr", "0.70"), metric("performance", "0.50"), metric("quality", "0.90"), metric("oee", oee)] })], continuationToken: null }; }
 function coverage(day) { const details = { machineId: source.machineId, siteId: source.siteId, businessDate: day }; return new ProductionDayShiftRosterCoverageRequiredFailure({ type: "urn:factoryconnect:problem:reporting:production-day-shift-roster-coverage-required", title: "Production-day shift roster coverage required", status: 409, code: "production-day-shift-roster-coverage-required", ...details }, details); }
 async function attemptDisabledClick(button) { assert.equal(button.disabled, true); await act(async () => { button.click(); }); }
 

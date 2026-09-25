@@ -16,11 +16,11 @@ import {
 const day = "2026-08-31";
 const processorId = "operational-metrics";
 const expectedMetrics = [
-  { metricKey: "Availability", version: "1.0" },
-  { metricKey: "Utilization", version: "1.0" },
-  { metricKey: "Performance", version: "1.0" },
-  { metricKey: "Quality", version: "1.0" },
-  { metricKey: "OEE", version: "1.0" },
+  { metricKey: "availability", version: "1.0" },
+  { metricKey: "utilization.elr", version: "1.0" },
+  { metricKey: "performance", version: "1.0" },
+  { metricKey: "quality", version: "1.0" },
+  { metricKey: "oee", version: "1.0" },
 ];
 const expectedContext = {
   productionOrderId: null,
@@ -182,10 +182,10 @@ test("mixed authoritative states and absence survive through presentation and UI
   const a = configured[0];
   const revision = { processorId, machineId: a.machineId, streamKey: "mixed", position: "42" };
   const mixed = [
-    item(a, "Availability", "0.8000000000000000001"),
-    item(a, "Utilization", 0),
-    item(a, "Performance", null, { status: "unavailable", reasonCode: "no-reference", reasonOperandName: "ReferenceTime", sourceRevision: revision }),
-    item(a, "Quality", null, { status: "insufficient-evidence", reasonCode: "no-quality", sourceRevision: revision }),
+    item(a, "availability", "0.8000000000000000001"),
+    item(a, "utilization.elr", 0),
+    item(a, "performance", null, { status: "unavailable", reasonCode: "no-reference", reasonOperandName: "ReferenceTime", sourceRevision: revision }),
+    item(a, "quality", null, { status: "insufficient-evidence", reasonCode: "no-quality", sourceRevision: revision }),
   ];
   const result = await queryAuthoritativeProductionDay(day, configured, {
     async queryProductionDayMetrics() { return { items: mixed, continuationToken: null }; },
@@ -212,10 +212,10 @@ test("authoritative OEE crosses the whole result-to-render path as 37 percent ra
   const configured = sources(1);
   const source = configured[0];
   const authoritative = [
-    item(source, "Availability", "0.80"),
-    item(source, "Performance", "0.50"),
-    item(source, "Quality", "0.90"),
-    item(source, "OEE", "0.37"),
+    item(source, "availability", "0.80"),
+    item(source, "performance", "0.50"),
+    item(source, "quality", "0.90"),
+    item(source, "oee", "0.37"),
   ];
   const result = await queryAuthoritativeProductionDay(day, configured, {
     async queryProductionDayMetrics() { return { items: authoritative, continuationToken: null }; },
@@ -252,11 +252,11 @@ test("identity metric version and context violations become controlled presentat
   const configured = sources(1);
   const source = configured[0];
   const violations = [
-    item(source, "OEE", "0.37", { processorId: "wrong-processor" }),
-    item(source, "OEE", "0.37", { machineId: machineId(9) }),
-    item(source, "OEE", "0.37", { definitionVersion: "2.0" }),
+    item(source, "oee", "0.37", { processorId: "wrong-processor" }),
+    item(source, "oee", "0.37", { machineId: machineId(9) }),
+    item(source, "oee", "0.37", { definitionVersion: "2.0" }),
     item(source, "UnknownMetric", "0.37"),
-    item(source, "OEE", "0.37", { context: { productionOrderId: "PO-1", operationId: null, partId: null, operatorId: null } }),
+    item(source, "oee", "0.37", { context: { productionOrderId: "PO-1", operationId: null, partId: null, operatorId: null } }),
   ];
 
   for (const violation of violations) {
@@ -273,7 +273,7 @@ test("later-page failures and cursor guards reject the whole retrieval without r
     queryAuthoritativeProductionDay(day, configured, {
       async queryProductionDayMetrics() {
         call++;
-        if (call === 1) return { items: [item(configured[0], "OEE", "0.37")], continuationToken: "next" };
+        if (call === 1) return { items: [item(configured[0], "oee", "0.37")], continuationToken: "next" };
         throw new ReportingNetworkFailure(new Error("offline"));
       },
     }),
@@ -300,7 +300,7 @@ test("later-page failures and cursor guards reject the whole retrieval without r
 test("zero and absent production-day metrics never infer current machine state", () => {
   const configured = sources(1);
   for (const result of [
-    { items: [item(configured[0], "Availability", 0), item(configured[0], "OEE", 0)] },
+    { items: [item(configured[0], "availability", 0), item(configured[0], "oee", 0)] },
     { items: [] },
   ]) {
     const state = deriveProductionDayOverviewViewState(result.items.length === 0 ? { kind: "empty", data: result } : { kind: "success", data: result }, day, configured);

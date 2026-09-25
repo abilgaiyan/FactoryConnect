@@ -28,7 +28,7 @@ test("whole boundary preserves configured population, ordering, and all lineage 
   const m3 = source("M3", "projection-m3", "Line B", 30, "line-b");
   const revision = { machineId: "M3", processorId: "aggregation", streamKey: "metric-inputs", position: 73 };
   const m1Shift1 = report(m1, "shift-a", "2026-09-02T00:00:00Z", "2026-09-02T08:00:00Z");
-  const m1Shift2 = report(m1, "shift-b", "2026-09-02T08:00:00Z", "2026-09-02T16:00:00Z", [metric("Availability", "calculated", { value: "0.80" }), metric("Performance", "calculated", { value: "0.50" }), metric("Quality", "calculated", { value: "0.90" }), metric("OEE", "calculated", { value: "0.37" })]);
+  const m1Shift2 = report(m1, "shift-b", "2026-09-02T08:00:00Z", "2026-09-02T16:00:00Z", [metric("availability", "calculated", { value: "0.80" }), metric("performance", "calculated", { value: "0.50" }), metric("quality", "calculated", { value: "0.90" }), metric("oee", "calculated", { value: "0.37" })]);
   const m3Shift = report(m3, "shift-a", "2026-09-02T00:00:00+00:00", "2026-09-02T08:00:00+00:00", [], revision);
   const overview = mapShiftPerformanceOverview(day, [m1, m2, m3], { items: [m1Shift1, m3Shift, m1Shift2] });
   assert.equal(overview.productionDay, day);
@@ -71,18 +71,18 @@ test("whole boundary groups by first configured occurrence while preserving rela
 
 test("whole boundary preserves authoritative evaluation states without normalization", () => {
   const m1 = source("M1", "projection-m1", "Line A", 0, "line-a");
-  const item = report(m1, "shift-a", "2026-09-02T00:00:00Z", "2026-09-02T08:00:00Z", [metric("Availability", "calculated", { value: "0.8000" }), metric("Utilization", "unavailable", { reasonCode: "missing-power-on", reasonOperandName: "PowerOn" }), metric("Performance", "insufficient-evidence", { reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" })]);
+  const item = report(m1, "shift-a", "2026-09-02T00:00:00Z", "2026-09-02T08:00:00Z", [metric("availability", "calculated", { value: "0.8000" }), metric("utilization.elr", "unavailable", { reasonCode: "missing-power-on", reasonOperandName: "PowerOn" }), metric("performance", "insufficient-evidence", { reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" })]);
   const shift = mapShiftPerformanceOverview(day, [m1], { items: [item] }).groups[0].machines[0].shifts[0];
-  assert.deepEqual(shift.availability, { metricKey: "Availability", version: "1.0", state: "calculated", value: "0.8000", unit: "Ratio" });
-  assert.deepEqual(shift.utilization, { metricKey: "Utilization", version: "1.0", state: "unavailable", reasonCode: "missing-power-on", reasonOperandName: "PowerOn" });
-  assert.deepEqual(shift.performance, { metricKey: "Performance", version: "1.0", state: "insufficient-evidence", reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" });
+  assert.deepEqual(shift.availability, { metricKey: "availability", version: "1.0", state: "calculated", value: "0.8000", unit: "Ratio" });
+  assert.deepEqual(shift.utilization, { metricKey: "utilization.elr", version: "1.0", state: "unavailable", reasonCode: "missing-power-on", reasonOperandName: "PowerOn" });
+  assert.deepEqual(shift.performance, { metricKey: "performance", version: "1.0", state: "insufficient-evidence", reasonCode: "missing-reference-time", reasonOperandName: "ReferenceTime" });
   assert.equal(shift.quality.state, "missing"); assert.equal(shift.oee.state, "missing");
 });
 
 test("whole boundary rejects malformed authority and publishes no partial model", () => {
   const m1 = source("M1", "projection-m1", "Line A", 0, "line-a");
   const valid = report(m1, "shift-a", "2026-09-02T00:00:00Z", "2026-09-02T08:00:00Z");
-  const invalid = report(m1, "shift-b", "2026-09-02T08:00:00Z", "2026-09-02T16:00:00Z", [metric("OEE", "calculated", { value: null })]);
+  const invalid = report(m1, "shift-b", "2026-09-02T08:00:00Z", "2026-09-02T16:00:00Z", [metric("oee", "calculated", { value: null })]);
   expectFailure("malformed-metric-state", day, [m1], [valid, invalid]);
 });
 

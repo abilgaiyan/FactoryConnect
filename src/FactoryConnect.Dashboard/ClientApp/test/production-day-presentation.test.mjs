@@ -19,7 +19,7 @@ function source(index, overrides = {}) {
   };
 }
 
-function item(configuredSource, metricKey = "Availability", overrides = {}) {
+function item(configuredSource, metricKey = "availability", overrides = {}) {
   const revision = {
     processorId: configuredSource.processorId,
     machineId: configuredSource.machineId,
@@ -128,7 +128,7 @@ test("reporting arrival order does not affect configured output order", () => {
 
 test("correlation requires MachineId plus ProcessorId rather than MachineId alone", () => {
   const configured = source(1);
-  const wrongProcessor = item(configured, "Availability", { processorId: "other-processor" });
+  const wrongProcessor = item(configured, "availability", { processorId: "other-processor" });
 
   expectPresentationFailure("unexpected-source", () => map([configured], [wrongProcessor]));
 });
@@ -136,12 +136,12 @@ test("correlation requires MachineId plus ProcessorId rather than MachineId alon
 test("calculated numeric strings, zero, unit, and source revision are preserved verbatim", () => {
   const configured = source(1);
   const availabilityRevision = item(configured).sourceRevision;
-  const availability = item(configured, "Availability", {
+  const availability = item(configured, "availability", {
     value: "0.8000000000000000000000000001",
     unit: "ratio-exact",
     sourceRevision: availabilityRevision,
   });
-  const utilization = item(configured, "Utilization", { value: 0 });
+  const utilization = item(configured, "utilization.elr", { value: 0 });
 
   const model = map([configured], [availability, utilization]);
   const overview = machine(model);
@@ -157,10 +157,10 @@ test("calculated numeric strings, zero, unit, and source revision are preserved 
 test("authoritative OEE is never reconstructed from Availability, Performance, and Quality", () => {
   const configured = source(1);
   const results = [
-    item(configured, "Availability", { value: 0.8 }),
-    item(configured, "Performance", { value: 0.5 }),
-    item(configured, "Quality", { value: 0.9 }),
-    item(configured, "OEE", { value: 0.37 }),
+    item(configured, "availability", { value: 0.8 }),
+    item(configured, "performance", { value: 0.5 }),
+    item(configured, "quality", { value: 0.9 }),
+    item(configured, "oee", { value: 0.37 }),
   ];
 
   const overview = machine(map([configured], results));
@@ -175,14 +175,14 @@ test("unavailable and insufficient-evidence preserve reason evidence and source 
   const unavailableRevision = item(configured).sourceRevision;
   const insufficientRevision = { ...unavailableRevision, position: "42" };
   const results = [
-    item(configured, "Availability", {
+    item(configured, "availability", {
       status: "unavailable",
       value: null,
       reasonCode: "planned-time-missing",
       reasonOperandName: "PlannedOperatingTime",
       sourceRevision: unavailableRevision,
     }),
-    item(configured, "Quality", {
+    item(configured, "quality", {
       status: "insufficient-evidence",
       value: null,
       reasonCode: "part-count-missing",
@@ -195,7 +195,7 @@ test("unavailable and insufficient-evidence preserve reason evidence and source 
 
   assert.deepEqual(overview.metrics.availability, {
     kind: "unavailable",
-    metricKey: "Availability",
+    metricKey: "availability",
     version: "1.0",
     reasonCode: "planned-time-missing",
     reasonOperandName: "PlannedOperatingTime",
@@ -203,7 +203,7 @@ test("unavailable and insufficient-evidence preserve reason evidence and source 
   });
   assert.deepEqual(overview.metrics.quality, {
     kind: "insufficient-evidence",
-    metricKey: "Quality",
+    metricKey: "quality",
     version: "1.0",
     reasonCode: "part-count-missing",
     reasonOperandName: "GoodParts",
@@ -215,7 +215,7 @@ test("missing is presentation-only and contains no fabricated value, unit, reaso
   const configured = source(1);
   const missing = machine(map([configured], [])).metrics.oee;
 
-  assert.deepEqual(missing, { kind: "missing", metricKey: "OEE", version: "1.0" });
+  assert.deepEqual(missing, { kind: "missing", metricKey: "oee", version: "1.0" });
   assert.equal("value" in missing, false);
   assert.equal("unit" in missing, false);
   assert.equal("reasonCode" in missing, false);
@@ -224,15 +224,15 @@ test("missing is presentation-only and contains no fabricated value, unit, reaso
 
 test("duplicate authoritative identity fails rather than selecting a result", () => {
   const configured = source(1);
-  const first = item(configured, "Availability", { value: 0.8 });
-  const second = item(configured, "Availability", { value: 0.9 });
+  const first = item(configured, "availability", { value: 0.8 });
+  const second = item(configured, "availability", { value: 0.9 });
 
   expectPresentationFailure("duplicate-result", () => map([configured], [first, second]));
 });
 
 test("every authoritative item is validated before missing slots are manufactured", () => {
   const configured = source(1);
-  const unexpected = item(source(2), "Availability");
+  const unexpected = item(source(2), "availability");
 
   expectPresentationFailure("unexpected-source", () => map([configured], [unexpected]));
 });
@@ -241,18 +241,18 @@ test("unexpected scope, period, context, metric identity, and version fail expli
   const configured = source(1);
 
   expectPresentationFailure("unexpected-scope", () =>
-    map([configured], [item(configured, "Availability", { scope: "shift" })]),
+    map([configured], [item(configured, "availability", { scope: "shift" })]),
   );
   expectPresentationFailure("unexpected-period", () =>
     map([configured], [
-      item(configured, "Availability", {
+      item(configured, "availability", {
         productionDay: { siteId: "site-1", businessDate: "2026-08-30" },
       }),
     ]),
   );
   expectPresentationFailure("unexpected-context", () =>
     map([configured], [
-      item(configured, "Availability", {
+      item(configured, "availability", {
         context: {
           productionOrderId: "PO-1",
           operationId: null,
@@ -266,7 +266,7 @@ test("unexpected scope, period, context, metric identity, and version fail expli
     map([configured], [item(configured, "SomethingElse")]),
   );
   expectPresentationFailure("unexpected-metric", () =>
-    map([configured], [item(configured, "Availability", { definitionVersion: "2.0" })]),
+    map([configured], [item(configured, "availability", { definitionVersion: "2.0" })]),
   );
 });
 
@@ -274,17 +274,17 @@ test("unknown status and inconsistent status/value combinations fail rather than
   const configured = source(1);
 
   expectPresentationFailure("invalid-result-shape", () =>
-    map([configured], [item(configured, "Availability", { status: "future-status" })]),
+    map([configured], [item(configured, "availability", { status: "future-status" })]),
   );
   expectPresentationFailure("invalid-result-shape", () =>
-    map([configured], [item(configured, "Availability", { status: "calculated", value: null })]),
+    map([configured], [item(configured, "availability", { status: "calculated", value: null })]),
   );
   expectPresentationFailure("invalid-result-shape", () =>
-    map([configured], [item(configured, "Availability", { status: "unavailable", value: 0 })]),
+    map([configured], [item(configured, "availability", { status: "unavailable", value: 0 })]),
   );
   expectPresentationFailure("invalid-result-shape", () =>
     map([configured], [
-      item(configured, "Availability", { status: "insufficient-evidence", value: "0.1" }),
+      item(configured, "availability", { status: "insufficient-evidence", value: "0.1" }),
     ]),
   );
 });

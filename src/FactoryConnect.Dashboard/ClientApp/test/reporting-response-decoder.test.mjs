@@ -59,7 +59,7 @@ function validShiftItem(overrides = {}) {
     shift: validShift(),
     productionDay: null,
     context: validContext(),
-    metricKey: "Availability",
+    metricKey: "availability",
     definitionVersion: "1.0",
     status: "calculated",
     value: 0.75,
