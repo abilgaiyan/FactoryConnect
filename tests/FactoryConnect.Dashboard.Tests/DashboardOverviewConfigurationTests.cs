@@ -33,12 +33,9 @@ public sealed class DashboardOverviewConfigurationTests
         for (var index = 0; index < sources.Length; index++)
         {
             var sourceNumber = index + 1;
-            var machineId = GuidFromIndex(sourceNumber);
+            Assert.Equal($"processor-{sourceNumber:D2}", sources[index].GetProperty("processorId").GetString());
             Assert.Equal($"site-{sourceNumber:D2}", sources[index].GetProperty("siteId").GetString());
             Assert.Equal($"production-line-{sourceNumber:D2}", sources[index].GetProperty("productionLineId").GetString());
-            Assert.Equal(
-                $"operational-metrics:{machineId:D}:builtins-v1",
-                sources[index].GetProperty("processorId").GetString());
         }
     }
 
@@ -66,14 +63,10 @@ public sealed class DashboardOverviewConfigurationTests
         Assert.Equal(ExpectedDisplayOrders, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
         Assert.Equal("site-d", sources[0].GetProperty("siteId").GetString());
         Assert.Equal("production-line-d", sources[0].GetProperty("productionLineId").GetString());
-        Assert.Equal(
-            "operational-metrics:00000000-0000-0000-0000-000000000004:builtins-v1",
-            sources[0].GetProperty("processorId").GetString());
+        Assert.Equal("processor-d", sources[0].GetProperty("processorId").GetString());
         Assert.Equal("site-a", sources[1].GetProperty("siteId").GetString());
         Assert.Equal("production-line-a", sources[1].GetProperty("productionLineId").GetString());
-        Assert.Equal(
-            "operational-metrics:00000000-0000-0000-0000-000000000001:builtins-v1",
-            sources[1].GetProperty("processorId").GetString());
+        Assert.Equal("processor-a", sources[1].GetProperty("processorId").GetString());
         Assert.Null(sources[0].GetProperty("groupName").GetString());
         Assert.Equal("Line 1", sources[1].GetProperty("groupName").GetString());
         Assert.NotEqual(sources[1].GetProperty("groupName").GetString(), sources[1].GetProperty("productionLineId").GetString());
