@@ -12,6 +12,7 @@ public sealed class ProductionStandardAuthorityTests
     private static readonly ShiftOccurrenceId Shift = new(
         Site, new ShiftScheduleAssignmentId("assignment-1"), new ShiftId("shift-1"), Start, Start.AddHours(8));
     private static readonly ProductionDayId Day = new(Site, new DateOnly(2026, 9, 26));
+    private static readonly string[] AmbiguousMachineStandardVersionIds = ["machine-a", "machine-b"];
 
     [Fact]
     public void MachineSpecificStandardTakesPrecedenceWithoutHidingAnOverlap()
@@ -28,7 +29,7 @@ public sealed class ProductionStandardAuthorityTests
         Assert.Equal(16m, ProductionStandardResolver.Resolve(evidence, Shift, Day, machineCut).IdealDurationSeconds);
         var ambiguous = ProductionStandardResolver.Resolve(evidence, Shift, Day, authority.ReadCurrentCut());
         Assert.Equal(ProductionReferenceTimeResolutionStatus.AmbiguousStandard, ambiguous.Status);
-        Assert.Equal(new[] { "machine-a", "machine-b" }, ambiguous.ConflictingStandardVersionIds);
+        Assert.Equal(AmbiguousMachineStandardVersionIds, ambiguous.ConflictingStandardVersionIds);
         Assert.Null(ambiguous.IdealDurationSeconds);
     }
 
