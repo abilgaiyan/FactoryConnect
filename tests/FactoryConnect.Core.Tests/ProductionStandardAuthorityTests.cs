@@ -106,6 +106,75 @@ public sealed class ProductionStandardAuthorityTests
         Assert.Null(result.IdealDurationSeconds);
     }
 
+    [Fact]
+    public void CanonicalValidationAcceptsResolvedMissingAndAmbiguousOutcomes()
+    {
+        var evidence = Evidence("a", 2);
+
+        var missingAuthority = new InMemoryProductionStandardAuthority();
+        var missingCut = missingAuthority.ReadCurrentCut();
+        var missing = ProductionStandardResolver.Resolve(evidence, Shift, Day, missingCut);
+        ProductionStandardResolver.ValidateCanonicalOutcome(evidence, Shift, Day, missingCut, missing);
+
+        var resolvedAuthority = new InMemoryProductionStandardAuthority();
+        resolvedAuthority.Publish(Standard("site", 1, 10));
+        var resolvedCut = resolvedAuthority.ReadCurrentCut();
+        var resolved = ProductionStandardResolver.Resolve(evidence, Shift, Day, resolvedCut);
+        ProductionStandardResolver.ValidateCanonicalOutcome(evidence, Shift, Day, resolvedCut, resolved);
+
+        resolvedAuthority.Publish(Standard("machine-a", 2, 8, Machine));
+        resolvedAuthority.Publish(Standard("machine-b", 3, 9, Machine));
+        var ambiguousCut = resolvedAuthority.ReadCurrentCut();
+        var ambiguous = ProductionStandardResolver.Resolve(evidence, Shift, Day, ambiguousCut);
+        ProductionStandardResolver.ValidateCanonicalOutcome(evidence, Shift, Day, ambiguousCut, ambiguous);
+    }
+
+    [Fact]
+    public void CanonicalValidationRejectsTamperedResolvedLineageAndValue()
+    {
+        var standards = new InMemoryProductionStandardAuthority();
+        standards.Publish(Standard("site", 1, 10));
+        var cut = standards.ReadCurrentCut();
+        var evidence = Evidence("a", 2);
+        var resolved = ProductionStandardResolver.Resolve(evidence, Shift, Day, cut);
+
+        Assert.Throws<InvalidOperationException>(() => ProductionStandardResolver.ValidateCanonicalOutcome(
+            evidence, Shift, Day, cut, resolved with { SelectedStandardVersionId = "other" }));
+        Assert.Throws<InvalidOperationException>(() => ProductionStandardResolver.ValidateCanonicalOutcome(
+            evidence, Shift, Day, cut, resolved with { SelectedStandardSourceReference = "other-source" }));
+        Assert.Throws<InvalidOperationException>(() => ProductionStandardResolver.ValidateCanonicalOutcome(
+            evidence, Shift, Day, cut, resolved with { IdealDurationSeconds = 19m }));
+    }
+
+    [Fact]
+    public void CanonicalValidationRejectsAChangedAuthorityCut()
+    {
+        var standards = new InMemoryProductionStandardAuthority();
+        standards.Publish(Standard("site", 1, 10));
+        var originalCut = standards.ReadCurrentCut();
+        var evidence = Evidence("a", 2);
+        var original = ProductionStandardResolver.Resolve(evidence, Shift, Day, originalCut);
+
+        standards.Publish(Standard("machine", 2, 8, Machine));
+        var laterCut = standards.ReadCurrentCut();
+
+        Assert.Throws<InvalidOperationException>(() => ProductionStandardResolver.ValidateCanonicalOutcome(
+            evidence, Shift, Day, laterCut, original));
+    }
+
+    [Fact]
+    public void CanonicalValidationRejectsTamperedUnresolvedOutcome()
+    {
+        var standards = new InMemoryProductionStandardAuthority();
+        var cut = standards.ReadCurrentCut();
+        var evidence = Evidence("a", 2);
+        var missing = ProductionStandardResolver.Resolve(evidence, Shift, Day, cut);
+
+        var tampered = missing with { Status = ProductionReferenceTimeResolutionStatus.MissingIdentity };
+        Assert.Throws<InvalidOperationException>(() => ProductionStandardResolver.ValidateCanonicalOutcome(
+            evidence, Shift, Day, cut, tampered));
+    }
+
     private static ProductionStandardVersion Standard(string id, long revision, decimal seconds, MachineId? machine = null) => new()
     {
         VersionId = id,
