@@ -22,6 +22,7 @@ internal static class SqlRepositoryPost012SchemaDescriptor
             Table(
                 "ProductionReferenceTimeOutcome",
                 [
+                    Column("MetricAggregationProcessorRowId", "bigint"),
                     UInt64("ProductionReferenceTimeRevision"),
                     Text("SourceQuantityEvidenceId"),
                     Text("CompanyId"),
@@ -45,8 +46,13 @@ internal static class SqlRepositoryPost012SchemaDescriptor
                     Decimal("IdealProductionDurationSeconds", 20, 6, isNullable: true)
                 ],
                 PrimaryKey("PK_ProductionReferenceTimeOutcome", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"),
+                uniques:
+                [Unique("UQ_ProductionReferenceTimeOutcome_SourceReplay", "MetricAggregationProcessorRowId", "SourceQuantityEvidenceId")],
                 foreignKeys:
-                [ForeignKey("FK_ProductionReferenceTimeOutcome_Revision", ["ProductionReferenceTimeRevision"], "ProductionReferenceTimeRevision", ["ProductionReferenceTimeRevision"])],
+                [
+                    ForeignKey("FK_ProductionReferenceTimeOutcome_Revision", ["ProductionReferenceTimeRevision"], "ProductionReferenceTimeRevision", ["ProductionReferenceTimeRevision"]),
+                    ForeignKey("FK_ProductionReferenceTimeOutcome_AggregationAuthority", ["MetricAggregationProcessorRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId"])
+                ],
                 checks:
                 [
                     Check("CK_ProductionReferenceTimeOutcome_Revision_UInt64", "([ProductionReferenceTimeRevision]>=(0) AND [ProductionReferenceTimeRevision]<=(18446744073709551615.))"),
@@ -80,8 +86,8 @@ internal static class SqlRepositoryPost012SchemaDescriptor
         ]);
     }
 
-    private static SqlTableDescriptor Table(string name, ImmutableArray<SqlColumnDescriptor> columns, SqlPrimaryKeyDescriptor primaryKey, ImmutableArray<SqlForeignKeyDescriptor> foreignKeys = default, ImmutableArray<SqlCheckConstraintDescriptor> checks = default) =>
-        new(new SqlObjectName("dbo", name), columns, primaryKey, [], foreignKeys.IsDefault ? [] : foreignKeys, checks.IsDefault ? [] : checks, []);
+    private static SqlTableDescriptor Table(string name, ImmutableArray<SqlColumnDescriptor> columns, SqlPrimaryKeyDescriptor primaryKey, ImmutableArray<SqlUniqueConstraintDescriptor> uniques = default, ImmutableArray<SqlForeignKeyDescriptor> foreignKeys = default, ImmutableArray<SqlCheckConstraintDescriptor> checks = default) =>
+        new(new SqlObjectName("dbo", name), columns, primaryKey, uniques.IsDefault ? [] : uniques, foreignKeys.IsDefault ? [] : foreignKeys, checks.IsDefault ? [] : checks, []);
 
     private static SqlColumnDescriptor Text(string name, int maxLength = 256, bool isNullable = false) => Column(name, "nvarchar", maxLength, isNullable, BinaryCollation);
 
@@ -92,6 +98,7 @@ internal static class SqlRepositoryPost012SchemaDescriptor
     private static SqlColumnDescriptor Decimal(string name, byte precision, byte scale, bool isNullable = false) => new(name, "decimal", null, precision, scale, isNullable, null, null);
     private static SqlColumnDescriptor DateTimeOffset(string name, byte scale, bool isNullable = false) => new(name, "datetimeoffset", null, null, scale, isNullable, null, null);
     private static SqlPrimaryKeyDescriptor PrimaryKey(string name, params string[] columns) => new(name, IndexStructure(columns));
+    private static SqlUniqueConstraintDescriptor Unique(string name, params string[] columns) => new(name, true, new SqlIndexStructureDescriptor(false, columns.Select(static (column, index) => new SqlIndexColumnDescriptor(column, SqlIndexColumnDirection.Ascending, index + 1)).ToImmutableArray(), [], null));
     private static SqlIndexStructureDescriptor IndexStructure(params string[] columns) => new(true, columns.Select(static (column, index) => new SqlIndexColumnDescriptor(column, SqlIndexColumnDirection.Ascending, index + 1)).ToImmutableArray(), [], null);
     private static SqlForeignKeyDescriptor ForeignKey(string name, string[] columns, string referencedTable, string[] referencedColumns) => new(name, columns.ToImmutableArray(), new SqlObjectName("dbo", referencedTable), referencedColumns.ToImmutableArray(), SqlReferentialAction.NoAction, SqlReferentialAction.NoAction, true, true, false);
     private static SqlCheckConstraintDescriptor Check(string name, string definition) => new(name, definition, true, true, false);

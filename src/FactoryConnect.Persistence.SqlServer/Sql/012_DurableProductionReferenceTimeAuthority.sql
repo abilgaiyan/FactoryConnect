@@ -14,6 +14,7 @@ CREATE TABLE dbo.ProductionReferenceTimeRevision
 
 CREATE TABLE dbo.ProductionReferenceTimeOutcome
 (
+    MetricAggregationProcessorRowId bigint NOT NULL,
     ProductionReferenceTimeRevision decimal(20,0) NOT NULL,
     SourceQuantityEvidenceId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
     CompanyId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
@@ -42,6 +43,13 @@ CREATE TABLE dbo.ProductionReferenceTimeOutcome
     CONSTRAINT FK_ProductionReferenceTimeOutcome_Revision
         FOREIGN KEY (ProductionReferenceTimeRevision)
         REFERENCES dbo.ProductionReferenceTimeRevision (ProductionReferenceTimeRevision),
+
+    CONSTRAINT FK_ProductionReferenceTimeOutcome_AggregationAuthority
+        FOREIGN KEY (MetricAggregationProcessorRowId)
+        REFERENCES dbo.MetricAggregationProcessor (MetricAggregationProcessorRowId),
+
+    CONSTRAINT UQ_ProductionReferenceTimeOutcome_SourceReplay
+        UNIQUE (MetricAggregationProcessorRowId, SourceQuantityEvidenceId),
 
     CONSTRAINT CK_ProductionReferenceTimeOutcome_Revision_UInt64
         CHECK (
@@ -137,3 +145,17 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationCut
             AND ProductionReferenceTimeRevision <= 18446744073709551615
         )
 );
+
+-- A Post-011 database can already have immutable aggregation revisions. The migration
+-- transaction establishes their initial empty reference-time cut without modifying
+-- the aggregation revision ledger or inventing outcomes.
+IF EXISTS (SELECT 1 FROM dbo.MetricAggregationRevision)
+BEGIN
+    INSERT INTO dbo.ProductionReferenceTimeRevision (ProductionReferenceTimeRevision)
+    VALUES (0);
+
+    INSERT INTO dbo.ProductionReferenceTimePublicationCut
+        (MetricAggregationProcessorRowId, MetricAggregationPosition, ProductionReferenceTimeRevision)
+    SELECT MetricAggregationProcessorRowId, Position, 0
+    FROM dbo.MetricAggregationRevision;
+END;
