@@ -19,11 +19,13 @@ internal sealed partial class SqlServerMetricAggregationStore
             IF NOT EXISTS (
                 SELECT 1
                 FROM dbo.ProductionReferenceTimeRevision WITH (UPDLOCK, HOLDLOCK)
-                WHERE ProductionReferenceTimeRevision = 0
+                WHERE MetricAggregationProcessorRowId = @ProcessorRowId
+                  AND ProductionReferenceTimeRevision = 0
             )
             BEGIN
-                INSERT INTO dbo.ProductionReferenceTimeRevision (ProductionReferenceTimeRevision)
-                VALUES (0);
+                INSERT INTO dbo.ProductionReferenceTimeRevision
+                    (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision)
+                VALUES (@ProcessorRowId, 0);
             END;
 
             INSERT INTO dbo.ProductionReferenceTimePublicationCut
