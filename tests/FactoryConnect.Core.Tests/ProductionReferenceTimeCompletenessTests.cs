@@ -15,7 +15,7 @@ public sealed class ProductionReferenceTimeCompletenessTests
     private static readonly ProductionDayId Day = new(Site, new DateOnly(2026, 9, 26));
 
     [Fact]
-    public void A_partial_sum_cannot_be_exposed_as_complete()
+    public void PartialSumCannotBeExposedAsComplete()
     {
         var sources = new[] { new ProductionQuantityEvidenceId("a"), new ProductionQuantityEvidenceId("b") };
         var resolved = Outcome("a", ProductionReferenceTimeResolutionStatus.Resolved);
@@ -28,7 +28,7 @@ public sealed class ProductionReferenceTimeCompletenessTests
     }
 
     [Fact]
-    public void A_day_cannot_hide_an_unresolved_source_in_another_shift()
+    public void DayCannotHideUnresolvedSourceInAnotherShift()
     {
         var sources = new[] { new ProductionQuantityEvidenceId("a"), new ProductionQuantityEvidenceId("b") };
         var laterShift = new ShiftOccurrenceId(
