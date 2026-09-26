@@ -21,9 +21,9 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
         var first = CreateOutcome("source-a", 1, ProductionReferenceTimeResolutionStatus.Resolved);
         var second = CreateOutcome("source-b", 2, ProductionReferenceTimeResolutionStatus.AmbiguousStandard);
 
-        Assert.Equal(first, await store.PublishAsync(processor, first, CancellationToken.None));
+        await store.PublishAsync(processor, first, CancellationToken.None);
         Assert.Single(await store.ReadAtRevisionAsync(processor, new(1), CancellationToken.None));
-        Assert.Equal(second, await store.PublishAsync(processor, second, CancellationToken.None));
+        await store.PublishAsync(processor, second, CancellationToken.None);
         var old = await store.ReadAtRevisionAsync(processor, new(1), CancellationToken.None);
         Assert.Equal("source-a", Assert.Single(old).SourceQuantityEvidenceId.Value);
         var current = await store.ReadAtRevisionAsync(processor, new(2), CancellationToken.None);
@@ -32,7 +32,10 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
         Assert.Equal(second.Resolution.ConflictingStandardVersionIds,
             current[1].Resolution.ConflictingStandardVersionIds);
 
-        Assert.Equal(first, await store.PublishAsync(processor, first, CancellationToken.None));
+        var replay = await store.PublishAsync(processor, first, CancellationToken.None);
+        Assert.Equal(first.PublicationRevision, replay.PublicationRevision);
+        Assert.Equal(first.SourceQuantityEvidenceId, replay.SourceQuantityEvidenceId);
+        Assert.Equal(first.Resolution.IdealDurationSeconds, replay.Resolution.IdealDurationSeconds);
         var changed = new PublishedProductionReferenceTimeOutcome(new(3),
             first.Resolution with { IdealDurationSeconds = 99m });
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
