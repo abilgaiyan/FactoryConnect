@@ -24,8 +24,8 @@ public sealed class ProductionStandardAuthorityTests
         authority.Publish(Standard("machine-b", 3, 9, Machine));
         var evidence = Evidence("a", 2);
 
-        Assert.Equal(20, ProductionStandardResolver.Resolve(evidence, Shift, Day, siteCut).IdealDurationSeconds);
-        Assert.Equal(16, ProductionStandardResolver.Resolve(evidence, Shift, Day, machineCut).IdealDurationSeconds);
+        Assert.Equal(20m, ProductionStandardResolver.Resolve(evidence, Shift, Day, siteCut).IdealDurationSeconds);
+        Assert.Equal(16m, ProductionStandardResolver.Resolve(evidence, Shift, Day, machineCut).IdealDurationSeconds);
         var ambiguous = ProductionStandardResolver.Resolve(evidence, Shift, Day, authority.ReadCurrentCut());
         Assert.Equal(ProductionReferenceTimeResolutionStatus.AmbiguousStandard, ambiguous.Status);
         Assert.Equal(new[] { "machine-a", "machine-b" }, ambiguous.ConflictingStandardVersionIds);
@@ -44,7 +44,7 @@ public sealed class ProductionStandardAuthorityTests
             ProductionStandardResolver.Resolve(evidence, Shift, Day, emptyCut).Status);
         Assert.Equal(ProductionReferenceTimeResolutionStatus.MissingStandard,
             ProductionStandardResolver.Resolve(evidence, Shift, Day, authority.ReadCurrentCut()).Status);
-        Assert.Equal(20, ProductionStandardResolver.Resolve(
+        Assert.Equal(20m, ProductionStandardResolver.Resolve(
             evidence with { OccurredAtUtc = Start.AddHours(2) }, Shift, Day, authority.ReadCurrentCut()).IdealDurationSeconds);
     }
 
