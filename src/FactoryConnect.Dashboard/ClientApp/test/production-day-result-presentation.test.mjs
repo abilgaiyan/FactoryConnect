@@ -23,7 +23,7 @@ function metric(overrides) {
       partId: "part-9",
       operatorId: "operator-4",
     },
-    metricKey: "Availability",
+    metricKey: "availability",
     definitionVersion: "1.0",
     status: "calculated",
     value: 0,
@@ -46,7 +46,7 @@ test("production-day results preserve authoritative states, context, revision, a
       metric({}),
       metric({
         machineId: unknownMachineId,
-        metricKey: "Performance",
+        metricKey: "performance",
         status: "unavailable",
         value: null,
         reasonCode: "missing-reference-time",
@@ -59,7 +59,7 @@ test("production-day results preserve authoritative states, context, revision, a
         },
       }),
       metric({
-        metricKey: "Quality",
+        metricKey: "quality",
         status: "insufficient-evidence",
         value: null,
         reasonCode: "missing-good-count",

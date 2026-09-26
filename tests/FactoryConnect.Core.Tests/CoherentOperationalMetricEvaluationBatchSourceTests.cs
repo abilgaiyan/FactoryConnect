@@ -139,12 +139,12 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             new MetricInputPosition(6));
         var inputs = new[]
         {
-            Input(streamId, 1, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ActualProductionTime, 300m, MetricInputFactUnits.Seconds),
-            Input(streamId, 2, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.PlannedOperatingTime, 600m, MetricInputFactUnits.Seconds),
+            Input(streamId, 1, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.RunningDuration, 300m, MetricInputFactUnits.Seconds),
+            Input(streamId, 2, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.PlannedProductionDuration, 600m, MetricInputFactUnits.Seconds),
             Input(streamId, 3, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProductionReferenceTime, 240m, MetricInputFactUnits.Seconds),
-            Input(streamId, 4, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProducedQuantity, 100m, MetricInputFactUnits.Count),
-            Input(streamId, 5, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.GoodQuantity, 90m, MetricInputFactUnits.Count),
-            Input(streamId, 6, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.MachinePowerOnTime, 750m, MetricInputFactUnits.Seconds),
+            Input(streamId, 4, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.PartCountIncrement, 100m, MetricInputFactUnits.Count),
+            Input(streamId, 5, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.GoodQuantity, 90m, MetricInputFactUnits.Count),
+            Input(streamId, 6, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.ScheduledDuration, 750m, MetricInputFactUnits.Seconds),
         };
         await aggregationStore.CommitAsync(
             new MetricAggregationCommit(
@@ -202,6 +202,20 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
         Assert.Equal(0.36m, shiftOee.Value);
         Assert.Equal(3, dayOee.DependencyEvidence.Count);
         Assert.Equal(aggregationCheckpoint, dayOee.SourceRevision);
+
+        var dayQuality = await projectionStore.ReadProjectionAsync(
+            projectionProcessorId,
+            new OperationalMetricEvaluationKey(
+                machineId,
+                new OperationalMetricPeriodId.ProductionDay(day),
+                BuiltInOperationalMetricDefinitions.QualityId,
+                OperationalMetricEvaluationContextKey.Unpartitioned),
+            CancellationToken.None);
+        Assert.NotNull(dayQuality);
+        Assert.Contains(dayQuality.OperandEvidence,
+            evidence => evidence.SourceIdentity.ComponentKey == MetricInputFactKeys.GoodQuantity);
+        Assert.Contains(dayQuality.OperandEvidence,
+            evidence => evidence.SourceIdentity.ComponentKey == MetricInputFactKeys.PartCountIncrement);
 
         var restarted = new OperationalMetricProjectionProcessingRuntime(
             projectionProcessorId,

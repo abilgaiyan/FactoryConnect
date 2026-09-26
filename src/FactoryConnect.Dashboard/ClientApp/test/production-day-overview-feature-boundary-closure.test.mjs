@@ -31,7 +31,7 @@ function calculatedOee(value = "0.37") {
       partId: null,
       operatorId: null,
     },
-    metricKey: "OEE",
+    metricKey: "oee",
     definitionVersion: "1.0",
     status: "calculated",
     value,

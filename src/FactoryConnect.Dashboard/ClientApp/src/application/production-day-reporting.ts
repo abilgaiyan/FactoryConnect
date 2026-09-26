@@ -13,13 +13,12 @@ const lastQueryableProductionDay = "9999-12-30";
 const pageSize = 200;
 const maximumPageCount = 100;
 const successfulResponseStatus = 200;
-
 const overviewMetrics = [
-  { metricKey: "Availability", version: "1.0" },
-  { metricKey: "Utilization", version: "1.0" },
-  { metricKey: "Performance", version: "1.0" },
-  { metricKey: "Quality", version: "1.0" },
-  { metricKey: "OEE", version: "1.0" },
+  { metricKey: "availability", version: "1.0" },
+  { metricKey: "utilization.elr", version: "1.0" },
+  { metricKey: "performance", version: "1.0" },
+  { metricKey: "quality", version: "1.0" },
+  { metricKey: "oee", version: "1.0" },
 ] as const;
 
 type UnpartitionedContextRequest = NonNullable<ProductionDayQueryRequest["context"]> & {
@@ -100,11 +99,7 @@ export async function queryAuthoritativeProductionDay(
       throw traversalProtocolFailure("page-limit-exceeded");
     }
 
-    const request = buildProductionDayQueryRequest(
-      productionDay,
-      sources,
-      continuationToken,
-    );
+    const request = buildProductionDayQueryRequest(productionDay, sources, continuationToken);
     const page = await reportingClient.queryProductionDayMetrics(request, options);
     pagesRead += 1;
     items.push(...page.items);
@@ -114,7 +109,6 @@ export async function queryAuthoritativeProductionDay(
       if (seenContinuationTokens.has(nextToken)) {
         throw traversalProtocolFailure("continuation-cycle");
       }
-
       seenContinuationTokens.add(nextToken);
     }
 
@@ -125,11 +119,7 @@ export async function queryAuthoritativeProductionDay(
 }
 
 export function isProductionDaySelection(value: string): boolean {
-  if (
-    !productionDayPattern.test(value) ||
-    value < firstQueryableProductionDay ||
-    value > lastQueryableProductionDay
-  ) {
+  if (!productionDayPattern.test(value) || value < firstQueryableProductionDay || value > lastQueryableProductionDay) {
     return false;
   }
 
@@ -137,15 +127,9 @@ export function isProductionDaySelection(value: string): boolean {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
-function traversalProtocolFailure(
-  reason: ProductionDayReportingTraversalFailureReason,
-): ReportingProtocolFailure {
+function traversalProtocolFailure(reason: ProductionDayReportingTraversalFailureReason): ReportingProtocolFailure {
   const cause = new ProductionDayReportingTraversalFailure(reason);
-  return new ReportingProtocolFailure(
-    successfulResponseStatus,
-    cause.message,
-    cause,
-  );
+  return new ReportingProtocolFailure(successfulResponseStatus, cause.message, cause);
 }
 
 function nextProductionDay(productionDay: string): string {

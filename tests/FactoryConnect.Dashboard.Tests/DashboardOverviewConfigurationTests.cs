@@ -33,6 +33,7 @@ public sealed class DashboardOverviewConfigurationTests
         for (var index = 0; index < sources.Length; index++)
         {
             var sourceNumber = index + 1;
+            Assert.Equal($"processor-{sourceNumber:D2}", sources[index].GetProperty("processorId").GetString());
             Assert.Equal($"site-{sourceNumber:D2}", sources[index].GetProperty("siteId").GetString());
             Assert.Equal($"production-line-{sourceNumber:D2}", sources[index].GetProperty("productionLineId").GetString());
         }
@@ -62,8 +63,10 @@ public sealed class DashboardOverviewConfigurationTests
         Assert.Equal(ExpectedDisplayOrders, sources.Select(static source => source.GetProperty("displayOrder").GetInt32()).ToArray());
         Assert.Equal("site-d", sources[0].GetProperty("siteId").GetString());
         Assert.Equal("production-line-d", sources[0].GetProperty("productionLineId").GetString());
+        Assert.Equal("processor-d", sources[0].GetProperty("processorId").GetString());
         Assert.Equal("site-a", sources[1].GetProperty("siteId").GetString());
         Assert.Equal("production-line-a", sources[1].GetProperty("productionLineId").GetString());
+        Assert.Equal("processor-a", sources[1].GetProperty("processorId").GetString());
         Assert.Null(sources[0].GetProperty("groupName").GetString());
         Assert.Equal("Line 1", sources[1].GetProperty("groupName").GetString());
         Assert.NotEqual(sources[1].GetProperty("groupName").GetString(), sources[1].GetProperty("productionLineId").GetString());

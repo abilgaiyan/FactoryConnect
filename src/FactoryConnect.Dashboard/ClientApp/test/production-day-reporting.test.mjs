@@ -28,11 +28,11 @@ const sources = [
 ];
 
 const expectedMetrics = [
-  { metricKey: "Availability", version: "1.0" },
-  { metricKey: "Utilization", version: "1.0" },
-  { metricKey: "Performance", version: "1.0" },
-  { metricKey: "Quality", version: "1.0" },
-  { metricKey: "OEE", version: "1.0" },
+  { metricKey: "availability", version: "1.0" },
+  { metricKey: "utilization.elr", version: "1.0" },
+  { metricKey: "performance", version: "1.0" },
+  { metricKey: "quality", version: "1.0" },
+  { metricKey: "oee", version: "1.0" },
 ];
 
 test("production-day request selects one day, exact configured identities, exact metric versions, and unpartitioned context", () => {

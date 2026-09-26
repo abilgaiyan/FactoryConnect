@@ -15,11 +15,7 @@ import {
 } from "./daily-report-model.ts";
 
 const metricOrder = [
-  ["availability", "Availability"],
-  ["utilization", "Utilization"],
-  ["performance", "Performance"],
-  ["quality", "Quality"],
-  ["oee", "OEE"],
+  "availability", "utilization", "performance", "quality", "oee",
 ] as const;
 
 export function composeDailyReport(input: DailyReportCompositionInput): DailyReportModel {
@@ -120,7 +116,7 @@ function projectMachine(
     displayName: machine.displayName,
     groupName: machine.groupName,
     displayOrder: machine.displayOrder,
-    productionDayCells: metricOrder.map(([property]) => projectProductionDayCell(machine.metrics[property])),
+    productionDayCells: metricOrder.map(property => projectProductionDayCell(machine.metrics[property])),
     shifts: shiftMachine.shifts.map(projectShift),
   };
 }
@@ -130,7 +126,7 @@ function projectShift(shift: ShiftPerformanceShift): DailyReportShift {
     shift: shift.shift,
     productionLineId: shift.productionLineId,
     sourceRevision: shift.sourceRevision,
-    cells: metricOrder.map(([property]) => projectShiftCell(shift[property])),
+    cells: metricOrder.map(property => projectShiftCell(shift[property])),
   };
 }
 

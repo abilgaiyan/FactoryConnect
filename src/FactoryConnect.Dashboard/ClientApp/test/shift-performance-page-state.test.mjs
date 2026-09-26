@@ -99,10 +99,10 @@ test("authoritative OEE value remains 0.37 and is never recomputed from operands
   const configured = source();
   const result = {
     items: [report(configured, [
-      metric("Availability", "0.80"),
-      metric("Performance", "0.50"),
-      metric("Quality", "0.90"),
-      metric("OEE", "0.37"),
+      metric("availability", "0.80"),
+      metric("performance", "0.50"),
+      metric("quality", "0.90"),
+      metric("oee", "0.37"),
     ])],
   };
   const state = deriveShiftPerformancePageState({ kind: "success", data: result }, day, [configured]);

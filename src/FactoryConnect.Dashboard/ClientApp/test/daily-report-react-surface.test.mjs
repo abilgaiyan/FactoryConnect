@@ -38,11 +38,11 @@ const model = {
           groupName: "Line A",
           displayOrder: 10,
           productionDayCells: [
-            calculated("Availability", "0.82"),
-            missing("Utilization"),
-            unavailable("Performance", "missing-reference-time", "ReferenceTime"),
-            insufficientEvidence("Quality", "missing-counts", null),
-            calculated("OEE", "0.61"),
+            calculated("availability", "0.82"),
+            missing("utilization.elr"),
+            unavailable("performance", "missing-reference-time", "ReferenceTime"),
+            insufficientEvidence("quality", "missing-counts", null),
+            calculated("oee", "0.61"),
           ],
           shifts: [
             {
@@ -56,11 +56,11 @@ const model = {
               productionLineId: "line-a",
               sourceRevision: null,
               cells: [
-                calculated("Availability", "0.75"),
-                missing("Utilization"),
-                unavailable("Performance", "missing-cycle-time", "ReferenceCycleTime"),
-                insufficientEvidence("Quality", "missing-counts", "GoodCount"),
-                calculated("OEE", "0.49"),
+                calculated("availability", "0.75"),
+                missing("utilization.elr"),
+                unavailable("performance", "missing-cycle-time", "ReferenceCycleTime"),
+                insufficientEvidence("quality", "missing-counts", "GoodCount"),
+                calculated("oee", "0.49"),
               ],
             },
           ],

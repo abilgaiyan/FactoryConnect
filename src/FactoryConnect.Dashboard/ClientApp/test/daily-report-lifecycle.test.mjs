@@ -302,7 +302,7 @@ test("same-day presentation-contract failure retains only the stale previous mod
             partId: null,
             operatorId: null,
           },
-          metricKey: "Availability",
+          metricKey: "availability",
           definitionVersion: "1.0",
           status: "calculated",
           value: "0.80",

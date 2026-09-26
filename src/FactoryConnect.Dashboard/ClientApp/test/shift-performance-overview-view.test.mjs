@@ -52,11 +52,11 @@ function shift(overrides = {}) {
     },
     productionLineId: "line-a",
     sourceRevision: null,
-    availability: metric("Availability", "missing"),
-    utilization: metric("Utilization", "missing"),
-    performance: metric("Performance", "missing"),
-    quality: metric("Quality", "missing"),
-    oee: metric("OEE", "missing"),
+    availability: metric("availability", "missing"),
+    utilization: metric("utilization.elr", "missing"),
+    performance: metric("performance", "missing"),
+    quality: metric("quality", "missing"),
+    oee: metric("oee", "missing"),
     ...overrides,
   };
 }
@@ -119,10 +119,10 @@ test("displays authoritative shift identity and UTC wire timestamps verbatim", (
 
 test("renders precision-preserving calculated ratios and authoritative inconsistent OEE", () => {
   const renderedShift = shift({
-    availability: metric("Availability", "calculated", { value: "0.8000" }),
-    performance: metric("Performance", "calculated", { value: "0.5000" }),
-    quality: metric("Quality", "calculated", { value: "0.9000" }),
-    oee: metric("OEE", "calculated", { value: "0.3700" }),
+    availability: metric("availability", "calculated", { value: "0.8000" }),
+    performance: metric("performance", "calculated", { value: "0.5000" }),
+    quality: metric("quality", "calculated", { value: "0.9000" }),
+    oee: metric("oee", "calculated", { value: "0.3700" }),
   });
   const html = render(overview([{ groupName: "Line A", machines: [machine("M1", "Machine One", [renderedShift])] }]));
 
@@ -135,11 +135,11 @@ test("renders precision-preserving calculated ratios and authoritative inconsist
 
 test("renders unavailable and insufficient-evidence as distinct visible states with reason evidence", () => {
   const renderedShift = shift({
-    utilization: metric("Utilization", "unavailable", {
+    utilization: metric("utilization.elr", "unavailable", {
       reasonCode: "missing-power-on",
       reasonOperandName: "PowerOn",
     }),
-    performance: metric("Performance", "insufficient-evidence", {
+    performance: metric("performance", "insufficient-evidence", {
       reasonCode: "missing-reference-time",
       reasonOperandName: "ReferenceTime",
     }),

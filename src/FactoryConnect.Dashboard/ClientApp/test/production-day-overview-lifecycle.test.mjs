@@ -68,7 +68,7 @@ function unexpectedSourcePage(day) {
       scope: "production-day",
       processorId,
       machineId: "22222222-2222-2222-2222-222222222222",
-      metricKey: "Availability",
+      metricKey: "availability",
       definitionVersion: "1.0",
       status: "calculated",
       value: "0.8",

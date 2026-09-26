@@ -31,11 +31,11 @@ const exactRevision = {
   position: "18446744073709551615",
 };
 const expectedMetrics = [
-  { metricKey: "Availability", version: "1.0" },
-  { metricKey: "Utilization", version: "1.0" },
-  { metricKey: "Performance", version: "1.0" },
-  { metricKey: "Quality", version: "1.0" },
-  { metricKey: "OEE", version: "1.0" },
+  { metricKey: "availability", version: "1.0" },
+  { metricKey: "utilization.elr", version: "1.0" },
+  { metricKey: "performance", version: "1.0" },
+  { metricKey: "quality", version: "1.0" },
+  { metricKey: "oee", version: "1.0" },
 ];
 
 function deferred() {
@@ -165,11 +165,11 @@ test("two-page production route publishes no partial overview and atomically ren
     endsAtUtc: `${day}T16:00:00Z`,
     sourceRevision: exactRevision,
     metrics: [
-      metric("Availability", "0.80"),
-      metric("Utilization", "0.70"),
-      metric("Performance", "0.50"),
-      metric("Quality", "0.90"),
-      metric("OEE", "0.37"),
+      metric("availability", "0.80"),
+      metric("utilization.elr", "0.70"),
+      metric("performance", "0.50"),
+      metric("quality", "0.90"),
+      metric("oee", "0.37"),
     ],
   });
   const runtime = {

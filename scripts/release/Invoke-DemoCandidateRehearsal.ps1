@@ -95,7 +95,13 @@ function Add-RehearsalObservationProcessingEnvironment {
         $prefix = "ObservationProcessing__Streams__${index}"
         $Environment["${prefix}__MachineId"] = [string]$machine.machineId
         $Environment["${prefix}__StreamKey"] = [string]$machine.streamIdentity
+        $Environment["${prefix}__Mappings__0__Source"] = 'mtconnect'
+        $Environment["${prefix}__Mappings__0__Address"] = 'exec'
+        $Environment["${prefix}__Mappings__0__SignalKey"] = 'state.running'
+        $Environment["${prefix}__Mappings__0__Type"] = 'Digital'
     }
+    $Environment['DemoCanonicalInputs__Enabled'] = 'true'
+    $Environment['DemoCanonicalInputs__SyntheticGoodQuantity'] = 'true'
 }
 
 function Add-RehearsalProductionEnvironment {
@@ -113,7 +119,7 @@ function Add-RehearsalProductionEnvironment {
         $Environment["${prefix}__CompanyId"] = 'GAJRA'
         $Environment["${prefix}__SiteId"] = [string]$Configuration.siteId
         $Environment["${prefix}__ProductionLineId"] = [string]$machine.productionLineId
-        $Environment["${prefix}__PlannedProduction__AssignmentId"] = "POT-$($index + 1)"
+        $Environment["${prefix}__PlannedProduction__AssignmentId"] = "POT-$($machine.productionLineId)"
         $Environment["${prefix}__PlannedProduction__TimeZoneId"] = [string]$Configuration.timeZoneId
         $Environment["${prefix}__PlannedProduction__StartsAtLocal"] = '00:00:00'
         $Environment["${prefix}__PlannedProduction__EndsAtLocal"] = '23:59:59'
@@ -355,7 +361,7 @@ try {
         $machine = $configuration.machines[$index]
         $prefix = "Dashboard__Sources__${index}"
         $dashboardEnvironment["${prefix}__MachineId"] = [string]$machine.machineId
-        $dashboardEnvironment["${prefix}__ProcessorId"] = [string]$machine.processorId
+        $dashboardEnvironment["${prefix}__ProcessorId"] = "operational-metrics:$([string]$machine.machineId):builtins-v1"
         $dashboardEnvironment["${prefix}__SiteId"] = [string]$configuration.siteId
         $dashboardEnvironment["${prefix}__ProductionLineId"] = [string]$machine.productionLineId
         $dashboardEnvironment["${prefix}__DisplayName"] = [string]$machine.deviceKey
@@ -399,7 +405,7 @@ try {
     Assert-RehearsalOwnedProcessAlive -OwnedProcess $edge
     $today = [DateTime]::UtcNow.Date
     $reportBody = [ordered]@{
-        sources = @($configuration.machines | ForEach-Object { [ordered]@{ machineId = [string]$_.machineId; processorId = [string]$_.processorId } })
+        sources = @($configuration.machines | ForEach-Object { [ordered]@{ machineId = [string]$_.machineId; processorId = "operational-metrics:$([string]$_.machineId):builtins-v1" } })
         fromInclusive = $today.ToString('yyyy-MM-dd')
         toExclusive = $today.AddDays(1).ToString('yyyy-MM-dd')
         metrics = $null

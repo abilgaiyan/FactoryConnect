@@ -8,13 +8,7 @@ import {
 type OperationalMetricItem = OperationalMetricPage["items"][number];
 export type MetricValue = Exclude<OperationalMetricItem["value"], null>;
 export type MetricSourceRevision = OperationalMetricItem["sourceRevision"];
-
-export type OverviewMetricKey =
-  | "Availability"
-  | "Utilization"
-  | "Performance"
-  | "Quality"
-  | "OEE";
+export type OverviewMetricKey = "availability" | "utilization.elr" | "performance" | "quality" | "oee";
 
 export type ProductionDayPresentationFailureReason =
   | "duplicate-result"
@@ -108,11 +102,11 @@ export class ProductionDayPresentationFailure extends Error {
 }
 
 const overviewMetricKeys = new Set<OverviewMetricKey>([
-  "Availability",
-  "Utilization",
-  "Performance",
-  "Quality",
-  "OEE",
+  "availability",
+  "utilization.elr",
+  "performance",
+  "quality",
+  "oee",
 ]);
 
 const jsonNumberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
@@ -238,11 +232,11 @@ function buildMetricSet(
   resultIndex: ReadonlyMap<string, OperationalMetricItem>,
 ): ProductionDayMetricSet {
   return {
-    availability: metricDisplay(source, productionDay, "Availability", resultIndex),
-    utilization: metricDisplay(source, productionDay, "Utilization", resultIndex),
-    performance: metricDisplay(source, productionDay, "Performance", resultIndex),
-    quality: metricDisplay(source, productionDay, "Quality", resultIndex),
-    oee: metricDisplay(source, productionDay, "OEE", resultIndex),
+    availability: metricDisplay(source, productionDay, "availability", resultIndex),
+    utilization: metricDisplay(source, productionDay, "utilization.elr", resultIndex),
+    performance: metricDisplay(source, productionDay, "performance", resultIndex),
+    quality: metricDisplay(source, productionDay, "quality", resultIndex),
+    oee: metricDisplay(source, productionDay, "oee", resultIndex),
   };
 }
 

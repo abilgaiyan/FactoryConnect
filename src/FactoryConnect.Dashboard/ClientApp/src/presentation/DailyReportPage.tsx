@@ -10,6 +10,14 @@ import {
   visibleDailyReportModel,
 } from "./daily-report-page-policy.ts";
 
+const metricLabels = {
+  availability: "Availability",
+  "utilization.elr": "Utilization",
+  performance: "Performance",
+  quality: "Quality",
+  oee: "OEE",
+} as const;
+
 export interface DailyReportPageProps {
   readonly productionDay: string;
   readonly state: DailyReportLifecycleState;
@@ -151,7 +159,7 @@ function MetricTable({ cells, caption }: { readonly cells: readonly DailyReportC
       <caption>{caption}</caption>
       <thead>
         <tr>
-          {cells.map(cell => <th scope="col" key={cell.metricKey}>{cell.metricKey}</th>)}
+          {cells.map(cell => <th scope="col" key={cell.metricKey}>{metricLabels[cell.metricKey]}</th>)}
         </tr>
       </thead>
       <tbody>

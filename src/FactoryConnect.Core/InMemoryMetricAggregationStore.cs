@@ -102,7 +102,13 @@ public sealed class InMemoryMetricAggregationStore :
                 var aggregate = ReadAggregateUnderLock(
                     request.ProcessorId,
                     request.EvaluationKey,
-                    source.ComponentKey);
+                    OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey));
+                var aggregateKey = OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey);
+                if (aggregate is null && aggregateKey != source.ComponentKey)
+                {
+                    aggregate = ReadAggregateUnderLock(request.ProcessorId, request.EvaluationKey, source.ComponentKey);
+                    aggregateKey = source.ComponentKey;
+                }
 
                 if (aggregate is null)
                 {
@@ -115,7 +121,7 @@ public sealed class InMemoryMetricAggregationStore :
                         request.ProcessorId,
                         request.EvaluationKey.MachineId,
                         request.EvaluationKey.PeriodId,
-                        source.ComponentKey),
+                        aggregateKey),
                     operand.RequiredDimension,
                     aggregate));
             }
@@ -221,7 +227,13 @@ public sealed class InMemoryMetricAggregationStore :
                 var aggregate = ReadHistoricalAggregate(
                     contributionSet,
                     request.EvaluationKey,
-                    source.ComponentKey);
+                    OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey));
+                var aggregateKey = OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey);
+                if (aggregate is null && aggregateKey != source.ComponentKey)
+                {
+                    aggregate = ReadHistoricalAggregate(contributionSet, request.EvaluationKey, source.ComponentKey);
+                    aggregateKey = source.ComponentKey;
+                }
                 if (aggregate is null)
                 {
                     continue;
@@ -233,7 +245,7 @@ public sealed class InMemoryMetricAggregationStore :
                         request.ProcessorId,
                         request.EvaluationKey.MachineId,
                         request.EvaluationKey.PeriodId,
-                        source.ComponentKey),
+                        aggregateKey),
                     operand.RequiredDimension,
                     aggregate));
             }

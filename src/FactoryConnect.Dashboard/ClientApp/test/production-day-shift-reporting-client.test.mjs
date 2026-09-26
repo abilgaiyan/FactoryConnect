@@ -24,7 +24,7 @@ function request(overrides = {}) {
       operatorId: null,
       unpartitionedOnly: true,
     },
-    metrics: [{ metricKey: "OEE", version: "1.0" }],
+    metrics: [{ metricKey: "oee", version: "1.0" }],
     statuses: ["calculated", "unavailable", "insufficient-evidence"],
     pageSize: 50,
     continuationToken: "request+/=opaque",
@@ -34,7 +34,7 @@ function request(overrides = {}) {
 
 function metric(overrides = {}) {
   return {
-    metricKey: "OEE",
+    metricKey: "oee",
     definitionVersion: "1.0",
     status: "calculated",
     value: "0.37000000000000000001",
@@ -98,14 +98,14 @@ test("requests and losslessly decodes one authoritative production-day shift pag
         sourceRevision: null,
         metrics: [
           metric({
-            metricKey: "Performance",
+            metricKey: "performance",
             status: "unavailable",
             value: null,
             reasonCode: "missing-operand",
             reasonOperandName: "IdealCycleTime",
           }),
           metric({
-            metricKey: "Quality",
+            metricKey: "quality",
             status: "insufficient-evidence",
             value: null,
             reasonCode: "insufficient-input",

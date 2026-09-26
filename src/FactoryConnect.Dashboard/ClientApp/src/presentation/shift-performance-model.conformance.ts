@@ -2,7 +2,7 @@ import type { PresentedMetric } from "./shift-performance-model.ts";
 
 const calculated: PresentedMetric = {
   state: "calculated",
-  metricKey: "OEE",
+  metricKey: "oee",
   version: "1.0",
   value: "0.37000000000000000000",
   unit: "Ratio",
@@ -10,7 +10,7 @@ const calculated: PresentedMetric = {
 
 const unavailable: PresentedMetric = {
   state: "unavailable",
-  metricKey: "Availability",
+  metricKey: "availability",
   version: "1.0",
   reasonCode: null,
   reasonOperandName: null,
@@ -18,7 +18,7 @@ const unavailable: PresentedMetric = {
 
 const insufficientEvidence: PresentedMetric = {
   state: "insufficient-evidence",
-  metricKey: "Quality",
+  metricKey: "quality",
   version: "1.0",
   reasonCode: "missing-input",
   reasonOperandName: "GoodCount",
@@ -26,7 +26,7 @@ const insufficientEvidence: PresentedMetric = {
 
 const missing: PresentedMetric = {
   state: "missing",
-  metricKey: "Performance",
+  metricKey: "performance",
   version: "1.0",
 };
 
@@ -37,7 +37,7 @@ void missing;
 
 const calculatedWithNullValue: PresentedMetric = {
   state: "calculated",
-  metricKey: "OEE",
+  metricKey: "oee",
   version: "1.0",
   // @ts-expect-error calculated metrics require a non-null authoritative value.
   value: null,
@@ -46,7 +46,7 @@ const calculatedWithNullValue: PresentedMetric = {
 
 const calculatedWithNullUnit: PresentedMetric = {
   state: "calculated",
-  metricKey: "OEE",
+  metricKey: "oee",
   version: "1.0",
   value: 0.37,
   // @ts-expect-error calculated metrics require a non-null unit.
@@ -55,7 +55,7 @@ const calculatedWithNullUnit: PresentedMetric = {
 
 const unavailableWithValue: PresentedMetric = {
   state: "unavailable",
-  metricKey: "Availability",
+  metricKey: "availability",
   version: "1.0",
   // @ts-expect-error unavailable metrics cannot carry a calculated value.
   value: 0.25,
@@ -65,7 +65,7 @@ const unavailableWithValue: PresentedMetric = {
 
 const missingWithAuthoritativeFields: PresentedMetric = {
   state: "missing",
-  metricKey: "Quality",
+  metricKey: "quality",
   version: "1.0",
   // @ts-expect-error missing metrics cannot manufacture authoritative value fields.
   value: 0,
@@ -83,7 +83,7 @@ const unknownMetricKey: PresentedMetric = {
 
 const wrongVersion: PresentedMetric = {
   state: "missing",
-  metricKey: "OEE",
+  metricKey: "oee",
   // @ts-expect-error FC-029.3B preserves the exact 1.0 definition identity.
   version: "2.0",
 };

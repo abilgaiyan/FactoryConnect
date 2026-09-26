@@ -20,7 +20,7 @@ function source(index, overrides = {}) {
   };
 }
 
-function productionDayItem(configuredSource, metricKey = "Availability", overrides = {}) {
+function productionDayItem(configuredSource, metricKey = "availability", overrides = {}) {
   return {
     scope: "production-day",
     processorId: configuredSource.processorId,
@@ -110,7 +110,7 @@ test("configured ordering is retained and absent production-day evaluations manu
 
   for (const machine of flattenMachines(model)) {
     assert.deepEqual(machine.productionDayCells.map(cell => cell.metricKey), [
-      "Availability", "Utilization", "Performance", "Quality", "OEE",
+      "availability", "utilization.elr", "performance", "quality", "oee",
     ]);
     assert.deepEqual(machine.productionDayCells.map(cell => cell.state), [
       "missing", "missing", "missing", "missing", "missing",
@@ -121,20 +121,20 @@ test("configured ordering is retained and absent production-day evaluations manu
 test("calculated, unavailable, insufficient-evidence, and missing production-day states are preserved without arithmetic", () => {
   const configured = source(1);
   const model = compose([configured], [
-    productionDayItem(configured, "Availability", { value: 0 }),
-    productionDayItem(configured, "Performance", {
+    productionDayItem(configured, "availability", { value: 0 }),
+    productionDayItem(configured, "performance", {
       status: "unavailable",
       value: null,
       reasonCode: "missing-reference-time",
       reasonOperandName: "ReferenceTime",
     }),
-    productionDayItem(configured, "Quality", {
+    productionDayItem(configured, "quality", {
       status: "insufficient-evidence",
       value: null,
       reasonCode: "missing-counts",
       reasonOperandName: null,
     }),
-    productionDayItem(configured, "OEE", { value: "0.37" }),
+    productionDayItem(configured, "oee", { value: "0.37" }),
   ]);
 
   const cells = flattenMachines(model)[0].productionDayCells;
@@ -147,7 +147,7 @@ test("calculated, unavailable, insufficient-evidence, and missing production-day
 
 test("retains supplied production-day and roster-owned shift lineage", () => {
   const configured = source(1);
-  const productionDay = productionDayItem(configured, "Availability");
+  const productionDay = productionDayItem(configured, "availability");
   const shiftRevision = {
     processorId: configured.processorId,
     machineId: configured.machineId,
@@ -188,16 +188,16 @@ test("covered zero occurrences remains distinct from a roster-owned occurrence w
 test("partial shift metric authority preserves all four cell states and authoritative OEE", () => {
   const configured = source(1);
   const occurrence = shiftReport(configured, "Shift A", "2026-09-09T00:00:00Z", [
-    shiftMetric("Availability", "calculated", { value: "0.80" }),
-    shiftMetric("Performance", "unavailable", {
+    shiftMetric("availability", "calculated", { value: "0.80" }),
+    shiftMetric("performance", "unavailable", {
       reasonCode: "missing-reference-time",
       reasonOperandName: "ReferenceTime",
     }),
-    shiftMetric("Quality", "insufficient-evidence", {
+    shiftMetric("quality", "insufficient-evidence", {
       reasonCode: "missing-counts",
       reasonOperandName: null,
     }),
-    shiftMetric("OEE", "calculated", { value: "0.31" }),
+    shiftMetric("oee", "calculated", { value: "0.31" }),
   ]);
 
   const cells = compose([configured], [], [occurrence]).groups[0].machines[0].shifts[0].cells;

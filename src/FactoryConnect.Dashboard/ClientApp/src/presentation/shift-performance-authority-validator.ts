@@ -1,6 +1,7 @@
 import type { ProductionDayShiftPage } from "../api/reporting/index.ts";
 import type { AuthoritativeProductionDayShiftResult } from "../application/production-day-shift-reporting.ts";
 import type { DashboardRuntimeSource } from "../application/runtime-configuration.ts";
+import { overviewMetricDefinitions } from "../application/operational-metric-identities.ts";
 import { ShiftPresentationContractFailure } from "./shift-performance-model.ts";
 
 export interface ValidatedProductionDayShiftResult {
@@ -10,13 +11,9 @@ export interface ValidatedProductionDayShiftResult {
 type ShiftReport = ProductionDayShiftPage["items"][number];
 type ShiftMetric = ShiftReport["metrics"][number];
 
-const allowedMetrics = new Set([
-  "Availability\u00001.0",
-  "Utilization\u00001.0",
-  "Performance\u00001.0",
-  "Quality\u00001.0",
-  "OEE\u00001.0",
-]);
+const allowedMetrics = new Set(
+  overviewMetricDefinitions.map(({ metricKey, version }) => `${metricKey}\u0000${version}`),
+);
 const utcInstantPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:\d{2})$/;
 
 interface ParsedUtcInstant {
