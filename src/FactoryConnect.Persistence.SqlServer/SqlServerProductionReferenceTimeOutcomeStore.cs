@@ -18,10 +18,12 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
 
     public async Task<PublishedProductionReferenceTimeOutcome> PublishAsync(
         MetricAggregationProcessorId processorId,
+        MetricInputPosition aggregationPosition,
         PublishedProductionReferenceTimeOutcome proposed,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(processorId);
+        ArgumentNullException.ThrowIfNull(aggregationPosition);
         ArgumentNullException.ThrowIfNull(proposed);
         proposed.Resolution.Validate();
 
@@ -32,6 +34,8 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
 
         var processorRowId = await ReadProcessorRowIdAsync(
             connection, transaction, processorId, cancellationToken);
+        await RequireAggregationRevisionAsync(
+            connection, transaction, processorRowId, aggregationPosition, cancellationToken);
         var latest = await ReadLatestRevisionAsync(
             connection, transaction, processorRowId, cancellationToken);
         var existing = await ReadSourceAsync(
@@ -44,6 +48,9 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
                     "Ordinary replay cannot change a reference-time source outcome or its authority cut.");
             }
 
+            await RequirePublicationCutAsync(
+                connection, transaction, processorRowId, aggregationPosition,
+                existing.PublicationRevision, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return existing;
         }
@@ -68,6 +75,9 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
         }
 
         await InsertOutcomeAsync(connection, transaction, processorRowId, proposed, cancellationToken);
+        await InsertPublicationCutAsync(
+            connection, transaction, processorRowId, aggregationPosition,
+            proposed.PublicationRevision, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return proposed;
     }
@@ -121,6 +131,25 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
         return value is long id ? id : throw new InvalidOperationException("Aggregation authority is not available.");
     }
 
+    private static async Task RequireAggregationRevisionAsync(
+        SqlConnection connection, SqlTransaction transaction, long processorRowId,
+        MetricInputPosition aggregationPosition, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM dbo.MetricAggregationRevision WITH (UPDLOCK, HOLDLOCK)
+            WHERE MetricAggregationProcessorRowId = @Processor AND Position = @Position;
+            """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", aggregationPosition.Value));
+        if ((long)(await command.ExecuteScalarAsync(cancellationToken))! != 1)
+        {
+            throw new InvalidOperationException("Aggregation revision is not available for paired publication.");
+        }
+    }
+
     private static async Task<long> ReadLatestRevisionAsync(
         SqlConnection connection, SqlTransaction transaction,
         long processorRowId, CancellationToken cancellationToken)
@@ -147,6 +176,47 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
         return await reader.ReadAsync(cancellationToken) ? Materialize(reader) : null;
     }
 
+    private static async Task InsertPublicationCutAsync(
+        SqlConnection connection, SqlTransaction transaction, long processorRowId,
+        MetricInputPosition aggregationPosition, ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO dbo.ProductionReferenceTimePublicationCut
+                (MetricAggregationProcessorRowId, MetricAggregationPosition, ProductionReferenceTimeRevision)
+            VALUES (@Processor, @Position, @Revision);
+            """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", aggregationPosition.Value));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", checked((ulong)referenceTimeRevision.Value)));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RequirePublicationCutAsync(
+        SqlConnection connection, SqlTransaction transaction, long processorRowId,
+        MetricInputPosition aggregationPosition, ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM dbo.ProductionReferenceTimePublicationCut
+            WHERE MetricAggregationProcessorRowId = @Processor
+              AND MetricAggregationPosition = @Position
+              AND ProductionReferenceTimeRevision = @Revision;
+            """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", aggregationPosition.Value));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", checked((ulong)referenceTimeRevision.Value)));
+        if ((long)(await command.ExecuteScalarAsync(cancellationToken))! != 1)
+        {
+            throw new InvalidOperationException("Ordinary replay must use the originally published paired cut.");
+        }
+    }
+
     private const string OutcomeSelect = """
         SELECT o.ProductionReferenceTimeRevision, o.SourceQuantityEvidenceId,
                o.CompanyId, o.SiteId, o.MachineId, o.ShiftScheduleAssignmentId,
@@ -167,10 +237,11 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStore
 
     private static PublishedProductionReferenceTimeOutcome Materialize(SqlDataReader reader)
     {
-        using var conflictsJson = JsonDocument.Parse(reader.GetString(19));
-        var conflicts = conflictsJson.RootElement.EnumerateArray()
-            .Select(static item => item.GetProperty("ConflictingStandardVersionId").GetString()!)
-            .ToArray();
+        var conflicts = reader.IsDBNull(19)
+            ? []
+            : JsonDocument.Parse(reader.GetString(19)).RootElement.EnumerateArray()
+                .Select(static item => item.GetProperty("ConflictingStandardVersionId").GetString()!)
+                .ToArray();
         var site = new SiteId(reader.GetString(3));
         var shift = new ShiftOccurrenceId(site,
             new ShiftScheduleAssignmentId(reader.GetString(5)),
