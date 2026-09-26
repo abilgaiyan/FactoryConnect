@@ -32,6 +32,10 @@ internal static class SqlRepositorySchemaAuthority
         Table("ProductionContextCheckpoint"),
         Table("ProductionContextProcessor"),
         Table("ProductionDayMetricAggregate"),
+        Table("ProductionReferenceTimeOutcome"),
+        Table("ProductionReferenceTimeOutcomeConflict"),
+        Table("ProductionReferenceTimePublicationCut"),
+        Table("ProductionReferenceTimeRevision"),
         Table("ProductionTimeEligibilityOutput"),
         Table("ShiftMetricAggregate")
     ]);
