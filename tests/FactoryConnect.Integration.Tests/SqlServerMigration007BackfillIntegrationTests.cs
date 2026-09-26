@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration007BackfillIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough006 = [1, 2, 3, 4, 5, 6];
-    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     private static readonly ulong[] FirstStreamPositions = [1UL, 2UL, 3UL];
     private static readonly ulong[] SecondStreamPositions = [1UL, 2UL];
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(10);
