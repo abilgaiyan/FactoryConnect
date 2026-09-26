@@ -25,7 +25,7 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
         Assert.Equal(12, catalog.Migrations.Length);
-        Assert.Equal(12, catalog.Migrations[^1].Id);
+        Assert.Equal(12, catalog.Migrations[^1].MigrationId);
 
         await CreateExactPrefixAsync(connection, catalog, prefixLength: 11);
 
@@ -53,6 +53,40 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountMigration012HistoryRowsAsync(connection));
         await AssertCurrentSchemaExactAsync(connection);
+    }
+
+    [Fact]
+    public async Task PopulatedPost011BackfillsEmptyReferenceTimeRevisionAndCuts()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var connection = new SqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        var catalog = SqlMigrationCatalog.Load();
+
+        await CreateExactPrefixAsync(connection, catalog, prefixLength: 11);
+        await SeedAggregationAuthorityAsync(connection);
+
+        Assert.Equal(MigrationIdsThrough011, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(1, await CountAggregationProcessorsAsync(connection));
+        Assert.Equal(2, await CountAggregationRevisionsAsync(connection));
+        Assert.Equal(0, await CountMigration012HistoryRowsAsync(connection));
+
+        var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
+        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
+
+        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(1, await CountReferenceTimeRevisionZeroRowsAsync(connection));
+        Assert.Equal(2, await CountReferenceTimeRevisionZeroCutsAsync(connection));
+        Assert.Equal(0, await CountReferenceTimeOutcomesAsync(connection));
+        await AssertCurrentSchemaExactAsync(connection);
+
+        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
+
+        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(1, await CountMigration012HistoryRowsAsync(connection));
+        Assert.Equal(1, await CountReferenceTimeRevisionZeroRowsAsync(connection));
+        Assert.Equal(2, await CountReferenceTimeRevisionZeroCutsAsync(connection));
+        Assert.Equal(0, await CountReferenceTimeOutcomesAsync(connection));
     }
 
     private static async Task CreateExactPrefixAsync(
@@ -86,6 +120,40 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         await transaction.CommitAsync();
     }
 
+    private static async Task SeedAggregationAuthorityAsync(SqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DECLARE @MachineId uniqueidentifier = '00112233-4455-6677-8899-AABBCCDDEEFF';
+
+            INSERT INTO dbo.MetricInputStream
+                (MachineId, StreamKeyBinary, StreamKey)
+            VALUES
+                (@MachineId, 0x01, N'migration-012-upgrade');
+
+            DECLARE @StreamRowId bigint = SCOPE_IDENTITY();
+
+            INSERT INTO dbo.MetricAggregationProcessor
+                (ProcessorKeyBinary, ProcessorKey, MetricInputStreamRowId)
+            VALUES
+                (0x01, N'migration-012-upgrade-processor', @StreamRowId);
+
+            DECLARE @ProcessorRowId bigint = SCOPE_IDENTITY();
+
+            INSERT INTO dbo.MetricAggregationCheckpoint
+                (MetricAggregationProcessorRowId, Position)
+            VALUES
+                (@ProcessorRowId, 2);
+
+            INSERT INTO dbo.MetricAggregationRevision
+                (MetricAggregationProcessorRowId, Position)
+            VALUES
+                (@ProcessorRowId, 1),
+                (@ProcessorRowId, 2);
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
     private static async Task AssertCurrentSchemaExactAsync(SqlConnection connection)
     {
         await using var transaction = connection.BeginTransaction();
@@ -113,10 +181,28 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         return ids.ToArray();
     }
 
-    private static async Task<int> CountMigration012HistoryRowsAsync(SqlConnection connection)
+    private static Task<int> CountMigration012HistoryRowsAsync(SqlConnection connection) =>
+        ExecuteCountAsync(connection, "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 12;");
+
+    private static Task<int> CountAggregationProcessorsAsync(SqlConnection connection) =>
+        ExecuteCountAsync(connection, "SELECT COUNT(*) FROM dbo.MetricAggregationProcessor;");
+
+    private static Task<int> CountAggregationRevisionsAsync(SqlConnection connection) =>
+        ExecuteCountAsync(connection, "SELECT COUNT(*) FROM dbo.MetricAggregationRevision;");
+
+    private static Task<int> CountReferenceTimeRevisionZeroRowsAsync(SqlConnection connection) =>
+        ExecuteCountAsync(connection, "SELECT COUNT(*) FROM dbo.ProductionReferenceTimeRevision WHERE ProductionReferenceTimeRevision = 0;");
+
+    private static Task<int> CountReferenceTimeRevisionZeroCutsAsync(SqlConnection connection) =>
+        ExecuteCountAsync(connection, "SELECT COUNT(*) FROM dbo.ProductionReferenceTimePublicationCut WHERE ProductionReferenceTimeRevision = 0;");
+
+    private static Task<int> CountReferenceTimeOutcomesAsync(SqlConnection connection) =>
+        ExecuteCountAsync(connection, "SELECT COUNT(*) FROM dbo.ProductionReferenceTimeOutcome;");
+
+    private static async Task<int> ExecuteCountAsync(SqlConnection connection, string sql)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 12;";
+        command.CommandText = sql;
         return Convert.ToInt32(
             await command.ExecuteScalarAsync(),
             System.Globalization.CultureInfo.InvariantCulture);
