@@ -37,7 +37,7 @@ public sealed record ProductionReferenceTimeResolution
             OccurredAtUtc.Offset != TimeSpan.Zero ||
             OccurredAtUtc < ShiftOccurrenceId.StartsAtUtc ||
             OccurredAtUtc >= ShiftOccurrenceId.EndsAtUtc ||
-            ProducedUnits < 0 || AuthorityRevision < 1 ||
+            ProducedUnits < 0 || AuthorityRevision < 0 ||
             !Enum.IsDefined(Status))
         {
             throw new ArgumentException("Reference-time resolution has invalid source, period, or authority identity.");

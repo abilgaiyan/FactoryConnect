@@ -257,6 +257,38 @@ public sealed class InMemoryMetricAggregationStore :
         }
     }
 
+    internal IReadOnlyList<PositionedMetricInputFact> ReadProducedQuantityAtRevision(
+        MetricAggregationCheckpoint revision,
+        OperationalMetricPeriodId periodId)
+    {
+        ArgumentNullException.ThrowIfNull(revision);
+        ArgumentNullException.ThrowIfNull(periodId);
+        lock (_sync)
+        {
+            if (!_revisionChanges.TryGetValue(
+                    (revision.ProcessorId, revision.Position), out var change) ||
+                change.Revision != revision)
+            {
+                throw new InvalidOperationException("Requested historical aggregation revision is not available.");
+            }
+
+            return _contributions
+                .Where(pair => pair.Key.ProcessorId == revision.ProcessorId &&
+                    pair.Value.StreamId == revision.StreamId &&
+                    pair.Value.Position <= revision.Position &&
+                    pair.Value.Fact.Key == MetricInputFactKeys.PartCountIncrement &&
+                    (periodId switch
+                    {
+                        OperationalMetricPeriodId.Shift shift => pair.Value.ShiftOccurrenceId == shift.ShiftOccurrenceId,
+                        OperationalMetricPeriodId.ProductionDay day => pair.Value.ProductionDayId == day.ProductionDayId,
+                        _ => throw new InvalidOperationException("Unsupported operational metric period."),
+                    }))
+                .Select(static pair => pair.Value)
+                .OrderBy(static input => input.Position.Value)
+                .ToArray();
+        }
+    }
+
     public ValueTask CommitAsync(
         MetricAggregationCommit commit,
         CancellationToken cancellationToken)
