@@ -15,8 +15,10 @@ internal static class SqlRepositoryPost012SchemaDescriptor
             .. post011.Tables,
             Table(
                 "ProductionReferenceTimeRevision",
-                [UInt64("ProductionReferenceTimeRevision")],
-                PrimaryKey("PK_ProductionReferenceTimeRevision", "ProductionReferenceTimeRevision"),
+                [Column("MetricAggregationProcessorRowId", "bigint"), UInt64("ProductionReferenceTimeRevision")],
+                PrimaryKey("PK_ProductionReferenceTimeRevision", "MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"),
+                foreignKeys:
+                [ForeignKey("FK_ProductionReferenceTimeRevision_AggregationAuthority", ["MetricAggregationProcessorRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId"])],
                 checks:
                 [Check("CK_ProductionReferenceTimeRevision_UInt64", "([ProductionReferenceTimeRevision]>=(0) AND [ProductionReferenceTimeRevision]<=(18446744073709551615.))")]),
             Table(
@@ -45,14 +47,11 @@ internal static class SqlRepositoryPost012SchemaDescriptor
                     Text("SelectedStandardSourceReference", maxLength: 1024, isNullable: true),
                     Decimal("IdealProductionDurationSeconds", 20, 6, isNullable: true)
                 ],
-                PrimaryKey("PK_ProductionReferenceTimeOutcome", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"),
+                PrimaryKey("PK_ProductionReferenceTimeOutcome", "MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"),
                 uniques:
                 [Unique("UQ_ProductionReferenceTimeOutcome_SourceReplay", "MetricAggregationProcessorRowId", "SourceQuantityEvidenceId")],
                 foreignKeys:
-                [
-                    ForeignKey("FK_ProductionReferenceTimeOutcome_Revision", ["ProductionReferenceTimeRevision"], "ProductionReferenceTimeRevision", ["ProductionReferenceTimeRevision"]),
-                    ForeignKey("FK_ProductionReferenceTimeOutcome_AggregationAuthority", ["MetricAggregationProcessorRowId"], "MetricAggregationProcessor", ["MetricAggregationProcessorRowId"])
-                ],
+                [ForeignKey("FK_ProductionReferenceTimeOutcome_Revision", ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"], "ProductionReferenceTimeRevision", ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"])],
                 checks:
                 [
                     Check("CK_ProductionReferenceTimeOutcome_Revision_UInt64", "([ProductionReferenceTimeRevision]>=(0) AND [ProductionReferenceTimeRevision]<=(18446744073709551615.))"),
@@ -65,10 +64,10 @@ internal static class SqlRepositoryPost012SchemaDescriptor
                 ]),
             Table(
                 "ProductionReferenceTimeOutcomeConflict",
-                [UInt64("ProductionReferenceTimeRevision"), Text("SourceQuantityEvidenceId"), Text("ConflictingStandardVersionId")],
-                PrimaryKey("PK_ProductionReferenceTimeOutcomeConflict", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId", "ConflictingStandardVersionId"),
+                [Column("MetricAggregationProcessorRowId", "bigint"), UInt64("ProductionReferenceTimeRevision"), Text("SourceQuantityEvidenceId"), Text("ConflictingStandardVersionId")],
+                PrimaryKey("PK_ProductionReferenceTimeOutcomeConflict", "MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId", "ConflictingStandardVersionId"),
                 foreignKeys:
-                [ForeignKey("FK_ProductionReferenceTimeOutcomeConflict_Outcome", ["ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"], "ProductionReferenceTimeOutcome", ["ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"])]),
+                [ForeignKey("FK_ProductionReferenceTimeOutcomeConflict_Outcome", ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"], "ProductionReferenceTimeOutcome", ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision", "SourceQuantityEvidenceId"])]),
             Table(
                 "ProductionReferenceTimePublicationCut",
                 [Column("MetricAggregationProcessorRowId", "bigint"), UInt64("MetricAggregationPosition"), UInt64("ProductionReferenceTimeRevision")],
@@ -76,7 +75,7 @@ internal static class SqlRepositoryPost012SchemaDescriptor
                 foreignKeys:
                 [
                     ForeignKey("FK_ProductionReferenceTimePublicationCut_MetricAggregationRevision", ["MetricAggregationProcessorRowId", "MetricAggregationPosition"], "MetricAggregationRevision", ["MetricAggregationProcessorRowId", "Position"]),
-                    ForeignKey("FK_ProductionReferenceTimePublicationCut_ReferenceTimeRevision", ["ProductionReferenceTimeRevision"], "ProductionReferenceTimeRevision", ["ProductionReferenceTimeRevision"])
+                    ForeignKey("FK_ProductionReferenceTimePublicationCut_ReferenceTimeRevision", ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"], "ProductionReferenceTimeRevision", ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"])
                 ],
                 checks:
                 [
