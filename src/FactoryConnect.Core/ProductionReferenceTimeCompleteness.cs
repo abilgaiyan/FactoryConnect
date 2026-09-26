@@ -44,7 +44,7 @@ public static class ProductionReferenceTimeCompleteness
                 (shiftOccurrenceId is not null && outcome.ShiftOccurrenceId != shiftOccurrenceId) ||
                 (productionDayId is not null && outcome.ProductionDayId != productionDayId))
             {
-                continue;
+                throw new InvalidOperationException("Reference-time outcomes must belong to the evaluated machine and period.");
             }
 
             if (!sources.Contains(outcome.SourceQuantityEvidenceId) ||
