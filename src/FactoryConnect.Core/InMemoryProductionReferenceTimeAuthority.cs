@@ -62,6 +62,16 @@ public sealed class InMemoryProductionReferenceTimeAuthority
         ArgumentNullException.ThrowIfNull(aggregationRevision);
         ArgumentNullException.ThrowIfNull(periodId);
 
+        // Validate the requested reference-time cut before inspecting period inventory so an
+        // unavailable authority request cannot be hidden by an empty aggregation period.
+        lock (_sync)
+        {
+            if (referenceTimeRevision.Value > _revision)
+            {
+                throw new InvalidOperationException("Reference-time authority revision is not available.");
+            }
+        }
+
         // FC-026 owns the produced inventory at its exact cut. This authority independently owns
         // outcome visibility at the supplied reference-time cut. The pair is the publication identity.
         var produced = aggregationStore.ReadProducedQuantityAtRevision(aggregationRevision, periodId);
@@ -74,11 +84,6 @@ public sealed class InMemoryProductionReferenceTimeAuthority
         var outcomes = new List<ProductionReferenceTimeResolution>(produced.Count);
         lock (_sync)
         {
-            if (referenceTimeRevision.Value > _revision)
-            {
-                throw new InvalidOperationException("Reference-time authority revision is not available.");
-            }
-
             foreach (var input in produced)
             {
                 var fact = input.Fact;
