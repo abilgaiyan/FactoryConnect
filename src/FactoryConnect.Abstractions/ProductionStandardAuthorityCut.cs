@@ -8,10 +8,7 @@ public sealed class ProductionStandardAuthorityCut
     internal ProductionStandardAuthorityCut(long revision, IEnumerable<ProductionStandardVersion> versions)
     {
         ArgumentNullException.ThrowIfNull(versions);
-        if (revision < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(revision));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(revision);
 
         var snapshot = versions.ToArray();
         foreach (var version in snapshot)
