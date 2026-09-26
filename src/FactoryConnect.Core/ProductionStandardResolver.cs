@@ -89,4 +89,47 @@ public static class ProductionStandardResolver
         result.Validate();
         return result;
     }
+
+    /// <summary>
+    /// Proves that a stored resolution is exactly the canonical outcome for its source evidence
+    /// at the recorded production-standard authority cut.
+    /// </summary>
+    public static void ValidateCanonicalOutcome(
+        ProductionQuantityEvidence evidence,
+        ShiftOccurrenceId shift,
+        ProductionDayId day,
+        ProductionStandardAuthorityCut cut,
+        ProductionReferenceTimeResolution outcome)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        outcome.Validate();
+
+        var canonical = Resolve(evidence, shift, day, cut);
+        if (!Equivalent(canonical, outcome))
+        {
+            throw new InvalidOperationException(
+                "Reference-time outcome is not canonical for its source evidence and recorded authority cut.");
+        }
+    }
+
+    private static bool Equivalent(
+        ProductionReferenceTimeResolution expected,
+        ProductionReferenceTimeResolution actual) =>
+        expected.SourceQuantityEvidenceId == actual.SourceQuantityEvidenceId &&
+        expected.CompanyId == actual.CompanyId &&
+        expected.SiteId == actual.SiteId &&
+        expected.MachineId == actual.MachineId &&
+        expected.PartId == actual.PartId &&
+        expected.OperationId == actual.OperationId &&
+        expected.ShiftOccurrenceId == actual.ShiftOccurrenceId &&
+        expected.ProductionDayId == actual.ProductionDayId &&
+        expected.OccurredAtUtc == actual.OccurredAtUtc &&
+        expected.ProducedUnits == actual.ProducedUnits &&
+        expected.AuthorityRevision == actual.AuthorityRevision &&
+        expected.Status == actual.Status &&
+        string.Equals(expected.SelectedStandardVersionId, actual.SelectedStandardVersionId, StringComparison.Ordinal) &&
+        string.Equals(expected.SelectedStandardSourceReference, actual.SelectedStandardSourceReference, StringComparison.Ordinal) &&
+        expected.IdealDurationSeconds == actual.IdealDurationSeconds &&
+        expected.ConflictingStandardVersionIds.SequenceEqual(
+            actual.ConflictingStandardVersionIds, StringComparer.Ordinal);
 }
