@@ -1,9 +1,14 @@
 CREATE TABLE dbo.ProductionReferenceTimeRevision
 (
+    MetricAggregationProcessorRowId bigint NOT NULL,
     ProductionReferenceTimeRevision decimal(20,0) NOT NULL,
 
     CONSTRAINT PK_ProductionReferenceTimeRevision
-        PRIMARY KEY (ProductionReferenceTimeRevision),
+        PRIMARY KEY (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision),
+
+    CONSTRAINT FK_ProductionReferenceTimeRevision_AggregationAuthority
+        FOREIGN KEY (MetricAggregationProcessorRowId)
+        REFERENCES dbo.MetricAggregationProcessor (MetricAggregationProcessorRowId),
 
     CONSTRAINT CK_ProductionReferenceTimeRevision_UInt64
         CHECK (
@@ -38,15 +43,16 @@ CREATE TABLE dbo.ProductionReferenceTimeOutcome
     IdealProductionDurationSeconds decimal(20,6) NULL,
 
     CONSTRAINT PK_ProductionReferenceTimeOutcome
-        PRIMARY KEY (ProductionReferenceTimeRevision, SourceQuantityEvidenceId),
+        PRIMARY KEY (
+            MetricAggregationProcessorRowId,
+            ProductionReferenceTimeRevision,
+            SourceQuantityEvidenceId
+        ),
 
     CONSTRAINT FK_ProductionReferenceTimeOutcome_Revision
-        FOREIGN KEY (ProductionReferenceTimeRevision)
-        REFERENCES dbo.ProductionReferenceTimeRevision (ProductionReferenceTimeRevision),
-
-    CONSTRAINT FK_ProductionReferenceTimeOutcome_AggregationAuthority
-        FOREIGN KEY (MetricAggregationProcessorRowId)
-        REFERENCES dbo.MetricAggregationProcessor (MetricAggregationProcessorRowId),
+        FOREIGN KEY (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision)
+        REFERENCES dbo.ProductionReferenceTimeRevision
+            (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision),
 
     CONSTRAINT UQ_ProductionReferenceTimeOutcome_SourceReplay
         UNIQUE (MetricAggregationProcessorRowId, SourceQuantityEvidenceId),
@@ -94,21 +100,27 @@ CREATE TABLE dbo.ProductionReferenceTimeOutcome
 
 CREATE TABLE dbo.ProductionReferenceTimeOutcomeConflict
 (
+    MetricAggregationProcessorRowId bigint NOT NULL,
     ProductionReferenceTimeRevision decimal(20,0) NOT NULL,
     SourceQuantityEvidenceId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
     ConflictingStandardVersionId nvarchar(256) COLLATE Latin1_General_100_BIN2 NOT NULL,
 
     CONSTRAINT PK_ProductionReferenceTimeOutcomeConflict
         PRIMARY KEY (
+            MetricAggregationProcessorRowId,
             ProductionReferenceTimeRevision,
             SourceQuantityEvidenceId,
             ConflictingStandardVersionId
         ),
 
     CONSTRAINT FK_ProductionReferenceTimeOutcomeConflict_Outcome
-        FOREIGN KEY (ProductionReferenceTimeRevision, SourceQuantityEvidenceId)
+        FOREIGN KEY (
+            MetricAggregationProcessorRowId,
+            ProductionReferenceTimeRevision,
+            SourceQuantityEvidenceId
+        )
         REFERENCES dbo.ProductionReferenceTimeOutcome
-            (ProductionReferenceTimeRevision, SourceQuantityEvidenceId)
+            (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision, SourceQuantityEvidenceId)
 );
 
 CREATE TABLE dbo.ProductionReferenceTimePublicationCut
@@ -130,8 +142,9 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationCut
             (MetricAggregationProcessorRowId, Position),
 
     CONSTRAINT FK_ProductionReferenceTimePublicationCut_ReferenceTimeRevision
-        FOREIGN KEY (ProductionReferenceTimeRevision)
-        REFERENCES dbo.ProductionReferenceTimeRevision (ProductionReferenceTimeRevision),
+        FOREIGN KEY (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision)
+        REFERENCES dbo.ProductionReferenceTimeRevision
+            (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision),
 
     CONSTRAINT CK_ProductionReferenceTimePublicationCut_MetricPosition_UInt64Positive
         CHECK (
@@ -146,16 +159,16 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationCut
         )
 );
 
--- A Post-011 database can already have immutable aggregation revisions. The migration
--- transaction establishes their initial empty reference-time cut without modifying
--- the aggregation revision ledger or inventing outcomes.
-IF EXISTS (SELECT 1 FROM dbo.MetricAggregationRevision)
-BEGIN
-    INSERT INTO dbo.ProductionReferenceTimeRevision (ProductionReferenceTimeRevision)
-    VALUES (0);
+-- Every existing aggregation authority receives a durable empty reference-time
+-- revision. This makes (A, R0) a real ledger state rather than an implicit reader
+-- convention. Existing immutable aggregation revisions are paired with that empty
+-- cut without inventing outcomes.
+INSERT INTO dbo.ProductionReferenceTimeRevision
+    (MetricAggregationProcessorRowId, ProductionReferenceTimeRevision)
+SELECT MetricAggregationProcessorRowId, 0
+FROM dbo.MetricAggregationProcessor;
 
-    INSERT INTO dbo.ProductionReferenceTimePublicationCut
-        (MetricAggregationProcessorRowId, MetricAggregationPosition, ProductionReferenceTimeRevision)
-    SELECT MetricAggregationProcessorRowId, Position, 0
-    FROM dbo.MetricAggregationRevision;
-END;
+INSERT INTO dbo.ProductionReferenceTimePublicationCut
+    (MetricAggregationProcessorRowId, MetricAggregationPosition, ProductionReferenceTimeRevision)
+SELECT MetricAggregationProcessorRowId, Position, 0
+FROM dbo.MetricAggregationRevision;
