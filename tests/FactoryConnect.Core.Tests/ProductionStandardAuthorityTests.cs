@@ -50,7 +50,7 @@ public sealed class ProductionStandardAuthorityTests
     }
 
     [Fact]
-    public async Task HistoricalAggregationRevisionCannotHideASecondProducedSource()
+    public async Task HistoricalAggregationAndReferenceTimeCutsAreReplayStable()
     {
         var standards = new InMemoryProductionStandardAuthority();
         standards.Publish(Standard("site", 1, 10));
@@ -67,14 +67,37 @@ public sealed class ProductionStandardAuthorityTests
         await aggregates.CommitAsync(new MetricAggregationCommit(
             processor, null, first, [Input(stream, 1, evidenceA)]), CancellationToken.None);
         outcomes.ResolveAndRecord(evidenceA, Shift, Day, cut);
+        var outcomeCut1 = outcomes.CurrentRevision;
+
         await aggregates.CommitAsync(new MetricAggregationCommit(
             processor, first, second, [Input(stream, 2, evidenceB)]), CancellationToken.None);
 
         var period = new OperationalMetricPeriodId.Shift(Shift);
-        Assert.True(outcomes.IsCompleteAtRevision(aggregates, first, period));
-        Assert.False(outcomes.IsCompleteAtRevision(aggregates, second, period));
+        Assert.True(outcomes.IsCompleteAtRevision(aggregates, first, outcomeCut1, period));
+        Assert.False(outcomes.IsCompleteAtRevision(aggregates, second, outcomeCut1, period));
+
         outcomes.ResolveAndRecord(evidenceB, Shift, Day, cut);
-        Assert.True(outcomes.IsCompleteAtRevision(aggregates, second, period));
+        var outcomeCut2 = outcomes.CurrentRevision;
+
+        Assert.True(outcomes.IsCompleteAtRevision(aggregates, second, outcomeCut2, period));
+        Assert.False(outcomes.IsCompleteAtRevision(aggregates, second, outcomeCut1, period));
+        Assert.True(outcomes.IsCompleteAtRevision(aggregates, first, outcomeCut1, period));
+        Assert.True(outcomeCut2.Value > outcomeCut1.Value);
+    }
+
+    [Fact]
+    public void FutureReferenceTimeCutIsRejected()
+    {
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+
+        Assert.Throws<InvalidOperationException>(() => outcomes.IsCompleteAtRevision(
+            new InMemoryMetricAggregationStore(),
+            new MetricAggregationCheckpoint(
+                new MetricAggregationProcessorId("aggregate-machine-1"),
+                MetricInputStreamId.ForMachine(Machine),
+                new MetricInputPosition(0)),
+            new ProductionReferenceTimeAuthorityRevision(1),
+            new OperationalMetricPeriodId.Shift(Shift)));
     }
 
     [Fact]
