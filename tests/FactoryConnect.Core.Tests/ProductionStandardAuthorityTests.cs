@@ -86,16 +86,21 @@ public sealed class ProductionStandardAuthorityTests
     }
 
     [Fact]
-    public void FutureReferenceTimeCutIsRejected()
+    public async Task FutureReferenceTimeCutIsRejectedBeforeEmptyPeriodResult()
     {
         var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        var aggregates = new InMemoryMetricAggregationStore();
+        var processor = new MetricAggregationProcessorId("aggregate-machine-1");
+        var stream = MetricInputStreamId.ForMachine(Machine);
+        var checkpoint = new MetricAggregationCheckpoint(processor, stream, new MetricInputPosition(1));
+
+        await aggregates.CommitAsync(
+            new MetricAggregationCommit(processor, null, checkpoint, []),
+            CancellationToken.None);
 
         Assert.Throws<InvalidOperationException>(() => outcomes.IsCompleteAtRevision(
-            new InMemoryMetricAggregationStore(),
-            new MetricAggregationCheckpoint(
-                new MetricAggregationProcessorId("aggregate-machine-1"),
-                MetricInputStreamId.ForMachine(Machine),
-                new MetricInputPosition(0)),
+            aggregates,
+            checkpoint,
             new ProductionReferenceTimeAuthorityRevision(1),
             new OperationalMetricPeriodId.Shift(Shift)));
     }
