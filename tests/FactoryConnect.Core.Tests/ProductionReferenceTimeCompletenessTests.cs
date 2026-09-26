@@ -42,6 +42,76 @@ public sealed class ProductionReferenceTimeCompletenessTests
             Machine, null, Day));
     }
 
+    [Fact]
+    public void DuplicateOutcomeForSourceIsRejected()
+    {
+        var sources = new[] { new ProductionQuantityEvidenceId("a") };
+
+        Assert.Throws<InvalidOperationException>(() => ProductionReferenceTimeCompleteness.IsComplete(
+            sources,
+            [Outcome("a", ProductionReferenceTimeResolutionStatus.Resolved),
+                Outcome("a", ProductionReferenceTimeResolutionStatus.Resolved)],
+            Machine, Shift, null));
+    }
+
+    [Fact]
+    public void OutcomeForUnknownSourceIsRejected()
+    {
+        var sources = new[] { new ProductionQuantityEvidenceId("a") };
+
+        Assert.Throws<InvalidOperationException>(() => ProductionReferenceTimeCompleteness.IsComplete(
+            sources,
+            [Outcome("b", ProductionReferenceTimeResolutionStatus.Resolved)],
+            Machine, Shift, null));
+    }
+
+    [Fact]
+    public void ForeignMachineOutcomeIsRejected()
+    {
+        var sources = new[] { new ProductionQuantityEvidenceId("a") };
+        var foreign = Outcome("a", ProductionReferenceTimeResolutionStatus.Resolved) with
+        {
+            MachineId = new MachineId(Guid.Parse("22222222-2222-2222-2222-222222222222")),
+        };
+
+        Assert.Throws<InvalidOperationException>(() => ProductionReferenceTimeCompleteness.IsComplete(
+            sources, [foreign], Machine, Shift, null));
+    }
+
+    [Fact]
+    public void ForeignShiftOutcomeIsRejected()
+    {
+        var sources = new[] { new ProductionQuantityEvidenceId("a") };
+        var foreignShift = new ShiftOccurrenceId(
+            Site, new ShiftScheduleAssignmentId("assignment-2"), new ShiftId("shift-2"),
+            Start.AddHours(8), Start.AddHours(16));
+
+        Assert.Throws<InvalidOperationException>(() => ProductionReferenceTimeCompleteness.IsComplete(
+            sources,
+            [Outcome("a", ProductionReferenceTimeResolutionStatus.Resolved, foreignShift)],
+            Machine, Shift, null));
+    }
+
+    [Fact]
+    public void EmptyProducedSourcesAreIncomplete()
+    {
+        Assert.False(ProductionReferenceTimeCompleteness.IsComplete(
+            [], [], Machine, Shift, null));
+    }
+
+    [Fact]
+    public void ResolvedZeroSecondContributionIsComplete()
+    {
+        var sources = new[] { new ProductionQuantityEvidenceId("a") };
+        var zero = Outcome("a", ProductionReferenceTimeResolutionStatus.Resolved) with
+        {
+            IdealDurationSeconds = 0,
+        };
+
+        Assert.True(ProductionReferenceTimeCompleteness.IsComplete(
+            sources, [zero], Machine, Shift, null));
+    }
+
     private static ProductionReferenceTimeResolution Outcome(
         string id,
         ProductionReferenceTimeResolutionStatus status,
