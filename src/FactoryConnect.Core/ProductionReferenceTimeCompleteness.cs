@@ -3,7 +3,7 @@ using FactoryConnect.Abstractions;
 namespace FactoryConnect.Core;
 
 /// <summary>Requires an explicit resolution for every produced-quantity source in a period.</summary>
-public static class ProductionReferenceTimeCompleteness
+internal static class ProductionReferenceTimeCompleteness
 {
     public static bool IsComplete(
         IReadOnlyList<ProductionQuantityEvidenceId> producedSources,
