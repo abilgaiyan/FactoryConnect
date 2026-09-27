@@ -79,6 +79,8 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
         var store = new SqlServerProductionReferenceTimeOutcomeStore(_fixture.ConnectionString);
         var site = new SiteId("SITE-1");
         var machine = new MachineId(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var part = new PartId("part-1");
+        var operation = new OperationId("operation-1");
         var start = new DateTimeOffset(2026, 9, 26, 0, 0, 0, TimeSpan.Zero);
         var shift = new ShiftOccurrenceId(site, new("schedule-1"), new("shift-1"), start, start.AddHours(8));
         var day = new ProductionDayId(site, new DateOnly(2026, 9, 26));
@@ -89,8 +91,8 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
             SiteId = site,
             MachineId = machine,
             ShiftId = shift.ShiftId,
-            PartId = new("part-1"),
-            OperationId = new("operation-1"),
+            PartId = part,
+            OperationId = operation,
             OccurredAtUtc = start.AddMinutes(1),
             PartCountIncrement = 2,
         };
@@ -100,8 +102,8 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
             VersionId = "standard-1",
             CompanyId = evidence.CompanyId,
             SiteId = site,
-            PartId = evidence.PartId!,
-            OperationId = evidence.OperationId!,
+            PartId = part,
+            OperationId = operation,
             SecondsPerUnit = 5m,
             EffectiveFromUtc = start,
             SourceReference = "engineering-approval-1",
@@ -115,6 +117,7 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
             ProductionStandardAuthorityCut cut,
             ProductionReferenceTimeResolution resolution)
         {
+            var tampered = new PublishedProductionReferenceTimeOutcome(proposed.PublicationRevision, resolution);
             await Assert.ThrowsAsync<InvalidOperationException>(() => publisher.PublishAsync(
                 processor,
                 new(1),
@@ -122,7 +125,7 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
                 shift,
                 day,
                 cut,
-                proposed with { Resolution = resolution },
+                tampered,
                 CancellationToken.None));
 
             Assert.Empty(await store.ReadAtRevisionAsync(processor, new(0), CancellationToken.None));
@@ -147,8 +150,8 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
             VersionId = "machine-standard-2",
             CompanyId = evidence.CompanyId,
             SiteId = site,
-            PartId = evidence.PartId!,
-            OperationId = evidence.OperationId!,
+            PartId = part,
+            OperationId = operation,
             MachineId = machine,
             SecondsPerUnit = 4m,
             EffectiveFromUtc = start,
