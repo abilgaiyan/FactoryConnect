@@ -24,6 +24,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.010_DurableObservationProcessingCheckpoint.sql";
     private const string DurableMetricAggregationRevisionLedgerSchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.011_DurableMetricAggregationRevisionLedger.sql";
+    private const string DurableProductionReferenceTimeAuthoritySchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.012_DurableProductionReferenceTimeAuthority.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -57,6 +59,9 @@ internal static class SqlServerSchema
 
     public static string ReadDurableMetricAggregationRevisionLedgerSchema() =>
         ReadSchema(DurableMetricAggregationRevisionLedgerSchemaResourceName);
+
+    public static string ReadDurableProductionReferenceTimeAuthoritySchema() =>
+        ReadSchema(DurableProductionReferenceTimeAuthoritySchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {

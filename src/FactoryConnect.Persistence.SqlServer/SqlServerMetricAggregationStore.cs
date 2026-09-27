@@ -192,6 +192,13 @@ internal sealed partial class SqlServerMetricAggregationStore : IMetricAggregati
                 stagedInputs.Select(static item => item.Input),
                 cancellationToken);
 
+            await PublishEmptyReferenceTimeCutAsync(
+                connection,
+                sqlTransaction,
+                processorRowId,
+                commit.ProposedCheckpoint.Position,
+                cancellationToken);
+
             await WriteCheckpointAsync(
                 connection,
                 sqlTransaction,
