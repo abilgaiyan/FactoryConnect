@@ -38,6 +38,12 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
         Assert.Equal(first.PublicationRevision, replay.PublicationRevision);
         Assert.Equal(first.SourceQuantityEvidenceId, replay.SourceQuantityEvidenceId);
         Assert.Equal(first.Resolution.IdealDurationSeconds, replay.Resolution.IdealDurationSeconds);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.PublishAsync(processor, new(2), first, CancellationToken.None));
+        Assert.Equal(0, await CountCutAsync(processor, 2, 1));
+        Assert.Equal(1, await CountCutAsync(processor, 1, 1));
+
         var changed = new PublishedProductionReferenceTimeOutcome(new(3),
             first.Resolution with { IdealDurationSeconds = 99m });
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
