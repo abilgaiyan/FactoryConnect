@@ -13,12 +13,21 @@ namespace FactoryConnect.Edge.Tests;
 public sealed class EdgeConfigurationContractTests
 {
     private const string CommissioningMaximumCurrentAge = "00:00:10";
+    private const string CheckedInDeviceKey = "CNC-01";
+    private const string CheckedInActivityStreamKey = "mtconnect:CNC-01";
+    private const string ProductionTemplateDeviceKey = "__DEVICE_KEY__";
+    private const string ProductionTemplateActivityStreamKey = "mtconnect:__DEVICE_KEY__";
 
     [Fact]
     public void CheckedInRuntimeConfigurationCarriesCommissioningFreshnessAuthority()
     {
-        AssertMaximumCurrentAge(
-            RepositoryPath("src", "FactoryConnect.Edge", "appsettings.json"));
+        var path = RepositoryPath("src", "FactoryConnect.Edge", "appsettings.json");
+
+        AssertMaximumCurrentAge(path);
+        AssertMtConnectActivityStreamAuthority(
+            path,
+            CheckedInDeviceKey,
+            CheckedInActivityStreamKey);
     }
 
     [Fact]
@@ -41,8 +50,13 @@ public sealed class EdgeConfigurationContractTests
     [Fact]
     public void ProductionTemplateCarriesCommissioningFreshnessAuthority()
     {
-        AssertMaximumCurrentAge(
-            RepositoryPath("config", "templates", "edge.production.template.json"));
+        var path = RepositoryPath("config", "templates", "edge.production.template.json");
+
+        AssertMaximumCurrentAge(path);
+        AssertMtConnectActivityStreamAuthority(
+            path,
+            ProductionTemplateDeviceKey,
+            ProductionTemplateActivityStreamKey);
     }
 
     private static void AssertMaximumCurrentAge(string path)
@@ -55,6 +69,27 @@ public sealed class EdgeConfigurationContractTests
             .GetString();
 
         Assert.Equal(CommissioningMaximumCurrentAge, maximumCurrentAge);
+    }
+
+    private static void AssertMtConnectActivityStreamAuthority(
+        string path,
+        string expectedDeviceKey,
+        string expectedActivityStreamKey)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var deviceKey = document.RootElement
+            .GetProperty("MTConnect")
+            .GetProperty("Machines")[0]
+            .GetProperty("DeviceKey")
+            .GetString();
+        var activityStreamKey = document.RootElement
+            .GetProperty("ProductionProcessing")
+            .GetProperty("Machines")[0]
+            .GetProperty("ActivityStreamKey")
+            .GetString();
+
+        Assert.Equal(expectedDeviceKey, deviceKey);
+        Assert.Equal(expectedActivityStreamKey, activityStreamKey);
     }
 
     private static string RepositoryPath(
