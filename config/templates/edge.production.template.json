@@ -27,7 +27,7 @@
     "Machines": [
       {
         "MachineId": "__MACHINE_ID__",
-        "ActivityStreamKey": "__ACTIVITY_STREAM_KEY__",
+        "ActivityStreamKey": "mtconnect:__DEVICE_KEY__",
         "QuantityStreamKey": "__QUANTITY_STREAM_KEY__",
         "CompanyId": "__COMPANY_ID__",
         "SiteId": "__SITE_ID__",
