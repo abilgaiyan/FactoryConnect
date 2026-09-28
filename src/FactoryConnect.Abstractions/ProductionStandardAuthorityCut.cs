@@ -30,6 +30,10 @@ public sealed class ProductionStandardAuthorityCut
         Versions = new ReadOnlyCollection<ProductionStandardVersion>(snapshot);
     }
 
+    /// <summary>Materializes an authority-owned cut after its revision and versions have been read durably.</summary>
+    public static ProductionStandardAuthorityCut Materialize(long revision, IEnumerable<ProductionStandardVersion> versions) =>
+        new(revision, versions);
+
     public long Revision { get; }
 
     public IReadOnlyList<ProductionStandardVersion> Versions { get; }

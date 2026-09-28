@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration012UpgradeIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough011 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-    private static readonly int[] MigrationIdsThroughCurrent = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    private static readonly int[] MigrationIdsThrough012 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
     private static readonly string[] Migration012Tables =
     [
         "ProductionReferenceTimeRevision",
@@ -15,17 +15,16 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         "ProductionReferenceTimeOutcomeConflict",
         "ProductionReferenceTimePublicationCut",
     ];
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
-    public async Task ExactPost011UpgradesThrough012OnceAndMatchesCurrentSchema()
+    public async Task ExactPost011AdvancesThrough012AndMatchesHistoricalSchema()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(12, catalog.Migrations.Length);
-        Assert.Equal(12, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(13, catalog.Migrations.Length);
+        Assert.Equal(13, catalog.Migrations[^1].MigrationId);
 
         await CreateExactPrefixAsync(connection, catalog, prefixLength: 11);
 
@@ -36,23 +35,16 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
             Assert.False(await TableExistsAsync(connection, "dbo", table));
         }
 
-        var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
-        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
+        await ApplyMigration012Async(connection, catalog);
 
-        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough012, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountMigration012HistoryRowsAsync(connection));
         foreach (var table in Migration012Tables)
         {
             Assert.True(await TableExistsAsync(connection, "dbo", table));
         }
 
-        await AssertCurrentSchemaExactAsync(connection);
-
-        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
-
-        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
-        Assert.Equal(1, await CountMigration012HistoryRowsAsync(connection));
-        await AssertCurrentSchemaExactAsync(connection);
+        await AssertPost012SchemaExactAsync(connection);
     }
 
     [Fact]
@@ -71,22 +63,23 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         Assert.Equal(2, await CountAggregationRevisionsAsync(connection));
         Assert.Equal(0, await CountMigration012HistoryRowsAsync(connection));
 
-        var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
-        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
+        await ApplyMigration012Async(connection, catalog);
 
-        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough012, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountReferenceTimeRevisionZeroRowsAsync(connection));
         Assert.Equal(2, await CountReferenceTimeRevisionZeroCutsAsync(connection));
         Assert.Equal(0, await CountReferenceTimeOutcomesAsync(connection));
-        await AssertCurrentSchemaExactAsync(connection);
+        await AssertPost012SchemaExactAsync(connection);
+    }
 
-        await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
-
-        Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
-        Assert.Equal(1, await CountMigration012HistoryRowsAsync(connection));
-        Assert.Equal(1, await CountReferenceTimeRevisionZeroRowsAsync(connection));
-        Assert.Equal(2, await CountReferenceTimeRevisionZeroCutsAsync(connection));
-        Assert.Equal(0, await CountReferenceTimeOutcomesAsync(connection));
+    private static async Task ApplyMigration012Async(SqlConnection connection, SqlMigrationCatalog catalog)
+    {
+        var migration = Assert.Single(catalog.Migrations, static item => item.MigrationId == 12);
+        await using var transaction = connection.BeginTransaction();
+        await SqlServerMigrationExecutor.ExecuteAsync(connection, transaction, migration, CancellationToken.None);
+        await new SqlServerMigrationHistoryStore(new FixedUtcClock()).InsertAsync(
+            connection, transaction, migration, CancellationToken.None);
+        await transaction.CommitAsync();
     }
 
     private static async Task CreateExactPrefixAsync(
@@ -154,7 +147,7 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static async Task AssertCurrentSchemaExactAsync(SqlConnection connection)
+    private static async Task AssertPost012SchemaExactAsync(SqlConnection connection)
     {
         await using var transaction = connection.BeginTransaction();
         var schema = await new SqlServerSchemaMetadataReader()
@@ -162,7 +155,7 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
                 connection,
                 transaction,
                 CancellationToken.None);
-        var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Current, schema);
+        var comparison = SqlSchemaComparator.Compare(SqlRepositorySchemaDescriptors.Post012, schema);
         Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
         await transaction.RollbackAsync();
     }
