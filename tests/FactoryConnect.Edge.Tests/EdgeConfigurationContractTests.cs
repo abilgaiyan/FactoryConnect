@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
