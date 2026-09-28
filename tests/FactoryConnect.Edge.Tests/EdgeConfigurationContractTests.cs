@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Edge;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
