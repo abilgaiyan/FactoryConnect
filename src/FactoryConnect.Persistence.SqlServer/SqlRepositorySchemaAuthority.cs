@@ -36,6 +36,8 @@ internal static class SqlRepositorySchemaAuthority
         Table("ProductionReferenceTimeOutcomeConflict"),
         Table("ProductionReferenceTimePublicationCut"),
         Table("ProductionReferenceTimeRevision"),
+        Table("ProductionStandardAuthorityRevision"),
+        Table("ProductionStandardVersion"),
         Table("ProductionTimeEligibilityOutput"),
         Table("ShiftMetricAggregate")
     ]);

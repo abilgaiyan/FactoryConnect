@@ -27,7 +27,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 9, "CorrectCurrentStateDurableOutputIdentity", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 10, "DurableObservationProcessingCheckpoint", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 11, "DurableMetricAggregationRevisionLedger", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 12, "DurableProductionReferenceTimeAuthority", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 12, "DurableProductionReferenceTimeAuthority", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 13, "DurableProductionStandardAuthority", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]

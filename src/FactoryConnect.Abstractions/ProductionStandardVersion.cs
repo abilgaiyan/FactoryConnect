@@ -28,7 +28,9 @@ public sealed record ProductionStandardVersion
             throw new ArgumentException("An approved standard requires an identity, selector, and source reference.");
         }
 
-        if (SecondsPerUnit < 0 || PublishedRevision < 1 ||
+        if (SecondsPerUnit < 0 ||
+            decimal.Round(SecondsPerUnit, 6, MidpointRounding.ToZero) != SecondsPerUnit ||
+            PublishedRevision < 1 ||
             EffectiveFromUtc.Offset != TimeSpan.Zero ||
             EffectiveToUtc is { Offset: var offset } && offset != TimeSpan.Zero ||
             EffectiveToUtc is not null && EffectiveToUtc <= EffectiveFromUtc)

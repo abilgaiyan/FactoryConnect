@@ -97,6 +97,9 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
             await ExecuteSchemaAsync(
                 databaseConnection,
                 SqlServerSchema.ReadDurableProductionReferenceTimeAuthoritySchema());
+            await ExecuteSchemaAsync(
+                databaseConnection,
+                SqlServerSchema.ReadDurableProductionStandardAuthoritySchema());
         }
         catch
         {
