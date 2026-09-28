@@ -1,5 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using FactoryConnect.Core;
+using FactoryConnect.Edge;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace FactoryConnect.Edge.Tests;
@@ -13,6 +17,23 @@ public sealed class EdgeConfigurationContractTests
     {
         AssertMaximumCurrentAge(
             RepositoryPath("src", "FactoryConnect.Edge", "appsettings.json"));
+    }
+
+    [Fact]
+    public void CheckedInRuntimeConfigurationReachesSuccessfulRootComposition()
+    {
+        var path = RepositoryPath("src", "FactoryConnect.Edge", "appsettings.json");
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(path, optional: false, reloadOnChange: false)
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddFactoryConnectEdgeApplication(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var freshnessPolicy = provider.GetRequiredService<ICurrentStateFreshnessPolicy>();
+        Assert.Equal(TimeSpan.FromSeconds(10), freshnessPolicy.MaximumCurrentAge);
     }
 
     [Fact]
