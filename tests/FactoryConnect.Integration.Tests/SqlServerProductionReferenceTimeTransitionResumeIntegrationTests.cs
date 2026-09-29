@@ -33,9 +33,27 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         var aggregation = new SqlServerMetricAggregationStore(fixture.ConnectionString);
         var first = await inputs.AppendAsync(CreateAppend(machine, "component-a", 1), CancellationToken.None);
         var second = await inputs.AppendAsync(CreateAppend(machine, "component-b", 2), CancellationToken.None);
-        var revision = new MetricAggregationCheckpoint(processor, first.StreamId, second.Position);
+        var goodFirst = await inputs.AppendAsync(new DurableMetricInputAppend(first.StreamId,
+            first.Fact with { Id = new MetricInputFactId($"good-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.GoodQuantity, Value = 2 },
+            first.ShiftOccurrenceId, first.ProductionDayId), CancellationToken.None);
+        var goodSecond = await inputs.AppendAsync(new DurableMetricInputAppend(second.StreamId,
+            second.Fact with { Id = new MetricInputFactId($"good-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.GoodQuantity, Value = 2 },
+            second.ShiftOccurrenceId, second.ProductionDayId), CancellationToken.None);
+        var actual = await inputs.AppendAsync(new DurableMetricInputAppend(first.StreamId,
+            first.Fact with { Id = new MetricInputFactId($"actual-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.RunningDuration, Value = 40m,
+                Unit = MetricInputFactUnits.Seconds, SourceQuantityEvidenceId = null },
+            first.ShiftOccurrenceId, first.ProductionDayId), CancellationToken.None);
+        var planned = await inputs.AppendAsync(new DurableMetricInputAppend(first.StreamId,
+            first.Fact with { Id = new MetricInputFactId($"planned-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.PlannedProductionDuration, Value = 40m,
+                Unit = MetricInputFactUnits.Seconds, SourceQuantityEvidenceId = null },
+            first.ShiftOccurrenceId, first.ProductionDayId), CancellationToken.None);
+        var revision = new MetricAggregationCheckpoint(processor, first.StreamId, planned.Position);
         await aggregation.CommitAsync(new MetricAggregationCommit(processor, null, revision,
-            [first, second]), CancellationToken.None);
+            [first, second, goodFirst, goodSecond, actual, planned]), CancellationToken.None);
 
         var shift = ReferenceTimeRequest(machine, processor, new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId));
         var day = ReferenceTimeRequest(machine, processor, new OperationalMetricPeriodId.ProductionDay(first.ProductionDayId));
@@ -47,6 +65,41 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         Assert.Equal(20m, Assert.Single((await aggregation.ReadAtRevisionAsync(day, revision, CancellationToken.None)).Components).Aggregate.Value);
         Assert.Equal(20m, Assert.Single((await new SqlServerMetricAggregationStore(fixture.ConnectionString)
             .ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components).Aggregate.Value);
+
+        var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
+        var projectionProcessor = new OperationalMetricProjectionProcessorId($"reference-projection-{Guid.NewGuid():N}");
+        var projectionStore = new SqlServerOperationalMetricProjectionStore(fixture.ConnectionString);
+        OperationalMetricProjectionProcessingRuntime CreateRuntime() => new(
+            projectionProcessor, processor, first.StreamId,
+            new CoherentOperationalMetricEvaluationBatchSource(
+                catalog, new SqlServerMetricAggregationStore(fixture.ConnectionString),
+                new SqlServerMetricAggregationStore(fixture.ConnectionString),
+                processor, first.StreamId, OperationalMetricEvaluationContextKey.Unpartitioned),
+            new OperationalMetricProjectionFactory(catalog, projectionProcessor),
+            projectionStore,
+            new SqlServerOperationalMetricProjectionPrerequisite(fixture.ConnectionString));
+
+        Assert.Equal(10, await CreateRuntime().RunCycleAsync());
+        foreach (var period in new OperationalMetricPeriodId[]
+                 { new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId),
+                   new OperationalMetricPeriodId.ProductionDay(first.ProductionDayId) })
+        {
+            var performance = await projectionStore.ReadProjectionAsync(projectionProcessor,
+                new OperationalMetricEvaluationKey(machine, period,
+                    BuiltInOperationalMetricDefinitions.PerformanceId,
+                    OperationalMetricEvaluationContextKey.Unpartitioned), CancellationToken.None);
+            var oee = await projectionStore.ReadProjectionAsync(projectionProcessor,
+                new OperationalMetricEvaluationKey(machine, period,
+                    BuiltInOperationalMetricDefinitions.OeeId,
+                    OperationalMetricEvaluationContextKey.Unpartitioned), CancellationToken.None);
+            Assert.NotNull(performance);
+            Assert.NotNull(oee);
+            Assert.Equal(0.5m, performance.Value);
+            Assert.Equal(0.5m, oee.Value);
+            Assert.Equal(revision, oee.SourceRevision);
+        }
+
+        Assert.Equal(0, await CreateRuntime().RunCycleAsync());
     }
 
     private static OperationalMetricComponentSnapshotRequest ReferenceTimeRequest(
