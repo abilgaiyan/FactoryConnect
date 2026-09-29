@@ -155,6 +155,26 @@ internal sealed partial class SqlServerMetricAggregationStore
             .Select(static outcome => outcome.Resolution)
             .ToArray();
 
+        var sourcesById = sourceCut.Sources.ToDictionary(static source => source.Evidence.Id);
+        foreach (var outcome in outcomes)
+        {
+            var source = sourcesById[outcome.SourceQuantityEvidenceId];
+            var evidence = source.Evidence;
+            if (outcome.CompanyId != evidence.CompanyId ||
+                outcome.SiteId != evidence.SiteId ||
+                outcome.MachineId != evidence.MachineId ||
+                outcome.PartId != evidence.PartId ||
+                outcome.OperationId != evidence.OperationId ||
+                outcome.ShiftOccurrenceId != source.ShiftOccurrenceId ||
+                outcome.ProductionDayId != source.ProductionDayId ||
+                outcome.OccurredAtUtc != evidence.OccurredAtUtc ||
+                outcome.ProducedUnits != evidence.PartCountIncrement)
+            {
+                throw new InvalidDataException(
+                    "Completed reference-time outcome does not match its exact aggregated produced source.");
+            }
+        }
+
         var (shiftOccurrenceId, productionDayId) = request.EvaluationKey.PeriodId switch
         {
             OperationalMetricPeriodId.Shift shift =>

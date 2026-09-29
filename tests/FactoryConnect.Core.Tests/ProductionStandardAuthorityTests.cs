@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 using Xunit;
 
 namespace FactoryConnect.Core.Tests;
@@ -84,6 +85,98 @@ public sealed class ProductionStandardAuthorityTests
         Assert.True(outcomes.IsCompleteAtRevision(aggregates, first, outcomeCut1, period));
         Assert.True(outcomeCut2.Value > outcomeCut1.Value);
     }
+
+    [Fact]
+    public async Task RevisionedReferenceTimeComponentRequiresCompletedPairAndPreservesHistoricalCut()
+    {
+        var standards = new InMemoryProductionStandardAuthority();
+        standards.Publish(Standard("site", 1, 10));
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        var store = new InMemoryMetricAggregationStore();
+        var processor = new MetricAggregationProcessorId("paired-reference-time");
+        var stream = MetricInputStreamId.ForMachine(Machine);
+        var first = new MetricAggregationCheckpoint(processor, stream, new MetricInputPosition(1));
+        var second = new MetricAggregationCheckpoint(processor, stream, new MetricInputPosition(2));
+        var a = Evidence("paired-a", 2);
+        var b = Evidence("paired-b", 3) with { OccurredAtUtc = Start.AddMinutes(2) };
+        await store.CommitAsync(new MetricAggregationCommit(processor, null, first,
+            [Input(stream, 1, a)]), CancellationToken.None);
+        outcomes.ResolveAndRecord(a, Shift, Day, standards.ReadCurrentCut());
+        var firstR = outcomes.CurrentRevision;
+        var shift = ReferenceTimeRequest(processor, new OperationalMetricPeriodId.Shift(Shift));
+        var day = ReferenceTimeRequest(processor, new OperationalMetricPeriodId.ProductionDay(Day));
+
+        Assert.Empty((await store.ReadAtRevisionAsync(shift, first, CancellationToken.None)).Components);
+        store.CompleteReferenceTimePublication(first, firstR, outcomes);
+        Assert.Equal(20m, Assert.Single((await store.ReadAtRevisionAsync(shift, first, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(20m, Assert.Single((await store.ReadAtRevisionAsync(day, first, CancellationToken.None)).Components).Aggregate.Value);
+
+        await store.CommitAsync(new MetricAggregationCommit(processor, first, second,
+            [Input(stream, 2, b)]), CancellationToken.None);
+        Assert.Throws<InvalidOperationException>(() => store.CompleteReferenceTimePublication(second, firstR, outcomes));
+        Assert.Empty((await store.ReadAtRevisionAsync(shift, second, CancellationToken.None)).Components);
+        outcomes.ResolveAndRecord(b, Shift, Day, standards.ReadCurrentCut());
+        var secondR = outcomes.CurrentRevision;
+        store.CompleteReferenceTimePublication(second, secondR, outcomes);
+        store.CompleteReferenceTimePublication(second, secondR, outcomes);
+        Assert.Throws<InvalidOperationException>(() => store.CompleteReferenceTimePublication(first, secondR, outcomes));
+        Assert.Equal(50m, Assert.Single((await store.ReadAtRevisionAsync(shift, second, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(50m, Assert.Single((await store.ReadAtRevisionAsync(day, second, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(20m, Assert.Single((await store.ReadAtRevisionAsync(shift, first, CancellationToken.None)).Components).Aggregate.Value);
+    }
+
+    [Fact]
+    public async Task CompletedUnresolvedReferenceTimeLeavesComponentAbsent()
+    {
+        var store = new InMemoryMetricAggregationStore();
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        var processor = new MetricAggregationProcessorId("unresolved-reference-time");
+        var stream = MetricInputStreamId.ForMachine(Machine);
+        var revision = new MetricAggregationCheckpoint(processor, stream, new MetricInputPosition(1));
+        var evidence = Evidence("unresolved", 1);
+        await store.CommitAsync(new MetricAggregationCommit(processor, null, revision,
+            [Input(stream, 1, evidence)]), CancellationToken.None);
+        outcomes.ResolveAndRecord(evidence, Shift, Day, new InMemoryProductionStandardAuthority().ReadCurrentCut());
+        store.CompleteReferenceTimePublication(revision, outcomes.CurrentRevision, outcomes);
+        Assert.Empty((await store.ReadAtRevisionAsync(
+            ReferenceTimeRequest(processor, new OperationalMetricPeriodId.Shift(Shift)),
+            revision, CancellationToken.None)).Components);
+    }
+
+    [Fact]
+    public async Task CompletionRejectsOutcomeWithDifferentSourceQuantity()
+    {
+        var store = new InMemoryMetricAggregationStore();
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        var processor = new MetricAggregationProcessorId("mismatched-reference-time");
+        var stream = MetricInputStreamId.ForMachine(Machine);
+        var revision = new MetricAggregationCheckpoint(processor, stream, new MetricInputPosition(1));
+        var evidence = Evidence("mismatched", 2);
+        await store.CommitAsync(new MetricAggregationCommit(processor, null, revision,
+            [Input(stream, 1, evidence)]), CancellationToken.None);
+        outcomes.ResolveAndRecord(evidence with { PartCountIncrement = 3 }, Shift, Day,
+            new InMemoryProductionStandardAuthority().ReadCurrentCut());
+
+        Assert.Throws<InvalidOperationException>(() => store.CompleteReferenceTimePublication(
+            revision, outcomes.CurrentRevision, outcomes));
+        Assert.Empty((await store.ReadAtRevisionAsync(
+            ReferenceTimeRequest(processor, new OperationalMetricPeriodId.Shift(Shift)),
+            revision, CancellationToken.None)).Components);
+    }
+
+    private static OperationalMetricComponentSnapshotRequest ReferenceTimeRequest(
+        MetricAggregationProcessorId processor, OperationalMetricPeriodId period) => new(
+        new OperationalMetricEvaluationKey(Machine, period,
+            BuiltInOperationalMetricDefinitions.PerformanceId,
+            OperationalMetricEvaluationContextKey.Unpartitioned),
+        processor,
+        [new OperationalMetricOperandDefinition
+        {
+            OperandName = "IdealProductionDuration",
+            Source = new OperationalMetricOperandSource.Component(MetricInputKeys.ProductionReferenceTime),
+            RequiredDimension = MetricDimension.Duration,
+            RequiredUnit = MetricInputFactUnits.Seconds,
+        }]);
 
     [Fact]
     public async Task FutureReferenceTimeCutIsRejectedBeforeEmptyPeriodResult()

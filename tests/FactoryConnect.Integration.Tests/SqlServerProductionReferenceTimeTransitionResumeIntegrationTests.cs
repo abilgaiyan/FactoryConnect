@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 using FactoryConnect.Persistence.SqlServer;
 
 namespace FactoryConnect.Integration.Tests;
@@ -8,6 +9,60 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationTests(
     SqlServerTestDatabaseFixture fixture) : IClassFixture<SqlServerTestDatabaseFixture>
 {
+    [Fact]
+    public async Task ExactCompletedPairExposesNumericReferenceTimeForShiftAndDay()
+    {
+        var machine = new MachineId(Guid.NewGuid());
+        var processor = new MetricAggregationProcessorId($"reference-component-{Guid.NewGuid():N}");
+        var standards = new SqlServerProductionStandardAuthority(fixture.ConnectionString);
+        var current = await standards.ReadCurrentCutAsync();
+        await standards.PublishAsync(new ProductionStandardVersion
+        {
+            VersionId = $"component-standard-{Guid.NewGuid():N}",
+            CompanyId = new CompanyId("COMP-1"),
+            SiteId = new SiteId("SITE-1"),
+            PartId = new PartId("PART-1"),
+            OperationId = new OperationId("OP-1"),
+            MachineId = machine,
+            SecondsPerUnit = 5m,
+            EffectiveFromUtc = new DateTimeOffset(2026, 9, 26, 0, 0, 0, TimeSpan.Zero),
+            SourceReference = "approved-component-test",
+            PublishedRevision = current.Revision + 1,
+        });
+        var inputs = new SqlServerMetricInputStore(fixture.ConnectionString);
+        var aggregation = new SqlServerMetricAggregationStore(fixture.ConnectionString);
+        var first = await inputs.AppendAsync(CreateAppend(machine, "component-a", 1), CancellationToken.None);
+        var second = await inputs.AppendAsync(CreateAppend(machine, "component-b", 2), CancellationToken.None);
+        var revision = new MetricAggregationCheckpoint(processor, first.StreamId, second.Position);
+        await aggregation.CommitAsync(new MetricAggregationCommit(processor, null, revision,
+            [first, second]), CancellationToken.None);
+
+        var shift = ReferenceTimeRequest(machine, processor, new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId));
+        var day = ReferenceTimeRequest(machine, processor, new OperationalMetricPeriodId.ProductionDay(first.ProductionDayId));
+        Assert.Empty((await aggregation.ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components);
+        var completed = await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString)
+            .ConvergeAsync(revision, machine, null);
+        Assert.True(completed.IsCompleted);
+        Assert.Equal(20m, Assert.Single((await aggregation.ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(20m, Assert.Single((await aggregation.ReadAtRevisionAsync(day, revision, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(20m, Assert.Single((await new SqlServerMetricAggregationStore(fixture.ConnectionString)
+            .ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components).Aggregate.Value);
+    }
+
+    private static OperationalMetricComponentSnapshotRequest ReferenceTimeRequest(
+        MachineId machine, MetricAggregationProcessorId processor, OperationalMetricPeriodId period) => new(
+        new OperationalMetricEvaluationKey(machine, period,
+            BuiltInOperationalMetricDefinitions.PerformanceId,
+            OperationalMetricEvaluationContextKey.Unpartitioned),
+        processor,
+        [new OperationalMetricOperandDefinition
+        {
+            OperandName = "IdealProductionDuration",
+            Source = new OperationalMetricOperandSource.Component(MetricInputKeys.ProductionReferenceTime),
+            RequiredDimension = MetricDimension.Duration,
+            RequiredUnit = MetricInputFactUnits.Seconds,
+        }]);
+
     [Fact]
     public async Task ConcurrentWorkersConvergeOnOneClaimAndExactSourceSet()
     {

@@ -15,6 +15,64 @@ public sealed class InMemoryMetricAggregationStore :
     private readonly Dictionary<(MetricAggregationProcessorId ProcessorId, ShiftMetricAggregateKey Key), MetricAggregateValue> _shiftAggregates = [];
     private readonly Dictionary<(MetricAggregationProcessorId ProcessorId, ProductionDayMetricAggregateKey Key), MetricAggregateValue> _productionDayAggregates = [];
     private readonly Dictionary<(MetricAggregationProcessorId ProcessorId, MetricInputPosition Position), MetricAggregationRevisionChange> _revisionChanges = [];
+    private readonly Dictionary<(MetricAggregationProcessorId ProcessorId, MetricInputPosition Position), CompletedReferenceTimeCut> _completedReferenceTimeCuts = [];
+
+    /// <summary>Publishes an explicit completed pair. Individual outcomes never authorize metric visibility.</summary>
+    public void CompleteReferenceTimePublication(
+        MetricAggregationCheckpoint aggregationRevision,
+        ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
+        InMemoryProductionReferenceTimeAuthority authority)
+    {
+        ArgumentNullException.ThrowIfNull(aggregationRevision);
+        ArgumentNullException.ThrowIfNull(authority);
+        lock (_sync)
+        {
+            var key = (aggregationRevision.ProcessorId, aggregationRevision.Position);
+            if (!_revisionChanges.TryGetValue(key, out var change) || change.Revision != aggregationRevision)
+            {
+                throw new InvalidOperationException("Completed reference-time publication requires an exact aggregation revision.");
+            }
+
+            if (referenceTimeRevision.Value > authority.CurrentRevision.Value)
+            {
+                throw new InvalidOperationException("Completed reference-time revision is not available.");
+            }
+
+            var produced = _contributions
+                .Where(pair => pair.Key.ProcessorId == aggregationRevision.ProcessorId &&
+                    pair.Value.StreamId == aggregationRevision.StreamId &&
+                    pair.Value.Position <= aggregationRevision.Position &&
+                    pair.Value.Fact.Key == MetricInputFactKeys.PartCountIncrement)
+                .Select(static pair => pair.Value)
+                .ToArray();
+            var periods = produced.Select(static input => (OperationalMetricPeriodId)new OperationalMetricPeriodId.Shift(input.ShiftOccurrenceId))
+                .Concat(produced.Select(static input => (OperationalMetricPeriodId)new OperationalMetricPeriodId.ProductionDay(input.ProductionDayId)))
+                .Distinct();
+            if (periods.Any(period => !authority.HasPublishedCoverageAtRevision(
+                    this, aggregationRevision, referenceTimeRevision, period)))
+            {
+                throw new InvalidOperationException("Completed reference-time publication requires exact produced-source coverage.");
+            }
+
+            var proposed = new CompletedReferenceTimeCut(aggregationRevision, referenceTimeRevision, authority);
+            if (_completedReferenceTimeCuts.TryGetValue(key, out var existing))
+            {
+                if (existing != proposed)
+                {
+                    throw new InvalidOperationException("A completed aggregation transition cannot change its reference-time authority cut.");
+                }
+
+                return;
+            }
+
+            _completedReferenceTimeCuts.Add(key, proposed);
+        }
+    }
+
+    private sealed record CompletedReferenceTimeCut(
+        MetricAggregationCheckpoint AggregationRevision,
+        ProductionReferenceTimeAuthorityRevision ReferenceTimeRevision,
+        InMemoryProductionReferenceTimeAuthority Authority);
 
     public ValueTask<MetricAggregationCheckpoint?> ReadCheckpointAsync(
         MetricAggregationProcessorId processorId,
@@ -224,6 +282,32 @@ public sealed class InMemoryMetricAggregationStore :
             foreach (var operand in request.Operands)
             {
                 var source = (OperationalMetricOperandSource.Component)operand.Source;
+                if (source.ComponentKey == MetricInputKeys.ProductionReferenceTime)
+                {
+                    if (_completedReferenceTimeCuts.TryGetValue(
+                            (requiredRevision.ProcessorId, requiredRevision.Position), out var completed))
+                    {
+                        var outcomes = completed.Authority.ReadResolvedAtRevision(
+                            this, requiredRevision, completed.ReferenceTimeRevision,
+                            request.EvaluationKey.PeriodId);
+                        if (outcomes is not null)
+                        {
+                            components.Add(new OperationalMetricComponent(
+                                operand.OperandName,
+                                new OperationalMetricAggregateSourceIdentity(
+                                    request.ProcessorId, request.EvaluationKey.MachineId,
+                                    request.EvaluationKey.PeriodId, source.ComponentKey),
+                                operand.RequiredDimension,
+                                new MetricAggregateValue(
+                                    outcomes.Sum(static outcome => outcome.IdealDurationSeconds!.Value),
+                                    MetricInputFactUnits.Seconds, outcomes.Count,
+                                    outcomes.Min(static outcome => outcome.OccurredAtUtc),
+                                    outcomes.Max(static outcome => outcome.OccurredAtUtc))));
+                        }
+                    }
+
+                    continue;
+                }
                 var aggregate = ReadHistoricalAggregate(
                     contributionSet,
                     request.EvaluationKey,
