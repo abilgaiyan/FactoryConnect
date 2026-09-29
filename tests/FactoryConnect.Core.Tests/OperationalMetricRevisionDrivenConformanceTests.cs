@@ -25,6 +25,9 @@ public sealed class OperationalMetricRevisionDrivenConformanceTests
         var streamId = MetricInputStreamId.ForMachine(machineId);
         var aggregationProcessorId = new MetricAggregationProcessorId("aggregate-m01");
         var aggregationStore = new InMemoryMetricAggregationStore();
+        var sourceId = new ProductionQuantityEvidenceId("revision-source");
+        var partId = new PartId("part-a");
+        var operationId = new OperationId("operation-a");
 
         var revision6 = new MetricAggregationCheckpoint(
             aggregationProcessorId,
@@ -38,12 +41,42 @@ public sealed class OperationalMetricRevisionDrivenConformanceTests
                 [
                     Input(streamId, 1, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ActualProductionTime, 300m, MetricInputFactUnits.Seconds),
                     Input(streamId, 2, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.PlannedOperatingTime, 600m, MetricInputFactUnits.Seconds),
-                    Input(streamId, 3, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProductionReferenceTime, 240m, MetricInputFactUnits.Seconds),
-                    Input(streamId, 4, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProducedQuantity, 100m, MetricInputFactUnits.Count),
+                    Input(streamId, 3, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.PartCountIncrement, 100m, MetricInputFactUnits.Count, sourceId, partId, operationId),
+                    Input(streamId, 4, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProductionReferenceTime, 240m, MetricInputFactUnits.Seconds),
                     Input(streamId, 5, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.GoodQuantity, 90m, MetricInputFactUnits.Count),
                     Input(streamId, 6, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.MachinePowerOnTime, 750m, MetricInputFactUnits.Seconds),
                 ]),
             CancellationToken.None);
+
+        var standards = new InMemoryProductionStandardAuthority();
+        standards.Publish(new ProductionStandardVersion
+        {
+            VersionId = "revision-standard",
+            CompanyId = new CompanyId("company-a"),
+            SiteId = siteId,
+            PartId = partId,
+            OperationId = operationId,
+            MachineId = machineId,
+            SecondsPerUnit = 2.4m,
+            EffectiveFromUtc = StartsAt,
+            SourceReference = "revision-fixture",
+            PublishedRevision = 1,
+        });
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        outcomes.ResolveAndRecord(new ProductionQuantityEvidence
+        {
+            Id = sourceId,
+            CompanyId = new CompanyId("company-a"),
+            SiteId = siteId,
+            MachineId = machineId,
+            ShiftId = shiftId,
+            PartId = partId,
+            OperationId = operationId,
+            OccurredAtUtc = StartsAt,
+            PartCountIncrement = 100,
+            GoodQuantity = 90,
+        }, occurrence, day, standards.ReadCurrentCut());
+        aggregationStore.CompleteReferenceTimePublication(revision6, outcomes.CurrentRevision, outcomes);
 
         var revision7 = new MetricAggregationCheckpoint(
             aggregationProcessorId,
@@ -67,6 +100,7 @@ public sealed class OperationalMetricRevisionDrivenConformanceTests
                     5m,
                     MetricInputFactUnits.Count)]),
             CancellationToken.None);
+        aggregationStore.CompleteReferenceTimePublication(revision7, outcomes.CurrentRevision, outcomes);
 
         var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
         var source = new CoherentOperationalMetricEvaluationBatchSource(
@@ -139,7 +173,10 @@ public sealed class OperationalMetricRevisionDrivenConformanceTests
         ProductionDayId day,
         string key,
         decimal value,
-        string unit) => new(
+        string unit,
+        ProductionQuantityEvidenceId? sourceId = null,
+        PartId? partId = null,
+        OperationId? operationId = null) => new(
             streamId,
             new MetricInputPosition(position),
             new DurableMetricInputFact
@@ -155,6 +192,9 @@ public sealed class OperationalMetricRevisionDrivenConformanceTests
                 MachineId = machineId,
                 ShiftId = shiftId,
                 ShiftScheduleAssignmentId = assignmentId,
+                SourceQuantityEvidenceId = sourceId,
+                PartId = partId,
+                OperationId = operationId,
             },
             occurrence,
             day);
