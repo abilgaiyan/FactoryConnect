@@ -134,12 +134,16 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         var transitions = await Task.WhenAll(workers);
         Assert.All(transitions, transition => Assert.True(transition.IsCompleted));
         Assert.Equal(transitions[0], transitions[1]);
-        Assert.Equal(0, transitions[0].ProductionStandardAuthorityRevision);
+        Assert.NotNull(transitions[0].ProductionStandardAuthorityRevision);
         var completedRevision = transitions[0].CompletedReferenceTimeRevision
             ?? throw new InvalidDataException("The completed transition has no reference-time revision.");
         Assert.Equal(2, completedRevision.Value);
         Assert.Equal(2, (await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
             .ReadAtRevisionAsync(processor, completedRevision, CancellationToken.None)).Count);
+        Assert.All(await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
+            .ReadAtRevisionAsync(processor, completedRevision, CancellationToken.None),
+            outcome => Assert.Equal(transitions[0].ProductionStandardAuthorityRevision,
+                outcome.Resolution.AuthorityRevision));
     }
 
     [Fact]
@@ -191,12 +195,14 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         var completedFirst = await coordinator.ConvergeAsync(a1, machine, null, CancellationToken.None);
         Assert.True(completedFirst.IsCompleted);
         var starting = completedFirst.CompletedReferenceTimeRevision!.Value;
+        var frozenStandard = completedFirst.ProductionStandardAuthorityRevision
+            ?? throw new InvalidDataException("The first non-empty transition has no standard cut.");
 
         var transitionStore = new SqlServerProductionReferenceTimePublicationTransitionStore(fixture.ConnectionString);
         var pending = await transitionStore.BeginAsync(
-            processor, a2.Position, a1.Position, starting, 0, CancellationToken.None);
+            processor, a2.Position, a1.Position, starting, frozenStandard, CancellationToken.None);
         var standardAuthority = new SqlServerProductionStandardAuthority(fixture.ConnectionString);
-        var standardCut = await standardAuthority.ReadCutAsync(0, CancellationToken.None);
+        var standardCut = await standardAuthority.ReadCutAsync(frozenStandard, CancellationToken.None);
         var sources = await aggregation.ReadProductionQuantityTransitionSourcesAsync(
             a2, machine, a1.Position, CancellationToken.None);
         Assert.Equal(2, sources.Count);
@@ -221,21 +227,21 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
             SecondsPerUnit = 5m,
             EffectiveFromUtc = source.Evidence.OccurredAtUtc.AddMinutes(-1),
             SourceReference = "approved-after-claim",
-            PublishedRevision = 1,
+            PublishedRevision = (await standardAuthority.ReadCurrentCutAsync()).Revision + 1,
         }, CancellationToken.None);
 
         var completed = await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString)
             .ConvergeAsync(a2, machine, a1.Position, CancellationToken.None);
         Assert.True(completed.IsCompleted);
         Assert.Equal(pending.StartingReferenceTimeRevision, completed.StartingReferenceTimeRevision);
-        Assert.Equal(0, completed.ProductionStandardAuthorityRevision);
+        Assert.Equal(frozenStandard, completed.ProductionStandardAuthorityRevision);
         var finalRevision = completed.CompletedReferenceTimeRevision
             ?? throw new InvalidDataException("The completed transition has no reference-time revision.");
         Assert.Equal(starting.Value + 2, finalRevision.Value);
         var outcomes = await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
             .ReadAtRevisionAsync(processor, finalRevision, CancellationToken.None);
         Assert.Equal(3, outcomes.Count);
-        Assert.All(outcomes, outcome => Assert.Equal(0, outcome.Resolution.AuthorityRevision));
+        Assert.All(outcomes, outcome => Assert.Equal(frozenStandard, outcome.Resolution.AuthorityRevision));
         Assert.Equal(completed, await coordinator.ConvergeAsync(a2, machine, a1.Position, CancellationToken.None));
     }
 
