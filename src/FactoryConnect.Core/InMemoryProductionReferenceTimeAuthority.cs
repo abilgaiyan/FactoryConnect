@@ -73,7 +73,7 @@ public sealed class InMemoryProductionReferenceTimeAuthority
         OperationalMetricPeriodId periodId)
         => ReadAtRevision(aggregationStore, aggregationRevision, referenceTimeRevision, periodId, requireResolved: true);
 
-    private IReadOnlyList<ProductionReferenceTimeResolution>? ReadAtRevision(
+    private List<ProductionReferenceTimeResolution>? ReadAtRevision(
         InMemoryMetricAggregationStore aggregationStore,
         MetricAggregationCheckpoint aggregationRevision,
         ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
