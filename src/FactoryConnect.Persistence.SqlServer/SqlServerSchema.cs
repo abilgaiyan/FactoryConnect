@@ -28,6 +28,8 @@ internal static class SqlServerSchema
         "FactoryConnect.Persistence.SqlServer.Sql.012_DurableProductionReferenceTimeAuthority.sql";
     private const string DurableProductionStandardAuthoritySchemaResourceName =
         "FactoryConnect.Persistence.SqlServer.Sql.013_DurableProductionStandardAuthority.sql";
+    private const string DurableProductionReferenceTimePublicationTransitionSchemaResourceName =
+        "FactoryConnect.Persistence.SqlServer.Sql.014_DurableProductionReferenceTimePublicationTransition.sql";
 
     public static string ReadInitialSchema() =>
         ReadSchema(InitialSchemaResourceName);
@@ -67,6 +69,9 @@ internal static class SqlServerSchema
 
     public static string ReadDurableProductionStandardAuthoritySchema() =>
         ReadSchema(DurableProductionStandardAuthoritySchemaResourceName);
+
+    public static string ReadDurableProductionReferenceTimePublicationTransitionSchema() =>
+        ReadSchema(DurableProductionReferenceTimePublicationTransitionSchemaResourceName);
 
     private static string ReadSchema(string resourceName)
     {
