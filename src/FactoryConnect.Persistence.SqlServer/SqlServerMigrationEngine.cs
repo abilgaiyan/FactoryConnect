@@ -254,8 +254,9 @@ internal sealed class SqlServerMigrationEngine
             connection,
             transaction,
             cancellationToken);
+        var expectedSchema = SqlRepositorySchemaDescriptors.Current;
         var comparison = SqlSchemaComparator.Compare(
-            SqlRepositorySchemaDescriptors.Current,
+            expectedSchema,
             liveSchema);
         if (!comparison.IsExactMatch)
         {

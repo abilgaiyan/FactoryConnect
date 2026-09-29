@@ -7,18 +7,18 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration013UpgradeIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough012 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    private static readonly int[] MigrationIdsThrough013 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+    private static readonly int[] MigrationIdsThrough014 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
     private static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
-    public async Task ExactPost012UpgradesThrough013OnceAndMatchesCurrentSchema()
+    public async Task ExactPost012UpgradesThrough014OnceAndMatchesCurrentSchema()
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(13, catalog.Migrations.Length);
-        Assert.Equal(13, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(14, catalog.Migrations.Length);
+        Assert.Equal(14, catalog.Migrations[^1].MigrationId);
 
         await CreateExactPost012Async(connection, catalog);
         Assert.Equal(MigrationIdsThrough012, await ReadMigrationIdsAsync(connection));
@@ -29,11 +29,16 @@ public sealed class SqlServerMigration013UpgradeIntegrationTests
         var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
         await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough013, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough014, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 13;"));
+        Assert.Equal(1, await CountAsync(connection,
+            "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 14;"));
         Assert.True(await TableExistsAsync(connection, "ProductionStandardAuthorityRevision"));
         Assert.True(await TableExistsAsync(connection, "ProductionStandardVersion"));
+        Assert.True(await TableExistsAsync(connection, "ProductionReferenceTimePublicationTransition"));
+        Assert.Equal(0, await CountAsync(connection,
+            "SELECT COUNT(*) FROM dbo.ProductionReferenceTimePublicationTransition;"));
         Assert.Equal(1, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.ProductionStandardAuthorityRevision WHERE ProductionStandardAuthorityRevision = 0;"));
         Assert.Equal(0, await CountAsync(connection,
@@ -42,13 +47,17 @@ public sealed class SqlServerMigration013UpgradeIntegrationTests
 
         await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough013, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough014, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 13;"));
+        Assert.Equal(1, await CountAsync(connection,
+            "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 14;"));
         Assert.Equal(1, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.ProductionStandardAuthorityRevision WHERE ProductionStandardAuthorityRevision = 0;"));
         Assert.Equal(0, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.ProductionStandardVersion;"));
+        Assert.Equal(0, await CountAsync(connection,
+            "SELECT COUNT(*) FROM dbo.ProductionReferenceTimePublicationTransition;"));
         await AssertSchemaExactAsync(connection, SqlRepositorySchemaDescriptors.Current);
     }
 

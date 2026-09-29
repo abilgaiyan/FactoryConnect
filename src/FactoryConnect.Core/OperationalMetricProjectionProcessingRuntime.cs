@@ -10,6 +10,7 @@ public sealed class OperationalMetricProjectionProcessingRuntime
     private readonly IOperationalMetricEvaluationBatchSource _source;
     private readonly OperationalMetricProjectionFactory _projectionFactory;
     private readonly IOperationalMetricProjectionStore _store;
+    private readonly IOperationalMetricProjectionPrerequisite? _prerequisite;
     private OperationalMetricProjectionCheckpoint? _checkpoint;
     private bool _checkpointRestored;
 
@@ -19,7 +20,8 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         MetricInputStreamId sourceStreamId,
         IOperationalMetricEvaluationBatchSource source,
         OperationalMetricProjectionFactory projectionFactory,
-        IOperationalMetricProjectionStore store)
+        IOperationalMetricProjectionStore store,
+        IOperationalMetricProjectionPrerequisite? prerequisite = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(sourceProcessorId);
@@ -41,6 +43,7 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         _source = source;
         _projectionFactory = projectionFactory;
         _store = store;
+        _prerequisite = prerequisite;
     }
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
@@ -53,6 +56,14 @@ public sealed class OperationalMetricProjectionProcessingRuntime
             _sourceProcessorId,
             _sourceStreamId,
             _checkpoint?.SourceRevision);
+        var preparedRevision = _prerequisite is null
+            ? null
+            : await _prerequisite.PrepareAsync(request, cancellationToken);
+        if (_prerequisite is not null && preparedRevision is null)
+        {
+            return 0;
+        }
+
         var batch = await _source.ReadAsync(request, cancellationToken);
         if (batch is null)
         {
@@ -60,6 +71,11 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         }
 
         ValidateBatchIdentity(batch);
+        if (_prerequisite is not null && batch.SourceRevision != preparedRevision)
+        {
+            throw new InvalidDataException(
+                "Operational evaluation batch differs from the exact prepared reference-time revision.");
+        }
         var projections = ProjectBatch(batch);
         var manifest = new OperationalMetricProjectionBatchManifest(
             projections.Select(static projection => projection.Key));

@@ -5,8 +5,8 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-/// <summary>Persists immutable source outcomes at an independently advancing authority cut.</summary>
-public sealed class SqlServerProductionReferenceTimeOutcomeStore
+/// <summary>Legacy low-level persistence conformance seam; production publication uses claim-bound admission.</summary>
+internal sealed class SqlServerProductionReferenceTimeOutcomeStore
 {
     private readonly string _connectionString;
 

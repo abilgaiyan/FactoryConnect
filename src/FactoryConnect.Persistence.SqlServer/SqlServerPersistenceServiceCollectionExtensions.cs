@@ -78,7 +78,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         mappingCoverageAuthorityStore: mappingStore,
                         machineStateActivityAuthorityStore: stateActivityStore,
                         productionContextActivityReader:
-                            productionContextActivityReader);
+                            productionContextActivityReader,
+                        operationalMetricProjectionPrerequisite:
+                            new SqlServerOperationalMetricProjectionPrerequisite(connectionString));
                 },
                 _ =>
                 {

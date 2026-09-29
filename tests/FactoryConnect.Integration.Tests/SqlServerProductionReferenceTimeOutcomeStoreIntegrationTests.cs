@@ -15,6 +15,14 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
         SqlServerTestDatabaseFixture fixture) => _fixture = fixture;
 
     [Fact]
+    public void IndependentOutcomeWritersAreNotPublicProductionApis()
+    {
+        Assert.False(typeof(SqlServerProductionReferenceTimeOutcomeStore).IsPublic);
+        Assert.False(typeof(SqlServerCanonicalProductionReferenceTimePublisher).IsPublic);
+        Assert.False(typeof(SqlServerProductionReferenceTimeTransitionOutcomeStore).IsPublic);
+    }
+
+    [Fact]
     public async Task ExactRevisionPreservesEarlierOutcomesAndOrdinaryReplay()
     {
         var processor = await CreateAuthorityAsync();
@@ -72,7 +80,7 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
     }
 
     [Fact]
-    public async Task CanonicalPublisherRejectsTamperingAndChangedAuthorityCutWithoutDurablePublication()
+    public async Task CanonicalPublisherRejectsTamperingAndRequiresClaimBoundAdmission()
     {
         var processor = await CreateAuthorityAsync();
         var publisher = new SqlServerCanonicalProductionReferenceTimePublisher(_fixture.ConnectionString);
@@ -160,7 +168,7 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
         });
         await AssertRejectedWithoutPublicationAsync(standards.ReadCurrentCut(), canonical);
 
-        var published = await publisher.PublishAsync(
+        await Assert.ThrowsAsync<InvalidOperationException>(() => publisher.PublishAsync(
             processor,
             new(1),
             evidence,
@@ -168,14 +176,8 @@ public sealed class SqlServerProductionReferenceTimeOutcomeStoreIntegrationTests
             day,
             originalCut,
             proposed,
-            CancellationToken.None);
-
-        Assert.Equal(proposed.PublicationRevision, published.PublicationRevision);
-        Assert.Equal(proposed.SourceQuantityEvidenceId, published.SourceQuantityEvidenceId);
-        Assert.Equal(canonical.IdealDurationSeconds, published.Resolution.IdealDurationSeconds);
-        Assert.Single(await store.ReadAtRevisionAsync(processor, new(1), CancellationToken.None));
-        Assert.Equal(1, await CountOutcomeAsync(processor, evidence.Id.Value));
-        Assert.Equal(1, await CountCutAsync(processor, 1, 1));
+            CancellationToken.None));
+        Assert.Equal(0, await CountOutcomeAsync(processor, evidence.Id.Value));
     }
 
     private async Task<MetricAggregationProcessorId> CreateAuthorityAsync()

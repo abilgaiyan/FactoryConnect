@@ -6,6 +6,42 @@ namespace FactoryConnect.Core.Tests;
 public sealed class OperationalMetricProjectionProcessingRuntimeTests
 {
     [Fact]
+    public async Task IncompleteReferenceTimeDoesNotReadBatchOrAdvanceCheckpoint()
+    {
+        var fixture = CreateFixture();
+        var prerequisite = new ControlledPrerequisite { Prepared = null };
+        var runtime = CreateRuntime(fixture, fixture.Source, prerequisite);
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+
+        Assert.Equal(0, await runtime.RunCycleAsync());
+        Assert.Empty(fixture.Source.Requests);
+        Assert.Null(await fixture.Store.ReadCheckpointAsync(
+            fixture.ProjectionProcessorId, fixture.SourceStreamId, CancellationToken.None));
+
+        prerequisite.Prepared = Revision(fixture, 40);
+        Assert.Equal(1, await runtime.RunCycleAsync());
+        Assert.Equal(Revision(fixture, 40), (await fixture.Store.ReadCheckpointAsync(
+            fixture.ProjectionProcessorId, fixture.SourceStreamId, CancellationToken.None))!.SourceRevision);
+
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+        Assert.Equal(0, await runtime.RunCycleAsync());
+        Assert.Equal(Revision(fixture, 40), prerequisite.Requests[^1].KnownRevision);
+    }
+
+    [Fact]
+    public async Task LaterPreparedRevisionCannotAuthorizeEarlierBatch()
+    {
+        var fixture = CreateFixture();
+        var prerequisite = new ControlledPrerequisite { Prepared = Revision(fixture, 41) };
+        var runtime = CreateRuntime(fixture, fixture.Source, prerequisite);
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await runtime.RunCycleAsync());
+        Assert.Null(await fixture.Store.ReadCheckpointAsync(
+            fixture.ProjectionProcessorId, fixture.SourceStreamId, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task NewerCoherentBatchPublishesProjectionAndCheckpoint()
     {
         var fixture = CreateFixture();
@@ -218,13 +254,15 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
 
     private static OperationalMetricProjectionProcessingRuntime CreateRuntime(
         RuntimeFixture fixture,
-        IOperationalMetricEvaluationBatchSource source) => new(
+        IOperationalMetricEvaluationBatchSource source,
+        IOperationalMetricProjectionPrerequisite? prerequisite = null) => new(
             fixture.ProjectionProcessorId,
             fixture.SourceProcessorId,
             fixture.SourceStreamId,
             source,
             fixture.Factory,
-            fixture.Store);
+            fixture.Store,
+            prerequisite);
 
     private static OperationalMetricEvaluationBatch Batch(
         RuntimeFixture fixture,
@@ -336,6 +374,22 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
             Requests.Add(request);
             return ValueTask.FromResult(
                 _batches.Count == 0 ? null : _batches.Dequeue());
+        }
+    }
+
+    private sealed class ControlledPrerequisite : IOperationalMetricProjectionPrerequisite
+    {
+        public MetricAggregationCheckpoint? Prepared { get; set; }
+
+        public List<OperationalMetricEvaluationBatchRequest> Requests { get; } = [];
+
+        public ValueTask<MetricAggregationCheckpoint?> PrepareAsync(
+            OperationalMetricEvaluationBatchRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return ValueTask.FromResult(Prepared);
         }
     }
 

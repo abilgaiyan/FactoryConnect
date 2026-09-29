@@ -6,19 +6,19 @@ namespace FactoryConnect.Persistence.SqlServer;
 /// <summary>
 /// Canonical publication boundary for durable production reference-time outcomes.
 /// Validates the D11-D15 outcome against source evidence and the recorded production-standard
-/// authority cut before delegating transactional persistence to the SQL outcome store.
+/// authority cut before claim-bound transactional outcome admission.
 /// </summary>
-public sealed class SqlServerCanonicalProductionReferenceTimePublisher
+internal sealed class SqlServerCanonicalProductionReferenceTimePublisher
 {
-    private readonly SqlServerProductionReferenceTimeOutcomeStore _store;
+    private readonly SqlServerProductionReferenceTimeTransitionOutcomeStore _store;
 
     public SqlServerCanonicalProductionReferenceTimePublisher(string connectionString)
-        : this(new SqlServerProductionReferenceTimeOutcomeStore(connectionString))
+        : this(new SqlServerProductionReferenceTimeTransitionOutcomeStore(connectionString))
     {
     }
 
     internal SqlServerCanonicalProductionReferenceTimePublisher(
-        SqlServerProductionReferenceTimeOutcomeStore store)
+        SqlServerProductionReferenceTimeTransitionOutcomeStore store)
     {
         ArgumentNullException.ThrowIfNull(store);
         _store = store;
@@ -47,7 +47,7 @@ public sealed class SqlServerCanonicalProductionReferenceTimePublisher
             standardAuthorityCut,
             proposed.Resolution);
 
-        return await _store.PublishAsync(
+        return await _store.AdmitAsync(
             processorId,
             aggregationPosition,
             proposed,

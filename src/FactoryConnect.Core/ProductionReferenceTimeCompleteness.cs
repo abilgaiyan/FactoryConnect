@@ -3,7 +3,7 @@ using FactoryConnect.Abstractions;
 namespace FactoryConnect.Core;
 
 /// <summary>Requires an explicit resolution for every produced-quantity source in a period.</summary>
-internal static class ProductionReferenceTimeCompleteness
+public static class ProductionReferenceTimeCompleteness
 {
     public static bool IsComplete(
         IReadOnlyList<ProductionQuantityEvidenceId> producedSources,
@@ -60,5 +60,37 @@ internal static class ProductionReferenceTimeCompleteness
         }
 
         return allResolved && resolved.SetEquals(sources);
+    }
+
+    /// <summary>
+    /// Returns the canonical ideal-production duration only when every required source
+    /// has exactly one resolved outcome. An unresolved or missing source returns null;
+    /// resolved subsets are never summed.
+    /// </summary>
+    public static decimal? SumIdealDurationSeconds(
+        IReadOnlyList<ProductionQuantityEvidenceId> producedSources,
+        IReadOnlyList<ProductionReferenceTimeResolution> outcomes,
+        MachineId machineId,
+        ShiftOccurrenceId? shiftOccurrenceId,
+        ProductionDayId? productionDayId)
+    {
+        if (!IsComplete(producedSources, outcomes, machineId, shiftOccurrenceId, productionDayId))
+        {
+            return null;
+        }
+
+        decimal total = 0m;
+        foreach (var outcome in outcomes)
+        {
+            if (outcome.IdealDurationSeconds is not decimal seconds)
+            {
+                throw new InvalidOperationException(
+                    "A resolved reference-time outcome must contain ideal duration seconds.");
+            }
+
+            total = checked(total + seconds);
+        }
+
+        return total;
     }
 }

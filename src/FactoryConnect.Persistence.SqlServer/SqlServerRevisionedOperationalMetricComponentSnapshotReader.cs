@@ -60,16 +60,37 @@ internal sealed partial class SqlServerMetricAggregationStore
         foreach (var operand in request.Operands)
         {
             var source = (OperationalMetricOperandSource.Component)operand.Source;
-            var aggregate = ReadHistoricalAggregate(
-                contributionSet,
-                request.EvaluationKey,
-                OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey));
-            var aggregateKey = OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey);
-            if (aggregate is null && aggregateKey != source.ComponentKey)
+            MetricAggregateValue? aggregate;
+            string aggregateKey;
+
+            if (string.Equals(
+                    source.ComponentKey,
+                    MetricInputKeys.ProductionReferenceTime,
+                    StringComparison.Ordinal))
             {
-                aggregate = ReadHistoricalAggregate(contributionSet, request.EvaluationKey, source.ComponentKey);
+                aggregate = await ReadCompletedReferenceTimeAggregateAsync(
+                    request,
+                    requiredRevision,
+                    cancellationToken);
                 aggregateKey = source.ComponentKey;
             }
+            else
+            {
+                aggregate = ReadHistoricalAggregate(
+                    contributionSet,
+                    request.EvaluationKey,
+                    OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey));
+                aggregateKey = OperationalMetricComponentKeyMapping.AggregateKey(source.ComponentKey);
+                if (aggregate is null && aggregateKey != source.ComponentKey)
+                {
+                    aggregate = ReadHistoricalAggregate(
+                        contributionSet,
+                        request.EvaluationKey,
+                        source.ComponentKey);
+                    aggregateKey = source.ComponentKey;
+                }
+            }
+
             if (aggregate is null)
             {
                 continue;
@@ -90,6 +111,78 @@ internal sealed partial class SqlServerMetricAggregationStore
             request.EvaluationKey,
             requiredRevision,
             components);
+    }
+
+    private async Task<MetricAggregateValue?> ReadCompletedReferenceTimeAggregateAsync(
+        OperationalMetricComponentSnapshotRequest request,
+        MetricAggregationCheckpoint requiredRevision,
+        CancellationToken cancellationToken)
+    {
+        var transitionStore = new SqlServerProductionReferenceTimePublicationTransitionStore(
+            _connectionString);
+        var transition = await transitionStore.ReadAsync(
+            requiredRevision.ProcessorId,
+            requiredRevision.Position,
+            cancellationToken);
+        if (transition is not { IsCompleted: true, CompletedReferenceTimeRevision: not null })
+        {
+            // Reference-time outcomes that are individually durable but belong to a
+            // pending transition are deliberately invisible to operational metrics.
+            return null;
+        }
+
+        var sourceCut = await ReadProductionQuantitySourceCutAsync(
+            requiredRevision,
+            request.EvaluationKey.MachineId,
+            request.EvaluationKey.PeriodId,
+            cancellationToken);
+        var producedSources = sourceCut.Sources
+            .Select(static source => source.Evidence.Id)
+            .ToArray();
+        if (producedSources.Length == 0)
+        {
+            return null;
+        }
+
+        var sourceSet = producedSources.ToHashSet();
+        var outcomeStore = new SqlServerProductionReferenceTimeOutcomeStore(_connectionString);
+        var published = await outcomeStore.ReadAtRevisionAsync(
+            requiredRevision.ProcessorId,
+            transition.CompletedReferenceTimeRevision,
+            cancellationToken);
+        var outcomes = published
+            .Where(outcome => sourceSet.Contains(outcome.SourceQuantityEvidenceId))
+            .Select(static outcome => outcome.Resolution)
+            .ToArray();
+
+        var (shiftOccurrenceId, productionDayId) = request.EvaluationKey.PeriodId switch
+        {
+            OperationalMetricPeriodId.Shift shift =>
+                ((ShiftOccurrenceId?)shift.ShiftOccurrenceId, (ProductionDayId?)null),
+            OperationalMetricPeriodId.ProductionDay day =>
+                ((ShiftOccurrenceId?)null, (ProductionDayId?)day.ProductionDayId),
+            _ => throw new InvalidOperationException("Unsupported operational metric period type."),
+        };
+
+        var idealSeconds = ProductionReferenceTimeCompleteness.SumIdealDurationSeconds(
+            producedSources,
+            outcomes,
+            request.EvaluationKey.MachineId,
+            shiftOccurrenceId,
+            productionDayId);
+        if (idealSeconds is null)
+        {
+            // Missing, ambiguous, or otherwise unresolved sources make the operand
+            // unavailable. Never sum only the resolved subset.
+            return null;
+        }
+
+        return new MetricAggregateValue(
+            idealSeconds.Value,
+            MetricInputFactUnits.Seconds,
+            outcomes.LongLength,
+            outcomes.Min(static outcome => outcome.OccurredAtUtc),
+            outcomes.Max(static outcome => outcome.OccurredAtUtc));
     }
 
     private static InvalidOperationException HistoricalRevisionUnavailable() =>

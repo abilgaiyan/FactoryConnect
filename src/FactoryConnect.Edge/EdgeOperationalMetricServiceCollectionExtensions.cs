@@ -2,6 +2,7 @@ using System.Globalization;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
 using FactoryConnect.Core.Metrics;
+using FactoryConnect.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -51,6 +52,8 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
                 var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
                 var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
                 var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
+                var prerequisite = provider.GetService<PersistenceProviderServices>()?
+                    .OperationalMetricProjectionPrerequisite;
 
                 var runtimes = machines
                     .Select(machineId =>
@@ -74,7 +77,8 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
                             streamId,
                             source,
                             new OperationalMetricProjectionFactory(catalog, projectionProcessorId),
-                            projectionStore);
+                            projectionStore,
+                            prerequisite);
                     })
                     .ToArray();
 

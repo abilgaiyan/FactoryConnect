@@ -35,6 +35,7 @@ internal static class SqlRepositorySchemaAuthority
         Table("ProductionReferenceTimeOutcome"),
         Table("ProductionReferenceTimeOutcomeConflict"),
         Table("ProductionReferenceTimePublicationCut"),
+        Table("ProductionReferenceTimePublicationTransition"),
         Table("ProductionReferenceTimeRevision"),
         Table("ProductionStandardAuthorityRevision"),
         Table("ProductionStandardVersion"),
