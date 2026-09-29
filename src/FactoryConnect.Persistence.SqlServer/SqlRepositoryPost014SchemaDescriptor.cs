@@ -18,8 +18,9 @@ internal static class SqlRepositoryPost014SchemaDescriptor
                     UInt64("TargetMetricAggregationPosition"),
                     UInt64("ExpectedPreviousMetricAggregationPosition", isNullable: true),
                     UInt64("ProductionStandardAuthorityRevision", isNullable: true),
-                    UInt64("CompletedProductionReferenceTimeRevision", isNullable: true),
-                    Column("IsCompleted", "bit")
+                    UInt64("StartingProductionReferenceTimeRevision"),
+                    Column("State", "tinyint"),
+                    UInt64("FinalProductionReferenceTimeRevision", isNullable: true)
                 ],
                 PrimaryKey(
                     "PK_ProductionReferenceTimePublicationTransition",
@@ -43,8 +44,13 @@ internal static class SqlRepositoryPost014SchemaDescriptor
                         "ProductionStandardAuthorityRevision",
                         ["ProductionStandardAuthorityRevision"]),
                     ForeignKey(
-                        "FK_ProductionReferenceTimePublicationTransition_CompletedReferenceRevision",
-                        ["MetricAggregationProcessorRowId", "CompletedProductionReferenceTimeRevision"],
+                        "FK_ProductionReferenceTimePublicationTransition_StartingReferenceRevision",
+                        ["MetricAggregationProcessorRowId", "StartingProductionReferenceTimeRevision"],
+                        "ProductionReferenceTimeRevision",
+                        ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"]),
+                    ForeignKey(
+                        "FK_ProductionReferenceTimePublicationTransition_FinalReferenceRevision",
+                        ["MetricAggregationProcessorRowId", "FinalProductionReferenceTimeRevision"],
                         "ProductionReferenceTimeRevision",
                         ["MetricAggregationProcessorRowId", "ProductionReferenceTimeRevision"])
                 ],
@@ -60,11 +66,32 @@ internal static class SqlRepositoryPost014SchemaDescriptor
                         "CK_ProductionReferenceTimePublicationTransition_StandardRevision",
                         "([ProductionStandardAuthorityRevision] IS NULL OR [ProductionStandardAuthorityRevision]>=(0) AND [ProductionStandardAuthorityRevision]<=(18446744073709551615.))"),
                     Check(
-                        "CK_ProductionReferenceTimePublicationTransition_CompletedReferenceRevision",
-                        "([CompletedProductionReferenceTimeRevision] IS NULL OR [CompletedProductionReferenceTimeRevision]>=(0) AND [CompletedProductionReferenceTimeRevision]<=(18446744073709551615.))"),
+                        "CK_ProductionReferenceTimePublicationTransition_StartingReferenceRevision",
+                        "([StartingProductionReferenceTimeRevision]>=(0) AND [StartingProductionReferenceTimeRevision]<=(18446744073709551615.))"),
+                    Check(
+                        "CK_ProductionReferenceTimePublicationTransition_FinalReferenceRevision",
+                        "([FinalProductionReferenceTimeRevision] IS NULL OR [FinalProductionReferenceTimeRevision]>=(0) AND [FinalProductionReferenceTimeRevision]<=(18446744073709551615.))"),
                     Check(
                         "CK_ProductionReferenceTimePublicationTransition_State",
-                        "([IsCompleted]=(0) AND [CompletedProductionReferenceTimeRevision] IS NULL OR [IsCompleted]=(1) AND [CompletedProductionReferenceTimeRevision] IS NOT NULL)")
+                        "([State]=(0) AND [FinalProductionReferenceTimeRevision] IS NULL OR [State]=(1) AND [FinalProductionReferenceTimeRevision] IS NOT NULL)"),
+                    Check(
+                        "CK_ProductionReferenceTimePublicationTransition_CompletionRevision",
+                        "([State]=(0) OR [ProductionStandardAuthorityRevision] IS NULL AND [FinalProductionReferenceTimeRevision]=[StartingProductionReferenceTimeRevision] OR [ProductionStandardAuthorityRevision] IS NOT NULL AND [FinalProductionReferenceTimeRevision]>[StartingProductionReferenceTimeRevision])")
+                ],
+                indexes:
+                [
+                    UniqueFilteredIndex(
+                        "UX_ProductionReferenceTimePublicationTransition_Pending",
+                        ["MetricAggregationProcessorRowId"],
+                        "([State]=(0))"),
+                    UniqueFilteredIndex(
+                        "UX_ProductionReferenceTimePublicationTransition_Successor",
+                        ["MetricAggregationProcessorRowId", "ExpectedPreviousMetricAggregationPosition"],
+                        "([ExpectedPreviousMetricAggregationPosition] IS NOT NULL)"),
+                    UniqueFilteredIndex(
+                        "UX_ProductionReferenceTimePublicationTransition_BootstrapSuccessor",
+                        ["MetricAggregationProcessorRowId"],
+                        "([ExpectedPreviousMetricAggregationPosition] IS NULL)")
                 ])
         ]);
     }
@@ -74,7 +101,8 @@ internal static class SqlRepositoryPost014SchemaDescriptor
         ImmutableArray<SqlColumnDescriptor> columns,
         SqlPrimaryKeyDescriptor primaryKey,
         ImmutableArray<SqlForeignKeyDescriptor> foreignKeys = default,
-        ImmutableArray<SqlCheckConstraintDescriptor> checks = default) =>
+        ImmutableArray<SqlCheckConstraintDescriptor> checks = default,
+        ImmutableArray<SqlIndexDescriptor> indexes = default) =>
         new(
             new SqlObjectName("dbo", name),
             columns,
@@ -82,7 +110,7 @@ internal static class SqlRepositoryPost014SchemaDescriptor
             [],
             foreignKeys.IsDefault ? [] : foreignKeys,
             checks.IsDefault ? [] : checks,
-            []);
+            indexes.IsDefault ? [] : indexes);
 
     private static SqlColumnDescriptor Column(
         string name,
@@ -96,10 +124,29 @@ internal static class SqlRepositoryPost014SchemaDescriptor
     private static SqlPrimaryKeyDescriptor PrimaryKey(string name, params string[] columns) =>
         new(name, new SqlIndexStructureDescriptor(
             true,
-            columns.Select(static (column, index) =>
-                new SqlIndexColumnDescriptor(column, SqlIndexColumnDirection.Ascending, index + 1)).ToImmutableArray(),
+            IndexColumns(columns),
             [],
             null));
+
+    private static SqlIndexDescriptor UniqueFilteredIndex(
+        string name,
+        string[] columns,
+        string filter) =>
+        new(
+            name,
+            IsUnique: true,
+            IsEnabled: true,
+            new SqlIndexStructureDescriptor(
+                IsClustered: false,
+                KeyColumns: IndexColumns(columns),
+                IncludedColumns: [],
+                CanonicalFilterDefinition: filter));
+
+    private static ImmutableArray<SqlIndexColumnDescriptor> IndexColumns(IEnumerable<string> columns) =>
+        columns
+            .Select(static (column, index) =>
+                new SqlIndexColumnDescriptor(column, SqlIndexColumnDirection.Ascending, index + 1))
+            .ToImmutableArray();
 
     private static SqlForeignKeyDescriptor ForeignKey(
         string name,
