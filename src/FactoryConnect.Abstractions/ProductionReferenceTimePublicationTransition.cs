@@ -2,9 +2,9 @@ namespace FactoryConnect.Abstractions;
 
 /// <summary>
 /// Durable authority for one exact aggregation-to-reference-time publication transition.
-/// A pending transition may establish one production-standard revision when its first
-/// source outcome is admitted. Completion is separate from source admission so a
-/// multi-source aggregation cut cannot become visible after only a prefix is durable.
+/// A pending non-empty transition already owns one exact production-standard revision and
+/// one starting reference-time revision before any source outcome is admitted. Completion
+/// is a separate, forward-only state transition after exact source coverage is proven.
 /// </summary>
 public sealed record ProductionReferenceTimePublicationTransition
 {
@@ -13,6 +13,7 @@ public sealed record ProductionReferenceTimePublicationTransition
         MetricInputPosition targetAggregationPosition,
         MetricInputPosition? expectedPreviousAggregationPosition,
         long? productionStandardAuthorityRevision,
+        ProductionReferenceTimeAuthorityRevision startingReferenceTimeRevision,
         ProductionReferenceTimeAuthorityRevision? completedReferenceTimeRevision,
         bool isCompleted)
     {
@@ -37,14 +38,32 @@ public sealed record ProductionReferenceTimePublicationTransition
         if (isCompleted != (completedReferenceTimeRevision is not null))
         {
             throw new ArgumentException(
-                "A completed transition must have a completed reference-time revision and a pending transition must not.",
+                "A completed transition must have a final reference-time revision and a pending transition must not.",
                 nameof(completedReferenceTimeRevision));
+        }
+
+        if (completedReferenceTimeRevision is { } finalRevision)
+        {
+            if (productionStandardAuthorityRevision is null && finalRevision != startingReferenceTimeRevision)
+            {
+                throw new ArgumentException(
+                    "An empty completed transition must retain its starting reference-time revision.",
+                    nameof(completedReferenceTimeRevision));
+            }
+
+            if (productionStandardAuthorityRevision is not null && finalRevision.Value <= startingReferenceTimeRevision.Value)
+            {
+                throw new ArgumentException(
+                    "A non-empty completed transition must advance beyond its starting reference-time revision.",
+                    nameof(completedReferenceTimeRevision));
+            }
         }
 
         ProcessorId = processorId;
         TargetAggregationPosition = targetAggregationPosition;
         ExpectedPreviousAggregationPosition = expectedPreviousAggregationPosition;
         ProductionStandardAuthorityRevision = productionStandardAuthorityRevision;
+        StartingReferenceTimeRevision = startingReferenceTimeRevision;
         CompletedReferenceTimeRevision = completedReferenceTimeRevision;
         IsCompleted = isCompleted;
     }
@@ -56,10 +75,12 @@ public sealed record ProductionReferenceTimePublicationTransition
     public MetricInputPosition? ExpectedPreviousAggregationPosition { get; init; }
 
     /// <summary>
-    /// Exact standard authority established by the first durable outcome in the batch.
-    /// Null is valid before admission and for an empty completed delta.
+    /// Exact standard authority owned by this transition. Null is valid only for an
+    /// empty delta; non-empty transitions establish this value before first admission.
     /// </summary>
     public long? ProductionStandardAuthorityRevision { get; init; }
+
+    public ProductionReferenceTimeAuthorityRevision StartingReferenceTimeRevision { get; init; }
 
     public ProductionReferenceTimeAuthorityRevision? CompletedReferenceTimeRevision { get; init; }
 
