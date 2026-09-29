@@ -126,11 +126,11 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
 
     private async Task<HashSet<ProductionQuantityEvidenceId>> ReadExistingSourceIdsAsync(
         MetricAggregationProcessorId processorId,
-        IReadOnlyCollection<ProductionQuantityEvidenceId> sourceIds,
+        ProductionQuantityEvidenceId[] sourceIds,
         CancellationToken cancellationToken)
     {
         var result = new HashSet<ProductionQuantityEvidenceId>();
-        if (sourceIds.Count == 0)
+        if (sourceIds.Length == 0)
         {
             return result;
         }
