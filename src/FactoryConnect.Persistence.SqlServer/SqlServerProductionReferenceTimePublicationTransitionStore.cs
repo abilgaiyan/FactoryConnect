@@ -5,12 +5,13 @@ using Microsoft.Data.SqlClient;
 namespace FactoryConnect.Persistence.SqlServer;
 
 /// <summary>
-/// Durable compare-and-complete authority for FC-034.2B.3B reference-time publication.
-/// The transition row, rather than the legacy paired-cut table by itself, is the
-/// authority that says a target aggregation cut has been fully converged.
+/// Durable FC-034.2B.3B transition authority. Claim creation fixes Aprev, A,
+/// optional S, and StartingR before source admission. Completion proves exact
+/// delta coverage and publishes the terminal R in one serializable transaction.
 /// </summary>
 public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
 {
+    private const string ProducedQuantityMetricKey = "quantity.part-count-increment";
     private readonly string _connectionString;
 
     public SqlServerProductionReferenceTimePublicationTransitionStore(string connectionString)
@@ -23,38 +24,99 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         MetricAggregationProcessorId processorId,
         MetricInputPosition targetAggregationPosition,
         MetricInputPosition? expectedPreviousAggregationPosition,
+        ProductionReferenceTimeAuthorityRevision startingReferenceTimeRevision,
+        long? productionStandardAuthorityRevision,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(targetAggregationPosition);
         ValidatePrevious(targetAggregationPosition, expectedPreviousAggregationPosition);
+        if (productionStandardAuthorityRevision is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(productionStandardAuthorityRevision));
+        }
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
-            IsolationLevel.Serializable, cancellationToken);
+            IsolationLevel.Serializable,
+            cancellationToken);
 
         var processorRowId = await ReadProcessorRowIdAsync(
-            connection, transaction, processorId, cancellationToken);
-        await RequireAggregationRevisionAsync(
-            connection, transaction, processorRowId, targetAggregationPosition, cancellationToken);
+            connection,
+            transaction,
+            processorId,
+            cancellationToken);
 
         var existing = await ReadAsync(
-            connection, transaction, processorId, processorRowId, targetAggregationPosition, cancellationToken);
+            connection,
+            transaction,
+            processorId,
+            processorRowId,
+            targetAggregationPosition,
+            forUpdate: true,
+            cancellationToken);
         if (existing is not null)
         {
-            RequireSameExpectedPrevious(existing, expectedPreviousAggregationPosition);
+            RequireEquivalentClaim(
+                existing,
+                expectedPreviousAggregationPosition,
+                startingReferenceTimeRevision,
+                productionStandardAuthorityRevision);
             await transaction.CommitAsync(cancellationToken);
             return existing;
         }
 
-        await RequireExpectedCompletedCutAsync(
+        await RequireNoPendingTransitionAsync(connection, transaction, processorRowId, cancellationToken);
+        await RequireLatestCompletedPredecessorAsync(
             connection,
             transaction,
             processorRowId,
-            targetAggregationPosition,
             expectedPreviousAggregationPosition,
             cancellationToken);
+        await RequireNextAggregationRevisionAsync(
+            connection,
+            transaction,
+            processorRowId,
+            expectedPreviousAggregationPosition,
+            targetAggregationPosition,
+            cancellationToken);
+        await RequireLatestReferenceTimeRevisionAsync(
+            connection,
+            transaction,
+            processorRowId,
+            startingReferenceTimeRevision,
+            cancellationToken);
+
+        var expectedSources = await ReadExpectedSourceIdsAsync(
+            connection,
+            transaction,
+            processorRowId,
+            expectedPreviousAggregationPosition,
+            targetAggregationPosition,
+            cancellationToken);
+        if (expectedSources.Count == 0)
+        {
+            if (productionStandardAuthorityRevision is not null)
+            {
+                throw new InvalidOperationException(
+                    "An empty reference-time publication delta must not claim a production-standard authority revision.");
+            }
+        }
+        else
+        {
+            if (productionStandardAuthorityRevision is null)
+            {
+                throw new InvalidOperationException(
+                    "A non-empty reference-time publication delta must durably claim one production-standard authority revision before admission.");
+            }
+
+            await RequireStandardRevisionAsync(
+                connection,
+                transaction,
+                productionStandardAuthorityRevision.Value,
+                cancellationToken);
+        }
 
         await using (var command = connection.CreateCommand())
         {
@@ -65,14 +127,25 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
                      TargetMetricAggregationPosition,
                      ExpectedPreviousMetricAggregationPosition,
                      ProductionStandardAuthorityRevision,
-                     CompletedProductionReferenceTimeRevision,
-                     IsCompleted)
-                VALUES (@Processor, @Target, @Previous, NULL, NULL, 0);
+                     StartingProductionReferenceTimeRevision,
+                     State,
+                     FinalProductionReferenceTimeRevision)
+                VALUES
+                    (@Processor, @Target, @Previous, @Standard, @StartingR, 0, NULL);
                 """;
             command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
             command.Parameters.Add(SqlServerUInt64.CreateParameter("@Target", targetAggregationPosition.Value));
             command.Parameters.Add(SqlServerUInt64.CreateNullableParameter(
-                "@Previous", expectedPreviousAggregationPosition?.Value));
+                "@Previous",
+                expectedPreviousAggregationPosition?.Value));
+            command.Parameters.Add(SqlServerUInt64.CreateNullableParameter(
+                "@Standard",
+                productionStandardAuthorityRevision is long standard
+                    ? checked((ulong)standard)
+                    : null));
+            command.Parameters.Add(SqlServerUInt64.CreateParameter(
+                "@StartingR",
+                checked((ulong)startingReferenceTimeRevision.Value)));
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -81,94 +154,15 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
             processorId,
             targetAggregationPosition,
             expectedPreviousAggregationPosition,
-            null,
+            productionStandardAuthorityRevision,
+            startingReferenceTimeRevision,
             null,
             false);
-    }
-
-    /// <summary>
-    /// Establishes the one exact production-standard cut for a pending non-empty
-    /// publication batch. Repeating the same revision is idempotent; a different
-    /// revision fails closed.
-    /// </summary>
-    public async Task<ProductionReferenceTimePublicationTransition> EstablishStandardRevisionAsync(
-        MetricAggregationProcessorId processorId,
-        MetricInputPosition targetAggregationPosition,
-        long productionStandardAuthorityRevision,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(processorId);
-        ArgumentNullException.ThrowIfNull(targetAggregationPosition);
-        ArgumentOutOfRangeException.ThrowIfNegative(productionStandardAuthorityRevision);
-
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
-            IsolationLevel.Serializable, cancellationToken);
-        var processorRowId = await ReadProcessorRowIdAsync(
-            connection, transaction, processorId, cancellationToken);
-        var transition = await ReadRequiredAsync(
-            connection, transaction, processorId, processorRowId, targetAggregationPosition, cancellationToken);
-
-        if (transition.IsCompleted)
-        {
-            if (transition.ProductionStandardAuthorityRevision != productionStandardAuthorityRevision)
-            {
-                throw new InvalidOperationException(
-                    "A completed reference-time publication transition cannot change its production-standard authority cut.");
-            }
-
-            await transaction.CommitAsync(cancellationToken);
-            return transition;
-        }
-
-        if (transition.ProductionStandardAuthorityRevision is long established)
-        {
-            if (established != productionStandardAuthorityRevision)
-            {
-                throw new InvalidOperationException(
-                    "A pending reference-time publication transition cannot mix production-standard authority revisions.");
-            }
-
-            await transaction.CommitAsync(cancellationToken);
-            return transition;
-        }
-
-        await RequireStandardRevisionAsync(
-            connection, transaction, productionStandardAuthorityRevision, cancellationToken);
-        await using (var command = connection.CreateCommand())
-        {
-            command.Transaction = transaction;
-            command.CommandText = """
-                UPDATE dbo.ProductionReferenceTimePublicationTransition
-                SET ProductionStandardAuthorityRevision = @Standard
-                WHERE MetricAggregationProcessorRowId = @Processor
-                  AND TargetMetricAggregationPosition = @Target
-                  AND IsCompleted = 0
-                  AND ProductionStandardAuthorityRevision IS NULL;
-                """;
-            command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
-            command.Parameters.Add(SqlServerUInt64.CreateParameter("@Target", targetAggregationPosition.Value));
-            command.Parameters.Add(SqlServerUInt64.CreateParameter(
-                "@Standard", checked((ulong)productionStandardAuthorityRevision)));
-            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
-            {
-                throw new InvalidOperationException(
-                    "Reference-time publication transition standard authority changed concurrently.");
-            }
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        return transition with
-        {
-            ProductionStandardAuthorityRevision = productionStandardAuthorityRevision
-        };
     }
 
     public async Task<ProductionReferenceTimePublicationTransition> CompleteAsync(
         MetricAggregationProcessorId processorId,
         MetricInputPosition targetAggregationPosition,
-        ProductionReferenceTimeAuthorityRevision completedReferenceTimeRevision,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(processorId);
@@ -177,26 +171,87 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
-            IsolationLevel.Serializable, cancellationToken);
+            IsolationLevel.Serializable,
+            cancellationToken);
+
         var processorRowId = await ReadProcessorRowIdAsync(
-            connection, transaction, processorId, cancellationToken);
+            connection,
+            transaction,
+            processorId,
+            cancellationToken);
         var transition = await ReadRequiredAsync(
-            connection, transaction, processorId, processorRowId, targetAggregationPosition, cancellationToken);
+            connection,
+            transaction,
+            processorId,
+            processorRowId,
+            targetAggregationPosition,
+            forUpdate: true,
+            cancellationToken);
 
         if (transition.IsCompleted)
         {
-            if (transition.CompletedReferenceTimeRevision != completedReferenceTimeRevision)
-            {
-                throw new InvalidOperationException(
-                    "A completed reference-time publication transition cannot change its completion revision.");
-            }
-
             await transaction.CommitAsync(cancellationToken);
             return transition;
         }
 
-        await RequireReferenceTimeRevisionAsync(
-            connection, transaction, processorRowId, completedReferenceTimeRevision, cancellationToken);
+        var expectedSources = await ReadExpectedSourceIdsAsync(
+            connection,
+            transaction,
+            processorRowId,
+            transition.ExpectedPreviousAggregationPosition,
+            targetAggregationPosition,
+            cancellationToken);
+        var finalRevision = await ReadLatestReferenceTimeRevisionAsync(
+            connection,
+            transaction,
+            processorRowId,
+            cancellationToken);
+        var admittedSources = await ReadAdmittedSourceIdsAsync(
+            connection,
+            transaction,
+            processorRowId,
+            transition.StartingReferenceTimeRevision,
+            finalRevision,
+            cancellationToken);
+
+        if (!expectedSources.SetEquals(admittedSources))
+        {
+            throw new InvalidOperationException(
+                "Reference-time publication cannot complete because exact delta source coverage has not been proven.");
+        }
+
+        if (expectedSources.Count == 0)
+        {
+            if (transition.ProductionStandardAuthorityRevision is not null ||
+                finalRevision != transition.StartingReferenceTimeRevision)
+            {
+                throw new InvalidOperationException(
+                    "An empty reference-time publication transition must complete without a standard cut or reference-time revision advance.");
+            }
+        }
+        else
+        {
+            if (transition.ProductionStandardAuthorityRevision is not long standardRevision)
+            {
+                throw new InvalidOperationException(
+                    "A non-empty reference-time publication transition has no durable production-standard authority revision.");
+            }
+
+            if (finalRevision.Value <= transition.StartingReferenceTimeRevision.Value)
+            {
+                throw new InvalidOperationException(
+                    "A non-empty reference-time publication transition must advance reference-time authority.");
+            }
+
+            await RequireAdmittedStandardRevisionAsync(
+                connection,
+                transaction,
+                processorRowId,
+                transition.StartingReferenceTimeRevision,
+                finalRevision,
+                standardRevision,
+                cancellationToken);
+        }
 
         await using (var cut = connection.CreateCommand())
         {
@@ -221,7 +276,8 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
             cut.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
             cut.Parameters.Add(SqlServerUInt64.CreateParameter("@Target", targetAggregationPosition.Value));
             cut.Parameters.Add(SqlServerUInt64.CreateParameter(
-                "@Revision", checked((ulong)completedReferenceTimeRevision.Value)));
+                "@Revision",
+                checked((ulong)finalRevision.Value)));
             await cut.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -230,27 +286,28 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
             complete.Transaction = transaction;
             complete.CommandText = """
                 UPDATE dbo.ProductionReferenceTimePublicationTransition
-                SET CompletedProductionReferenceTimeRevision = @Revision,
-                    IsCompleted = 1
+                SET State = 1,
+                    FinalProductionReferenceTimeRevision = @FinalR
                 WHERE MetricAggregationProcessorRowId = @Processor
                   AND TargetMetricAggregationPosition = @Target
-                  AND IsCompleted = 0;
+                  AND State = 0;
                 """;
             complete.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
             complete.Parameters.Add(SqlServerUInt64.CreateParameter("@Target", targetAggregationPosition.Value));
             complete.Parameters.Add(SqlServerUInt64.CreateParameter(
-                "@Revision", checked((ulong)completedReferenceTimeRevision.Value)));
+                "@FinalR",
+                checked((ulong)finalRevision.Value)));
             if (await complete.ExecuteNonQueryAsync(cancellationToken) != 1)
             {
                 throw new InvalidOperationException(
-                    "Reference-time publication transition was completed concurrently.");
+                    "Reference-time publication transition completion raced with another authority operation.");
             }
         }
 
         await transaction.CommitAsync(cancellationToken);
         return transition with
         {
-            CompletedReferenceTimeRevision = completedReferenceTimeRevision,
+            CompletedReferenceTimeRevision = finalRevision,
             IsCompleted = true
         };
     }
@@ -262,17 +319,25 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(targetAggregationPosition);
+
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         var processorRowId = await ReadProcessorRowIdAsync(
-            connection, null, processorId, cancellationToken);
+            connection,
+            null,
+            processorId,
+            cancellationToken);
         return await ReadAsync(
-            connection, null, processorId, processorRowId, targetAggregationPosition, cancellationToken);
+            connection,
+            null,
+            processorId,
+            processorRowId,
+            targetAggregationPosition,
+            forUpdate: false,
+            cancellationToken);
     }
 
-    private static void ValidatePrevious(
-        MetricInputPosition target,
-        MetricInputPosition? previous)
+    private static void ValidatePrevious(MetricInputPosition target, MetricInputPosition? previous)
     {
         if (previous is not null && previous >= target)
         {
@@ -282,77 +347,241 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         }
     }
 
-    private static void RequireSameExpectedPrevious(
+    private static void RequireEquivalentClaim(
         ProductionReferenceTimePublicationTransition existing,
-        MetricInputPosition? expectedPrevious)
+        MetricInputPosition? expectedPrevious,
+        ProductionReferenceTimeAuthorityRevision startingRevision,
+        long? standardRevision)
     {
-        if (existing.ExpectedPreviousAggregationPosition != expectedPrevious)
+        if (existing.ExpectedPreviousAggregationPosition != expectedPrevious ||
+            existing.StartingReferenceTimeRevision != startingRevision ||
+            existing.ProductionStandardAuthorityRevision != standardRevision)
         {
             throw new InvalidOperationException(
-                "Ordinary replay must use the transition's original expected previous publication cut.");
+                "Ordinary claim replay must use the exact durable Aprev, A, S, and StartingR identity.");
         }
     }
 
-    private static async Task RequireExpectedCompletedCutAsync(
+    private static async Task RequireNoPendingTransitionAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         long processorRowId,
-        MetricInputPosition target,
-        MetricInputPosition? expectedPrevious,
         CancellationToken cancellationToken)
     {
-        await using var active = connection.CreateCommand();
-        active.Transaction = transaction;
-        active.CommandText = """
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
             SELECT COUNT_BIG(*)
             FROM dbo.ProductionReferenceTimePublicationTransition WITH (UPDLOCK, HOLDLOCK)
             WHERE MetricAggregationProcessorRowId = @Processor
-              AND IsCompleted = 0;
+              AND State = 0;
             """;
-        active.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
-        if ((long)(await active.ExecuteScalarAsync(cancellationToken))! != 0)
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        if ((long)(await command.ExecuteScalarAsync(cancellationToken))! != 0)
         {
             throw new InvalidOperationException(
                 "Only one pending reference-time publication transition may exist for an aggregation processor.");
         }
+    }
 
-        if (expectedPrevious is null)
-        {
-            await using var completed = connection.CreateCommand();
-            completed.Transaction = transaction;
-            completed.CommandText = """
-                SELECT COUNT_BIG(*)
-                FROM dbo.ProductionReferenceTimePublicationTransition WITH (UPDLOCK, HOLDLOCK)
-                WHERE MetricAggregationProcessorRowId = @Processor
-                  AND IsCompleted = 1
-                  AND TargetMetricAggregationPosition < @Target;
-                """;
-            completed.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
-            completed.Parameters.Add(SqlServerUInt64.CreateParameter("@Target", target.Value));
-            if ((long)(await completed.ExecuteScalarAsync(cancellationToken))! != 0)
-            {
-                throw new InvalidOperationException(
-                    "A previous completed transition exists and must be supplied as the expected publication cut.");
-            }
-
-            return;
-        }
-
-        await using var previous = connection.CreateCommand();
-        previous.Transaction = transaction;
-        previous.CommandText = """
-            SELECT COUNT_BIG(*)
+    private static async Task RequireLatestCompletedPredecessorAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        MetricInputPosition? expectedPrevious,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT TOP (1) TargetMetricAggregationPosition
             FROM dbo.ProductionReferenceTimePublicationTransition WITH (UPDLOCK, HOLDLOCK)
             WHERE MetricAggregationProcessorRowId = @Processor
-              AND TargetMetricAggregationPosition = @Previous
-              AND IsCompleted = 1;
+              AND State = 1
+            ORDER BY TargetMetricAggregationPosition DESC;
             """;
-        previous.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
-        previous.Parameters.Add(SqlServerUInt64.CreateParameter("@Previous", expectedPrevious.Value));
-        if ((long)(await previous.ExecuteScalarAsync(cancellationToken))! != 1)
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        MetricInputPosition? latestCompleted = scalar is decimal value
+            ? new MetricInputPosition(checked((ulong)value))
+            : null;
+        if (latestCompleted != expectedPrevious)
         {
             throw new InvalidOperationException(
-                "The expected previous reference-time publication transition is not completed.");
+                "Reference-time transition predecessor must be the latest completed transition for the processor.");
+        }
+    }
+
+    private static async Task RequireNextAggregationRevisionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        MetricInputPosition? previous,
+        MetricInputPosition target,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = previous is null
+            ? """
+                SELECT MIN(Position)
+                FROM dbo.MetricAggregationRevision WITH (UPDLOCK, HOLDLOCK)
+                WHERE MetricAggregationProcessorRowId = @Processor;
+                """
+            : """
+                SELECT MIN(Position)
+                FROM dbo.MetricAggregationRevision WITH (UPDLOCK, HOLDLOCK)
+                WHERE MetricAggregationProcessorRowId = @Processor
+                  AND Position > @Previous;
+                """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        if (previous is not null)
+        {
+            command.Parameters.Add(SqlServerUInt64.CreateParameter("@Previous", previous.Value));
+        }
+
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        if (scalar is not decimal value || checked((ulong)value) != target.Value)
+        {
+            throw new InvalidOperationException(
+                "Reference-time transition target must be the next exact aggregation revision after the latest completed predecessor.");
+        }
+    }
+
+    private static async Task RequireLatestReferenceTimeRevisionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        ProductionReferenceTimeAuthorityRevision expected,
+        CancellationToken cancellationToken)
+    {
+        var latest = await ReadLatestReferenceTimeRevisionAsync(
+            connection,
+            transaction,
+            processorRowId,
+            cancellationToken);
+        if (latest != expected)
+        {
+            throw new InvalidOperationException(
+                "Reference-time transition StartingR must equal the latest durable reference-time revision while the claim is created.");
+        }
+    }
+
+    internal static async Task<HashSet<string>> ReadExpectedSourceIdsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        MetricInputPosition? previous,
+        MetricInputPosition target,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = previous is null
+            ? """
+                SELECT DISTINCT f.SourceQuantityEvidenceId
+                FROM dbo.MetricAggregationContribution c WITH (UPDLOCK, HOLDLOCK)
+                JOIN dbo.MetricInputFact f
+                  ON f.MetricInputFactRowId = c.MetricInputFactRowId
+                 AND f.MetricInputStreamRowId = c.MetricInputStreamRowId
+                 AND f.Position = c.Position
+                WHERE c.MetricAggregationProcessorRowId = @Processor
+                  AND c.Position <= @Target
+                  AND f.MetricInputKey = @MetricKey
+                  AND f.SourceQuantityEvidenceId IS NOT NULL;
+                """
+            : """
+                SELECT DISTINCT f.SourceQuantityEvidenceId
+                FROM dbo.MetricAggregationContribution c WITH (UPDLOCK, HOLDLOCK)
+                JOIN dbo.MetricInputFact f
+                  ON f.MetricInputFactRowId = c.MetricInputFactRowId
+                 AND f.MetricInputStreamRowId = c.MetricInputStreamRowId
+                 AND f.Position = c.Position
+                WHERE c.MetricAggregationProcessorRowId = @Processor
+                  AND c.Position > @Previous
+                  AND c.Position <= @Target
+                  AND f.MetricInputKey = @MetricKey
+                  AND f.SourceQuantityEvidenceId IS NOT NULL;
+                """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Target", target.Value));
+        if (previous is not null)
+        {
+            command.Parameters.Add(SqlServerUInt64.CreateParameter("@Previous", previous.Value));
+        }
+        command.Parameters.Add("@MetricKey", SqlDbType.NVarChar, 256).Value = ProducedQuantityMetricKey;
+
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(reader.GetString(0));
+        }
+        return result;
+    }
+
+    private static async Task<HashSet<string>> ReadAdmittedSourceIdsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        ProductionReferenceTimeAuthorityRevision starting,
+        ProductionReferenceTimeAuthorityRevision final,
+        CancellationToken cancellationToken)
+    {
+        if (final.Value <= starting.Value)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT SourceQuantityEvidenceId
+            FROM dbo.ProductionReferenceTimeOutcome WITH (UPDLOCK, HOLDLOCK)
+            WHERE MetricAggregationProcessorRowId = @Processor
+              AND ProductionReferenceTimeRevision > @StartingR
+              AND ProductionReferenceTimeRevision <= @FinalR;
+            """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@StartingR", checked((ulong)starting.Value)));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@FinalR", checked((ulong)final.Value)));
+
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(reader.GetString(0));
+        }
+        return result;
+    }
+
+    private static async Task RequireAdmittedStandardRevisionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long processorRowId,
+        ProductionReferenceTimeAuthorityRevision starting,
+        ProductionReferenceTimeAuthorityRevision final,
+        long expectedStandardRevision,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COUNT_BIG(*)
+            FROM dbo.ProductionReferenceTimeOutcome WITH (UPDLOCK, HOLDLOCK)
+            WHERE MetricAggregationProcessorRowId = @Processor
+              AND ProductionReferenceTimeRevision > @StartingR
+              AND ProductionReferenceTimeRevision <= @FinalR
+              AND ProductionStandardAuthorityRevision <> @Standard;
+            """;
+        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@StartingR", checked((ulong)starting.Value)));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@FinalR", checked((ulong)final.Value)));
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Standard", checked((ulong)expectedStandardRevision)));
+        if ((long)(await command.ExecuteScalarAsync(cancellationToken))! != 0)
+        {
+            throw new InvalidOperationException(
+                "Reference-time publication transition contains outcomes from a different production-standard authority revision.");
         }
     }
 
@@ -362,8 +591,9 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         MetricAggregationProcessorId processorId,
         long processorRowId,
         MetricInputPosition target,
+        bool forUpdate,
         CancellationToken cancellationToken) =>
-        await ReadAsync(connection, transaction, processorId, processorRowId, target, cancellationToken)
+        await ReadAsync(connection, transaction, processorId, processorRowId, target, forUpdate, cancellationToken)
         ?? throw new InvalidOperationException("Reference-time publication transition is not available.");
 
     private static async Task<ProductionReferenceTimePublicationTransition?> ReadAsync(
@@ -372,16 +602,19 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         MetricAggregationProcessorId processorId,
         long processorRowId,
         MetricInputPosition target,
+        bool forUpdate,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
+        var lockHint = forUpdate ? " WITH (UPDLOCK, HOLDLOCK)" : string.Empty;
+        command.CommandText = $"""
             SELECT ExpectedPreviousMetricAggregationPosition,
                    ProductionStandardAuthorityRevision,
-                   CompletedProductionReferenceTimeRevision,
-                   IsCompleted
-            FROM dbo.ProductionReferenceTimePublicationTransition
+                   StartingProductionReferenceTimeRevision,
+                   State,
+                   FinalProductionReferenceTimeRevision
+            FROM dbo.ProductionReferenceTimePublicationTransition{lockHint}
             WHERE MetricAggregationProcessorRowId = @Processor
               AND TargetMetricAggregationPosition = @Target;
             """;
@@ -393,20 +626,28 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
             return null;
         }
 
-        var previous = reader.IsDBNull(0)
+        MetricInputPosition? previous = reader.IsDBNull(0)
             ? null
             : new MetricInputPosition(checked((ulong)reader.GetDecimal(0)));
-        var standard = reader.IsDBNull(1)
-            ? (long?)null
-            : checked((long)reader.GetDecimal(1));
-        ProductionReferenceTimeAuthorityRevision? completed = reader.IsDBNull(2)
+        long? standard = reader.IsDBNull(1)
             ? null
-            : new ProductionReferenceTimeAuthorityRevision(checked((long)reader.GetDecimal(2)));
+            : checked((long)reader.GetDecimal(1));
+        var starting = new ProductionReferenceTimeAuthorityRevision(checked((long)reader.GetDecimal(2)));
+        var state = reader.GetByte(3);
+        ProductionReferenceTimeAuthorityRevision? final = reader.IsDBNull(4)
+            ? null
+            : new ProductionReferenceTimeAuthorityRevision(checked((long)reader.GetDecimal(4)));
         return new ProductionReferenceTimePublicationTransition(
-            processorId, target, previous, standard, completed, reader.GetBoolean(3));
+            processorId,
+            target,
+            previous,
+            standard,
+            starting,
+            final,
+            state == 1);
     }
 
-    private static async Task<long> ReadProcessorRowIdAsync(
+    internal static async Task<long> ReadProcessorRowIdAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
         MetricAggregationProcessorId processorId,
@@ -423,29 +664,6 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         return await command.ExecuteScalarAsync(cancellationToken) is long value
             ? value
             : throw new InvalidOperationException("Aggregation authority is not available.");
-    }
-
-    private static async Task RequireAggregationRevisionAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long processorRowId,
-        MetricInputPosition position,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            SELECT COUNT_BIG(*)
-            FROM dbo.MetricAggregationRevision WITH (UPDLOCK, HOLDLOCK)
-            WHERE MetricAggregationProcessorRowId = @Processor
-              AND Position = @Position;
-            """;
-        command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
-        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", position.Value));
-        if ((long)(await command.ExecuteScalarAsync(cancellationToken))! != 1)
-        {
-            throw new InvalidOperationException("Aggregation revision is not available for reference-time publication.");
-        }
     }
 
     private static async Task RequireStandardRevisionAsync(
@@ -468,27 +686,22 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         }
     }
 
-    private static async Task RequireReferenceTimeRevisionAsync(
+    internal static async Task<ProductionReferenceTimeAuthorityRevision> ReadLatestReferenceTimeRevisionAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         long processorRowId,
-        ProductionReferenceTimeAuthorityRevision revision,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT COUNT_BIG(*)
+            SELECT MAX(ProductionReferenceTimeRevision)
             FROM dbo.ProductionReferenceTimeRevision WITH (UPDLOCK, HOLDLOCK)
-            WHERE MetricAggregationProcessorRowId = @Processor
-              AND ProductionReferenceTimeRevision = @Revision;
+            WHERE MetricAggregationProcessorRowId = @Processor;
             """;
         command.Parameters.Add("@Processor", SqlDbType.BigInt).Value = processorRowId;
-        command.Parameters.Add(SqlServerUInt64.CreateParameter(
-            "@Revision", checked((ulong)revision.Value)));
-        if ((long)(await command.ExecuteScalarAsync(cancellationToken))! != 1)
-        {
-            throw new InvalidOperationException("Reference-time authority revision is not available for completion.");
-        }
+        return await command.ExecuteScalarAsync(cancellationToken) is decimal value
+            ? new ProductionReferenceTimeAuthorityRevision(checked((long)value))
+            : throw new InvalidOperationException("Reference-time authority is not initialized for the aggregation processor.");
     }
 }
