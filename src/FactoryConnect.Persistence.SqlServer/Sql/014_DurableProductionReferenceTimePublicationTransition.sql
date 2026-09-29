@@ -104,7 +104,3 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationTransition
             (IsCompleted = 1 AND CompletedProductionReferenceTimeRevision IS NOT NULL)
         )
 );
-
-CREATE UNIQUE INDEX UQ_ProductionReferenceTimePublicationTransition_Active
-    ON dbo.ProductionReferenceTimePublicationTransition (MetricAggregationProcessorRowId)
-    WHERE IsCompleted = 0;
