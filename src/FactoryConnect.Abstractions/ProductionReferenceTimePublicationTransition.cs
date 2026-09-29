@@ -49,19 +49,19 @@ public sealed record ProductionReferenceTimePublicationTransition
         IsCompleted = isCompleted;
     }
 
-    public MetricAggregationProcessorId ProcessorId { get; }
+    public MetricAggregationProcessorId ProcessorId { get; init; }
 
-    public MetricInputPosition TargetAggregationPosition { get; }
+    public MetricInputPosition TargetAggregationPosition { get; init; }
 
-    public MetricInputPosition? ExpectedPreviousAggregationPosition { get; }
+    public MetricInputPosition? ExpectedPreviousAggregationPosition { get; init; }
 
     /// <summary>
     /// Exact standard authority established by the first durable outcome in the batch.
     /// Null is valid before admission and for an empty completed delta.
     /// </summary>
-    public long? ProductionStandardAuthorityRevision { get; }
+    public long? ProductionStandardAuthorityRevision { get; init; }
 
-    public ProductionReferenceTimeAuthorityRevision? CompletedReferenceTimeRevision { get; }
+    public ProductionReferenceTimeAuthorityRevision? CompletedReferenceTimeRevision { get; init; }
 
-    public bool IsCompleted { get; }
+    public bool IsCompleted { get; init; }
 }
