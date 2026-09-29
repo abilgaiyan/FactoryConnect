@@ -19,6 +19,20 @@ internal static class SqlServerUInt64
         };
     }
 
+    public static SqlParameter CreateNullableParameter(
+        string name,
+        ulong? value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        return new SqlParameter(name, SqlDbType.Decimal)
+        {
+            Precision = 20,
+            Scale = 0,
+            Value = value is null ? DBNull.Value : checked((decimal)value.Value),
+        };
+    }
+
     public static ulong Materialize(decimal value) =>
         checked((ulong)value);
 }
