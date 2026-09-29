@@ -8,7 +8,7 @@ namespace FactoryConnect.Persistence.SqlServer;
 /// <summary>
 /// Coordinates one exact FC-026 aggregation cut into a completed durable reference-time
 /// publication transition. Completion is processor/A-wide: every produced source visible
-/// through A is covered before the transition becomes authoritative for metric projection.
+/// through the transition delta is covered before the transition becomes authoritative for metric projection.
 /// </summary>
 public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
 {
@@ -36,11 +36,11 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
     {
         ArgumentNullException.ThrowIfNull(targetAggregationCheckpoint);
 
-        // Transition authority is keyed by processor/A, so its source membership must be
-        // the complete machine-stream inventory through A, not one shift/day projection.
+        // Transition membership is the exact produced-source delta (Aprev, A].
         var transitionSources = await _aggregationStore.ReadProductionQuantityTransitionSourcesAsync(
             targetAggregationCheckpoint,
             machineId,
+            expectedPreviousCompletedAggregationPosition,
             cancellationToken);
 
         var requiredSourceIds = transitionSources
@@ -57,12 +57,12 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
         var startingRevision = await ReadLatestReferenceTimeRevisionAsync(
             targetAggregationCheckpoint.ProcessorId,
             cancellationToken);
-        ProductionStandardAuthorityCut? selectedStandardCut = null;
-        long? selectedStandardRevision = null;
-        if (delta.Length != 0)
+        ProductionStandardAuthorityCut? standardCut = null;
+        long? standardRevision = null;
+        if (transitionSources.Count != 0)
         {
-            selectedStandardCut = await _standardAuthority.ReadCurrentCutAsync(cancellationToken);
-            selectedStandardRevision = selectedStandardCut.Revision;
+            standardCut = await _standardAuthority.ReadCurrentCutAsync(cancellationToken);
+            standardRevision = standardCut.Revision;
         }
 
         var transition = await _transitionStore.BeginAsync(
@@ -70,14 +70,14 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
             targetAggregationCheckpoint.Position,
             expectedPreviousCompletedAggregationPosition,
             startingRevision,
-            selectedStandardRevision,
+            standardRevision,
             cancellationToken);
         if (transition.IsCompleted)
         {
             return transition;
         }
 
-        if (delta.Length == 0)
+        if (transitionSources.Count == 0)
         {
             return await _transitionStore.CompleteAsync(
                 targetAggregationCheckpoint.ProcessorId,
@@ -85,12 +85,16 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
                 cancellationToken);
         }
 
-        var standardCut = transition.ProductionStandardAuthorityRevision is long establishedStandardRevision
-            ? selectedStandardCut is not null && selectedStandardCut.Revision == establishedStandardRevision
-                ? selectedStandardCut
-                : await _standardAuthority.ReadCutAsync(establishedStandardRevision, cancellationToken)
-            : throw new InvalidOperationException(
+        if (transition.ProductionStandardAuthorityRevision is not long establishedStandardRevision)
+        {
+            throw new InvalidOperationException(
                 "A non-empty reference-time publication transition has no durable production-standard authority revision.");
+        }
+
+        if (standardCut is null || standardCut.Revision != establishedStandardRevision)
+        {
+            standardCut = await _standardAuthority.ReadCutAsync(establishedStandardRevision, cancellationToken);
+        }
 
         foreach (var source in delta)
         {
@@ -113,19 +117,7 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
                 cancellationToken);
         }
 
-        // Re-read rather than trusting the loop. This is a coordinator-level early diagnostic;
-        // the transition store remains the authoritative completion gate and re-proves exact
-        // delta coverage in the same serializable transaction that publishes Completed(FinalR).
-        existingSourceIds = await ReadExistingSourceIdsAsync(
-            targetAggregationCheckpoint.ProcessorId,
-            requiredSourceIds,
-            cancellationToken);
-        if (requiredSourceIds.Any(sourceId => !existingSourceIds.Contains(sourceId)))
-        {
-            throw new InvalidOperationException(
-                "Reference-time publication cannot complete because the target aggregation source cut is not fully covered.");
-        }
-
+        // The store repeats exact set equality under the same serializable claim lock.
         return await _transitionStore.CompleteAsync(
             targetAggregationCheckpoint.ProcessorId,
             targetAggregationCheckpoint.Position,
