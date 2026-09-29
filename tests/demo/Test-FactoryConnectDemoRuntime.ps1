@@ -196,11 +196,15 @@ Invoke-Proof 'D08' 'Startup order is candidate DB fixture migrations Edge API Da
     }
 }
 
-Invoke-Proof 'D09' 'Seven-machine R5 stream projection is reused without mappings' {
+Invoke-Proof 'D09' 'Seven-machine observation mapping and production selectors are projected' {
     $commonText = Get-Content -Raw -LiteralPath $commonPath
     Assert-True ($commonText -match 'ObservationProcessing__Streams__') 'Observation processing stream projection is missing.'
     Assert-True ($commonText -match 'StreamKey') 'Canonical stream key projection is missing.'
-    Assert-True (-not ($commonText -match 'Mappings__')) 'FC-034.1 introduced mapping configuration.'
+    Assert-True ($commonText -match 'Mappings__0__SignalKey') 'Execution mapping is missing.'
+    Assert-True ($commonText -match 'Contexts__0__PartId') 'Demo part selector is missing.'
+    Assert-True ($commonText -match 'Contexts__0__OperationId') 'Demo operation selector is missing.'
+    $startText = Get-Content -Raw -LiteralPath $startPath
+    Assert-True ($startText -match 'DemoStandardProvisioning__Enabled') 'Demo standard publication is missing.'
 }
 
 Invoke-Proof 'D10' 'Supervisor remains foreground and continuously checks owned services' {
