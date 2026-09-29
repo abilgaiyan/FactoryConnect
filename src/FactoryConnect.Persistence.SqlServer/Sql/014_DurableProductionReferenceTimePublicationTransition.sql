@@ -4,8 +4,9 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationTransition
     TargetMetricAggregationPosition decimal(20,0) NOT NULL,
     ExpectedPreviousMetricAggregationPosition decimal(20,0) NULL,
     ProductionStandardAuthorityRevision decimal(20,0) NULL,
-    CompletedProductionReferenceTimeRevision decimal(20,0) NULL,
-    IsCompleted bit NOT NULL,
+    StartingProductionReferenceTimeRevision decimal(20,0) NOT NULL,
+    State tinyint NOT NULL,
+    FinalProductionReferenceTimeRevision decimal(20,0) NULL,
 
     CONSTRAINT PK_ProductionReferenceTimePublicationTransition
         PRIMARY KEY
@@ -43,11 +44,23 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationTransition
         REFERENCES dbo.ProductionStandardAuthorityRevision
             (ProductionStandardAuthorityRevision),
 
-    CONSTRAINT FK_ProductionReferenceTimePublicationTransition_CompletedReferenceRevision
+    CONSTRAINT FK_ProductionReferenceTimePublicationTransition_StartingReferenceRevision
         FOREIGN KEY
         (
             MetricAggregationProcessorRowId,
-            CompletedProductionReferenceTimeRevision
+            StartingProductionReferenceTimeRevision
+        )
+        REFERENCES dbo.ProductionReferenceTimeRevision
+        (
+            MetricAggregationProcessorRowId,
+            ProductionReferenceTimeRevision
+        ),
+
+    CONSTRAINT FK_ProductionReferenceTimePublicationTransition_FinalReferenceRevision
+        FOREIGN KEY
+        (
+            MetricAggregationProcessorRowId,
+            FinalProductionReferenceTimeRevision
         )
         REFERENCES dbo.ProductionReferenceTimeRevision
         (
@@ -85,22 +98,60 @@ CREATE TABLE dbo.ProductionReferenceTimePublicationTransition
             )
         ),
 
-    CONSTRAINT CK_ProductionReferenceTimePublicationTransition_CompletedReferenceRevision
+    CONSTRAINT CK_ProductionReferenceTimePublicationTransition_StartingReferenceRevision
         CHECK
         (
-            CompletedProductionReferenceTimeRevision IS NULL
+            StartingProductionReferenceTimeRevision >= 0
+            AND StartingProductionReferenceTimeRevision <= 18446744073709551615
+        ),
+
+    CONSTRAINT CK_ProductionReferenceTimePublicationTransition_FinalReferenceRevision
+        CHECK
+        (
+            FinalProductionReferenceTimeRevision IS NULL
             OR
             (
-                CompletedProductionReferenceTimeRevision >= 0
-                AND CompletedProductionReferenceTimeRevision <= 18446744073709551615
+                FinalProductionReferenceTimeRevision >= 0
+                AND FinalProductionReferenceTimeRevision <= 18446744073709551615
             )
         ),
 
     CONSTRAINT CK_ProductionReferenceTimePublicationTransition_State
         CHECK
         (
-            (IsCompleted = 0 AND CompletedProductionReferenceTimeRevision IS NULL)
+            (State = 0 AND FinalProductionReferenceTimeRevision IS NULL)
             OR
-            (IsCompleted = 1 AND CompletedProductionReferenceTimeRevision IS NOT NULL)
+            (State = 1 AND FinalProductionReferenceTimeRevision IS NOT NULL)
+        ),
+
+    CONSTRAINT CK_ProductionReferenceTimePublicationTransition_CompletionRevision
+        CHECK
+        (
+            State = 0
+            OR
+            (
+                ProductionStandardAuthorityRevision IS NULL
+                AND FinalProductionReferenceTimeRevision = StartingProductionReferenceTimeRevision
+            )
+            OR
+            (
+                ProductionStandardAuthorityRevision IS NOT NULL
+                AND FinalProductionReferenceTimeRevision > StartingProductionReferenceTimeRevision
+            )
         )
 );
+
+CREATE UNIQUE INDEX UX_ProductionReferenceTimePublicationTransition_Pending
+    ON dbo.ProductionReferenceTimePublicationTransition
+        (MetricAggregationProcessorRowId)
+    WHERE State = 0;
+
+CREATE UNIQUE INDEX UX_ProductionReferenceTimePublicationTransition_Successor
+    ON dbo.ProductionReferenceTimePublicationTransition
+        (MetricAggregationProcessorRowId, ExpectedPreviousMetricAggregationPosition)
+    WHERE ExpectedPreviousMetricAggregationPosition IS NOT NULL;
+
+CREATE UNIQUE INDEX UX_ProductionReferenceTimePublicationTransition_BootstrapSuccessor
+    ON dbo.ProductionReferenceTimePublicationTransition
+        (MetricAggregationProcessorRowId)
+    WHERE ExpectedPreviousMetricAggregationPosition IS NULL;
