@@ -125,6 +125,8 @@ function Add-RehearsalProductionEnvironment {
         $Environment["${prefix}__PlannedProduction__EndsAtLocal"] = '23:59:59'
         $Environment["${prefix}__PlannedProduction__EffectiveFrom"] = '2026-01-01'
         $Environment["${prefix}__Contexts__0__AssignmentId"] = "CTX-$($index + 1)"
+        $Environment["${prefix}__Contexts__0__PartId"] = 'DEMO-PART'
+        $Environment["${prefix}__Contexts__0__OperationId"] = 'DEMO-OPERATION'
         $Environment["${prefix}__Contexts__0__EffectiveFrom"] = '2026-01-01T00:00:00+00:00'
     }
 
