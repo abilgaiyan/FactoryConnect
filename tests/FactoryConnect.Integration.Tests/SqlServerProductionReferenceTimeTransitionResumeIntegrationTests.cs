@@ -27,9 +27,11 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         Assert.All(transitions, transition => Assert.True(transition.IsCompleted));
         Assert.Equal(transitions[0], transitions[1]);
         Assert.Equal(0, transitions[0].ProductionStandardAuthorityRevision);
-        Assert.Equal(2, transitions[0].CompletedReferenceTimeRevision!.Value.Value);
+        var completedRevision = transitions[0].CompletedReferenceTimeRevision
+            ?? throw new InvalidDataException("The completed transition has no reference-time revision.");
+        Assert.Equal(2, completedRevision.Value);
         Assert.Equal(2, (await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
-            .ReadAtRevisionAsync(processor, transitions[0].CompletedReferenceTimeRevision.Value, CancellationToken.None)).Count);
+            .ReadAtRevisionAsync(processor, completedRevision, CancellationToken.None)).Count);
     }
 
     [Fact]
@@ -104,8 +106,10 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
             VersionId = $"later-standard-{Guid.NewGuid():N}",
             CompanyId = source.Evidence.CompanyId,
             SiteId = source.Evidence.SiteId,
-            PartId = source.Evidence.PartId!,
-            OperationId = source.Evidence.OperationId!,
+            PartId = source.Evidence.PartId
+                ?? throw new InvalidDataException("Produced source has no part selector."),
+            OperationId = source.Evidence.OperationId
+                ?? throw new InvalidDataException("Produced source has no operation selector."),
             SecondsPerUnit = 5m,
             EffectiveFromUtc = source.Evidence.OccurredAtUtc.AddMinutes(-1),
             SourceReference = "approved-after-claim",
@@ -117,9 +121,11 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         Assert.True(completed.IsCompleted);
         Assert.Equal(pending.StartingReferenceTimeRevision, completed.StartingReferenceTimeRevision);
         Assert.Equal(0, completed.ProductionStandardAuthorityRevision);
-        Assert.Equal(starting.Value + 2, completed.CompletedReferenceTimeRevision!.Value.Value);
+        var finalRevision = completed.CompletedReferenceTimeRevision
+            ?? throw new InvalidDataException("The completed transition has no reference-time revision.");
+        Assert.Equal(starting.Value + 2, finalRevision.Value);
         var outcomes = await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
-            .ReadAtRevisionAsync(processor, completed.CompletedReferenceTimeRevision.Value, CancellationToken.None);
+            .ReadAtRevisionAsync(processor, finalRevision, CancellationToken.None);
         Assert.Equal(3, outcomes.Count);
         Assert.All(outcomes, outcome => Assert.Equal(0, outcome.Resolution.AuthorityRevision));
         Assert.Equal(completed, await coordinator.ConvergeAsync(a2, machine, a1.Position, CancellationToken.None));

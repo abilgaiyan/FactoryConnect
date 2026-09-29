@@ -50,4 +50,9 @@ public sealed class SqlServerMigration014UpgradeIntegrationTests
             string.Join(Environment.NewLine, comparison.Differences));
         await transaction.RollbackAsync();
     }
+
+    private sealed class FixedUtcClock : ISqlMigrationUtcClock
+    {
+        public DateTimeOffset UtcNow { get; } = new(2026, 9, 29, 0, 0, 0, TimeSpan.Zero);
+    }
 }
