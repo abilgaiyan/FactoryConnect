@@ -7,13 +7,13 @@ namespace FactoryConnect.Persistence.SqlServer;
 
 /// <summary>
 /// Coordinates one exact FC-026 aggregation cut into a completed durable reference-time
-/// publication transition. Source outcomes are immutable and historical outcomes retain
-/// the production-standard authority revision under which they were first published.
+/// publication transition. Completion is processor/A-wide: every produced source visible
+/// through A is covered before the transition becomes authoritative for metric projection.
 /// </summary>
 public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
 {
     private readonly string _connectionString;
-    private readonly IProductionQuantitySourceCutReader _sourceCutReader;
+    private readonly SqlServerMetricAggregationStore _aggregationStore;
     private readonly SqlServerProductionStandardAuthority _standardAuthority;
     private readonly SqlServerProductionReferenceTimePublicationTransitionStore _transitionStore;
     private readonly SqlServerProductionReferenceTimeTransitionOutcomeStore _outcomeStore;
@@ -22,7 +22,7 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         _connectionString = connectionString;
-        _sourceCutReader = new SqlServerMetricAggregationStore(connectionString);
+        _aggregationStore = new SqlServerMetricAggregationStore(connectionString);
         _standardAuthority = new SqlServerProductionStandardAuthority(connectionString);
         _transitionStore = new SqlServerProductionReferenceTimePublicationTransitionStore(connectionString);
         _outcomeStore = new SqlServerProductionReferenceTimeTransitionOutcomeStore(connectionString);
@@ -31,17 +31,16 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
     public async Task<ProductionReferenceTimePublicationTransition> ConvergeAsync(
         MetricAggregationCheckpoint targetAggregationCheckpoint,
         MachineId machineId,
-        OperationalMetricPeriodId periodId,
         MetricInputPosition? expectedPreviousCompletedAggregationPosition,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(targetAggregationCheckpoint);
-        ArgumentNullException.ThrowIfNull(periodId);
 
-        var sourceCut = await _sourceCutReader.ReadProductionQuantitySourceCutAsync(
+        // Transition authority is keyed by processor/A, so its source membership must be
+        // the complete machine-stream inventory through A, not one shift/day projection.
+        var transitionSources = await _aggregationStore.ReadProductionQuantityTransitionSourcesAsync(
             targetAggregationCheckpoint,
             machineId,
-            periodId,
             cancellationToken);
 
         var transition = await _transitionStore.BeginAsync(
@@ -54,11 +53,14 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
             return transition;
         }
 
+        var requiredSourceIds = transitionSources
+            .Select(static source => source.Evidence.Id)
+            .ToArray();
         var existingSourceIds = await ReadExistingSourceIdsAsync(
             targetAggregationCheckpoint.ProcessorId,
-            sourceCut.Sources.Select(static source => source.Evidence.Id).ToArray(),
+            requiredSourceIds,
             cancellationToken);
-        var delta = sourceCut.Sources
+        var delta = transitionSources
             .Where(source => !existingSourceIds.Contains(source.Evidence.Id))
             .ToArray();
 
@@ -100,16 +102,16 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
         }
 
         // Re-read rather than trusting the loop. This is the completion gate for restart
-        // and concurrent-worker cases: every source required by SourceCut(A) must now have
+        // and concurrent-worker cases: every produced source visible through A must have
         // one immutable durable outcome before A is marked completed.
         existingSourceIds = await ReadExistingSourceIdsAsync(
             targetAggregationCheckpoint.ProcessorId,
-            sourceCut.Sources.Select(static source => source.Evidence.Id).ToArray(),
+            requiredSourceIds,
             cancellationToken);
-        if (sourceCut.Sources.Any(source => !existingSourceIds.Contains(source.Evidence.Id)))
+        if (requiredSourceIds.Any(sourceId => !existingSourceIds.Contains(sourceId)))
         {
             throw new InvalidOperationException(
-                "Reference-time publication cannot complete because the target source cut is not fully covered.");
+                "Reference-time publication cannot complete because the target aggregation source cut is not fully covered.");
         }
 
         var completedRevision = await ReadLatestReferenceTimeRevisionAsync(
