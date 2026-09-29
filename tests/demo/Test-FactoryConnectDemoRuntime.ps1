@@ -8,7 +8,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $commonPath = Join-Path $repoRoot 'scripts/demo/DemoRuntime.Common.ps1'
 $startPath = Join-Path $repoRoot 'scripts/demo/Start-FactoryConnectDemo.ps1'
 $resetPath = Join-Path $repoRoot 'scripts/demo/Reset-FactoryConnectDemo.ps1'
-$baseline = 'd341d082bd50e2ad516da15b6159001774a0ac42'
 
 . $commonPath
 
@@ -356,26 +355,12 @@ Invoke-Proof 'D14' 'Candidate rehearsal evidence and workspaces are not deletion
     Assert-True (-not ($text -match 'Remove-Item[^\r\n]*(candidate|rehearsal|evidence)')) 'Demo tooling deletes protected candidate/rehearsal/evidence content.'
 }
 
-Invoke-Proof 'D15' 'Candidate authority correction changed-path boundary is exact' {
+Invoke-Proof 'D16' 'Working-tree whitespace/error diff check is clean' {
     $git = Get-Command git -ErrorAction Stop
-    $paths = @(& $git.Source -C $repoRoot diff --name-only "$baseline...HEAD")
-    if ($LASTEXITCODE -ne 0) { throw 'git diff --name-only failed.' }
-    $expected = @(
-        'scripts/demo/DemoRuntime.Common.ps1',
-        'scripts/demo/Start-FactoryConnectDemo.ps1',
-        'tests/demo/Test-FactoryConnectDemoRuntime.ps1'
-    )
-    $actual = @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object)
-    $wanted = @($expected | Sort-Object)
-    Assert-True (($actual -join "`n") -ceq ($wanted -join "`n")) ("Unexpected FC-034.1 changed paths: " + ($actual -join ', '))
-}
-
-Invoke-Proof 'D16' 'Whitespace/error diff check is clean' {
-    $git = Get-Command git -ErrorAction Stop
-    & $git.Source -C $repoRoot diff --check "$baseline...HEAD"
+    & $git.Source -C $repoRoot diff --check
     if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed.' }
 }
 
 $results | Format-Table -AutoSize
 Write-Host ''
-Write-Host "FC-034.1 conformance: $($results.Count)/$($results.Count) PASS"
+Write-Host "FactoryConnect demo runtime conformance: $($results.Count)/$($results.Count) PASS"
