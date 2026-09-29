@@ -39,6 +39,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "ProductionReferenceTimeOutcome",
         "ProductionReferenceTimeOutcomeConflict",
         "ProductionReferenceTimePublicationCut",
+        "ProductionReferenceTimePublicationTransition",
         "ProductionReferenceTimeRevision",
         "ProductionStandardAuthorityRevision",
         "ProductionStandardVersion",
@@ -51,7 +52,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(36, ownedTables.Length);
+        Assert.Equal(37, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }

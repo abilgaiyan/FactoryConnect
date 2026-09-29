@@ -254,8 +254,7 @@ internal sealed class SqlServerMigrationEngine
             connection,
             transaction,
             cancellationToken);
-        var expectedSchema = SqlRepositoryPost014SchemaDescriptor.Create(
-            SqlRepositorySchemaDescriptors.Current);
+        var expectedSchema = SqlRepositorySchemaDescriptors.Current;
         var comparison = SqlSchemaComparator.Compare(
             expectedSchema,
             liveSchema);

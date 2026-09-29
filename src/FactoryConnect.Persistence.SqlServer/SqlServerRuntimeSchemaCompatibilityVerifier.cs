@@ -143,7 +143,7 @@ internal sealed class SqlServerRuntimeSchemaCompatibilityVerifier
             transaction,
             cancellationToken);
         var comparison = SqlSchemaComparator.Compare(
-            SqlRepositoryPost014SchemaDescriptor.Create(SqlRepositorySchemaDescriptors.Current),
+            SqlRepositorySchemaDescriptors.Current,
             liveSchema);
         return comparison.IsExactMatch
             ? new SqlRuntimeCompatibilityResult(

@@ -106,8 +106,7 @@ internal sealed class SqlServerProductionReferenceTimeTransitionOutcomeStore
             cancellationToken);
         if (proposed.PublicationRevision.Value != checked(latestRevision.Value + 1))
         {
-            throw new InvalidOperationException(
-                "Reference-time publication revision must advance exactly by one while the claim lock is held.");
+            throw new ReferenceTimeRevisionRaceException();
         }
 
         await using (var revision = connection.CreateCommand())
@@ -196,8 +195,7 @@ internal sealed class SqlServerProductionReferenceTimeTransitionOutcomeStore
             : new ProductionReferenceTimeAuthorityRevision(checked((long)reader.GetDecimal(4)));
         if (state != 0)
         {
-            throw new InvalidOperationException(
-                "A completed reference-time publication transition cannot admit new source outcomes.");
+            throw new ReferenceTimeTransitionCompletedException();
         }
 
         return new ProductionReferenceTimePublicationTransition(

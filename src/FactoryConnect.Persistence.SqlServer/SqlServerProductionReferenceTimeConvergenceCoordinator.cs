@@ -16,7 +16,7 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
     private readonly SqlServerMetricAggregationStore _aggregationStore;
     private readonly SqlServerProductionStandardAuthority _standardAuthority;
     private readonly SqlServerProductionReferenceTimePublicationTransitionStore _transitionStore;
-    private readonly SqlServerProductionReferenceTimeTransitionOutcomeStore _outcomeStore;
+    private readonly SqlServerCanonicalProductionReferenceTimePublisher _publisher;
 
     public SqlServerProductionReferenceTimeConvergenceCoordinator(string connectionString)
     {
@@ -25,7 +25,7 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
         _aggregationStore = new SqlServerMetricAggregationStore(connectionString);
         _standardAuthority = new SqlServerProductionStandardAuthority(connectionString);
         _transitionStore = new SqlServerProductionReferenceTimePublicationTransitionStore(connectionString);
-        _outcomeStore = new SqlServerProductionReferenceTimeTransitionOutcomeStore(connectionString);
+        _publisher = new SqlServerCanonicalProductionReferenceTimePublisher(connectionString);
     }
 
     public async Task<ProductionReferenceTimePublicationTransition> ConvergeAsync(
@@ -43,6 +43,77 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
             expectedPreviousCompletedAggregationPosition,
             cancellationToken);
 
+        var existingClaim = await _transitionStore.ReadAsync(
+            targetAggregationCheckpoint.ProcessorId,
+            targetAggregationCheckpoint.Position,
+            cancellationToken);
+        if (existingClaim is not null &&
+            existingClaim.ExpectedPreviousAggregationPosition != expectedPreviousCompletedAggregationPosition)
+        {
+            throw new InvalidOperationException(
+                "The requested predecessor does not match the durable reference-time transition claim.");
+        }
+
+        if (existingClaim is { IsCompleted: true })
+        {
+            return existingClaim;
+        }
+
+        ProductionStandardAuthorityCut? standardCut = null;
+        ProductionReferenceTimePublicationTransition transition;
+        if (existingClaim is not null)
+        {
+            transition = existingClaim;
+            if (transition.ProductionStandardAuthorityRevision is long frozenStandard)
+            {
+                standardCut = await _standardAuthority.ReadCutAsync(frozenStandard, cancellationToken);
+            }
+        }
+        else
+        {
+            var startingRevision = await ReadLatestReferenceTimeRevisionAsync(
+                targetAggregationCheckpoint.ProcessorId,
+                cancellationToken);
+            if (transitionSources.Count != 0)
+            {
+                standardCut = await _standardAuthority.ReadCurrentCutAsync(cancellationToken);
+            }
+
+            try
+            {
+                transition = await _transitionStore.BeginAsync(
+                    targetAggregationCheckpoint.ProcessorId,
+                    targetAggregationCheckpoint.Position,
+                    expectedPreviousCompletedAggregationPosition,
+                    startingRevision,
+                    standardCut?.Revision,
+                    cancellationToken);
+            }
+            catch (InvalidOperationException exception)
+            {
+                transition = await ResumeCompetingClaimAsync(
+                    targetAggregationCheckpoint, expectedPreviousCompletedAggregationPosition,
+                    exception, cancellationToken);
+            }
+            catch (SqlException exception) when (exception.Number is 2601 or 2627 or 1205)
+            {
+                transition = await ResumeCompetingClaimAsync(
+                    targetAggregationCheckpoint, expectedPreviousCompletedAggregationPosition,
+                    exception, cancellationToken);
+            }
+
+            if (transition.ProductionStandardAuthorityRevision is long selected)
+            {
+                standardCut = standardCut is { Revision: var current } && current == selected
+                    ? standardCut
+                    : await _standardAuthority.ReadCutAsync(selected, cancellationToken);
+            }
+        }
+        if (transition.IsCompleted)
+        {
+            return transition;
+        }
+
         var requiredSourceIds = transitionSources
             .Select(static source => source.Evidence.Id)
             .ToArray();
@@ -53,29 +124,6 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
         var delta = transitionSources
             .Where(source => !existingSourceIds.Contains(source.Evidence.Id))
             .ToArray();
-
-        var startingRevision = await ReadLatestReferenceTimeRevisionAsync(
-            targetAggregationCheckpoint.ProcessorId,
-            cancellationToken);
-        ProductionStandardAuthorityCut? standardCut = null;
-        long? standardRevision = null;
-        if (transitionSources.Count != 0)
-        {
-            standardCut = await _standardAuthority.ReadCurrentCutAsync(cancellationToken);
-            standardRevision = standardCut.Revision;
-        }
-
-        var transition = await _transitionStore.BeginAsync(
-            targetAggregationCheckpoint.ProcessorId,
-            targetAggregationCheckpoint.Position,
-            expectedPreviousCompletedAggregationPosition,
-            startingRevision,
-            standardRevision,
-            cancellationToken);
-        if (transition.IsCompleted)
-        {
-            return transition;
-        }
 
         if (transitionSources.Count == 0)
         {
@@ -98,23 +146,52 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
 
         foreach (var source in delta)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             var resolution = ProductionStandardResolver.Resolve(
                 source.Evidence,
                 source.ShiftOccurrenceId,
                 source.ProductionDayId,
                 standardCut);
-            var latest = await ReadLatestReferenceTimeRevisionAsync(
-                targetAggregationCheckpoint.ProcessorId,
-                cancellationToken);
-            var proposed = new PublishedProductionReferenceTimeOutcome(
-                new ProductionReferenceTimeAuthorityRevision(checked(latest.Value + 1)),
-                resolution);
-            await _outcomeStore.AdmitAsync(
-                targetAggregationCheckpoint.ProcessorId,
-                targetAggregationCheckpoint.Position,
-                proposed,
-                cancellationToken);
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var latest = await ReadLatestReferenceTimeRevisionAsync(
+                    targetAggregationCheckpoint.ProcessorId,
+                    cancellationToken);
+                var proposed = new PublishedProductionReferenceTimeOutcome(
+                    new ProductionReferenceTimeAuthorityRevision(checked(latest.Value + 1)),
+                    resolution);
+                try
+                {
+                    await _publisher.PublishAsync(
+                        targetAggregationCheckpoint.ProcessorId,
+                        targetAggregationCheckpoint.Position,
+                        source.Evidence,
+                        source.ShiftOccurrenceId,
+                        source.ProductionDayId,
+                        standardCut,
+                        proposed,
+                        cancellationToken);
+                    break;
+                }
+                catch (ReferenceTimeRevisionRaceException)
+                {
+                    // Another claimant admitted a different source first; read R again.
+                }
+                catch (ReferenceTimeTransitionCompletedException)
+                {
+                    var completed = await _transitionStore.ReadAsync(
+                        targetAggregationCheckpoint.ProcessorId,
+                        targetAggregationCheckpoint.Position,
+                        cancellationToken);
+                    if (completed is { IsCompleted: true } &&
+                        completed.ExpectedPreviousAggregationPosition == expectedPreviousCompletedAggregationPosition)
+                    {
+                        return completed;
+                    }
+
+                    throw;
+                }
+            }
         }
 
         // The store repeats exact set equality under the same serializable claim lock.
@@ -122,6 +199,25 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
             targetAggregationCheckpoint.ProcessorId,
             targetAggregationCheckpoint.Position,
             cancellationToken);
+    }
+
+    private async Task<ProductionReferenceTimePublicationTransition> ResumeCompetingClaimAsync(
+        MetricAggregationCheckpoint checkpoint,
+        MetricInputPosition? expectedPrevious,
+        Exception cause,
+        CancellationToken cancellationToken)
+    {
+        var transition = await _transitionStore.ReadAsync(
+            checkpoint.ProcessorId, checkpoint.Position, cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Reference-time claim creation failed without a durable competing claim.", cause);
+        if (transition.ExpectedPreviousAggregationPosition != expectedPrevious)
+        {
+            throw new InvalidOperationException(
+                "The competing reference-time transition claimed a different predecessor.");
+        }
+
+        return transition;
     }
 
     private async Task<HashSet<ProductionQuantityEvidenceId>> ReadExistingSourceIdsAsync(
