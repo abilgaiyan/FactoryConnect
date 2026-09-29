@@ -99,10 +99,7 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(targetAggregationPosition);
-        if (productionStandardAuthorityRevision < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(productionStandardAuthorityRevision));
-        }
+        ArgumentOutOfRangeException.ThrowIfNegative(productionStandardAuthorityRevision);
 
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -402,7 +399,7 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         var standard = reader.IsDBNull(1)
             ? (long?)null
             : checked((long)reader.GetDecimal(1));
-        var completed = reader.IsDBNull(2)
+        ProductionReferenceTimeAuthorityRevision? completed = reader.IsDBNull(2)
             ? null
             : new ProductionReferenceTimeAuthorityRevision(checked((long)reader.GetDecimal(2)));
         return new ProductionReferenceTimePublicationTransition(
