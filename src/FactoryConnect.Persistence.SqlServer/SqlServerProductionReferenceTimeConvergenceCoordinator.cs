@@ -43,16 +43,6 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
             machineId,
             cancellationToken);
 
-        var transition = await _transitionStore.BeginAsync(
-            targetAggregationCheckpoint.ProcessorId,
-            targetAggregationCheckpoint.Position,
-            expectedPreviousCompletedAggregationPosition,
-            cancellationToken);
-        if (transition.IsCompleted)
-        {
-            return transition;
-        }
-
         var requiredSourceIds = transitionSources
             .Select(static source => source.Evidence.Id)
             .ToArray();
@@ -64,21 +54,43 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
             .Where(source => !existingSourceIds.Contains(source.Evidence.Id))
             .ToArray();
 
+        var startingRevision = await ReadLatestReferenceTimeRevisionAsync(
+            targetAggregationCheckpoint.ProcessorId,
+            cancellationToken);
+        ProductionStandardAuthorityCut? selectedStandardCut = null;
+        long? selectedStandardRevision = null;
+        if (delta.Length != 0)
+        {
+            selectedStandardCut = await _standardAuthority.ReadCurrentCutAsync(cancellationToken);
+            selectedStandardRevision = selectedStandardCut.Revision;
+        }
+
+        var transition = await _transitionStore.BeginAsync(
+            targetAggregationCheckpoint.ProcessorId,
+            targetAggregationCheckpoint.Position,
+            expectedPreviousCompletedAggregationPosition,
+            startingRevision,
+            selectedStandardRevision,
+            cancellationToken);
+        if (transition.IsCompleted)
+        {
+            return transition;
+        }
+
         if (delta.Length == 0)
         {
-            var latest = await ReadLatestReferenceTimeRevisionAsync(
-                targetAggregationCheckpoint.ProcessorId,
-                cancellationToken);
             return await _transitionStore.CompleteAsync(
                 targetAggregationCheckpoint.ProcessorId,
                 targetAggregationCheckpoint.Position,
-                latest,
                 cancellationToken);
         }
 
         var standardCut = transition.ProductionStandardAuthorityRevision is long establishedStandardRevision
-            ? await _standardAuthority.ReadCutAsync(establishedStandardRevision, cancellationToken)
-            : await _standardAuthority.ReadCurrentCutAsync(cancellationToken);
+            ? selectedStandardCut is not null && selectedStandardCut.Revision == establishedStandardRevision
+                ? selectedStandardCut
+                : await _standardAuthority.ReadCutAsync(establishedStandardRevision, cancellationToken)
+            : throw new InvalidOperationException(
+                "A non-empty reference-time publication transition has no durable production-standard authority revision.");
 
         foreach (var source in delta)
         {
@@ -101,9 +113,9 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
                 cancellationToken);
         }
 
-        // Re-read rather than trusting the loop. This is the completion gate for restart
-        // and concurrent-worker cases: every produced source visible through A must have
-        // one immutable durable outcome before A is marked completed.
+        // Re-read rather than trusting the loop. This is a coordinator-level early diagnostic;
+        // the transition store remains the authoritative completion gate and re-proves exact
+        // delta coverage in the same serializable transaction that publishes Completed(FinalR).
         existingSourceIds = await ReadExistingSourceIdsAsync(
             targetAggregationCheckpoint.ProcessorId,
             requiredSourceIds,
@@ -114,13 +126,9 @@ public sealed class SqlServerProductionReferenceTimeConvergenceCoordinator
                 "Reference-time publication cannot complete because the target aggregation source cut is not fully covered.");
         }
 
-        var completedRevision = await ReadLatestReferenceTimeRevisionAsync(
-            targetAggregationCheckpoint.ProcessorId,
-            cancellationToken);
         return await _transitionStore.CompleteAsync(
             targetAggregationCheckpoint.ProcessorId,
             targetAggregationCheckpoint.Position,
-            completedRevision,
             cancellationToken);
     }
 
