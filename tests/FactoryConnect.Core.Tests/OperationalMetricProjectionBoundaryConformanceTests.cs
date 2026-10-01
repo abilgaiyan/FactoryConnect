@@ -36,6 +36,11 @@ public sealed class OperationalMetricProjectionBoundaryConformanceTests
             aggregationProcessorId,
             streamId,
             new MetricInputPosition(12));
+        var sourceA = new ProductionQuantityEvidenceId("boundary-source-a");
+        var sourceB = new ProductionQuantityEvidenceId("boundary-source-b");
+        var partA = new PartId("part-a");
+        var partB = new PartId("part-b");
+        var operation = new OperationId("operation-a");
 
         await aggregationStore.CommitAsync(
             new MetricAggregationCommit(
@@ -45,18 +50,63 @@ public sealed class OperationalMetricProjectionBoundaryConformanceTests
                 [
                     Input(streamId, 1, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.ActualProductionTime, 50m, MetricInputFactUnits.Seconds),
                     Input(streamId, 2, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.PlannedOperatingTime, 100m, MetricInputFactUnits.Seconds),
-                    Input(streamId, 3, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.ProductionReferenceTime, 50m, MetricInputFactUnits.Seconds),
-                    Input(streamId, 4, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.ProducedQuantity, 10m, MetricInputFactUnits.Count),
+                    Input(streamId, 3, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputFactKeys.PartCountIncrement, 10m, MetricInputFactUnits.Count, sourceA, partA, operation),
+                    Input(streamId, 4, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.ProductionReferenceTime, 50m, MetricInputFactUnits.Seconds),
                     Input(streamId, 5, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.GoodQuantity, 10m, MetricInputFactUnits.Count),
                     Input(streamId, 6, machineId, siteId, shiftIdA, assignmentA, shiftA, day, MetricInputKeys.MachinePowerOnTime, 100m, MetricInputFactUnits.Seconds),
                     Input(streamId, 7, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.ActualProductionTime, 810m, MetricInputFactUnits.Seconds),
                     Input(streamId, 8, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.PlannedOperatingTime, 900m, MetricInputFactUnits.Seconds),
-                    Input(streamId, 9, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.ProductionReferenceTime, 810m, MetricInputFactUnits.Seconds),
-                    Input(streamId, 10, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.ProducedQuantity, 90m, MetricInputFactUnits.Count),
+                    Input(streamId, 9, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputFactKeys.PartCountIncrement, 90m, MetricInputFactUnits.Count, sourceB, partB, operation),
+                    Input(streamId, 10, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.ProductionReferenceTime, 810m, MetricInputFactUnits.Seconds),
                     Input(streamId, 11, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.GoodQuantity, 90m, MetricInputFactUnits.Count),
                     Input(streamId, 12, machineId, siteId, shiftIdB, assignmentB, shiftB, day, MetricInputKeys.MachinePowerOnTime, 900m, MetricInputFactUnits.Seconds),
                 ]),
             CancellationToken.None);
+
+        var standards = new InMemoryProductionStandardAuthority();
+        foreach (var (part, seconds, version, revisionNumber) in new[]
+        {
+            (partA, 5m, "boundary-standard-a", 1L),
+            (partB, 9m, "boundary-standard-b", 2L),
+        })
+        {
+            standards.Publish(new ProductionStandardVersion
+            {
+                VersionId = version,
+                CompanyId = new CompanyId("company-a"),
+                SiteId = siteId,
+                PartId = part,
+                OperationId = operation,
+                MachineId = machineId,
+                SecondsPerUnit = seconds,
+                EffectiveFromUtc = DayStartsAt,
+                SourceReference = "boundary-fixture",
+                PublishedRevision = revisionNumber,
+            });
+        }
+
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        foreach (var (sourceId, part, units, shift, occurrence) in new[]
+        {
+            (sourceA, partA, 10, shiftIdA, shiftA),
+            (sourceB, partB, 90, shiftIdB, shiftB),
+        })
+        {
+            outcomes.ResolveAndRecord(new ProductionQuantityEvidence
+            {
+                Id = sourceId,
+                CompanyId = new CompanyId("company-a"),
+                SiteId = siteId,
+                MachineId = machineId,
+                ShiftId = shift,
+                PartId = part,
+                OperationId = operation,
+                OccurredAtUtc = occurrence.StartsAtUtc,
+                PartCountIncrement = units,
+                GoodQuantity = units,
+            }, occurrence, day, standards.ReadCurrentCut());
+        }
+        aggregationStore.CompleteReferenceTimePublication(revision, outcomes.CurrentRevision, outcomes);
 
         var catalog = Catalog();
         var source = new CoherentOperationalMetricEvaluationBatchSource(
@@ -381,7 +431,10 @@ public sealed class OperationalMetricProjectionBoundaryConformanceTests
         ProductionDayId day,
         string key,
         decimal value,
-        string unit) => new(
+        string unit,
+        ProductionQuantityEvidenceId? sourceId = null,
+        PartId? partId = null,
+        OperationId? operationId = null) => new(
             streamId,
             new MetricInputPosition(position),
             new DurableMetricInputFact
@@ -397,6 +450,9 @@ public sealed class OperationalMetricProjectionBoundaryConformanceTests
                 MachineId = machineId,
                 ShiftId = shiftId,
                 ShiftScheduleAssignmentId = assignmentId,
+                SourceQuantityEvidenceId = sourceId,
+                PartId = partId,
+                OperationId = operationId,
             },
             occurrence,
             day);

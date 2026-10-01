@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 using FactoryConnect.Persistence.SqlServer;
 
 namespace FactoryConnect.Integration.Tests;
@@ -8,6 +9,113 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationTests(
     SqlServerTestDatabaseFixture fixture) : IClassFixture<SqlServerTestDatabaseFixture>
 {
+    [Fact]
+    public async Task ExactCompletedPairExposesNumericReferenceTimeForShiftAndDay()
+    {
+        var machine = new MachineId(Guid.NewGuid());
+        var processor = new MetricAggregationProcessorId($"reference-component-{Guid.NewGuid():N}");
+        var standards = new SqlServerProductionStandardAuthority(fixture.ConnectionString);
+        var current = await standards.ReadCurrentCutAsync();
+        await standards.PublishAsync(new ProductionStandardVersion
+        {
+            VersionId = $"component-standard-{Guid.NewGuid():N}",
+            CompanyId = new CompanyId("COMP-1"),
+            SiteId = new SiteId("SITE-1"),
+            PartId = new PartId("PART-1"),
+            OperationId = new OperationId("OP-1"),
+            MachineId = machine,
+            SecondsPerUnit = 5m,
+            EffectiveFromUtc = new DateTimeOffset(2026, 9, 26, 0, 0, 0, TimeSpan.Zero),
+            SourceReference = "approved-component-test",
+            PublishedRevision = current.Revision + 1,
+        });
+        var inputs = new SqlServerMetricInputStore(fixture.ConnectionString);
+        var aggregation = new SqlServerMetricAggregationStore(fixture.ConnectionString);
+        var first = await inputs.AppendAsync(CreateAppend(machine, "component-a", 1), CancellationToken.None);
+        var second = await inputs.AppendAsync(CreateAppend(machine, "component-b", 2), CancellationToken.None);
+        var goodFirst = await inputs.AppendAsync(new DurableMetricInputAppend(first.StreamId,
+            first.Fact with { Id = new MetricInputFactId($"good-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.GoodQuantity, Value = 2 },
+            first.ShiftOccurrenceId, first.ProductionDayId), CancellationToken.None);
+        var goodSecond = await inputs.AppendAsync(new DurableMetricInputAppend(second.StreamId,
+            second.Fact with { Id = new MetricInputFactId($"good-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.GoodQuantity, Value = 2 },
+            second.ShiftOccurrenceId, second.ProductionDayId), CancellationToken.None);
+        var actual = await inputs.AppendAsync(new DurableMetricInputAppend(first.StreamId,
+            first.Fact with { Id = new MetricInputFactId($"actual-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.RunningDuration, Value = 40m,
+                Unit = MetricInputFactUnits.Seconds, SourceQuantityEvidenceId = null },
+            first.ShiftOccurrenceId, first.ProductionDayId), CancellationToken.None);
+        var planned = await inputs.AppendAsync(new DurableMetricInputAppend(first.StreamId,
+            first.Fact with { Id = new MetricInputFactId($"planned-{Guid.NewGuid():N}"),
+                Key = MetricInputFactKeys.PlannedProductionDuration, Value = 40m,
+                Unit = MetricInputFactUnits.Seconds, SourceQuantityEvidenceId = null },
+            first.ShiftOccurrenceId, first.ProductionDayId), CancellationToken.None);
+        var revision = new MetricAggregationCheckpoint(processor, first.StreamId, planned.Position);
+        await aggregation.CommitAsync(new MetricAggregationCommit(processor, null, revision,
+            [first, second, goodFirst, goodSecond, actual, planned]), CancellationToken.None);
+
+        var shift = ReferenceTimeRequest(machine, processor, new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId));
+        var day = ReferenceTimeRequest(machine, processor, new OperationalMetricPeriodId.ProductionDay(first.ProductionDayId));
+        Assert.Empty((await aggregation.ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components);
+        var completed = await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString)
+            .ConvergeAsync(revision, machine, null);
+        Assert.True(completed.IsCompleted);
+        Assert.Equal(20m, Assert.Single((await aggregation.ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(20m, Assert.Single((await aggregation.ReadAtRevisionAsync(day, revision, CancellationToken.None)).Components).Aggregate.Value);
+        Assert.Equal(20m, Assert.Single((await new SqlServerMetricAggregationStore(fixture.ConnectionString)
+            .ReadAtRevisionAsync(shift, revision, CancellationToken.None)).Components).Aggregate.Value);
+
+        var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
+        var projectionProcessor = new OperationalMetricProjectionProcessorId($"reference-projection-{Guid.NewGuid():N}");
+        var projectionStore = new SqlServerOperationalMetricProjectionStore(fixture.ConnectionString);
+        OperationalMetricProjectionProcessingRuntime CreateRuntime() => new(
+            projectionProcessor, processor, first.StreamId,
+            new CoherentOperationalMetricEvaluationBatchSource(
+                catalog, new SqlServerMetricAggregationStore(fixture.ConnectionString),
+                new SqlServerMetricAggregationStore(fixture.ConnectionString),
+                processor, first.StreamId, OperationalMetricEvaluationContextKey.Unpartitioned),
+            new OperationalMetricProjectionFactory(catalog, projectionProcessor),
+            projectionStore,
+            new SqlServerOperationalMetricProjectionPrerequisite(fixture.ConnectionString));
+
+        Assert.Equal(10, await CreateRuntime().RunCycleAsync());
+        foreach (var period in new OperationalMetricPeriodId[]
+                 { new OperationalMetricPeriodId.Shift(first.ShiftOccurrenceId),
+                   new OperationalMetricPeriodId.ProductionDay(first.ProductionDayId) })
+        {
+            var performance = await projectionStore.ReadProjectionAsync(projectionProcessor,
+                new OperationalMetricEvaluationKey(machine, period,
+                    BuiltInOperationalMetricDefinitions.PerformanceId,
+                    OperationalMetricEvaluationContextKey.Unpartitioned), CancellationToken.None);
+            var oee = await projectionStore.ReadProjectionAsync(projectionProcessor,
+                new OperationalMetricEvaluationKey(machine, period,
+                    BuiltInOperationalMetricDefinitions.OeeId,
+                    OperationalMetricEvaluationContextKey.Unpartitioned), CancellationToken.None);
+            Assert.NotNull(performance);
+            Assert.NotNull(oee);
+            Assert.Equal(0.5m, performance.Value);
+            Assert.Equal(0.5m, oee.Value);
+            Assert.Equal(revision, oee.SourceRevision);
+        }
+
+        Assert.Equal(0, await CreateRuntime().RunCycleAsync());
+    }
+
+    private static OperationalMetricComponentSnapshotRequest ReferenceTimeRequest(
+        MachineId machine, MetricAggregationProcessorId processor, OperationalMetricPeriodId period) => new(
+        new OperationalMetricEvaluationKey(machine, period,
+            BuiltInOperationalMetricDefinitions.PerformanceId,
+            OperationalMetricEvaluationContextKey.Unpartitioned),
+        processor,
+        [new OperationalMetricOperandDefinition
+        {
+            OperandName = "IdealProductionDuration",
+            Source = new OperationalMetricOperandSource.Component(MetricInputKeys.ProductionReferenceTime),
+            RequiredDimension = MetricDimension.Duration,
+            RequiredUnit = MetricInputFactUnits.Seconds,
+        }]);
+
     [Fact]
     public async Task ConcurrentWorkersConvergeOnOneClaimAndExactSourceSet()
     {
@@ -26,12 +134,16 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         var transitions = await Task.WhenAll(workers);
         Assert.All(transitions, transition => Assert.True(transition.IsCompleted));
         Assert.Equal(transitions[0], transitions[1]);
-        Assert.Equal(0, transitions[0].ProductionStandardAuthorityRevision);
+        Assert.NotNull(transitions[0].ProductionStandardAuthorityRevision);
         var completedRevision = transitions[0].CompletedReferenceTimeRevision
             ?? throw new InvalidDataException("The completed transition has no reference-time revision.");
         Assert.Equal(2, completedRevision.Value);
         Assert.Equal(2, (await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
             .ReadAtRevisionAsync(processor, completedRevision, CancellationToken.None)).Count);
+        Assert.All(await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
+            .ReadAtRevisionAsync(processor, completedRevision, CancellationToken.None),
+            outcome => Assert.Equal(transitions[0].ProductionStandardAuthorityRevision,
+                outcome.Resolution.AuthorityRevision));
     }
 
     [Fact]
@@ -83,12 +195,14 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
         var completedFirst = await coordinator.ConvergeAsync(a1, machine, null, CancellationToken.None);
         Assert.True(completedFirst.IsCompleted);
         var starting = completedFirst.CompletedReferenceTimeRevision!.Value;
+        var frozenStandard = completedFirst.ProductionStandardAuthorityRevision
+            ?? throw new InvalidDataException("The first non-empty transition has no standard cut.");
 
         var transitionStore = new SqlServerProductionReferenceTimePublicationTransitionStore(fixture.ConnectionString);
         var pending = await transitionStore.BeginAsync(
-            processor, a2.Position, a1.Position, starting, 0, CancellationToken.None);
+            processor, a2.Position, a1.Position, starting, frozenStandard, CancellationToken.None);
         var standardAuthority = new SqlServerProductionStandardAuthority(fixture.ConnectionString);
-        var standardCut = await standardAuthority.ReadCutAsync(0, CancellationToken.None);
+        var standardCut = await standardAuthority.ReadCutAsync(frozenStandard, CancellationToken.None);
         var sources = await aggregation.ReadProductionQuantityTransitionSourcesAsync(
             a2, machine, a1.Position, CancellationToken.None);
         Assert.Equal(2, sources.Count);
@@ -113,21 +227,21 @@ public sealed class SqlServerProductionReferenceTimeTransitionResumeIntegrationT
             SecondsPerUnit = 5m,
             EffectiveFromUtc = source.Evidence.OccurredAtUtc.AddMinutes(-1),
             SourceReference = "approved-after-claim",
-            PublishedRevision = 1,
+            PublishedRevision = (await standardAuthority.ReadCurrentCutAsync()).Revision + 1,
         }, CancellationToken.None);
 
         var completed = await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString)
             .ConvergeAsync(a2, machine, a1.Position, CancellationToken.None);
         Assert.True(completed.IsCompleted);
         Assert.Equal(pending.StartingReferenceTimeRevision, completed.StartingReferenceTimeRevision);
-        Assert.Equal(0, completed.ProductionStandardAuthorityRevision);
+        Assert.Equal(frozenStandard, completed.ProductionStandardAuthorityRevision);
         var finalRevision = completed.CompletedReferenceTimeRevision
             ?? throw new InvalidDataException("The completed transition has no reference-time revision.");
         Assert.Equal(starting.Value + 2, finalRevision.Value);
         var outcomes = await new SqlServerProductionReferenceTimeOutcomeStore(fixture.ConnectionString)
             .ReadAtRevisionAsync(processor, finalRevision, CancellationToken.None);
         Assert.Equal(3, outcomes.Count);
-        Assert.All(outcomes, outcome => Assert.Equal(0, outcome.Resolution.AuthorityRevision));
+        Assert.All(outcomes, outcome => Assert.Equal(frozenStandard, outcome.Resolution.AuthorityRevision));
         Assert.Equal(completed, await coordinator.ConvergeAsync(a2, machine, a1.Position, CancellationToken.None));
     }
 

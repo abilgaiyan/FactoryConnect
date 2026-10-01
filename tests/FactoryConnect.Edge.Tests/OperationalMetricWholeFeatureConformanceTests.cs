@@ -243,10 +243,13 @@ public sealed class OperationalMetricWholeFeatureConformanceTests
             shiftId,
             DayStartsAt,
             DayStartsAt.AddHours(8));
+        var sourceId = new ProductionQuantityEvidenceId($"quantity-{machineId.Value:D}");
+        var partId = new PartId("part-a");
+        var operationId = new OperationId("operation-a");
         var revision = new MetricAggregationCheckpoint(
             processorId,
             streamId,
-            new MetricInputPosition(6));
+            new MetricInputPosition(5));
 
         await store.CommitAsync(
             new MetricAggregationCommit(
@@ -254,14 +257,43 @@ public sealed class OperationalMetricWholeFeatureConformanceTests
                 null,
                 revision,
                 [
-                    Input(streamId, 1, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ActualProductionTime, actualProductionTime, MetricInputFactUnits.Seconds),
-                    Input(streamId, 2, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.PlannedOperatingTime, plannedOperatingTime, MetricInputFactUnits.Seconds),
-                    Input(streamId, 3, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProductionReferenceTime, productionReferenceTime, MetricInputFactUnits.Seconds),
-                    Input(streamId, 4, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.ProducedQuantity, producedQuantity, MetricInputFactUnits.Count),
-                    Input(streamId, 5, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.GoodQuantity, goodQuantity, MetricInputFactUnits.Count),
-                    Input(streamId, 6, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputKeys.MachinePowerOnTime, machinePowerOnTime, MetricInputFactUnits.Seconds),
+                    Input(streamId, 1, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.RunningDuration, actualProductionTime, MetricInputFactUnits.Seconds),
+                    Input(streamId, 2, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.PlannedProductionDuration, plannedOperatingTime, MetricInputFactUnits.Seconds),
+                    Input(streamId, 3, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.PartCountIncrement, producedQuantity, MetricInputFactUnits.Count, sourceId, partId, operationId),
+                    Input(streamId, 4, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.GoodQuantity, goodQuantity, MetricInputFactUnits.Count, sourceId, partId, operationId),
+                    Input(streamId, 5, machineId, siteId, shiftId, assignmentId, occurrence, day, MetricInputFactKeys.ScheduledDuration, machinePowerOnTime, MetricInputFactUnits.Seconds),
                 ]),
             CancellationToken.None);
+
+        var standards = new InMemoryProductionStandardAuthority();
+        standards.Publish(new ProductionStandardVersion
+        {
+            VersionId = $"standard-{machineId.Value:D}",
+            CompanyId = new CompanyId("company-a"),
+            SiteId = siteId,
+            PartId = partId,
+            OperationId = operationId,
+            MachineId = machineId,
+            SecondsPerUnit = productionReferenceTime / producedQuantity,
+            EffectiveFromUtc = DayStartsAt,
+            SourceReference = "approved-fixture-standard",
+            PublishedRevision = 1,
+        });
+        var outcomes = new InMemoryProductionReferenceTimeAuthority();
+        outcomes.ResolveAndRecord(new ProductionQuantityEvidence
+        {
+            Id = sourceId,
+            CompanyId = new CompanyId("company-a"),
+            SiteId = siteId,
+            MachineId = machineId,
+            ShiftId = shiftId,
+            PartId = partId,
+            OperationId = operationId,
+            OccurredAtUtc = DayStartsAt,
+            PartCountIncrement = decimal.ToInt32(producedQuantity),
+            GoodQuantity = decimal.ToInt32(goodQuantity),
+        }, occurrence, day, standards.ReadCurrentCut());
+        store.CompleteReferenceTimePublication(revision, outcomes.CurrentRevision, outcomes);
     }
 
     private static PositionedMetricInputFact Input(
@@ -275,7 +307,10 @@ public sealed class OperationalMetricWholeFeatureConformanceTests
         ProductionDayId day,
         string key,
         decimal value,
-        string unit) => new(
+        string unit,
+        ProductionQuantityEvidenceId? sourceId = null,
+        PartId? partId = null,
+        OperationId? operationId = null) => new(
             streamId,
             new MetricInputPosition(position),
             new DurableMetricInputFact
@@ -292,6 +327,9 @@ public sealed class OperationalMetricWholeFeatureConformanceTests
                 MachineId = machineId,
                 ShiftId = shiftId,
                 ShiftScheduleAssignmentId = assignmentId,
+                SourceQuantityEvidenceId = sourceId,
+                PartId = partId,
+                OperationId = operationId,
             },
             occurrence,
             day);

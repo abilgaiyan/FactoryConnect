@@ -127,6 +127,7 @@ try {
         -Environment @{
             DOTNET_ENVIRONMENT = 'Production'
             PersistenceProviders__SqlServer__ConnectionString = $SqlConnectionString
+            DemoStandardProvisioning__Enabled = 'true'
         }
     $ownedProcesses.Add($migration)
     Write-DemoRuntimeState -Path $runtimeStatePath -CandidateId $ExpectedCandidateId -OwnedProcesses $ownedProcesses -Phase 'MigrationExecution'

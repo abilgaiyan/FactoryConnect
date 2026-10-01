@@ -57,6 +57,28 @@ public sealed class InMemoryProductionReferenceTimeAuthority
         MetricAggregationCheckpoint aggregationRevision,
         ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
         OperationalMetricPeriodId periodId)
+        => ReadAtRevision(aggregationStore, aggregationRevision, referenceTimeRevision, periodId, requireResolved: true) is not null;
+
+    internal bool HasPublishedCoverageAtRevision(
+        InMemoryMetricAggregationStore aggregationStore,
+        MetricAggregationCheckpoint aggregationRevision,
+        ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
+        OperationalMetricPeriodId periodId) =>
+        ReadAtRevision(aggregationStore, aggregationRevision, referenceTimeRevision, periodId, requireResolved: false) is not null;
+
+    internal IReadOnlyList<ProductionReferenceTimeResolution>? ReadResolvedAtRevision(
+        InMemoryMetricAggregationStore aggregationStore,
+        MetricAggregationCheckpoint aggregationRevision,
+        ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
+        OperationalMetricPeriodId periodId)
+        => ReadAtRevision(aggregationStore, aggregationRevision, referenceTimeRevision, periodId, requireResolved: true);
+
+    private List<ProductionReferenceTimeResolution>? ReadAtRevision(
+        InMemoryMetricAggregationStore aggregationStore,
+        MetricAggregationCheckpoint aggregationRevision,
+        ProductionReferenceTimeAuthorityRevision referenceTimeRevision,
+        OperationalMetricPeriodId periodId,
+        bool requireResolved)
     {
         ArgumentNullException.ThrowIfNull(aggregationStore);
         ArgumentNullException.ThrowIfNull(aggregationRevision);
@@ -77,7 +99,7 @@ public sealed class InMemoryProductionReferenceTimeAuthority
         var produced = aggregationStore.ReadProducedQuantityAtRevision(aggregationRevision, periodId);
         if (produced.Count == 0)
         {
-            return false;
+            return null;
         }
 
         var sources = new List<ProductionQuantityEvidenceId>(produced.Count);
@@ -115,12 +137,15 @@ public sealed class InMemoryProductionReferenceTimeAuthority
             }
         }
 
-        return ProductionReferenceTimeCompleteness.IsComplete(
+        var fullyResolved = ProductionReferenceTimeCompleteness.IsComplete(
             sources,
             outcomes,
             aggregationRevision.StreamId.MachineId,
             periodId is OperationalMetricPeriodId.Shift shift ? shift.ShiftOccurrenceId : null,
             periodId is OperationalMetricPeriodId.ProductionDay day ? day.ProductionDayId : null);
+        return (requireResolved ? fullyResolved : outcomes.Count == sources.Count)
+            ? outcomes
+            : null;
     }
 
     private sealed record PublishedOutcome(
