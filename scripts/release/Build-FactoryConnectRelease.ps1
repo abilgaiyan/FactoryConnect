@@ -53,7 +53,20 @@ function Get-RelativePath {
         [Parameter(Mandatory = $true)][string]$Path
     )
 
-    return ([System.IO.Path]::GetRelativePath($Root, $Path)).Replace('\', '/')
+    # Windows PowerShell 5.1 runs on .NET Framework, where Path.GetRelativePath
+    # is unavailable. Keep release construction compatible with both Windows
+    # PowerShell and modern PowerShell by deriving a contained relative path.
+    $rootFullPath = [System.IO.Path]::GetFullPath($Root).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar)
+    $pathFullPath = [System.IO.Path]::GetFullPath($Path)
+    $rootPrefix = $rootFullPath + [System.IO.Path]::DirectorySeparatorChar
+
+    if (-not $pathFullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Path '$pathFullPath' is not contained by root '$rootFullPath'."
+    }
+
+    return $pathFullPath.Substring($rootPrefix.Length).Replace('\', '/')
 }
 
 function Assert-CleanWorkspace {
