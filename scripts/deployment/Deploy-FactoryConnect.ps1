@@ -224,6 +224,16 @@ function Assert-CurrentTargetsRelease {
     if ($state.Kind -ne 'Release' -or $state.Release -cne $Expected -or -not [string]::Equals([string]$state.Target,$expectedTarget,[System.StringComparison]::OrdinalIgnoreCase)) { throw "Current selection is not '$Expected'. Observed kind '$($state.Kind)', release '$($state.Release)', target '$($state.Target)'." }
 }
 
+function Remove-ActivationJunction {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $item=Get-Item -LiteralPath $Path -Force
+    if ([string]$item.LinkType -cne 'Junction') { throw "Refusing to remove activation path '$Path' because it is not a junction." }
+    & cmd.exe /d /c rmdir ('"' + $Path + '"')
+    if ($LASTEXITCODE -ne 0) { throw "Failed to remove activation junction '$Path'. rmdir exited with code $LASTEXITCODE." }
+    if (Test-Path -LiteralPath $Path) { throw "Activation junction '$Path' still exists after removal." }
+}
+
 function New-RuntimeState {
     param([string]$SelectedRelease,[string]$ReleasePath,[string]$AttemptId,[string]$Status,$Records,[string]$FailurePhase=$null,[string]$MigrationOutcome=$null,[bool]$DatabaseMayHaveChanged=$false,$ProcessStates=$null)
     $verifiedRunning=$false
@@ -296,7 +306,7 @@ try {
     $failurePhase='Selection'
     $replacement="$current.new-$attemptId"; if (Test-Path -LiteralPath $replacement) { Remove-Item -LiteralPath $replacement -Force }
     New-Item -ItemType Junction -Path $replacement -Target $targetReleasePath | Out-Null
-    if (Test-Path -LiteralPath $current) { Remove-Item -LiteralPath $current -Force }
+    if (Test-Path -LiteralPath $current) { Remove-ActivationJunction $current }
     Rename-Item -LiteralPath $replacement -NewName (Split-Path $current -Leaf)
     Assert-CurrentTargetsRelease $current $releases $targetRelease
     Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false)
