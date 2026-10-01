@@ -127,17 +127,30 @@ function Get-RecordedProcessState {
     catch { return [pscustomobject]@{ State='Mismatch'; Process=$process } }
 }
 function Test-OwnedProcess { param($Record); (Get-RecordedProcessState $Record).State -eq 'Owned' }
-
 function Get-RuntimeRecords {
     param($Runtime)
-    $records=[ordered]@{edge=$null;api=$null;dashboard=$null}
-    if ($null -eq $Runtime) { return $records }
-    foreach ($name in @('edge','api','dashboard')) { if ($null -ne $Runtime.PSObject.Properties[$name]) { $records[$name]=$Runtime.$name } }
-    $records
+    [ordered]@{
+        edge = if ($null -ne $Runtime) { $Runtime.edge } else { $null }
+        api = if ($null -ne $Runtime) { $Runtime.api } else { $null }
+        dashboard = if ($null -ne $Runtime) { $Runtime.dashboard } else { $null }
+    }
+}
+function Get-ObservedProcessRecords {
+    param($NewRecords,$OldRecords)
+    $records=[ordered]@{edge=$null;api=$null;dashboard=$null}; $states=[ordered]@{edge='Absent';api='Absent';dashboard='Absent'}
+    foreach ($name in @('edge','api','dashboard')) {
+        $candidates=@($NewRecords[$name],$OldRecords[$name]) | Where-Object { $null -ne $_ }
+        foreach ($record in $candidates) {
+            $state=Get-RecordedProcessState $record
+            if ($state.State -eq 'Owned') { $records[$name]=$record; $states[$name]='Owned'; break }
+            if ($state.State -eq 'Mismatch' -and $states[$name] -ne 'Owned') { $records[$name]=$record; $states[$name]='IdentityMismatch' }
+        }
+    }
+    [pscustomobject]@{Records=$records;States=$states}
 }
 
 function Stop-RecordedProcesses {
-    param([System.Collections.IDictionary]$Records)
+    param($Records)
     foreach ($name in @('dashboard','api','edge')) {
         $record=$Records[$name]; if ($null -eq $record) { continue }
         $state=Get-RecordedProcessState $record
@@ -148,20 +161,6 @@ function Stop-RecordedProcesses {
         if (Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue) { throw "FactoryConnect $name PID $($record.pid) did not stop within 30 seconds." }
         $Records[$name]=$null
     }
-}
-
-function Get-ObservedProcessRecords {
-    param([System.Collections.IDictionary]$Primary,[System.Collections.IDictionary]$Secondary)
-    $records=[ordered]@{edge=$null;api=$null;dashboard=$null}; $states=[ordered]@{edge='Absent';api='Absent';dashboard='Absent'}
-    foreach ($name in @('edge','api','dashboard')) {
-        $candidates=@($Primary[$name],$Secondary[$name]) | Where-Object { $null -ne $_ }
-        foreach ($record in $candidates) {
-            $state=Get-RecordedProcessState $record
-            if ($state.State -eq 'Owned') { $records[$name]=$record; $states[$name]='Owned'; break }
-            if ($state.State -eq 'Mismatch' -and $states[$name] -ne 'Owned') { $records[$name]=$record; $states[$name]='IdentityMismatch' }
-        }
-    }
-    [pscustomobject]@{Records=$records;States=$states}
 }
 
 function Wait-HttpOk {
@@ -206,33 +205,34 @@ function Assert-ExactPackageMatch {
     foreach ($path in $incoming.Manifest.Keys) { if (-not $installed.Manifest.ContainsKey($path) -or $installed.Manifest[$path] -ne $incoming.Manifest[$path]) { throw "Installed immutable release differs from incoming package at '$path'." } }
 }
 function Get-CurrentTarget { param([string]$CurrentPath); if (-not (Test-Path -LiteralPath $CurrentPath)) { return $null }; [System.IO.Path]::GetFullPath([string](Get-Item -LiteralPath $CurrentPath -Force).Target) }
-
 function Get-ObservedSelection {
     param([string]$CurrentPath,[string]$OldSelection,[string]$NewSelection)
-    try { $target=Get-CurrentTarget $CurrentPath } catch { return [pscustomobject]@{State='Unreadable';Target=$null;Commit=$null;Error=$_.Exception.Message} }
-    if ($null -eq $target) { return [pscustomobject]@{State='Absent';Target=$null;Commit=$null;Error=$null} }
-    if ($NewSelection -and $target -eq [System.IO.Path]::GetFullPath($NewSelection)) { return [pscustomobject]@{State='New';Target=$target;Commit=(Split-Path -Leaf $target);Error=$null} }
-    if ($OldSelection -and $target -eq [System.IO.Path]::GetFullPath($OldSelection)) { return [pscustomobject]@{State='Old';Target=$target;Commit=(Split-Path -Leaf $target);Error=$null} }
-    [pscustomobject]@{State='UnexpectedTarget';Target=$target;Commit=$null;Error=$null}
+    try {
+        if (-not (Test-Path -LiteralPath $CurrentPath)) { return [pscustomobject]@{State='Absent';Target=$null;Commit=$null;Error=$null} }
+        $target=Get-CurrentTarget $CurrentPath
+        if ($null -ne $NewSelection -and $target -eq [System.IO.Path]::GetFullPath($NewSelection)) { return [pscustomobject]@{State='New';Target=$target;Commit=(Split-Path -Leaf $target);Error=$null} }
+        if ($null -ne $OldSelection -and $target -eq [System.IO.Path]::GetFullPath($OldSelection)) { return [pscustomobject]@{State='Old';Target=$target;Commit=(Split-Path -Leaf $target);Error=$null} }
+        [pscustomobject]@{State='UnexpectedTarget';Target=$target;Commit=(Split-Path -Leaf $target);Error=$null}
+    }
+    catch { [pscustomobject]@{State='Unreadable';Target=$null;Commit=$null;Error=$_.Exception.Message} }
 }
-
 function Assert-FinalRuntimeState {
-    param([System.Collections.IDictionary]$Records,[string]$CurrentPath,[string]$ExpectedRelease,[string]$ApiBase,[string]$DashboardBase)
-    $target=Get-CurrentTarget $CurrentPath
-    if ($null -eq $target -or $target -ne [System.IO.Path]::GetFullPath($ExpectedRelease)) { throw "Final current selection does not target the new release. Observed '$target'." }
-    foreach ($name in @('edge','api','dashboard')) { if (-not (Test-OwnedProcess $Records[$name])) { throw "Final $name process ownership/liveness verification failed." } }
-    if (-not (Test-HttpOk "$ApiBase/health")) { throw 'Final API /health verification failed.' }
-    if (-not (Test-HttpOk "$DashboardBase/health/live")) { throw 'Final Dashboard /health/live verification failed.' }
-    if (-not (Test-HttpOk "$DashboardBase/health/ready")) { throw 'Final Dashboard /health/ready verification failed.' }
+    param($Records,[string]$CurrentPath,[string]$StagedRelease,[string]$ApiBase,[string]$DashboardBase)
+    $selection=Get-ObservedSelection $CurrentPath $null $StagedRelease
+    if ($selection.State -ne 'New') { throw "Final verification failed: current selection is '$($selection.State)'." }
+    foreach ($name in @('edge','api','dashboard')) { if (-not (Test-OwnedProcess $Records[$name])) { throw "Final verification failed: $name process ownership/liveness is not valid." } }
+    if (-not (Test-HttpOk "$ApiBase/health")) { throw 'Final verification failed: API health check failed.' }
+    if (-not (Test-HttpOk "$DashboardBase/health/live")) { throw 'Final verification failed: Dashboard live health check failed.' }
+    if (-not (Test-HttpOk "$DashboardBase/health/ready")) { throw 'Final verification failed: Dashboard ready health check failed.' }
 }
 
 $InstallRoot=[System.IO.Path]::GetFullPath($InstallRoot); $PackagePath=[System.IO.Path]::GetFullPath($PackagePath)
 $attemptId=[Guid]::NewGuid().ToString('N'); $deploymentRoot=Join-Path $InstallRoot 'deployment'; $logsRoot=Join-Path $deploymentRoot "logs/$attemptId"; $runtimePath=Join-Path $deploymentRoot 'runtime.json'; $lockPath=Join-Path $deploymentRoot 'deployment.lock'; $configRoot=Join-Path $InstallRoot 'config'; $releasesRoot=Join-Path $InstallRoot 'releases'; $currentPath=Join-Path $InstallRoot 'current'
-$tempPackageRoot=$null; $lockStream=$null; $sourceCommit=$null; $stagedRelease=$null; $migrationStarted=$false; $migrationSucceeded=$false; $failurePhase='Preparation'; $records=[ordered]@{edge=$null;api=$null;dashboard=$null}; $oldRecords=[ordered]@{edge=$null;api=$null;dashboard=$null}; $newProcesses=[System.Collections.Generic.List[object]]::new(); $oldSelection=$null
+$tempPackageRoot=$null; $lockStream=$null; $lockAcquired=$false; $runtimeDisruptionStarted=$false; $sourceCommit=$null; $stagedRelease=$null; $migrationStarted=$false; $migrationSucceeded=$false; $failurePhase='Preparation'; $records=[ordered]@{edge=$null;api=$null;dashboard=$null}; $oldRecords=[ordered]@{edge=$null;api=$null;dashboard=$null}; $newProcesses=[System.Collections.Generic.List[object]]::new(); $oldSelection=$null
 
 try {
     foreach ($directory in @($InstallRoot,$deploymentRoot,$logsRoot,$configRoot,$releasesRoot)) { [System.IO.Directory]::CreateDirectory($directory) | Out-Null }
-    try { $lockStream=[System.IO.File]::Open($lockPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None) } catch { throw "Another FactoryConnect deployment is already active for '$InstallRoot'." }
+    try { $lockStream=[System.IO.File]::Open($lockPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None); $lockAcquired=$true } catch { throw "Another FactoryConnect deployment is already active for '$InstallRoot'." }
 
     if (Test-Path -LiteralPath $PackagePath -PathType Leaf) { if ([System.IO.Path]::GetExtension($PackagePath) -ine '.zip') { throw 'PackagePath file must be a .zip archive.' }; $tempPackageRoot=Join-Path ([System.IO.Path]::GetTempPath()) "FactoryConnectDeploy-$attemptId"; [System.IO.Directory]::CreateDirectory($tempPackageRoot)|Out-Null; Expand-Archive -LiteralPath $PackagePath -DestinationPath $tempPackageRoot; $roots=@(Get-ChildItem -LiteralPath $tempPackageRoot -Directory); if ($roots.Count -ne 1) { throw 'Release ZIP must contain exactly one top-level release directory.' }; $packageRoot=$roots[0].FullName }
     elseif (Test-Path -LiteralPath $PackagePath -PathType Container) { $packageRoot=$PackagePath } else { throw "PackagePath does not exist: '$PackagePath'." }
@@ -258,7 +258,7 @@ try {
         if ([string]$oldRuntime.releaseCommit -eq $sourceCommit -and [string]$oldRuntime.deploymentStatus -eq 'Succeeded' -and $healthy) { [pscustomobject]@{Status='AlreadyDeployed';SourceCommit=$sourceCommit;ReleasePath=$stagedRelease;CurrentPath=$currentPath;RuntimePath=$runtimePath}; return }
     }
 
-    $failurePhase='StopOldRuntime'; Stop-RecordedProcesses $oldRecords
+    $failurePhase='StopOldRuntime'; $runtimeDisruptionStarted=$true; Stop-RecordedProcesses $oldRecords
     if ($oldSelection) { Write-JsonFile $runtimePath ([ordered]@{schemaVersion='1.0';deploymentAttemptId=$attemptId;releaseCommit=(Split-Path -Leaf $oldSelection);releasePath=$oldSelection;deploymentStatus='StoppedForDeployment';runtimeRunning=$false;processStates=[ordered]@{edge='Absent';api='Absent';dashboard='Absent'};edge=$null;api=$null;dashboard=$null}) }
 
     $failurePhase='Migration'; $migrationStarted=$true
@@ -295,7 +295,7 @@ catch {
     $unresolvedIdentity=@($observedProcesses.States.Values | Where-Object { $_ -eq 'IdentityMismatch' }).Count -gt 0
     $failure=[ordered]@{schemaVersion='1.0';deploymentAttemptId=$attemptId;releaseCommit=$selectedCommit;releasePath=$selectedRelease;selectionState=$observedSelection.State;selectionObservationError=$observedSelection.Error;deploymentStatus='Failed';runtimeRunning=$runtimeRunning;runtimeIdentityUnresolved=$unresolvedIdentity;failurePhase=$failurePhase;migrationOutcome=$(if(-not $migrationStarted){'NotStarted'}elseif($migrationSucceeded){'Succeeded'}else{'Failed'});databaseMayHaveChanged=($migrationStarted -and -not $migrationSucceeded);failedAtUtc=[DateTime]::UtcNow.ToString('o');processStates=$observedProcesses.States;edge=$observedProcesses.Records.edge;api=$observedProcesses.Records.api;dashboard=$observedProcesses.Records.dashboard;cleanupFailures=@($cleanupFailures);error=$primaryError}
     Write-JsonFile (Join-Path $logsRoot 'deployment-failure.json') $failure
-    if ($migrationStarted -or $oldSelection -or $null -ne $selectedRelease -or $runtimeRunning -or $unresolvedIdentity) { Write-JsonFile $runtimePath $failure }
+    if ($lockAcquired -and $runtimeDisruptionStarted) { Write-JsonFile $runtimePath $failure }
     throw
 }
 finally {
