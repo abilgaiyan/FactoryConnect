@@ -212,7 +212,7 @@ function Get-SelectedReleaseState {
         $prefix=$releasesFull + '\'
         if (-not $targetFull.StartsWith($prefix,[System.StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{Kind='Unexpected';Release=$null;Target=$targetFull} }
         $relative=$targetFull.Substring($prefix.Length)
-        if ([string]::IsNullOrWhiteSpace($relative) -or $relative.Contains('\') -or $relative.Contains('/')) { return [pscustomobject]@{Kind='Unexpected';Release=$null;Target=$targetFull} }
+        if ([string]::IsNullOrWhiteSpace($relative) -or $relative.Contains('\') -or $relative.Contains('/') -or $relative -cnotmatch '^[0-9a-f]{40}$') { return [pscustomobject]@{Kind='Unexpected';Release=$null;Target=$targetFull} }
         [pscustomobject]@{Kind='Release';Release=$relative;Target=$targetFull}
     }
     catch { [pscustomobject]@{Kind='Unreadable';Release=$null;Target=$null} }
@@ -251,7 +251,7 @@ try {
         New-Item -ItemType Directory -Force -Path $packageExtractRoot | Out-Null
         Expand-Archive -LiteralPath $resolvedPackage -DestinationPath $packageExtractRoot
         $candidates=@(Get-ChildItem -LiteralPath $packageExtractRoot -Directory)
-        if ($candidates.Count -ne 1 -or (Get-ChildItem -LiteralPath $packageExtractRoot -File).Count -ne 0) { throw 'Release archive must contain exactly one top-level package directory.' }
+        if ($candidates.Count -ne 1 -or @(Get-ChildItem -LiteralPath $packageExtractRoot -File).Count -ne 0) { throw 'Release archive must contain exactly one top-level package directory.' }
         $packageRoot=$candidates[0].FullName
     }
     elseif (Test-Path -LiteralPath $resolvedPackage -PathType Container) { $packageRoot=$resolvedPackage }
@@ -306,6 +306,7 @@ try {
     $apiExe=Join-Path $targetReleasePath 'apps/api/FactoryConnect.Api.exe'; $api=Start-OwnedProcess $apiExe (Split-Path $apiExe -Parent) $apiEnvironment (Join-Path $attemptLog 'api.out.log') (Join-Path $attemptLog 'api.err.log'); $newRecords.api=Get-ProcessRecord 'api' $api $apiExe; Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false); Wait-HttpOk "$apiBase/health" $HealthTimeoutSeconds | Out-Null
     $dashboardExe=Join-Path $targetReleasePath 'apps/dashboard/FactoryConnect.Dashboard.exe'; $dashboard=Start-OwnedProcess $dashboardExe (Split-Path $dashboardExe -Parent) $dashboardEnvironment (Join-Path $attemptLog 'dashboard.out.log') (Join-Path $attemptLog 'dashboard.err.log'); $newRecords.dashboard=Get-ProcessRecord 'dashboard' $dashboard $dashboardExe; Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false); Wait-HttpOk "$dashboardBase/health/live" $HealthTimeoutSeconds | Out-Null; Wait-HttpOk "$dashboardBase/health/ready" $HealthTimeoutSeconds | Out-Null
 
+    $failurePhase='FinalVerification'
     Assert-CurrentTargetsRelease $current $releases $targetRelease
     foreach ($name in @('edge','api','dashboard')) { if (-not (Test-OwnedProcess $newRecords[$name])) { throw "Final ownership/liveness verification failed for $name." } }
     Wait-HttpOk "$apiBase/health" $HealthTimeoutSeconds | Out-Null; Wait-HttpOk "$dashboardBase/health/live" $HealthTimeoutSeconds | Out-Null; Wait-HttpOk "$dashboardBase/health/ready" $HealthTimeoutSeconds | Out-Null
