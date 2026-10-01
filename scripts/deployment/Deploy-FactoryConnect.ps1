@@ -18,7 +18,7 @@ function Get-RelativePath {
     if (-not $pathFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Path '$Path' is outside root '$Root'." }
     $pathFull.Substring($prefix.Length).Replace('\','/')
 }
-function Read-JsonFile { param([string]$Path); Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -Depth 100 }
+function Read-JsonFile { param([string]$Path); Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json }
 function Write-JsonFile { param([string]$Path,$Value); ($Value | ConvertTo-Json -Depth 30) | Set-Content -LiteralPath $Path -Encoding utf8 }
 
 function Assert-NoPlaceholders {
@@ -114,7 +114,7 @@ function Start-OwnedProcess {
     $saved=@{}
     try {
         foreach ($entry in $ConfigurationEnvironment.GetEnumerator()) { $saved[$entry.Key]=[Environment]::GetEnvironmentVariable($entry.Key,'Process'); [Environment]::SetEnvironmentVariable($entry.Key,[string]$entry.Value,'Process') }
-        foreach ($name in @('DOTNET_ENVIRONMENT','ASPNETCORE_ENVIRONMENT')) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process'); [Environment]::SetEnvironmentVariable($name,'Production','Process') }
+        foreach ($name in @('DOTNET_ENVIRONMENT','ASPNETCORE_ENVIRONMENT')) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process'); [Environment]::SetEnvironmentVariable($name,[string]'Production','Process') }
         Start-Process -FilePath $Executable -WorkingDirectory $WorkingDirectory -PassThru -RedirectStandardOutput $StdOutPath -RedirectStandardError $StdErrPath
     }
     finally { foreach ($entry in $saved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process') } }
