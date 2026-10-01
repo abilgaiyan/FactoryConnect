@@ -26,7 +26,6 @@ function Assert-NoPlaceholders {
     $matches = [regex]::Matches((Get-Content -Raw -LiteralPath $Path),'__[A-Z0-9_]+__')
     if ($matches.Count -gt 0) { throw "$Name site configuration is not commissioned. Replace placeholders: $((@($matches | ForEach-Object Value | Sort-Object -Unique)) -join ', ')" }
 }
-
 function Assert-NonEmpty { param($Value,[string]$Description); if ([string]::IsNullOrWhiteSpace([string]$Value)) { throw "$Description is required." } }
 function Assert-AbsoluteHttpUri {
     param($Value,[string]$Description)
@@ -46,10 +45,8 @@ function Assert-SingleHostUrl {
     if ($parts.Count -ne 1) { throw "$Description must contain exactly one URL." }
     [void](Assert-AbsoluteHttpUri $parts[0] $Description)
 }
-
 function Assert-SiteConfiguration {
     param($Edge,$Api,$Dashboard)
-
     if ([string]$Edge.Persistence.Provider -cne 'SqlServer') { throw "Edge Persistence.Provider must be exactly 'SqlServer'." }
     Assert-NonEmpty $Edge.PersistenceProviders.SqlServer.ConnectionString 'Edge SQL connection string'
     if ($null -eq $Edge.MTConnect.Machines -or @($Edge.MTConnect.Machines).Count -lt 1) { throw 'Edge must configure at least one MTConnect machine.' }
@@ -61,9 +58,7 @@ function Assert-SiteConfiguration {
     }
     Assert-PositiveDuration $Edge.CurrentState.Freshness.MaximumCurrentAge 'Edge CurrentState.Freshness.MaximumCurrentAge'
     if ($null -eq $Edge.ProductionProcessing.Machines -or @($Edge.ProductionProcessing.Machines).Count -lt 1) { throw 'Edge ProductionProcessing.Machines must contain at least one machine.' }
-    foreach ($machine in @($Edge.ProductionProcessing.Machines)) {
-        foreach ($property in @('MachineId','ActivityStreamKey','QuantityStreamKey','CompanyId','SiteId','ProductionLineId')) { Assert-NonEmpty $machine.$property "Edge ProductionProcessing machine $property" }
-    }
+    foreach ($machine in @($Edge.ProductionProcessing.Machines)) { foreach ($property in @('MachineId','ActivityStreamKey','QuantityStreamKey','CompanyId','SiteId','ProductionLineId')) { Assert-NonEmpty $machine.$property "Edge ProductionProcessing machine $property" } }
 
     if ([string]$Api.Persistence.Provider -cne 'SqlServer') { throw "API Persistence.Provider must be exactly 'SqlServer'." }
     Assert-NonEmpty $Api.PersistenceProviders.SqlServer.ConnectionString 'API SQL connection string'
@@ -80,26 +75,18 @@ function Assert-SiteConfiguration {
     [void](Assert-AbsoluteHttpUri $Dashboard.Dashboard.ReportingApiBaseAddress 'Dashboard.ReportingApiBaseAddress')
     Assert-PositiveDuration $Dashboard.Dashboard.RequestTimeout 'Dashboard.RequestTimeout'
     if ($null -eq $Dashboard.Dashboard.Sources -or @($Dashboard.Dashboard.Sources).Count -lt 1) { throw 'Dashboard must configure at least one source.' }
-    foreach ($source in @($Dashboard.Dashboard.Sources)) {
-        foreach ($property in @('MachineId','ProcessorId','SiteId','ProductionLineId','DisplayName','GroupName')) { Assert-NonEmpty $source.$property "Dashboard source $property" }
-    }
+    foreach ($source in @($Dashboard.Dashboard.Sources)) { foreach ($property in @('MachineId','ProcessorId','SiteId','ProductionLineId','DisplayName','GroupName')) { Assert-NonEmpty $source.$property "Dashboard source $property" } }
 }
 
 function Add-ConfigurationEnvironment {
     param($Value,[string]$Prefix = '',[hashtable]$Environment)
     if ($null -eq $Value) { if ($Prefix) { $Environment[$Prefix] = '' }; return }
-    if ($Value -is [System.Management.Automation.PSCustomObject]) {
-        foreach ($property in $Value.PSObject.Properties) { Add-ConfigurationEnvironment $property.Value $(if ($Prefix) { "$Prefix`__$($property.Name)" } else { $property.Name }) $Environment }
-        return
-    }
-    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
-        $index = 0; foreach ($item in $Value) { Add-ConfigurationEnvironment $item $(if ($Prefix) { "$Prefix`__$index" } else { [string]$index }) $Environment; $index++ }; return
-    }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) { foreach ($property in $Value.PSObject.Properties) { Add-ConfigurationEnvironment $property.Value $(if ($Prefix) { "$Prefix`__$($property.Name)" } else { $property.Name }) $Environment }; return }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { $index = 0; foreach ($item in $Value) { Add-ConfigurationEnvironment $item $(if ($Prefix) { "$Prefix`__$index" } else { [string]$index }) $Environment; $index++ }; return }
     if (-not $Prefix) { throw 'A scalar configuration value cannot be projected without a key.' }
     $Environment[$Prefix] = if ($Value -is [bool]) { $Value.ToString().ToLowerInvariant() } else { [string]$Value }
 }
 function Get-ConfigurationEnvironment { param([string]$Path); $environment=@{}; Add-ConfigurationEnvironment (Read-JsonFile $Path) '' $environment; $environment }
-
 function Get-BaseAddressFromConfiguration {
     param($Configuration,[string]$Name)
     $parts = @(([string]$Configuration.Urls).Split(';',[System.StringSplitOptions]::RemoveEmptyEntries))
@@ -114,12 +101,11 @@ function Start-OwnedProcess {
     $saved=@{}
     try {
         foreach ($entry in $ConfigurationEnvironment.GetEnumerator()) { $saved[$entry.Key]=[Environment]::GetEnvironmentVariable($entry.Key,'Process'); [Environment]::SetEnvironmentVariable($entry.Key,[string]$entry.Value,'Process') }
-        foreach ($name in @('DOTNET_ENVIRONMENT','ASPNETCORE_ENVIRONMENT')) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process'); [Environment]::SetEnvironmentVariable($name,[string]'Production','Process') }
+        foreach ($name in @('DOTNET_ENVIRONMENT','ASPNETCORE_ENVIRONMENT')) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process'); [Environment]::SetEnvironmentVariable($name,'Production','Process') }
         Start-Process -FilePath $Executable -WorkingDirectory $WorkingDirectory -PassThru -RedirectStandardOutput $StdOutPath -RedirectStandardError $StdErrPath
     }
     finally { foreach ($entry in $saved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process') } }
 }
-
 function Get-RecordedProcessState {
     param($Record)
     if ($null -eq $Record) { return [pscustomobject]@{ State='Absent'; Process=$null } }
@@ -136,11 +122,7 @@ function Get-RecordedProcessState {
 function Test-OwnedProcess { param($Record); (Get-RecordedProcessState $Record).State -eq 'Owned' }
 function Get-RuntimeRecords {
     param($Runtime)
-    [ordered]@{
-        edge = if ($null -ne $Runtime) { $Runtime.edge } else { $null }
-        api = if ($null -ne $Runtime) { $Runtime.api } else { $null }
-        dashboard = if ($null -ne $Runtime) { $Runtime.dashboard } else { $null }
-    }
+    [ordered]@{ edge = if ($null -ne $Runtime) { $Runtime.edge } else { $null }; api = if ($null -ne $Runtime) { $Runtime.api } else { $null }; dashboard = if ($null -ne $Runtime) { $Runtime.dashboard } else { $null } }
 }
 function Get-ObservedProcessRecords {
     param($NewRecords,$OldRecords)
@@ -155,7 +137,6 @@ function Get-ObservedProcessRecords {
     }
     [pscustomobject]@{Records=$records;States=$states}
 }
-
 function Stop-RecordedProcesses {
     param($Records)
     foreach ($name in @('dashboard','api','edge')) {
@@ -186,7 +167,6 @@ function Get-ManifestMap {
     $map
 }
 function Assert-ContainedRelativePath { param([string]$Path,[string]$Description); if ([System.IO.Path]::IsPathRooted($Path) -or $Path.Contains('..') -or $Path.StartsWith('/') -or $Path.StartsWith('\')) { throw "$Description must be a contained relative path. Resolved '$Path'." } }
-
 function Verify-Package {
     param([string]$Root)
     $releasePath=Join-Path $Root 'release.json'; if (-not (Test-Path -LiteralPath $releasePath -PathType Leaf)) { throw 'Package is missing release.json.' }
@@ -204,7 +184,6 @@ function Verify-Package {
     $deployment=[string]$release.deploymentScript; Assert-ContainedRelativePath $deployment 'deployment script'; if ($deployment.Replace('\','/') -cne 'Deploy-FactoryConnect.ps1' -or -not (Test-Path -LiteralPath (Join-Path $Root $deployment) -PathType Leaf)) { throw 'release.json deploymentScript is invalid.' }
     [pscustomobject]@{Release=$release;Manifest=$expected}
 }
-
 function Verify-InstalledReleaseAgainstIncoming {
     param([string]$InstalledRoot,$IncomingManifest)
     $actual=@(Get-ChildItem -LiteralPath $InstalledRoot -File -Recurse | Where-Object { (Get-RelativePath $InstalledRoot $_.FullName) -ne 'MANIFEST.sha256' })
@@ -217,36 +196,53 @@ function Get-SelectedReleaseState {
     param([string]$CurrentPath,[string]$ReleasesRoot)
     if (-not (Test-Path -LiteralPath $CurrentPath)) { return [pscustomobject]@{Kind='Absent';Release=$null;Target=$null} }
     try {
-        $item=Get-Item -LiteralPath $CurrentPath -Force
-        $target=@($item.Target)[0]
+        $item=Get-Item -LiteralPath $CurrentPath -Force; $target=@($item.Target)[0]
         if ([string]::IsNullOrWhiteSpace([string]$target)) { return [pscustomobject]@{Kind='Unexpected';Release=$null;Target=$null} }
         if (-not [System.IO.Path]::IsPathRooted([string]$target)) { $target=Join-Path (Split-Path $CurrentPath -Parent) ([string]$target) }
-        $targetFull=[System.IO.Path]::GetFullPath([string]$target).TrimEnd('\')
-        $releasesFull=[System.IO.Path]::GetFullPath($ReleasesRoot).TrimEnd('\') + '\'
+        $targetFull=[System.IO.Path]::GetFullPath([string]$target).TrimEnd('\'); $releasesFull=[System.IO.Path]::GetFullPath($ReleasesRoot).TrimEnd('\') + '\'
         if (-not $targetFull.StartsWith($releasesFull,[System.StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{Kind='Unexpected';Release=$null;Target=$targetFull} }
         [pscustomobject]@{Kind='Release';Release=(Split-Path $targetFull -Leaf);Target=$targetFull}
     }
     catch { [pscustomobject]@{Kind='Unreadable';Release=$null;Target=$null} }
 }
 function Assert-CurrentTargetsRelease { param([string]$CurrentPath,[string]$ReleasesRoot,[string]$Expected); $state=Get-SelectedReleaseState $CurrentPath $ReleasesRoot; if ($state.Kind -ne 'Release' -or $state.Release -cne $Expected) { throw "Current selection is not '$Expected'. Observed kind '$($state.Kind)', release '$($state.Release)', target '$($state.Target)'." } }
-
 function New-RuntimeState {
     param([string]$SelectedRelease,[string]$ReleasePath,[string]$AttemptId,[string]$Status,$Records,[string]$FailurePhase=$null,[string]$MigrationOutcome=$null,[bool]$DatabaseMayHaveChanged=$false,$ProcessStates=$null)
-    [ordered]@{schemaVersion='1.0';selectedRelease=$SelectedRelease;releasePath=$ReleasePath;deploymentAttemptId=$AttemptId;deploymentStatus=$Status;updatedAtUtc=[DateTime]::UtcNow.ToString('o');runtimeRunning=($Status -eq 'Succeeded');failurePhase=$FailurePhase;migrationOutcome=$MigrationOutcome;databaseMayHaveChanged=$DatabaseMayHaveChanged;processStates=$ProcessStates;edge=$Records.edge;api=$Records.api;dashboard=$Records.dashboard}
+    $runtimeRunning = @($Records.edge,$Records.api,$Records.dashboard | Where-Object { $null -ne $_ }).Count -gt 0
+    [ordered]@{schemaVersion='1.0';selectedRelease=$SelectedRelease;releasePath=$ReleasePath;deploymentAttemptId=$AttemptId;deploymentStatus=$Status;updatedAtUtc=[DateTime]::UtcNow.ToString('o');runtimeRunning=$runtimeRunning;failurePhase=$FailurePhase;migrationOutcome=$MigrationOutcome;databaseMayHaveChanged=$DatabaseMayHaveChanged;processStates=$ProcessStates;edge=$Records.edge;api=$Records.api;dashboard=$Records.dashboard}
 }
 
-$packageRoot=[System.IO.Path]::GetFullPath($PackagePath); $install=[System.IO.Path]::GetFullPath($InstallRoot)
-$deployment=Join-Path $install 'deployment'; $logs=Join-Path $deployment 'logs'; $config=Join-Path $install 'config'; $releases=Join-Path $install 'releases'; $current=Join-Path $install 'current'; $runtimePath=Join-Path $deployment 'runtime.json'; $failurePath=Join-Path $deployment 'deployment-failure.json'
+$install=[System.IO.Path]::GetFullPath($InstallRoot)
+$deployment=Join-Path $install 'deployment'; $logs=Join-Path $deployment 'logs'; $config=Join-Path $install 'config'; $releases=Join-Path $install 'releases'; $current=Join-Path $install 'current'; $runtimePath=Join-Path $deployment 'runtime.json'
 New-Item -ItemType Directory -Force -Path $deployment,$logs | Out-Null
 $attemptId=[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'); $attemptLog=Join-Path $logs $attemptId; New-Item -ItemType Directory -Force -Path $attemptLog | Out-Null
-$lockPath=Join-Path $deployment 'deployment.lock'; $lockStream=$null; $lockAcquired=$false; $runtimeDisruptionStarted=$false; $migrationStarted=$false; $newRecords=[ordered]@{edge=$null;api=$null;dashboard=$null}; $oldRecords=[ordered]@{edge=$null;api=$null;dashboard=$null}; $oldSelected=$null; $targetRelease=$null; $targetReleasePath=$null
+$failurePath=Join-Path $attemptLog 'deployment-failure.json'; $lockPath=Join-Path $deployment 'deployment.lock'
+$lockStream=$null; $lockAcquired=$false; $runtimeDisruptionStarted=$false; $migrationStarted=$false; $migrationCompleted=$false; $failurePhase='Preparation'; $newRecords=[ordered]@{edge=$null;api=$null;dashboard=$null}; $oldRecords=[ordered]@{edge=$null;api=$null;dashboard=$null}; $oldSelected=$null; $targetRelease=$null; $targetReleasePath=$null; $tempPackageRoot=$null; $packageRoot=$null
 try {
     try { $lockStream=[System.IO.File]::Open($lockPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None); $lockAcquired=$true } catch { throw "Another FactoryConnect deployment holds '$lockPath'." }
+
+    $packageInput=[System.IO.Path]::GetFullPath($PackagePath)
+    if (Test-Path -LiteralPath $packageInput -PathType Leaf) {
+        if ([System.IO.Path]::GetExtension($packageInput) -ine '.zip') { throw 'PackagePath file must be a .zip archive.' }
+        $tempPackageRoot=Join-Path ([System.IO.Path]::GetTempPath()) "FactoryConnectDeploy-$attemptId"; New-Item -ItemType Directory -Force -Path $tempPackageRoot | Out-Null
+        Expand-Archive -LiteralPath $packageInput -DestinationPath $tempPackageRoot
+        $roots=@(Get-ChildItem -LiteralPath $tempPackageRoot -Directory)
+        if ($roots.Count -ne 1) { throw 'Release ZIP must contain exactly one top-level release directory.' }
+        $packageRoot=$roots[0].FullName
+    }
+    elseif (Test-Path -LiteralPath $packageInput -PathType Container) { $packageRoot=$packageInput }
+    else { throw "PackagePath does not exist: '$packageInput'." }
 
     $verified=Verify-Package $packageRoot; $release=$verified.Release; $targetRelease=[string]$release.sourceCommit; $targetReleasePath=Join-Path $releases $targetRelease
     New-Item -ItemType Directory -Force -Path $releases | Out-Null
     if (Test-Path -LiteralPath $targetReleasePath) { Verify-InstalledReleaseAgainstIncoming $targetReleasePath $verified.Manifest }
-    else { Copy-Item -LiteralPath $packageRoot -Destination $targetReleasePath -Recurse }
+    else {
+        $stagingPath=Join-Path $releases ".$targetRelease.staging-$attemptId"
+        if (Test-Path -LiteralPath $stagingPath) { Remove-Item -LiteralPath $stagingPath -Recurse -Force }
+        Copy-Item -LiteralPath $packageRoot -Destination $stagingPath -Recurse
+        Verify-InstalledReleaseAgainstIncoming $stagingPath $verified.Manifest
+        [System.IO.Directory]::Move($stagingPath,$targetReleasePath)
+    }
 
     New-Item -ItemType Directory -Force -Path $config | Out-Null
     $created=@()
@@ -261,28 +257,35 @@ try {
 
     $oldRuntime=if (Test-Path -LiteralPath $runtimePath) { Read-JsonFile $runtimePath } else { $null }; $oldRecords=Get-RuntimeRecords $oldRuntime
     $selection=Get-SelectedReleaseState $current $releases; if ($selection.Kind -eq 'Release') { $oldSelected=$selection.Release }
-
     if ($selection.Kind -eq 'Release' -and $selection.Release -ceq $targetRelease -and (Test-OwnedProcess $oldRecords.edge) -and (Test-OwnedProcess $oldRecords.api) -and (Test-OwnedProcess $oldRecords.dashboard) -and (Test-HttpOk "$apiBase/health") -and (Test-HttpOk "$dashboardBase/health/live") -and (Test-HttpOk "$dashboardBase/health/ready")) { [pscustomobject]@{Status='AlreadyDeployed';SourceCommit=$targetRelease;InstallRoot=$install}; return }
 
-    $runtimeDisruptionStarted=$true
-    Stop-RecordedProcesses $oldRecords
+    $failurePhase='StopOldRuntime'; $runtimeDisruptionStarted=$true; Stop-RecordedProcesses $oldRecords
 
-    $migrationExe=Join-Path $targetReleasePath 'apps/migrations/FactoryConnect.Migrations.exe'; $migrationDirectory=Split-Path $migrationExe -Parent; $migrationEnvironment=@{}; foreach ($entry in $edgeEnvironment.GetEnumerator()) { $migrationEnvironment[$entry.Key]=$entry.Value }; $migrationEnvironment['DemoStandardProvisioning__Enabled']='false'
-    $saved=@{}; try { foreach ($entry in $migrationEnvironment.GetEnumerator()) { $saved[$entry.Key]=[Environment]::GetEnvironmentVariable($entry.Key,'Process'); [Environment]::SetEnvironmentVariable($entry.Key,[string]$entry.Value,'Process') }; foreach ($name in @('DOTNET_ENVIRONMENT','ASPNETCORE_ENVIRONMENT')) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process'); [Environment]::SetEnvironmentVariable($name,'Production','Process') }; $migrationStarted=$true; $migration=Start-Process -FilePath $migrationExe -WorkingDirectory $migrationDirectory -Wait -PassThru -RedirectStandardOutput (Join-Path $attemptLog 'migrations.out.log') -RedirectStandardError (Join-Path $attemptLog 'migrations.err.log') } finally { foreach ($entry in $saved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process') } }
+    $failurePhase='Migration'; $migrationExe=Join-Path $targetReleasePath 'apps/migrations/FactoryConnect.Migrations.exe'; $migrationDirectory=Split-Path $migrationExe -Parent; $migrationEnvironment=@{}; foreach ($entry in $edgeEnvironment.GetEnumerator()) { $migrationEnvironment[$entry.Key]=$entry.Value }; $migrationEnvironment['DemoStandardProvisioning__Enabled']='false'
+    $saved=@{}
+    try {
+        foreach ($entry in $migrationEnvironment.GetEnumerator()) { $saved[$entry.Key]=[Environment]::GetEnvironmentVariable($entry.Key,'Process'); [Environment]::SetEnvironmentVariable($entry.Key,[string]$entry.Value,'Process') }
+        foreach ($name in @('DOTNET_ENVIRONMENT','ASPNETCORE_ENVIRONMENT')) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process'); [Environment]::SetEnvironmentVariable($name,'Production','Process') }
+        $migrationStarted=$true
+        $migration=Start-Process -FilePath $migrationExe -WorkingDirectory $migrationDirectory -Wait -PassThru -RedirectStandardOutput (Join-Path $attemptLog 'migrations.out.log') -RedirectStandardError (Join-Path $attemptLog 'migrations.err.log')
+    }
+    finally { foreach ($entry in $saved.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process') } }
     if ($migration.ExitCode -ne 0) { throw "Database migration failed with exit code $($migration.ExitCode)." }
+    $migrationCompleted=$true
 
-    $replacement="$current.new-$attemptId"; if (Test-Path -LiteralPath $replacement) { Remove-Item -LiteralPath $replacement -Force }
+    $failurePhase='Selection'; $replacement="$current.new-$attemptId"; if (Test-Path -LiteralPath $replacement) { Remove-Item -LiteralPath $replacement -Force }
     New-Item -ItemType Junction -Path $replacement -Target $targetReleasePath | Out-Null
     if (Test-Path -LiteralPath $current) { Remove-Item -LiteralPath $current -Force }
     Rename-Item -LiteralPath $replacement -NewName (Split-Path $current -Leaf)
     Assert-CurrentTargetsRelease $current $releases $targetRelease
     Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false)
 
+    $failurePhase='Startup'
     $edgeExe=Join-Path $targetReleasePath 'apps/edge/FactoryConnect.Edge.exe'; $edge=Start-OwnedProcess $edgeExe (Split-Path $edgeExe -Parent) $edgeEnvironment (Join-Path $attemptLog 'edge.out.log') (Join-Path $attemptLog 'edge.err.log'); $newRecords.edge=Get-ProcessRecord 'edge' $edge $edgeExe; Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false); Start-Sleep -Seconds $EdgeStabilizationSeconds; if (-not (Test-OwnedProcess $newRecords.edge)) { throw 'Edge exited during startup stabilization.' }
     $apiExe=Join-Path $targetReleasePath 'apps/api/FactoryConnect.Api.exe'; $api=Start-OwnedProcess $apiExe (Split-Path $apiExe -Parent) $apiEnvironment (Join-Path $attemptLog 'api.out.log') (Join-Path $attemptLog 'api.err.log'); $newRecords.api=Get-ProcessRecord 'api' $api $apiExe; Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false); Wait-HttpOk "$apiBase/health" $HealthTimeoutSeconds | Out-Null
     $dashboardExe=Join-Path $targetReleasePath 'apps/dashboard/FactoryConnect.Dashboard.exe'; $dashboard=Start-OwnedProcess $dashboardExe (Split-Path $dashboardExe -Parent) $dashboardEnvironment (Join-Path $attemptLog 'dashboard.out.log') (Join-Path $attemptLog 'dashboard.err.log'); $newRecords.dashboard=Get-ProcessRecord 'dashboard' $dashboard $dashboardExe; Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Starting' $newRecords $null 'Succeeded' $false); Wait-HttpOk "$dashboardBase/health/live" $HealthTimeoutSeconds | Out-Null; Wait-HttpOk "$dashboardBase/health/ready" $HealthTimeoutSeconds | Out-Null
 
-    Assert-CurrentTargetsRelease $current $releases $targetRelease
+    $failurePhase='FinalVerification'; Assert-CurrentTargetsRelease $current $releases $targetRelease
     foreach ($name in @('edge','api','dashboard')) { if (-not (Test-OwnedProcess $newRecords[$name])) { throw "Final ownership/liveness verification failed for $name." } }
     Wait-HttpOk "$apiBase/health" $HealthTimeoutSeconds | Out-Null; Wait-HttpOk "$dashboardBase/health/live" $HealthTimeoutSeconds | Out-Null; Wait-HttpOk "$dashboardBase/health/ready" $HealthTimeoutSeconds | Out-Null
     Write-JsonFile $runtimePath (New-RuntimeState $targetRelease $targetReleasePath $attemptId 'Succeeded' $newRecords $null 'Succeeded' $false)
@@ -302,10 +305,13 @@ catch {
     $selection=Get-SelectedReleaseState $current $releases
     $selectedRelease=if ($selection.Kind -eq 'Release') { $selection.Release } else { $null }
     $selectedPath=if ($selection.Kind -eq 'Release') { $selection.Target } else { $null }
-    $phase=if (-not $runtimeDisruptionStarted) { 'Preparation' } elseif ($migrationStarted -and $null -eq $selectedRelease) { 'MigrationOrSelection' } elseif ($null -ne $selectedRelease -and $selectedRelease -ceq $targetRelease) { 'Startup' } else { 'ShutdownOrSelection' }
-    $migrationOutcome=if ($migrationStarted -and $null -ne $selectedRelease -and $selectedRelease -ceq $targetRelease) { 'Succeeded' } elseif ($migrationStarted) { 'FailedOrIndeterminate' } else { 'NotStarted' }
-    if ($lockAcquired -and $runtimeDisruptionStarted) { Write-JsonFile $runtimePath (New-RuntimeState $selectedRelease $selectedPath $attemptId 'Failed' $observed.Records $phase $migrationOutcome $migrationStarted $observed.States) }
-    Write-JsonFile $failurePath ([ordered]@{schemaVersion='1.0';attemptId=$attemptId;failedAtUtc=[DateTime]::UtcNow.ToString('o');message=$primary;cleanupErrors=$cleanup;runtimeStateUpdated=($lockAcquired -and $runtimeDisruptionStarted);observedSelection=[ordered]@{kind=$selection.Kind;release=$selection.Release;target=$selection.Target};processStates=$observed.States})
+    $migrationOutcome=if (-not $migrationStarted) { 'NotStarted' } elseif ($migrationCompleted) { 'Succeeded' } else { 'Failed' }
+    $databaseMayHaveChanged=($migrationStarted -and -not $migrationCompleted)
+    if ($lockAcquired -and $runtimeDisruptionStarted) { Write-JsonFile $runtimePath (New-RuntimeState $selectedRelease $selectedPath $attemptId 'Failed' $observed.Records $failurePhase $migrationOutcome $databaseMayHaveChanged $observed.States) }
+    Write-JsonFile $failurePath ([ordered]@{schemaVersion='1.0';attemptId=$attemptId;failedAtUtc=[DateTime]::UtcNow.ToString('o');message=$primary;failurePhase=$failurePhase;migrationOutcome=$migrationOutcome;databaseMayHaveChanged=$databaseMayHaveChanged;cleanupErrors=$cleanup;runtimeStateUpdated=($lockAcquired -and $runtimeDisruptionStarted);observedSelection=[ordered]@{kind=$selection.Kind;release=$selection.Release;target=$selection.Target};processStates=$observed.States})
     throw
 }
-finally { if ($null -ne $lockStream) { $lockStream.Dispose() } }
+finally {
+    if ($null -ne $lockStream) { $lockStream.Dispose() }
+    if ($null -ne $tempPackageRoot -and (Test-Path -LiteralPath $tempPackageRoot)) { Remove-Item -LiteralPath $tempPackageRoot -Recurse -Force -ErrorAction SilentlyContinue }
+}
