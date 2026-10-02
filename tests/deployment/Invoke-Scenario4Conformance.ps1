@@ -24,32 +24,34 @@ if (-not (Test-Path -LiteralPath $productionScript -PathType Leaf)) {
 # deployment-failure.json, processStates, cleanupErrors, and process identity.
 $source = Get-Content -Raw -LiteralPath $productionScript
 
-# Anchor to the API-start statement rather than reproducing the entire preceding
-# Edge-start line. This remains fail-closed (exactly one match) while avoiding
-# sensitivity to formatting elsewhere on that long production statement.
-$failureNeedle = @'
-    $apiExe=Join-Path $targetReleasePath 'apps/api/FactoryConnect.Api.exe';
-'@.TrimEnd("`r", "`n")
-$failureReplacement = "    throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'`r`n" + $failureNeedle
-if (-not $source.Contains($failureNeedle)) {
-    $failureNeedle = $failureNeedle.Replace("`r`n", "`n")
-    $failureReplacement = "    throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'`n" + $failureNeedle
+# Match semantic statement prefixes rather than exact line formatting. Both
+# rewrites remain fail-closed: exactly one production statement must match.
+$apiPattern = '(?m)^(?<indent>\s*)\$apiExe=Join-Path \$targetReleasePath ''apps/api/FactoryConnect\.Api\.exe'';'
+$apiMatches = [regex]::Matches($source, $apiPattern)
+if ($apiMatches.Count -ne 1) {
+    throw "Scenario 4 harness expected exactly one pre-API startup seam; observed $($apiMatches.Count). Production deployer shape changed."
 }
-if (($source.Split($failureNeedle).Count - 1) -ne 1) {
-    throw 'Scenario 4 harness could not identify exactly one pre-API startup seam. Production deployer shape changed.'
-}
-$source = $source.Replace($failureNeedle, $failureReplacement)
+$source = [regex]::Replace(
+    $source,
+    $apiPattern,
+    { param($match) $match.Groups['indent'].Value + "throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'`r`n" + $match.Value },
+    1)
 
-$cleanupNeedle = @'
-        try { Stop-Process -Id ([int]$record.pid) -ErrorAction Stop; Wait-Process -Id ([int]$record.pid) -Timeout 30 -ErrorAction SilentlyContinue } catch { $cleanup += "$name PID $($record.pid) stop failed: $($_.Exception.Message)" }
-'@.TrimEnd("`r", "`n")
-$cleanupReplacement = @'
-        if ($name -ne 'edge') { try { Stop-Process -Id ([int]$record.pid) -ErrorAction Stop; Wait-Process -Id ([int]$record.pid) -Timeout 30 -ErrorAction SilentlyContinue } catch { $cleanup += "$name PID $($record.pid) stop failed: $($_.Exception.Message)" } }
-'@.TrimEnd("`r", "`n")
-if (($source.Split($cleanupNeedle).Count - 1) -ne 1) {
-    throw 'Scenario 4 harness could not identify exactly one failure-cleanup stop seam. Production deployer shape changed.'
+$cleanupPattern = '(?m)^(?<indent>\s*)try \{ Stop-Process -Id \(\[int\]\$record\.pid\) -ErrorAction Stop; Wait-Process -Id \(\[int\]\$record\.pid\) -Timeout 30 -ErrorAction SilentlyContinue \} catch \{ \$cleanup \+= "\$name PID \$\(\$record\.pid\) stop failed: \$\(\$_\.Exception\.Message\)" \}'
+$cleanupMatches = [regex]::Matches($source, $cleanupPattern)
+if ($cleanupMatches.Count -ne 1) {
+    throw "Scenario 4 harness expected exactly one failure-cleanup stop seam; observed $($cleanupMatches.Count). Production deployer shape changed."
 }
-$source = $source.Replace($cleanupNeedle, $cleanupReplacement)
+$source = [regex]::Replace(
+    $source,
+    $cleanupPattern,
+    {
+        param($match)
+        $indent = $match.Groups['indent'].Value
+        $statement = $match.Value.TrimStart()
+        $indent + "if (`$name -ne 'edge') { " + $statement + ' }'
+    },
+    1)
 
 $instrumentedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("FactoryConnect-Scenario4-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $instrumentedRoot | Out-Null
