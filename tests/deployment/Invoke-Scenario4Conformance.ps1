@@ -15,37 +15,33 @@ if (-not (Test-Path -LiteralPath $productionScript -PathType Leaf)) {
     throw "Production deployment script was not found at '$productionScript'."
 }
 
-# Scenario 4 must exercise the production deployment algorithm and production
-# evidence writer. The harness therefore creates a disposable instrumented copy
-# and changes only two deterministic control points:
+# Scenario 4 exercises the production deployment algorithm and evidence writer.
+# The harness creates a disposable instrumented copy and changes only two
+# deterministic control points:
 #   1. fail after the real new Edge process has started and stabilized;
 #   2. skip termination of that real Edge process during failure cleanup.
 # The production catch/observation path remains responsible for runtime.json,
 # deployment-failure.json, processStates, cleanupErrors, and process identity.
 $source = Get-Content -Raw -LiteralPath $productionScript
 
-$failureNeedle = "Start-Sleep -Seconds `$EdgeStabilizationSeconds; if (-not (Test-OwnedProcess `$newRecords.edge)) { throw 'Edge exited during startup stabilization.' }"
+$failureNeedle = @'
+Start-Sleep -Seconds $EdgeStabilizationSeconds; if (-not (Test-OwnedProcess $newRecords.edge)) { throw 'Edge exited during startup stabilization.' }
+'@.Trim()
 $failureReplacement = $failureNeedle + "; throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'"
 if (($source.Split($failureNeedle).Count - 1) -ne 1) {
     throw 'Scenario 4 harness could not identify exactly one post-Edge-start failure seam. Production deployer shape changed.'
 }
 $source = $source.Replace($failureNeedle, $failureReplacement)
 
-$cleanupNeedle = "if (`$state.State -eq 'Mismatch') { `$cleanup += \"`$name PID `$(`$record.pid) identity mismatch during cleanup.\"; continue }`r`n        try { Stop-Process -Id ([int]`$record.pid) -ErrorAction Stop; Wait-Process -Id ([int]`$record.pid) -Timeout 30 -ErrorAction SilentlyContinue } catch { `$cleanup += \"`$name PID `$(`$record.pid) stop failed: `$(`$_.Exception.Message)\" }"
-if (-not $source.Contains($cleanupNeedle)) {
-    # Git content is LF-normalized; retain Windows PowerShell compatibility while
-    # accepting either line-ending representation in the checked-out repository.
-    $cleanupNeedle = $cleanupNeedle.Replace("`r`n", "`n")
-}
+$cleanupNeedle = @'
+        try { Stop-Process -Id ([int]$record.pid) -ErrorAction Stop; Wait-Process -Id ([int]$record.pid) -Timeout 30 -ErrorAction SilentlyContinue } catch { $cleanup += "$name PID $($record.pid) stop failed: $($_.Exception.Message)" }
+'@.TrimEnd("`r", "`n")
+$cleanupReplacement = @'
+        if ($name -ne 'edge') { try { Stop-Process -Id ([int]$record.pid) -ErrorAction Stop; Wait-Process -Id ([int]$record.pid) -Timeout 30 -ErrorAction SilentlyContinue } catch { $cleanup += "$name PID $($record.pid) stop failed: $($_.Exception.Message)" } }
+'@.TrimEnd("`r", "`n")
 if (($source.Split($cleanupNeedle).Count - 1) -ne 1) {
     throw 'Scenario 4 harness could not identify exactly one failure-cleanup stop seam. Production deployer shape changed.'
 }
-$cleanupReplacement = $cleanupNeedle.Replace(
-    "try { Stop-Process -Id ([int]`$record.pid) -ErrorAction Stop;",
-    "if (`$name -eq 'edge') { } else { try { Stop-Process -Id ([int]`$record.pid) -ErrorAction Stop;")
-$cleanupReplacement = $cleanupReplacement.Replace(
-    "} catch { `$cleanup += \"`$name PID `$(`$record.pid) stop failed: `$(`$_.Exception.Message)\" }",
-    "} catch { `$cleanup += \"`$name PID `$(`$record.pid) stop failed: `$(`$_.Exception.Message)\" } }")
 $source = $source.Replace($cleanupNeedle, $cleanupReplacement)
 
 $instrumentedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("FactoryConnect-Scenario4-" + [Guid]::NewGuid().ToString('N'))
