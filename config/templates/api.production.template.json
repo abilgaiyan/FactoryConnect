@@ -1,4 +1,5 @@
 {
+  "Urls": "__API_URLS__",
   "Persistence": {
     "Provider": "SqlServer"
   },
