@@ -18,18 +18,25 @@ if (-not (Test-Path -LiteralPath $productionScript -PathType Leaf)) {
 # Scenario 4 exercises the production deployment algorithm and evidence writer.
 # The harness creates a disposable instrumented copy and changes only two
 # deterministic control points:
-#   1. fail after the real new Edge process has started and stabilized;
+#   1. fail immediately before API startup, after the real Edge startup line;
 #   2. skip termination of that real Edge process during failure cleanup.
 # The production catch/observation path remains responsible for runtime.json,
 # deployment-failure.json, processStates, cleanupErrors, and process identity.
 $source = Get-Content -Raw -LiteralPath $productionScript
 
+# Anchor to the API-start statement rather than reproducing the entire preceding
+# Edge-start line. This remains fail-closed (exactly one match) while avoiding
+# sensitivity to formatting elsewhere on that long production statement.
 $failureNeedle = @'
-Start-Sleep -Seconds $EdgeStabilizationSeconds; if (-not (Test-OwnedProcess $newRecords.edge)) { throw 'Edge exited during startup stabilization.' }
-'@.Trim()
-$failureReplacement = $failureNeedle + "; throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'"
+    $apiExe=Join-Path $targetReleasePath 'apps/api/FactoryConnect.Api.exe';
+'@.TrimEnd("`r", "`n")
+$failureReplacement = "    throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'`r`n" + $failureNeedle
+if (-not $source.Contains($failureNeedle)) {
+    $failureNeedle = $failureNeedle.Replace("`r`n", "`n")
+    $failureReplacement = "    throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'`n" + $failureNeedle
+}
 if (($source.Split($failureNeedle).Count - 1) -ne 1) {
-    throw 'Scenario 4 harness could not identify exactly one post-Edge-start failure seam. Production deployer shape changed.'
+    throw 'Scenario 4 harness could not identify exactly one pre-API startup seam. Production deployer shape changed.'
 }
 $source = $source.Replace($failureNeedle, $failureReplacement)
 
