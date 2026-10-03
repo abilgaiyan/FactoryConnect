@@ -63,8 +63,13 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             batchSize,
             pollingInterval);
         var mappings = ReadMappingConfigurations(section, streams);
+        var executionNormalizations = ReadExecutionNormalizations(section, mappings);
         var demoCanonicalInputs = bool.TryParse(
             configuration["DemoCanonicalInputs:Enabled"], out var demoEnabled) && demoEnabled;
+        if (demoCanonicalInputs && executionNormalizations.Count != 0)
+        {
+            throw new InvalidOperationException("Production execution normalization cannot be combined with demo canonical inputs.");
+        }
         if (demoCanonicalInputs && mappings.Values.Any(mapping =>
             mapping.Mappings.Count != 1 ||
             !string.Equals(mapping.Mappings.Single().Source, "mtconnect", StringComparison.OrdinalIgnoreCase) ||
@@ -167,6 +172,11 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                         mappings[streamId],
                         mappedSink,
                         authorityGraph.MappingStore);
+                    if (executionNormalizations.TryGetValue(streamId, out var execution))
+                    {
+                        mappingProcessor = new ExecutionNormalizationProcessor(
+                            mappingProcessor, streamId, execution.Source, execution.Address);
+                    }
                     if (demoCanonicalInputs)
                     {
                         mappingProcessor = new DemoExecutionMappingProcessor(mappingProcessor);
@@ -309,6 +319,51 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         }
 
         return configured;
+    }
+
+    private static Dictionary<ObservationStreamId, (string Source, string Address)> ReadExecutionNormalizations(
+        IConfigurationSection section,
+        IReadOnlyDictionary<ObservationStreamId, MachineSignalMappingConfiguration> mappings)
+    {
+        var streamSections = section.GetSection("Streams").GetChildren().ToArray();
+        if (streamSections.Length > 0 && section.GetSection("ExecutionNormalization").Exists())
+        {
+            throw new InvalidOperationException("Configure execution normalization per stream when Streams is present.");
+        }
+
+        Dictionary<ObservationStreamId, (string Source, string Address)> result = [];
+        foreach (var (streamId, mappingConfiguration) in mappings)
+        {
+            var owner = streamSections.Length == 0
+                ? section
+                : streamSections.Single(stream =>
+                    Guid.Parse(Required(stream, "MachineId")) == streamId.MachineId.Value &&
+                    string.Equals(Required(stream, "StreamKey"), streamId.StreamKey, StringComparison.Ordinal));
+            var normalization = owner.GetSection("ExecutionNormalization");
+            if (!normalization.Exists())
+            {
+                continue;
+            }
+
+            var source = Required(normalization, "Source");
+            var address = Required(normalization, "Address");
+            ArgumentException.ThrowIfNullOrWhiteSpace(source);
+            ArgumentException.ThrowIfNullOrWhiteSpace(address);
+            var matches = mappingConfiguration.Mappings.Where(mapping =>
+                string.Equals(mapping.Source, source, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(mapping.Address, address, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (matches.Length != 1 || matches[0].Type != SignalType.Digital ||
+                !string.Equals(matches[0].SignalKey, CanonicalSignalKeys.Running, StringComparison.Ordinal) ||
+                matches[0].Invert)
+            {
+                throw new InvalidOperationException(
+                    "Execution normalization requires exactly one matching, non-inverted Digital state.running mapping.");
+            }
+
+            result.Add(streamId, (source, address));
+        }
+
+        return result;
     }
 
     private static MachineSignalMappingDefinition[] ReadMappings(
