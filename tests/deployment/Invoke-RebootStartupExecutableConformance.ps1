@@ -74,11 +74,25 @@ function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false) {
     $out = Join-Path $Root ('out-' + [Guid]::NewGuid().ToString('N') + '.txt')
     $err = $out + '.err'
     $args = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2' -f $StartupScript,$Root
-    $p = Start-Process powershell.exe -ArgumentList $args -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = (Get-Command powershell.exe).Source
+    $info.Arguments = $args
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $info
+    [void]$p.Start()
+    $stdoutTask = $p.StandardOutput.ReadToEndAsync()
+    $stderrTask = $p.StandardError.ReadToEndAsync()
     try {
         if (-not $p.WaitForExit(30000)) { throw 'Startup exceeded harness deadline.' }
-        $p.Refresh()
+        $p.WaitForExit()
+        $stdoutTask.Result | Set-Content -LiteralPath $out
+        $stderrTask.Result | Set-Content -LiteralPath $err
         $exitCode = $p.ExitCode
+        if ($null -eq $exitCode) { throw 'Harness could not obtain a numeric child exit code.' }
         if (($exitCode -ne 0) -ne $ExpectFailure) {
             $stdout = if (Test-Path $out) { Get-Content -LiteralPath $out -Raw } else { '<missing>' }
             $stderr = if (Test-Path $err) { Get-Content -LiteralPath $err -Raw } else { '<missing>' }
@@ -86,7 +100,7 @@ function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false) {
             $intentFile = Join-Path $Root 'deployment\\runtime-start.intent.json'
             $runtimeEvidence = if (Test-Path $runtimeFile) { Get-Content -LiteralPath $runtimeFile -Raw } else { '<missing>' }
             $intentEvidence = if (Test-Path $intentFile) { Get-Content -LiteralPath $intentFile -Raw } else { '<missing>' }
-            throw ("Unexpected startup result for {0}: exit={1}; expectedFailure={2}\nSTDOUT:\n{3}\nSTDERR:\n{4}\nRUNTIME:\n{5}\nINTENT:\n{6}" -f $Root,$exitCode,$ExpectFailure,$stdout,$stderr,$runtimeEvidence,$intentEvidence)
+            throw ("Unexpected startup result for {0}: exit={1}; expectedFailure={2}`nSTDOUT:`n{3}`nSTDERR:`n{4}`nRUNTIME:`n{5}`nINTENT:`n{6}" -f $Root,$exitCode,$ExpectFailure,$stdout,$stderr,$runtimeEvidence,$intentEvidence)
         }
     } finally {
         if (-not $p.HasExited) { $p.Kill(); $p.WaitForExit() }
@@ -160,7 +174,7 @@ try {
     Invoke-Case B09 {
         foreach ($kind in @('nested','outside')) {
             $r=New-Root B09; cmd /c "rmdir `"$r\current`"" | Out-Null
-            $target=if($kind -eq 'nested'){Join-Path $r "releases\nested\$releaseId"}else{Join-Path $r 'outside'}
+            $target=if($kind -eq 'nested'){Join-Path $r "releases`nested\$releaseId"}else{Join-Path $r 'outside'}
             New-Item -ItemType Directory -Force $target | Out-Null
             New-Item -ItemType Junction -Path (Join-Path $r 'current') -Target $target | Out-Null
             Invoke-Startup $r $true; Assert-NoChildren $r
