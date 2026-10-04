@@ -18,5 +18,7 @@ Assert-Contains $source 'startTimeUtc=$p.StartTime.ToUniversalTime().ToString(''
 Assert-Contains $source '$p.StartTime.ToUniversalTime().ToString(''o'')-eq[string]$Record.startTimeUtc' 'Ownership comparison must use exact UTC start-time equality.'
 Assert-Contains $source '[System.IO.Path]::GetFullPath([string]$r.executablePath)-ne[System.IO.Path]::GetFullPath([string]$expected[$n])' 'Recorded executable must match selected release expected executable.'
 Assert-Contains $source 'Assert-SiteConfiguration $cfg.edge $cfg.api $cfg.dashboard' 'Commissioned configuration must be fully validated before reconciliation.'
-Assert-Contains $source "`$relative.Contains('\\')" 'Nested selected-release targets must be rejected.'
+Assert-Contains $source '$relative=$release.Substring($prefix.Length)' 'Selected-release identity must be derived relative to the releases root.'
+Assert-Contains $source '$relative.Contains(''\'')-or$relative.Contains(''/'')' 'Nested selected-release targets must be rejected.'
+Assert-Contains $source '$relative-cnotmatch''^[0-9a-f]{40}$''' 'Selected release must be exactly one 40-character commit identity.'
 [pscustomobject]@{B01='Executable scenario required locally';B02='Executable scenario required locally';B03='Executable scenario required locally';B04='Executable scenario required locally';B05='Executable scenario required locally';B06='Executable scenario required locally';B07='Static safety PASS; executable PID-reuse scenario required locally';B08='Static contract PASS';B09='Static contract PASS';B10='Static contract PASS';B11='Exclusive lock contract PASS';B12='Reconciliation contract PASS'}
