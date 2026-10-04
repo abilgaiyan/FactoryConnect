@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$PackagePath,
     [Parameter(Mandatory = $true)][string]$InstallRoot,
+    [Parameter()][string]$SqlServerConnectionString = $env:FACTORYCONNECT_TEST_SQL_CONNECTION_STRING,
     [Parameter()][ValidateRange(1, 300)][int]$EdgeStabilizationSeconds = 1,
     [Parameter()][ValidateRange(1, 300)][int]$HealthTimeoutSeconds = 30
 )
@@ -14,6 +15,58 @@ $productionScript = Join-Path $repoRoot 'scripts/deployment/Deploy-FactoryConnec
 if (-not (Test-Path -LiteralPath $productionScript -PathType Leaf)) {
     throw "Production deployment script was not found at '$productionScript'."
 }
+if ([string]::IsNullOrWhiteSpace($SqlServerConnectionString)) {
+    throw 'Scenario 4 requires -SqlServerConnectionString or FACTORYCONNECT_TEST_SQL_CONNECTION_STRING. Use only a disposable test database; the production deployer executes real migrations.'
+}
+
+function Write-ScenarioConfiguration {
+    param([string]$Root,[string]$ConnectionString)
+    $configRoot = Join-Path $Root 'config'
+    New-Item -ItemType Directory -Force -Path $configRoot | Out-Null
+
+    $machineId = '11111111-1111-1111-1111-111111111111'
+    $siteId = '22222222-2222-2222-2222-222222222222'
+    $companyId = '33333333-3333-3333-3333-333333333333'
+    $lineId = '44444444-4444-4444-4444-444444444444'
+    $processorId = '55555555-5555-5555-5555-555555555555'
+    $deviceKey = 'scenario4'
+    $apiUrl = 'http://127.0.0.1:51981'
+    $dashboardUrl = 'http://127.0.0.1:51982'
+
+    $edge = [ordered]@{
+        Persistence = [ordered]@{ Provider = 'SqlServer' }
+        PersistenceProviders = [ordered]@{ SqlServer = [ordered]@{ ConnectionString = $ConnectionString } }
+        MTConnect = [ordered]@{ Machines = @([ordered]@{ BaseUri='http://127.0.0.1:51983'; MachineId=$machineId; DeviceKey=$deviceKey; FromSequence='1'; PollingInterval='00:00:01' }) }
+        CurrentState = [ordered]@{ Freshness = [ordered]@{ MaximumCurrentAge='00:00:10' } }
+        ProductionProcessing = [ordered]@{
+            Machines = @([ordered]@{ MachineId=$machineId; ActivityStreamKey="mtconnect:$deviceKey"; QuantityStreamKey="mtconnect:$deviceKey:part-count"; CompanyId=$companyId; SiteId=$siteId; ProductionLineId=$lineId })
+            ShiftSchedules = @()
+        }
+    }
+    $api = [ordered]@{
+        Urls = $apiUrl
+        Persistence = [ordered]@{ Provider = 'SqlServer' }
+        PersistenceProviders = [ordered]@{ SqlServer = [ordered]@{ ConnectionString = $ConnectionString } }
+        MTConnect = [ordered]@{ Machines = @([ordered]@{ BaseUri='http://127.0.0.1:51983'; MachineId=$machineId; DeviceKey=$deviceKey }) }
+        CurrentState = [ordered]@{ Freshness = [ordered]@{ MaximumCurrentAge='00:00:30' } }
+    }
+    $dashboard = [ordered]@{
+        Urls = $dashboardUrl
+        Dashboard = [ordered]@{
+            ReportingApiBaseAddress = $apiUrl
+            RequestTimeout = '00:00:30'
+            Sources = @([ordered]@{ MachineId=$machineId; ProcessorId=$processorId; SiteId=$siteId; ProductionLineId=$lineId; DisplayName='Scenario 4'; GroupName='Scenario 4'; DisplayOrder=0 })
+        }
+    }
+    foreach ($entry in @(
+        @{Name='edge';Value=$edge},
+        @{Name='api';Value=$api},
+        @{Name='dashboard';Value=$dashboard}
+    )) {
+        $path = Join-Path $configRoot "$($entry.Name).production.json"
+        ($entry.Value | ConvertTo-Json -Depth 20) | Set-Content -LiteralPath $path -Encoding UTF8
+    }
+}
 
 # Scenario 4 exercises the production deployment algorithm and evidence writer.
 # The harness creates a disposable instrumented copy and changes only two
@@ -24,8 +77,6 @@ if (-not (Test-Path -LiteralPath $productionScript -PathType Leaf)) {
 # deployment-failure.json, processStates, cleanupErrors, and process identity.
 $source = Get-Content -Raw -LiteralPath $productionScript
 
-# Match semantic statement prefixes rather than exact line formatting. Both
-# rewrites remain fail-closed: exactly one production statement must match.
 $apiPattern = '(?m)^(?<indent>\s*)\$apiExe=Join-Path \$targetReleasePath ''apps/api/FactoryConnect\.Api\.exe'';'
 $apiMatches = [regex]::Matches($source, $apiPattern)
 if ($apiMatches.Count -ne 1) {
@@ -59,6 +110,12 @@ $instrumentedScript = Join-Path $instrumentedRoot 'Deploy-FactoryConnect.Scenari
 [System.IO.File]::WriteAllText($instrumentedScript, $source, [System.Text.UTF8Encoding]::new($false))
 
 try {
+    # Scenario 4 owns its disposable commissioning fixture. This does not bypass
+    # production validation: the real deployer still parses and validates all
+    # three files and executes the real migration against the caller-supplied
+    # disposable SQL database.
+    Write-ScenarioConfiguration $InstallRoot $SqlServerConnectionString
+
     $caught = $null
     try {
         & $instrumentedScript -PackagePath $PackagePath -InstallRoot $InstallRoot -EdgeStabilizationSeconds $EdgeStabilizationSeconds -HealthTimeoutSeconds $HealthTimeoutSeconds
