@@ -75,22 +75,16 @@ function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false) {
     $err = $out + '.err'
     $args = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2' -f $StartupScript,$Root
     $info = New-Object System.Diagnostics.ProcessStartInfo
-    $info.FileName = (Get-Command powershell.exe).Source
-    $info.Arguments = $args
+    $shell = (Get-Command powershell.exe).Source
+    $info.FileName = $env:ComSpec
+    $info.Arguments = '/d /s /c ""{0}" {1} >"{2}" 2>"{3}""' -f $shell,$args,$out,$err
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
-    $info.RedirectStandardOutput = $true
-    $info.RedirectStandardError = $true
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $info
     [void]$p.Start()
-    $stdoutTask = $p.StandardOutput.ReadToEndAsync()
-    $stderrTask = $p.StandardError.ReadToEndAsync()
     try {
         if (-not $p.WaitForExit(30000)) { throw 'Startup exceeded harness deadline.' }
-        $p.WaitForExit()
-        $stdoutTask.Result | Set-Content -LiteralPath $out
-        $stderrTask.Result | Set-Content -LiteralPath $err
         $exitCode = $p.ExitCode
         if ($null -eq $exitCode) { throw 'Harness could not obtain a numeric child exit code.' }
         if (($exitCode -ne 0) -ne $ExpectFailure) {
@@ -103,7 +97,7 @@ function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false) {
             throw ("Unexpected startup result for {0}: exit={1}; expectedFailure={2}`nSTDOUT:`n{3}`nSTDERR:`n{4}`nRUNTIME:`n{5}`nINTENT:`n{6}" -f $Root,$exitCode,$ExpectFailure,$stdout,$stderr,$runtimeEvidence,$intentEvidence)
         }
     } finally {
-        if (-not $p.HasExited) { $p.Kill(); $p.WaitForExit() }
+        if (-not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(5000) }
         $p.Dispose()
     }
 }
