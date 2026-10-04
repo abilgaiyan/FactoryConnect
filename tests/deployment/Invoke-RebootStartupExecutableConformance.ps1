@@ -14,7 +14,7 @@ New-Item -ItemType Directory $build | Out-Null
 $fixture = Join-Path $build 'Fixture.exe'
 # Each launched executable owns its health listener. No external responder can
 # make a dead API/Dashboard pass. Windows PowerShell/.NET Framework is required.
-Add-Type -OutputAssembly $fixture -OutputType ConsoleApplication -TypeDefinition @'
+Add-Type -OutputAssembly $fixture -OutputType WindowsApplication -TypeDefinition @'
 using System;
 using System.Net;
 using System.Diagnostics;
@@ -113,7 +113,7 @@ function Start-Fixture([string]$Root,[string]$Name) {
         $env:RbsFixtureFailure = $cfg.RbsFixtureFailure
         $role = @{edge='Edge';api='Api';dashboard='Dashboard'}[$Name]
         $exe = Join-Path $Root "releases\$releaseId\apps\$Name\FactoryConnect.$role.exe"
-        $p = Start-Process $exe -PassThru
+        $p = Start-Process $exe -PassThru -WindowStyle Hidden
         return @{name=$Name;pid=$p.Id;executablePath=$exe;startTimeUtc=$p.StartTime.ToUniversalTime().ToString('o')}
     } finally { $env:Urls=$savedUrl; $env:RbsFixtureFailure=$savedFailure }
 }
@@ -168,7 +168,7 @@ try {
     Invoke-Case B09 {
         foreach ($kind in @('nested','outside')) {
             $r=New-Root B09; cmd /c "rmdir `"$r\current`"" | Out-Null
-            $target=if($kind -eq 'nested'){Join-Path $r "releases`nested\$releaseId"}else{Join-Path $r 'outside'}
+            $target=if($kind -eq 'nested'){Join-Path (Join-Path (Join-Path $r 'releases') 'nested') $releaseId}else{Join-Path $r 'outside'}
             New-Item -ItemType Directory -Force $target | Out-Null
             New-Item -ItemType Junction -Path (Join-Path $r 'current') -Target $target | Out-Null
             Invoke-Startup $r $true; Assert-NoChildren $r
