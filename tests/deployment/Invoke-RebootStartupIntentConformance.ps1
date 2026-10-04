@@ -22,6 +22,16 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('RBS-intent-' + [Guid]::NewGuid().
 New-Item -ItemType Directory $root | Out-Null
 $results = [ordered]@{}
 try {
+    $writerAst = @($ast.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -eq 'Write-JsonFileAtomic'
+    })[0]
+    $writer = [scriptblock]::Create($writerAst.Body.Extent.Text.Trim().Substring(1).TrimEnd().TrimEnd('}'))
+    $atomicPath = Join-Path $root 'atomic.json'
+    & $writer $atomicPath @{revision=1}
+    & $writer $atomicPath @{revision=2}
+    if ((Read-JsonFile $atomicPath).revision -ne 2) { throw 'Atomic replacement did not publish the second value.' }
+    if (@(Get-ChildItem -LiteralPath $root -Filter 'atomic.json.tmp.*').Count -ne 0) { throw 'Atomic writer left temporary/backup files.' }
+    $results['AtomicCreateReplace'] = 'PASS'
     foreach ($case in @('UnknownLaunch','CleanupFailure','VerifiedAbsent','ForeignIntent','LockLoser','PublicationFailure')) {
         $attempt = 'current'
         $intentPath = Join-Path $root 'runtime-start.intent.json'

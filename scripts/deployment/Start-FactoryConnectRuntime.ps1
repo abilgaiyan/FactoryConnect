@@ -15,11 +15,18 @@ function Write-JsonFileAtomic {
     param([string]$Path,$Value)
     $directory = Split-Path $Path -Parent
     $temp = Join-Path $directory ((Split-Path $Path -Leaf) + '.tmp.' + [Guid]::NewGuid().ToString('N'))
+    $backup = $temp + '.backup'
     try {
         ($Value|ConvertTo-Json -Depth 30)|Set-Content -LiteralPath $temp -Encoding utf8
-        if(Test-Path -LiteralPath $Path){[System.IO.File]::Replace($temp,$Path,$null,$true)}else{Move-Item -LiteralPath $temp -Destination $Path}
+        if(Test-Path -LiteralPath $Path){[System.IO.File]::Replace($temp,$Path,$backup,$true)}else{Move-Item -LiteralPath $temp -Destination $Path}
     }
-    finally { if(Test-Path -LiteralPath $temp){Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue} }
+    finally {
+        foreach ($candidate in @($temp, $backup)) {
+            if (Test-Path -LiteralPath $candidate) {
+                Remove-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 function Assert-NoPlaceholders { param([string]$Path,[string]$Name);
 $m=[regex]::Matches((Get-Content -Raw -LiteralPath $Path),'__[A-Z0-9_]+__');
