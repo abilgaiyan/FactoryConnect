@@ -21,7 +21,9 @@ Assert-Contains $source 'Assert-SiteConfiguration $cfg.edge $cfg.api $cfg.dashbo
 Assert-Contains $source '$relative=$release.Substring($prefix.Length)' 'Selected-release identity must be derived relative to the releases root.'
 Assert-Contains $source '$relative.Contains(''\'')-or$relative.Contains(''/'')' 'Nested selected-release targets must be rejected.'
 Assert-Contains $source '$relative-cnotmatch''^[0-9a-f]{40}$''' 'Selected release must be exactly one 40-character commit identity.'
-Assert-Contains $source 'if($mutationStarted)' 'Preflight failure must not overwrite existing runtime evidence.'
+Assert-Contains $source '$mutationStarted-and$runtimeLoaded-and$null-ne$releaseId' 'Preflight failure must not overwrite existing runtime evidence.'
 Assert-Contains $source '$startedThisAttempt[$n]' 'Failure cleanup must be limited to processes started by the current attempt.'
+Assert-Contains $source '$intentOwnedByThisAttempt' 'Startup intent cleanup must be limited to the current attempt.'
+Assert-Contains $source '[string]$liveIntent.attemptId-eq$attempt' 'Startup intent cleanup must verify the persisted attempt identity before deletion.'
 Assert-Contains $source 'Previous runtime-start attempt may have been interrupted before durable process publication' 'Unresolved process-creation crash window must fail closed on retry.'
 [pscustomobject]@{B01='Executable scenario required locally';B02='Executable scenario required locally';B03='Executable scenario required locally';B04='Executable scenario required locally';B05='Executable scenario required locally';B06='Executable scenario required locally';B07='Static safety PASS; executable PID-reuse scenario required locally';B08='Static contract PASS';B09='Static contract PASS';B10='Static contract PASS';B11='Exclusive lock contract PASS';B12='Reconciliation contract PASS'}
