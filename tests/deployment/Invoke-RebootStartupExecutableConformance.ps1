@@ -39,7 +39,8 @@ public static class Fixture {
 '@
 function Assert-True([bool]$Value,[string]$Message) { if (-not $Value) { throw $Message } }
 function Invoke-Case([string]$Id,[scriptblock]$Body) {
-    try { & $Body; $results[$Id] = 'PASS' }
+    Write-Host "Running $Id"
+    try { & $Body; $results[$Id] = 'PASS'; Write-Host "$Id PASS" }
     catch { $results[$Id] = "FAIL: $($_.Exception.Message)"; throw }
 }
 function Free-Port {
@@ -77,7 +78,16 @@ function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false) {
     try {
         if (-not $p.WaitForExit(30000)) { throw 'Startup exceeded harness deadline.' }
         $p.Refresh()
-        Assert-True (($p.ExitCode -ne 0) -eq $ExpectFailure) ("Unexpected startup result: " + (Get-Content $err -Raw))
+        $exitCode = $p.ExitCode
+        if (($exitCode -ne 0) -ne $ExpectFailure) {
+            $stdout = if (Test-Path $out) { Get-Content -LiteralPath $out -Raw } else { '<missing>' }
+            $stderr = if (Test-Path $err) { Get-Content -LiteralPath $err -Raw } else { '<missing>' }
+            $runtimeFile = Join-Path $Root 'deployment\\runtime.json'
+            $intentFile = Join-Path $Root 'deployment\\runtime-start.intent.json'
+            $runtimeEvidence = if (Test-Path $runtimeFile) { Get-Content -LiteralPath $runtimeFile -Raw } else { '<missing>' }
+            $intentEvidence = if (Test-Path $intentFile) { Get-Content -LiteralPath $intentFile -Raw } else { '<missing>' }
+            throw ("Unexpected startup result for {0}: exit={1}; expectedFailure={2}\nSTDOUT:\n{3}\nSTDERR:\n{4}\nRUNTIME:\n{5}\nINTENT:\n{6}" -f $Root,$exitCode,$ExpectFailure,$stdout,$stderr,$runtimeEvidence,$intentEvidence)
+        }
     } finally {
         if (-not $p.HasExited) { $p.Kill(); $p.WaitForExit() }
         $p.Dispose()
