@@ -9,6 +9,14 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('FactoryConnect-RBS07-' + [Guid]::
 $child = $null
 $childPath = $null; $childStart = $null
 function Assert-True([bool]$Value,[string]$Message) { if (-not $Value) { throw $Message } }
+function Read-SelectionTarget([string]$Path) {
+    # Windows PowerShell exposes junction Target as string[], even for one target.
+    $targets = @((Get-Item -LiteralPath $Path).Target)
+    if ($targets.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$targets[0])) {
+        throw 'Expected exactly one current junction target.'
+    }
+    return [string]$targets[0]
+}
 function Snapshot([string]$Path) {
     $items = @(Get-ChildItem -LiteralPath $Path -Recurse -File | Sort-Object FullName | ForEach-Object {
         $_.FullName.Substring($Path.Length) + ':' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
@@ -27,7 +35,7 @@ try {
     $windowsHost = $env:OS -eq 'Windows_NT'
     if ($windowsHost) { New-Item -ItemType Junction -Path $current -Target $release | Out-Null }
     else { New-Item -ItemType SymbolicLink -Path $current -Target $release | Out-Null }
-    $selection = (Get-Item -LiteralPath $current).Target
+    $selection = Read-SelectionTarget $current
     # Reproduce launch-before-ownership-publication: a live child is deliberately
     # absent from runtime.json. Intent is the only durable launch warning.
     $shell = if ($windowsHost) { Join-Path $PSHOME 'powershell.exe' } else { Join-Path $PSHOME 'pwsh' }
@@ -72,7 +80,7 @@ public static class UnrecordedLaunch {
     Assert-True ((Snapshot (Join-Path $root 'config')) -ceq $beforeConfig) 'Configuration changed.'
     Assert-True ((Snapshot (Join-Path $root 'releases')) -ceq $beforeRelease) 'Release contents changed.'
     Assert-True ((Snapshot (Join-Path $root 'package')) -ceq $beforePackage) 'Package changed.'
-    Assert-True ((Get-Item -LiteralPath $current).Target -eq $selection) 'Current selection changed.'
+    Assert-True ((Read-SelectionTarget $current) -ceq $selection) 'Current selection changed.'
     Assert-True (@(Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($release,[StringComparison]::OrdinalIgnoreCase) }).Count -eq 1) 'Unexpected runtime process launched.'
     $after = Get-Process -Id $child.Id
     Assert-True ($after.Path -eq $childPath -and $after.StartTime.ToUniversalTime() -eq $childStart) 'Unrecorded launch was stopped/replaced.'
@@ -92,6 +100,15 @@ public static class UnrecordedLaunch {
         if ($live -and $null -ne $childStart -and $live.Path -eq $childPath -and $live.StartTime.ToUniversalTime() -eq $childStart) { $child.Kill(); [void]$child.WaitForExit(5000) }
         $child.Dispose()
     }
-    if (Test-Path (Join-Path $root 'current')) { Remove-Item -LiteralPath (Join-Path $root 'current') -Force }
+    $link = Join-Path $root 'current'
+    if (Test-Path -LiteralPath $link) {
+        $item = Get-Item -LiteralPath $link
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+            throw 'Cleanup refused: current is no longer a junction/link.'
+        }
+        # Delete only the junction itself. Remove-Item in Windows PowerShell 5.1
+        # can prompt about children; recursive removal risks following the target.
+        [IO.Directory]::Delete($link)
+    }
     if (Test-Path $root) { Remove-Item -LiteralPath $root -Recurse -Force }
 }
