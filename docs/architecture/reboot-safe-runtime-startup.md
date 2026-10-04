@@ -35,3 +35,27 @@ Every child launched from a disposable fixture root is revalidated and terminate
 before that root is removed, including children absent from runtime evidence.
 
 No scheduled task, merge, or factory deployment is included in this repair.
+
+### RBS-07 — Cross-operation unresolved-intent exclusion
+
+Deployment and startup share `deployment/deployment.lock`. After acquiring that
+lock, deployment rejects the presence of `deployment/runtime-start.intent.json`
+before package inspection/extraction, release installation, configuration or
+selection changes, migrations, or process operations. Deployment does not parse,
+reconcile, or remove the intent. Existing intent, runtime evidence, commissioned
+configuration and selection remain unchanged; diagnostic failure logs are allowed.
+Startup retains ownership of recovery.
+
+Run the executable cross-operation proof in Windows PowerShell 5.1:
+
+```powershell
+.\tests\deployment\Invoke-RebootStartupDeploymentExclusionConformance.ps1
+```
+
+The proof launches an unrecorded disposable child, leaves an unresolved intent,
+and invokes the real deployer in a separate process. It requires non-zero rejection
+at `UnresolvedStartupIntent`, unchanged protected file hashes and selection, and
+unchanged child ownership. It also checks that migration never starts and the
+lock is released. Its package sentinel deliberately exercises rejection before
+package validation; it does not claim a disposable-SQL integration test. Existing
+Scenario 4 and SQL regression requirements remain separate acceptance gates.

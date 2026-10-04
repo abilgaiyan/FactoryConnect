@@ -254,6 +254,12 @@ $lockPath=Join-Path $deployment 'deployment.lock'; $lockStream=$null; $lockAcqui
 try {
     try { $lockStream=[System.IO.File]::Open($lockPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None); $lockAcquired=$true } catch { throw "Another FactoryConnect deployment holds '$lockPath'." }
 
+    # Shared authority: deployment must not bypass unresolved startup ownership.
+    # Do not parse, repair, or remove the intent; startup owns reconciliation.
+    if (Test-Path -LiteralPath (Join-Path $deployment 'runtime-start.intent.json')) {
+        $failurePhase='UnresolvedStartupIntent'
+        throw 'Unresolved runtime startup intent exists. Deployment is blocked; startup ownership must be reconciled first.'
+    }
     $resolvedPackage=[System.IO.Path]::GetFullPath($PackagePath)
     if (Test-Path -LiteralPath $resolvedPackage -PathType Leaf) {
         if ([System.IO.Path]::GetExtension($resolvedPackage) -ine '.zip') { throw "PackagePath file must be a .zip archive. Resolved '$resolvedPackage'." }
