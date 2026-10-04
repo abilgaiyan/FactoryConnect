@@ -1,7 +1,18 @@
 [CmdletBinding()]
-param([string] $StartupScript = (Join-Path $PSScriptRoot '..\..\scripts\deployment\Start-FactoryConnectRuntime.ps1'))
+param([string] $StartupScript)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+
+# $PSScriptRoot is not reliably available while evaluating a parameter default
+# expression. Resolve the repository-relative default after parameter binding.
+if ([string]::IsNullOrWhiteSpace($StartupScript)) {
+    $StartupScript = Join-Path $PSScriptRoot '..\..\scripts\deployment\Start-FactoryConnectRuntime.ps1'
+}
+$StartupScript = [System.IO.Path]::GetFullPath($StartupScript)
+if (-not (Test-Path -LiteralPath $StartupScript -PathType Leaf)) {
+    throw "Reboot-startup script was not found: $StartupScript"
+}
+
 function Assert-True([bool]$Condition,[string]$Message){if(-not$Condition){throw $Message}}
 function Assert-Contains([string]$Text,[string]$Expected,[string]$Message){if(-not$Text.Contains($Expected,[StringComparison]::Ordinal)){throw $Message}}
 $source=Get-Content -LiteralPath $StartupScript -Raw
@@ -9,5 +20,5 @@ $required=@('pid','executablePath','startTimeUtc','current','Commissioned config
 foreach($token in $required){Assert-Contains $source $token "Missing frozen reboot-startup contract token: $token"}
 foreach($forbidden in @('Expand-Archive','FactoryConnect.Migrations.exe','New-Item -ItemType Junction','Remove-Item -LiteralPath $current')){Assert-True (-not $source.Contains($forbidden,[StringComparison]::OrdinalIgnoreCase)) "Start-only operation contains forbidden deployment mutation: $forbidden"}
 $classify=$source.IndexOf("Where-Object State -eq 'Mismatch'",[StringComparison]::Ordinal);$stop=$source.IndexOf('Stop-RecordedOwnedProcess $records[$name]',[StringComparison]::Ordinal);Assert-True ($classify -ge 0 -and $stop -gt $classify) 'RBS-06 requires complete mismatch classification before any stop.'
-Assert-Contains $source '$identity=Get-ProcessIdentity $Record' 'Termination must revalidate ownership immediately before stop.'
+Assert-Contains $source '$identity = Get-ProcessIdentity $Record' 'Termination must revalidate ownership immediately before stop.'
 [pscustomobject]@{B01='Executable scenario required locally';B02='Executable scenario required locally';B03='Executable scenario required locally';B04='Executable scenario required locally';B05='Executable scenario required locally';B06='Executable scenario required locally';B07='Static safety PASS; executable PID-reuse scenario required locally';B08='Static contract PASS';B09='Static contract PASS';B10='Static contract PASS';B11='Exclusive lock contract PASS';B12='Reconciliation contract PASS'}
