@@ -2,10 +2,15 @@
 param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
     [Parameter()][ValidateRange(1,300)][int]$EdgeStabilizationSeconds = 5,
-    [Parameter()][ValidateRange(1,300)][int]$HealthTimeoutSeconds = 60
+    [Parameter()][ValidateRange(1,300)][int]$HealthTimeoutSeconds = 60,
+    [Parameter()][ValidateRange(1,600)][int]$ShutdownTimeoutSeconds
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'FactoryConnect.ProcessTermination.ps1')
+if (-not $PSBoundParameters.ContainsKey('ShutdownTimeoutSeconds')) {
+    $ShutdownTimeoutSeconds = $script:FactoryConnectShutdownTimeoutDefaultSeconds
+}
 
 function Get-CanonicalPath { param([string]$Path);
  [System.IO.Path]::GetFullPath($Path).TrimEnd([System.IO.Path]::DirectorySeparatorChar,[System.IO.Path]::AltDirectorySeparatorChar) }
@@ -100,20 +105,15 @@ Process=$null}};
 $p=Get-Process -Id ([int]$Record.pid) -ErrorAction SilentlyContinue;
 if($null-eq$p){return [pscustomobject]@{State='Absent';
 Process=$null}};
-try{$samePath=[System.IO.Path]::GetFullPath($p.Path)-eq[System.IO.Path]::GetFullPath([string]$Record.executablePath);
+try{$p.Refresh();
+if($p.HasExited){return [pscustomobject]@{State='Absent';Process=$null}};
+$samePath=[System.IO.Path]::GetFullPath($p.Path)-eq[System.IO.Path]::GetFullPath([string]$Record.executablePath);
 $sameStart=$p.StartTime.ToUniversalTime().ToString('o')-eq[string]$Record.startTimeUtc;
 if($samePath-and$sameStart){return [pscustomobject]@{State='Owned';
 Process=$p}};
 return [pscustomobject]@{State='Mismatch';
 Process=$p}}catch{return [pscustomobject]@{State='Mismatch';
 Process=$p}} }
-function Stop-RecordedOwnedProcess { param($Record);
-$identity=Get-RecordedProcessState $Record;
-if($identity.State-eq'Absent'){return};
-if($identity.State-ne'Owned'){throw "Process ownership changed before termination for $($Record.name); refusing to terminate PID $($Record.pid)."};
-Stop-Process -Id ([int]$Record.pid) -ErrorAction Stop;
-Wait-Process -Id ([int]$Record.pid) -Timeout 30 -ErrorAction SilentlyContinue;
-if(Get-Process -Id ([int]$Record.pid)-ErrorAction SilentlyContinue){throw "FactoryConnect $($Record.name) PID $($Record.pid) did not stop within 30 seconds."} }
 function Test-HttpOk { param([string]$Uri);
 try{$r=Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 5;
 [int]$r.StatusCode-eq200}catch{$false} }
@@ -146,6 +146,7 @@ failurePhase=$FailurePhase;
 migrationOutcome='NotRun';
 databaseMayHaveChanged=$false;
 processStates=$States;
+terminationObservations=$script:TerminationObservations.ToArray();
 edge=$Records.edge;
 api=$Records.api;
 dashboard=$Records.dashboard} }
@@ -294,6 +295,7 @@ if ($intentOwnedByThisAttempt -and $null -ne $lock -and $null -ne $intentProcess
     } catch { # Preserve the intent when absence cannot be established.
     }
 };
+foreach($n in @('edge','api','dashboard')){if($null-ne$records[$n]){$states[$n]=(Get-RecordedProcessState $records[$n]).State;if($states[$n]-eq'Absent'){$records[$n]=$null}}};
 if($mutationStarted-and$runtimeLoaded-and$null-ne$releaseId){try{Write-JsonFileAtomic $runtimePath (New-RuntimeState $releaseId $release $attempt 'Failed' $records $states $failurePhase)}catch{}};
 if($cleanup.Count-gt0){throw "$primary Cleanup: $($cleanup -join '; ')"};
 throw

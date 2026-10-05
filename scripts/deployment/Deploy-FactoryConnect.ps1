@@ -3,11 +3,16 @@ param(
     [Parameter(Mandatory = $true)][string]$PackagePath,
     [Parameter()][string]$InstallRoot = 'D:\FactoryConnect',
     [Parameter()][ValidateRange(1, 300)][int]$EdgeStabilizationSeconds = 5,
-    [Parameter()][ValidateRange(1, 300)][int]$HealthTimeoutSeconds = 30
+    [Parameter()][ValidateRange(1, 300)][int]$HealthTimeoutSeconds = 30,
+    [Parameter()][ValidateRange(1,600)][int]$ShutdownTimeoutSeconds
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'FactoryConnect.ProcessTermination.ps1')
+if (-not $PSBoundParameters.ContainsKey('ShutdownTimeoutSeconds')) {
+    $ShutdownTimeoutSeconds = $script:FactoryConnectShutdownTimeoutDefaultSeconds
+}
 
 function Get-Sha256 { param([Parameter(Mandatory = $true)][string]$Path); (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Get-RelativePath {
@@ -112,6 +117,8 @@ function Get-RecordedProcessState {
     $process = Get-Process -Id ([int]$Record.pid) -ErrorAction SilentlyContinue
     if ($null -eq $process) { return [pscustomobject]@{ State='Absent'; Process=$null } }
     try {
+        $process.Refresh()
+        if ($process.HasExited) { return [pscustomobject]@{ State='Absent'; Process=$null } }
         $samePath = [System.IO.Path]::GetFullPath($process.Path) -eq [System.IO.Path]::GetFullPath([string]$Record.executablePath)
         $sameStart = $process.StartTime.ToUniversalTime().ToString('o') -eq [string]$Record.startTimeUtc
         if ($samePath -and $sameStart) { return [pscustomobject]@{ State='Owned'; Process=$process } }
@@ -141,12 +148,7 @@ function Stop-RecordedProcesses {
     param($Records)
     foreach ($name in @('dashboard','api','edge')) {
         $record=$Records[$name]; if ($null -eq $record) { continue }
-        $state=Get-RecordedProcessState $record
-        if ($state.State -eq 'Absent') { $Records[$name]=$null; continue }
-        if ($state.State -eq 'Mismatch') { throw "Refusing to stop $name PID $($record.pid): live PID/path/start-time identity does not match the recorded FactoryConnect process." }
-        Stop-Process -Id ([int]$record.pid) -ErrorAction Stop
-        Wait-Process -Id ([int]$record.pid) -Timeout 30 -ErrorAction SilentlyContinue
-        if (Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue) { throw "FactoryConnect $name PID $($record.pid) did not stop within 30 seconds." }
+        Stop-RecordedOwnedProcess $record
         $Records[$name]=$null
     }
 }
@@ -334,11 +336,8 @@ catch {
     $primary=$_.Exception.Message; $cleanup=@()
     foreach ($name in @('dashboard','api','edge')) {
         $record=$newRecords[$name]; if ($null -eq $record) { continue }
-        $state=Get-RecordedProcessState $record
-        if ($state.State -eq 'Absent') { $newRecords[$name]=$null; continue }
-        if ($state.State -eq 'Mismatch') { $cleanup += "$name PID $($record.pid) identity mismatch during cleanup."; continue }
-        try { Stop-Process -Id ([int]$record.pid) -ErrorAction Stop; Wait-Process -Id ([int]$record.pid) -Timeout 30 -ErrorAction SilentlyContinue } catch { $cleanup += "$name PID $($record.pid) stop failed: $($_.Exception.Message)" }
-        if (Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue) { $cleanup += "$name PID $($record.pid) survived cleanup." } else { $newRecords[$name]=$null }
+        try { Stop-RecordedOwnedProcess $record; $newRecords[$name]=$null }
+        catch { $cleanup += "$name cleanup failed: $($_.Exception.Message)" }
     }
     $observed=Get-ObservedProcessRecords $newRecords $oldRecords
     $selection=Get-SelectedReleaseState $current $releases
@@ -346,7 +345,7 @@ catch {
     $selectedPath=if ($selection.Kind -eq 'Release') { $selection.Target } else { $null }
     $migrationOutcome=if ($migrationCompleted) { 'Succeeded' } elseif ($migrationStarted) { 'Failed' } else { 'NotStarted' }
     if ($lockAcquired -and $runtimeDisruptionStarted) { Write-JsonFile $runtimePath (New-RuntimeState $selectedRelease $selectedPath $attemptId 'Failed' $observed.Records $failurePhase $migrationOutcome $migrationStarted $observed.States) }
-    Write-JsonFile $failurePath ([ordered]@{schemaVersion='1.0';attemptId=$attemptId;failedAtUtc=[DateTime]::UtcNow.ToString('o');message=$primary;failurePhase=$failurePhase;migrationOutcome=$migrationOutcome;databaseMayHaveChanged=$migrationStarted;cleanupErrors=$cleanup;runtimeStateUpdated=($lockAcquired -and $runtimeDisruptionStarted);observedSelection=[ordered]@{kind=$selection.Kind;release=$selection.Release;target=$selection.Target};processStates=$observed.States})
+    Write-JsonFile $failurePath ([ordered]@{schemaVersion='1.0';attemptId=$attemptId;failedAtUtc=[DateTime]::UtcNow.ToString('o');message=$primary;failurePhase=$failurePhase;migrationOutcome=$migrationOutcome;databaseMayHaveChanged=$migrationStarted;cleanupErrors=$cleanup;terminationObservations=$script:TerminationObservations.ToArray();runtimeStateUpdated=($lockAcquired -and $runtimeDisruptionStarted);observedSelection=[ordered]@{kind=$selection.Kind;release=$selection.Release;target=$selection.Target};processStates=$observed.States})
     throw
 }
 finally { if ($null -ne $lockStream) { $lockStream.Dispose() } }

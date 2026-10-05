@@ -9,12 +9,13 @@ function Assert-True([bool]$Condition,[string]$Message){if(-not$Condition){throw
 function Assert-Contains([string]$Text,[string]$Expected,[string]$Message){if($Text.IndexOf($Expected,[StringComparison]::Ordinal)-lt0){throw $Message}}
 $source=Get-Content -LiteralPath $StartupScript -Raw
 $source=$source -replace '\s+', ' '
-$required=@('pid','executablePath','startTimeUtc','current','Commissioned configuration is required','Runtime identity mismatch detected; no process will be stopped or started.','Process ownership changed before termination','Edge did not survive stabilization','Get-BaseAddressFromConfiguration','/health','/health/live','/health/ready',"migrationOutcome='NotRun'",'FinalVerification','Write-JsonFileAtomic $runtimePath','runtime-start.intent.json')
+$required=@('pid','executablePath','startTimeUtc','current','Commissioned configuration is required','Runtime identity mismatch detected; no process will be stopped or started.','Edge did not survive stabilization','Get-BaseAddressFromConfiguration','/health','/health/live','/health/ready',"migrationOutcome='NotRun'",'FinalVerification','Write-JsonFileAtomic $runtimePath','runtime-start.intent.json')
 foreach($token in $required){Assert-Contains $source $token "Missing frozen reboot-startup contract token: $token"}
 foreach($forbidden in @('Expand-Archive','FactoryConnect.Migrations.exe','New-Item -ItemType Junction','Remove-ActivationJunction')){Assert-True ($source.IndexOf($forbidden,[StringComparison]::OrdinalIgnoreCase)-lt0) "Start-only operation contains forbidden deployment mutation: $forbidden"}
 $classify=$source.IndexOf("Where-Object{`$_-eq'Mismatch'}",[StringComparison]::Ordinal);$stop=$source.IndexOf('Stop-RecordedOwnedProcess $records[$n]',[StringComparison]::Ordinal);Assert-True ($classify-ge0-and$stop-gt$classify) 'RBS-06 requires complete mismatch classification before any stop.'
-Assert-Contains $source '$identity=Get-RecordedProcessState $Record' 'Termination must revalidate ownership immediately before stop.'
-Assert-Contains $source "if(`$identity.State-ne'Owned')" 'Termination must fail closed if ownership changed before stop.'
+$termination = Get-Content -Raw (Join-Path (Split-Path $StartupScript -Parent) 'FactoryConnect.ProcessTermination.ps1')
+Assert-Contains $termination 'Stop-Process -InputObject $Process' 'Termination must act on the validated process instance.'
+Assert-Contains $termination "`$outcome = 'IdentityMismatch'" 'Termination must fail closed on changed ownership.'
 Assert-Contains $source 'startTimeUtc=$p.StartTime.ToUniversalTime().ToString(''o'')' 'Process record must preserve exact UTC start time.'
 Assert-Contains $source '$p.StartTime.ToUniversalTime().ToString(''o'')-eq[string]$Record.startTimeUtc' 'Ownership comparison must use exact UTC start-time equality.'
 Assert-Contains $source '[System.IO.Path]::GetFullPath([string]$r.executablePath)-ne[System.IO.Path]::GetFullPath([string]$expected[$n])' 'Recorded executable must match selected release expected executable.'
