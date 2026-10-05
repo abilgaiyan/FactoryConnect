@@ -8,7 +8,10 @@ param(
     [string]$OutputRoot,
 
     [Parameter()]
-    [string]$DeploymentScriptPath
+    [string]$DeploymentScriptPath,
+
+    [Parameter()]
+    [string]$RuntimeStartupScriptPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,7 +34,6 @@ function Invoke-External {
 
 function Get-Sha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
-
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
@@ -41,10 +43,7 @@ function Write-Utf8NoBom {
         [Parameter(Mandatory = $true)][string]$Text
     )
 
-    [System.IO.File]::WriteAllText(
-        $Path,
-        $Text,
-        [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($Path, $Text, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Get-RelativePath {
@@ -53,9 +52,6 @@ function Get-RelativePath {
         [Parameter(Mandatory = $true)][string]$Path
     )
 
-    # Windows PowerShell 5.1 runs on .NET Framework, where Path.GetRelativePath
-    # is unavailable. Keep release construction compatible with both Windows
-    # PowerShell and modern PowerShell by deriving a contained relative path.
     $rootFullPath = [System.IO.Path]::GetFullPath($Root).TrimEnd(
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar)
@@ -123,6 +119,13 @@ else {
     $DeploymentScriptPath = [System.IO.Path]::GetFullPath($DeploymentScriptPath)
 }
 
+if ([string]::IsNullOrWhiteSpace($RuntimeStartupScriptPath)) {
+    $RuntimeStartupScriptPath = Join-Path $repoRoot 'scripts/deployment/Start-FactoryConnectRuntime.ps1'
+}
+else {
+    $RuntimeStartupScriptPath = [System.IO.Path]::GetFullPath($RuntimeStartupScriptPath)
+}
+
 Push-Location $repoRoot
 try {
     $head = ((Invoke-External git @('rev-parse', 'HEAD')) -join '').Trim().ToLowerInvariant()
@@ -168,7 +171,10 @@ try {
     $npmVersion = ((Invoke-External npm @('--version')) -join '').Trim()
 
     if (-not (Test-Path -LiteralPath $DeploymentScriptPath -PathType Leaf)) {
-        throw "The frozen package contract requires the deployment script, but it was not found at '$DeploymentScriptPath'. Implement scripts/deployment/Deploy-FactoryConnect.ps1 before producing a transferable release."
+        throw "The frozen package contract requires the deployment script, but it was not found at '$DeploymentScriptPath'."
+    }
+    if (-not (Test-Path -LiteralPath $RuntimeStartupScriptPath -PathType Leaf)) {
+        throw "The reboot-safe package contract requires the runtime startup script, but it was not found at '$RuntimeStartupScriptPath'."
     }
 
     $deployables = @(
@@ -201,28 +207,18 @@ try {
     $finalRoot = Join-Path $OutputRoot $releaseName
     $zipPath = Join-Path $OutputRoot "$releaseName.zip"
 
-    if (Test-Path -LiteralPath $stagingRoot) {
-        Remove-Item -LiteralPath $stagingRoot -Force -Recurse
-    }
-    if (Test-Path -LiteralPath $finalRoot) {
-        throw "Release directory already exists and is immutable: '$finalRoot'."
-    }
-    if (Test-Path -LiteralPath $zipPath) {
-        throw "Release archive already exists: '$zipPath'."
-    }
+    if (Test-Path -LiteralPath $stagingRoot) { Remove-Item -LiteralPath $stagingRoot -Force -Recurse }
+    if (Test-Path -LiteralPath $finalRoot) { throw "Release directory already exists and is immutable: '$finalRoot'." }
+    if (Test-Path -LiteralPath $zipPath) { throw "Release archive already exists: '$zipPath'." }
 
     [System.IO.Directory]::CreateDirectory($stagingRoot) | Out-Null
 
     $dashboardClientOutput = Join-Path $repoRoot 'artifacts/dashboard-client/factory_release_win-x64'
-    if (Test-Path -LiteralPath $dashboardClientOutput) {
-        Remove-Item -LiteralPath $dashboardClientOutput -Force -Recurse
-    }
+    if (Test-Path -LiteralPath $dashboardClientOutput) { Remove-Item -LiteralPath $dashboardClientOutput -Force -Recurse }
 
     foreach ($deployable in $deployables) {
         $publishDirectory = Join-Path $repoRoot "artifacts/publish/$($deployable.Name)/factory_release_win-x64"
-        if (Test-Path -LiteralPath $publishDirectory) {
-            Remove-Item -LiteralPath $publishDirectory -Force -Recurse
-        }
+        if (Test-Path -LiteralPath $publishDirectory) { Remove-Item -LiteralPath $publishDirectory -Force -Recurse }
 
         $publishArguments = @(
             'publish', (Join-Path $repoRoot $deployable.Project),
@@ -239,12 +235,10 @@ try {
         }
 
         [void](Invoke-External dotnet $publishArguments)
-
         $publishedExecutable = Join-Path $publishDirectory $deployable.Executable
         if (-not (Test-Path -LiteralPath $publishedExecutable -PathType Leaf)) {
             throw "Publish did not produce required executable '$publishedExecutable'."
         }
-
         Copy-PublishPayload -Source $publishDirectory -Destination (Join-Path $stagingRoot "apps/$($deployable.Name)")
     }
 
@@ -256,6 +250,7 @@ try {
     }
 
     [System.IO.File]::Copy($DeploymentScriptPath, (Join-Path $stagingRoot 'Deploy-FactoryConnect.ps1'), $false)
+    [System.IO.File]::Copy($RuntimeStartupScriptPath, (Join-Path $stagingRoot 'Start-FactoryConnectRuntime.ps1'), $false)
 
     $release = [ordered]@{
         schemaVersion = '1.0'
@@ -288,6 +283,7 @@ try {
             }
         )
         deploymentScript = 'Deploy-FactoryConnect.ps1'
+        runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'
         migrationLedgerTarget = 'FactoryConnect SQL migration ledger managed by FactoryConnect.Migrations'
     }
 
@@ -309,7 +305,6 @@ try {
 
     [System.IO.Directory]::CreateDirectory($OutputRoot) | Out-Null
     [System.IO.Directory]::Move($stagingRoot, $finalRoot)
-
     Compress-Archive -LiteralPath $finalRoot -DestinationPath $zipPath -CompressionLevel Optimal
 
     [pscustomobject]@{
