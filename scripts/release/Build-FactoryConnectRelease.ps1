@@ -8,7 +8,10 @@ param(
     [string]$OutputRoot,
 
     [Parameter()]
-    [string]$DeploymentScriptPath
+    [string]$DeploymentScriptPath,
+
+    [Parameter()]
+    [string]$RuntimeStartupScriptPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -123,6 +126,13 @@ else {
     $DeploymentScriptPath = [System.IO.Path]::GetFullPath($DeploymentScriptPath)
 }
 
+if ([string]::IsNullOrWhiteSpace($RuntimeStartupScriptPath)) {
+    $RuntimeStartupScriptPath = Join-Path $repoRoot 'scripts/deployment/Start-FactoryConnectRuntime.ps1'
+}
+else {
+    $RuntimeStartupScriptPath = [System.IO.Path]::GetFullPath($RuntimeStartupScriptPath)
+}
+
 Push-Location $repoRoot
 try {
     $head = ((Invoke-External git @('rev-parse', 'HEAD')) -join '').Trim().ToLowerInvariant()
@@ -169,6 +179,10 @@ try {
 
     if (-not (Test-Path -LiteralPath $DeploymentScriptPath -PathType Leaf)) {
         throw "The frozen package contract requires the deployment script, but it was not found at '$DeploymentScriptPath'. Implement scripts/deployment/Deploy-FactoryConnect.ps1 before producing a transferable release."
+    }
+
+    if (-not (Test-Path -LiteralPath $RuntimeStartupScriptPath -PathType Leaf)) {
+        throw "The reboot-safe package contract requires the runtime startup script, but it was not found at '$RuntimeStartupScriptPath'."
     }
 
     $deployables = @(
@@ -256,6 +270,7 @@ try {
     }
 
     [System.IO.File]::Copy($DeploymentScriptPath, (Join-Path $stagingRoot 'Deploy-FactoryConnect.ps1'), $false)
+    [System.IO.File]::Copy($RuntimeStartupScriptPath, (Join-Path $stagingRoot 'Start-FactoryConnectRuntime.ps1'), $false)
 
     $release = [ordered]@{
         schemaVersion = '1.0'
@@ -288,6 +303,7 @@ try {
             }
         )
         deploymentScript = 'Deploy-FactoryConnect.ps1'
+        runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'
         migrationLedgerTarget = 'FactoryConnect SQL migration ledger managed by FactoryConnect.Migrations'
     }
 
