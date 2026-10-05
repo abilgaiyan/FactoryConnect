@@ -133,6 +133,9 @@ else {
     $RuntimeStartupScriptPath = [System.IO.Path]::GetFullPath($RuntimeStartupScriptPath)
 }
 
+$systemStartupScriptPath = Join-Path $repoRoot 'scripts/deployment/Start-FactoryConnectSystem.ps1'
+$systemStartupInstallerPath = Join-Path $repoRoot 'scripts/deployment/Install-FactoryConnectSystemStartup.ps1'
+
 Push-Location $repoRoot
 try {
     $head = ((Invoke-External git @('rev-parse', 'HEAD')) -join '').Trim().ToLowerInvariant()
@@ -183,6 +186,12 @@ try {
 
     if (-not (Test-Path -LiteralPath $RuntimeStartupScriptPath -PathType Leaf)) {
         throw "The reboot-safe package contract requires the runtime startup script, but it was not found at '$RuntimeStartupScriptPath'."
+    }
+
+    foreach ($requiredPath in @($systemStartupScriptPath, $systemStartupInstallerPath)) {
+        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+            throw "Required boot orchestration input missing: '$requiredPath'."
+        }
     }
 
     $deployables = @(
@@ -271,6 +280,8 @@ try {
 
     [System.IO.File]::Copy($DeploymentScriptPath, (Join-Path $stagingRoot 'Deploy-FactoryConnect.ps1'), $false)
     [System.IO.File]::Copy($RuntimeStartupScriptPath, (Join-Path $stagingRoot 'Start-FactoryConnectRuntime.ps1'), $false)
+    [System.IO.File]::Copy($systemStartupScriptPath, (Join-Path $stagingRoot 'Start-FactoryConnectSystem.ps1'), $false)
+    [System.IO.File]::Copy($systemStartupInstallerPath, (Join-Path $stagingRoot 'Install-FactoryConnectSystemStartup.ps1'), $false)
 
     $release = [ordered]@{
         schemaVersion = '1.0'
@@ -304,6 +315,8 @@ try {
         )
         deploymentScript = 'Deploy-FactoryConnect.ps1'
         runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'
+        systemStartupScript = 'Start-FactoryConnectSystem.ps1'
+        systemStartupInstaller = 'Install-FactoryConnectSystemStartup.ps1'
         migrationLedgerTarget = 'FactoryConnect SQL migration ledger managed by FactoryConnect.Migrations'
     }
 
