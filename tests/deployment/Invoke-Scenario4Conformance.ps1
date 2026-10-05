@@ -88,7 +88,7 @@ $source = [regex]::Replace(
     { param($match) $match.Groups['indent'].Value + "throw 'SCENARIO4_INJECTED_FAILURE_AFTER_EDGE_STARTED'`r`n" + $match.Value },
     1)
 
-$cleanupPattern = '(?m)^(?<indent>\s*)try \{ Stop-Process -Id \(\[int\]\$record\.pid\) -ErrorAction Stop; Wait-Process -Id \(\[int\]\$record\.pid\) -Timeout 30 -ErrorAction SilentlyContinue \} catch \{ \$cleanup \+= "\$name PID \$\(\$record\.pid\) stop failed: \$\(\$_\.Exception\.Message\)" \}'
+$cleanupPattern = '(?m)^(?<indent>\s*)try \{ Stop-RecordedOwnedProcess \$record; \$newRecords\[\$name\]=\$null \}\r?\n\s*catch \{ \$cleanup \+= "\$name cleanup failed: \$\(\$_\.Exception\.Message\)" \}'
 $cleanupMatches = [regex]::Matches($source, $cleanupPattern)
 if ($cleanupMatches.Count -ne 1) {
     throw "Scenario 4 harness expected exactly one failure-cleanup stop seam; observed $($cleanupMatches.Count). Production deployer shape changed."
@@ -100,7 +100,7 @@ $source = [regex]::Replace(
         param($match)
         $indent = $match.Groups['indent'].Value
         $statement = $match.Value.TrimStart()
-        $indent + "if (`$name -ne 'edge') { " + $statement + ' }'
+        $indent + 'if ($name -eq ''edge'') { $cleanup += "edge PID $($record.pid) survived cleanup." } else { ' + $statement + ' }'
     },
     1)
 
@@ -108,6 +108,7 @@ $instrumentedRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("FactoryConnect
 New-Item -ItemType Directory -Path $instrumentedRoot | Out-Null
 $instrumentedScript = Join-Path $instrumentedRoot 'Deploy-FactoryConnect.Scenario4.ps1'
 [System.IO.File]::WriteAllText($instrumentedScript, $source, [System.Text.UTF8Encoding]::new($false))
+Copy-Item -LiteralPath (Join-Path (Split-Path $productionScript -Parent) 'FactoryConnect.ProcessTermination.ps1') -Destination $instrumentedRoot
 
 try {
     # Scenario 4 owns its disposable commissioning fixture. This does not bypass

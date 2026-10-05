@@ -33,7 +33,9 @@ $required = @(
     "scripts/deployment/Start-FactoryConnectRuntime.ps1",
     "Test-Path -LiteralPath `$RuntimeStartupScriptPath -PathType Leaf",
     "Copy(`$RuntimeStartupScriptPath, (Join-Path `$stagingRoot 'Start-FactoryConnectRuntime.ps1'), `$false)",
-    "runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'"
+    "runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'",
+    "FactoryConnect.ProcessTermination.ps1",
+    "processTerminationScript = 'FactoryConnect.ProcessTermination.ps1'"
 )
 
 foreach ($token in $required) {
