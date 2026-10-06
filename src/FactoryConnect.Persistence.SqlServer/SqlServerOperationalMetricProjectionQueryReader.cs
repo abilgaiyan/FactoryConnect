@@ -55,22 +55,10 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
             source.ProjectionProcessorRowId,
             async (stableConnection, token) =>
             {
-                var manifestRowIds = await ReadManifestRowIdsAsync(
+                var rows = await ReadRetainedProjectionRowsAsync(
                     stableConnection,
                     source.ProjectionProcessorRowId,
                     token).ConfigureAwait(false);
-
-                if (manifestRowIds.Count == 0)
-                {
-                    return null;
-                }
-
-                var rows = await ReadManifestProjectionRowsAsync(
-                    stableConnection,
-                    source.ProjectionProcessorRowId,
-                    token).ConfigureAwait(false);
-
-                ValidateManifestCoverage(manifestRowIds, rows);
 
                 ProjectionRow? selectedRow = null;
                 OperationalMetricProjectionSummary? selectedSummary = null;
@@ -84,7 +72,7 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
 
                     if (selectedRow is not null)
                     {
-                        throw Corrupt("duplicate current-manifest evaluation key");
+                        throw Corrupt("duplicate retained evaluation key");
                     }
 
                     selectedRow = row;
@@ -168,30 +156,7 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
             new MetricInputStreamId(machineId, streamKey));
     }
 
-    private static async Task<IReadOnlyList<long>> ReadManifestRowIdsAsync(
-        SqlConnection connection,
-        long projectionProcessorRowId,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT OperationalMetricProjectionRowId " +
-            "FROM dbo.OperationalMetricProjectionManifest " +
-            "WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
-            "ORDER BY OperationalMetricProjectionRowId;";
-        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = projectionProcessorRowId;
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        var rowIds = new List<long>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            rowIds.Add(reader.GetInt64(0));
-        }
-
-        return rowIds;
-    }
-
-    private static async Task<IReadOnlyList<ProjectionRow>> ReadManifestProjectionRowsAsync(
+    private static async Task<IReadOnlyList<ProjectionRow>> ReadRetainedProjectionRowsAsync(
         SqlConnection connection,
         long projectionProcessorRowId,
         CancellationToken cancellationToken)
@@ -208,12 +173,9 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
             "p.OperatorPresent, p.OperatorId, p.OperatorOrderKey, " +
             "p.MetricKey, p.MetricKeyOrderKey, p.DefinitionVersion, p.DefinitionVersionOrderKey, " +
             "p.Status, p.MetricValue, p.Unit, p.ReasonCode, p.ReasonOperandName, p.SourceRevisionPosition " +
-            "FROM dbo.OperationalMetricProjectionManifest AS m " +
-            "INNER JOIN dbo.OperationalMetricProjection AS p " +
-            "ON p.OperationalMetricProjectionProcessorRowId = m.OperationalMetricProjectionProcessorRowId " +
-            "AND p.OperationalMetricProjectionRowId = m.OperationalMetricProjectionRowId " +
-            "WHERE m.OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
-            "ORDER BY m.OperationalMetricProjectionRowId;";
+            "FROM dbo.OperationalMetricProjection AS p " +
+            "WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
+            "ORDER BY p.OperationalMetricProjectionRowId;";
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = projectionProcessorRowId;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -224,24 +186,6 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
         }
 
         return rows;
-    }
-
-    private static void ValidateManifestCoverage(
-        IReadOnlyList<long> manifestRowIds,
-        IReadOnlyList<ProjectionRow> rows)
-    {
-        if (manifestRowIds.Count != rows.Count)
-        {
-            throw Corrupt("manifest projection coverage");
-        }
-
-        for (var index = 0; index < manifestRowIds.Count; index++)
-        {
-            if (manifestRowIds[index] != rows[index].RowId)
-            {
-                throw Corrupt("manifest projection identity");
-            }
-        }
     }
 
     private static OperationalMetricProjectionSummary MaterializeSummary(

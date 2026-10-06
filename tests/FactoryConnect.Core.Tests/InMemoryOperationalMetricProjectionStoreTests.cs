@@ -213,6 +213,60 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
             CancellationToken.None));
     }
 
+
+    [Fact]
+    public async Task UnrelatedDayAndEmptyBatchPreserveOriginalProjectionAndEvidence()
+    {
+        var fixture = CreateFixture();
+        var initial = Projection(fixture, Revision(fixture, 10), 0.5m);
+        var start = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
+        var evidence = new OperationalMetricComponentProjectionEvidence(
+            "running",
+            new OperationalMetricAggregateSourceIdentity(
+                fixture.SourceProcessorId, fixture.MachineId, initial.Key.PeriodId, "running-duration"),
+            initial.SourceRevision, MetricDimension.Duration, 60m, "seconds", 1, start, start.AddMinutes(1));
+        var first = new OperationalMetricProjection(
+            fixture.ProjectionProcessorId, initial.Key, initial.Status, initial.Value, initial.Unit,
+            null, null, initial.SourceRevision, [evidence]);
+        var secondKey = new OperationalMetricEvaluationKey(
+            fixture.MachineId,
+            new OperationalMetricPeriodId.ProductionDay(
+                new ProductionDayId(new SiteId("site-a"), new DateOnly(2026, 8, 30))),
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
+        var second = new OperationalMetricProjection(
+            fixture.ProjectionProcessorId, secondKey, OperationalMetricEvaluationStatus.Calculated,
+            0.6m, OperationalMetricUnits.Ratio, null, null, Revision(fixture, 11));
+        var checkpoint10 = Checkpoint(fixture, first.SourceRevision, first);
+        await fixture.Store.CommitAsync(new OperationalMetricProjectionCommit(
+            fixture.ProjectionProcessorId, null, checkpoint10, [first]), CancellationToken.None);
+        var checkpoint11 = Checkpoint(fixture, second.SourceRevision, second);
+        await fixture.Store.CommitAsync(new OperationalMetricProjectionCommit(
+            fixture.ProjectionProcessorId, checkpoint10, checkpoint11, [second]), CancellationToken.None);
+        Assert.Same(first, await fixture.Store.ReadProjectionAsync(
+            fixture.ProjectionProcessorId, first.Key, CancellationToken.None));
+        Assert.Single(checkpoint11.BatchManifest.ProjectionKeys);
+        Assert.Equal(second.Key, checkpoint11.BatchManifest.ProjectionKeys[0]);
+
+        var empty = Checkpoint(fixture, Revision(fixture, 12));
+        await fixture.Store.CommitAsync(new OperationalMetricProjectionCommit(
+            fixture.ProjectionProcessorId, checkpoint11, empty, []), CancellationToken.None);
+        Assert.Same(first, await fixture.Store.ReadProjectionAsync(
+            fixture.ProjectionProcessorId, first.Key, CancellationToken.None));
+        Assert.Same(second, await fixture.Store.ReadProjectionAsync(
+            fixture.ProjectionProcessorId, second.Key, CancellationToken.None));
+        var reports = new OperationalMetricReportReader(fixture.Store);
+        foreach (var projection in new[] { first, second })
+        {
+            var report = await reports.ReadProductionDayAsync(
+                fixture.ProjectionProcessorId, fixture.MachineId,
+                Assert.IsType<OperationalMetricPeriodId.ProductionDay>(projection.Key.PeriodId).ProductionDayId,
+                OperationalMetricEvaluationContextKey.Unpartitioned, CancellationToken.None);
+            Assert.NotNull(report);
+            Assert.Equal(projection.SourceRevision, report.SourceRevision);
+        }
+    }
+
     private static StoreFixture CreateFixture()
     {
         var machineId = MachineId.New();

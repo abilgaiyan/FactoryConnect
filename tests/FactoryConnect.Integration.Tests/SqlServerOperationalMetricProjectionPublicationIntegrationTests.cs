@@ -1,6 +1,7 @@
 using System.Data;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
+using FactoryConnect.Core.Metrics;
 using Microsoft.Data.SqlClient;
 using Xunit;
 
@@ -10,6 +11,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTests :
     IClassFixture<SqlServerTestDatabaseFixture>
 {
+    private static readonly string[] HistoricalMetricKeys = ["availability", "utilization.elr"];
     private readonly SqlServerTestDatabaseFixture _fixture;
 
     public SqlServerOperationalMetricProjectionPublicationIntegrationTests(
@@ -103,7 +105,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
     }
 
     [Fact]
-    public async Task ManifestShrinkageDeletesObsoleteProjectionAndKeepsRetainedMembership()
+    public async Task ManifestShrinkagePreservesOmittedProjection()
     {
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId();
@@ -129,14 +131,15 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
             [CreateCalculated(processorId, keyA, nextRevision, 0.65m)]));
 
         var after = await ReadStateAsync(processorId);
-        var retainedAfter = Assert.Single(after.ProjectionRows);
+        Assert.Equal(2, after.ProjectionRows.Count);
+        var retainedAfter = after.ProjectionRows.Single(row => row.MetricKey == "availability");
         Assert.Equal(retainedBefore, retainedAfter.RowId);
         Assert.Equal("availability", retainedAfter.MetricKey);
         Assert.Equal([retainedBefore], after.ManifestRowIds);
     }
 
     [Fact]
-    public async Task NonemptyToEmptyDeletesCompletePublishedSet()
+    public async Task NonemptyToEmptyRetainsProjectionAndEvidence()
     {
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId();
@@ -155,9 +158,9 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
             []));
 
         var after = await ReadStateAsync(processorId);
-        Assert.Empty(after.ProjectionRows);
+        Assert.Single(after.ProjectionRows);
         Assert.Empty(after.ManifestRowIds);
-        Assert.Empty(after.EvidenceRows);
+        Assert.Single(after.EvidenceRows);
         Assert.Equal(nextRevision.Position.Value, after.CheckpointPosition);
     }
 
@@ -265,6 +268,126 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
                 expected.DependencySnapshotBinary,
                 actual.DependencySnapshotBinary);
         }
+    }
+
+
+    [Fact]
+    public async Task HistoricalDaysRetainExactRowsAndEvidenceAcrossNewBatchesEmptyBatchAndReplay()
+    {
+        var source = await CreateSourceAsync();
+        var processorId = NewProcessorId();
+        var days = Enumerable.Range(4, 3)
+            .Select(day => new ProductionDayId(new SiteId("SITE-1"), new DateOnly(2026, 10, day)))
+            .ToArray();
+        var revisions = new[] { source.Checkpoint, Advance(source.Checkpoint), Advance(Advance(source.Checkpoint)) };
+        var store = new SqlServerOperationalMetricProjectionStore(_fixture.ConnectionString);
+        var reportReader = new OperationalMetricReportReader(new SqlServerOperationalMetricProjectionQueryReader(_fixture.ConnectionString));
+        OperationalMetricProjectionCheckpoint? checkpoint = null;
+        string? firstSnapshot = null;
+
+        for (var index = 0; index < days.Length; index++)
+        {
+            var projections = HistoricalMetricKeys
+                .Select(metric => CreateComponentProjection(
+                    processorId,
+                    new OperationalMetricEvaluationKey(
+                        source.MachineId,
+                        new OperationalMetricPeriodId.ProductionDay(days[index]),
+                        new OperationalMetricDefinitionId(metric, "1"),
+                        OperationalMetricEvaluationContextKey.Unpartitioned),
+                    revisions[index], 0.5m, "runtime-day"))
+                .ToArray();
+            var proposed = new OperationalMetricProjectionCheckpoint(
+                processorId, revisions[index],
+                new OperationalMetricProjectionBatchManifest(projections.Select(static projection => projection.Key)));
+            await store.CommitAsync(new OperationalMetricProjectionCommit(processorId, checkpoint, proposed, projections), CancellationToken.None);
+            checkpoint = await store.ReadCheckpointAsync(processorId, source.Checkpoint.StreamId, CancellationToken.None);
+            Assert.Equal(proposed, checkpoint);
+            if (index == 0)
+            {
+                firstSnapshot = await ReadDaySnapshotAsync(processorId, days[0]);
+            }
+            Assert.Equal(firstSnapshot, await ReadDaySnapshotAsync(processorId, days[0]));
+            for (var retained = 0; retained <= index; retained++)
+            {
+                var report = await reportReader.ReadProductionDayAsync(
+                    processorId, source.MachineId, days[retained],
+                    OperationalMetricEvaluationContextKey.Unpartitioned, CancellationToken.None);
+                Assert.NotNull(report);
+                Assert.Equal(revisions[retained], report.SourceRevision);
+                Assert.Equal(2, report.Metrics.Count);
+            }
+            // Exercise equal-position SQL reconciliation with older retained rows present.
+            await store.CommitAsync(CreateReplayCommit(processorId, revisions[index], projections), CancellationToken.None);
+            Assert.Equal(firstSnapshot, await ReadDaySnapshotAsync(processorId, days[0]));
+        }
+
+        var emptyRevision = Advance(revisions[2]);
+        var emptyCheckpoint = new OperationalMetricProjectionCheckpoint(processorId, emptyRevision);
+        await store.CommitAsync(new OperationalMetricProjectionCommit(processorId, checkpoint, emptyCheckpoint, []), CancellationToken.None);
+        var restarted = new SqlServerOperationalMetricProjectionStore(_fixture.ConnectionString);
+        Assert.Equal(emptyCheckpoint, await restarted.ReadCheckpointAsync(processorId, source.Checkpoint.StreamId, CancellationToken.None));
+        await restarted.CommitAsync(CreateReplayCommit(processorId, emptyRevision, []), CancellationToken.None);
+        Assert.Equal(firstSnapshot, await ReadDaySnapshotAsync(processorId, days[0]));
+        var state = await ReadStateAsync(processorId);
+        Assert.Equal(6, state.ProjectionRows.Count);
+        Assert.Empty(state.ManifestRowIds);
+        Assert.Equal(6, state.EvidenceRows.Count);
+        Assert.NotNull(await reportReader.ReadProductionDayAsync(
+            processorId, source.MachineId, days[0],
+            OperationalMetricEvaluationContextKey.Unpartitioned, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PartialPeriodReplacementRemainsRejectedByPeriodReportReader()
+    {
+        var source = await CreateSourceAsync();
+        var processorId = NewProcessorId();
+        var keyA = CreateShiftKey(source.MachineId, "availability");
+        var keyU = CreateShiftKey(source.MachineId, "utilization.elr");
+        var store = new SqlServerOperationalMetricProjectionStore(_fixture.ConnectionString);
+        await store.CommitAsync(CreateInitialCommit(processorId, source.Checkpoint,
+            [CreateCalculated(processorId, keyA, source.Checkpoint, 0.5m),
+             CreateCalculated(processorId, keyU, source.Checkpoint, 0.5m)]), CancellationToken.None);
+        var next = Advance(source.Checkpoint);
+        await store.CommitAsync(CreateAdvanceCommit(processorId, source.Checkpoint, [keyA, keyU], next,
+            [CreateCalculated(processorId, keyA, next, 0.6m)]), CancellationToken.None);
+        var reader = new OperationalMetricReportReader(new SqlServerOperationalMetricProjectionQueryReader(_fixture.ConnectionString));
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await reader.ReadShiftAsync(processorId, source.MachineId,
+                Assert.IsType<OperationalMetricPeriodId.Shift>(keyA.PeriodId).ShiftOccurrenceId,
+                OperationalMetricEvaluationContextKey.Unpartitioned, CancellationToken.None));
+    }
+
+    private async Task<string> ReadDaySnapshotAsync(
+        OperationalMetricProjectionProcessorId processorId, ProductionDayId day)
+    {
+        var transaction = new SqlServerOperationalMetricProjectionCommitTransaction(_fixture.ConnectionString);
+        var header = await transaction.ReadCheckpointHeaderAsync(processorId, CancellationToken.None);
+        Assert.NotNull(header);
+        await using var connection = _fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT p.*,
+                (SELECT e.* FROM dbo.OperationalMetricProjectionEvidence AS e
+                 WHERE e.OperationalMetricProjectionRowId = p.OperationalMetricProjectionRowId
+                 ORDER BY e.OperationalMetricProjectionEvidenceRowId FOR JSON PATH) AS EvidenceSnapshot
+            FROM dbo.OperationalMetricProjection AS p
+            WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId
+                AND p.ProductionBusinessDate = @BusinessDate
+            ORDER BY p.OperationalMetricProjectionRowId FOR JSON PATH;
+            """;
+        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = header.ProjectionProcessorRowId;
+        command.Parameters.Add("@BusinessDate", SqlDbType.Date).Value = day.BusinessDate.ToDateTime(TimeOnly.MinValue);
+        // FOR JSON may return several chunks; concatenate every chunk.
+        await using var result = await command.ExecuteReaderAsync();
+        var snapshot = new System.Text.StringBuilder();
+        while (await result.ReadAsync())
+        {
+            snapshot.Append(result.GetString(0));
+        }
+        return snapshot.ToString();
     }
 
     private async Task ExecutePublicationAsync(OperationalMetricProjectionCommit commit)
@@ -398,7 +521,12 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
         decimal value,
         string operandName)
     {
-        var period = Assert.IsType<OperationalMetricPeriodId.Shift>(key.PeriodId);
+        var start = key.PeriodId switch
+        {
+            OperationalMetricPeriodId.Shift shift => shift.ShiftOccurrenceId.StartsAtUtc,
+            OperationalMetricPeriodId.ProductionDay day => new DateTimeOffset(day.ProductionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+            _ => throw new InvalidOperationException("Unsupported test period."),
+        };
         var sourceIdentity = new OperationalMetricAggregateSourceIdentity(
             revision.ProcessorId,
             key.MachineId,
@@ -412,8 +540,8 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
             60m,
             "seconds",
             1,
-            period.ShiftOccurrenceId.StartsAtUtc,
-            period.ShiftOccurrenceId.StartsAtUtc.AddMinutes(1));
+            start,
+            start.AddMinutes(1));
         return new OperationalMetricProjection(
             processorId,
             key,

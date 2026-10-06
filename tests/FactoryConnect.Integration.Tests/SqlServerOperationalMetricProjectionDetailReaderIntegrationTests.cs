@@ -91,7 +91,7 @@ public sealed class SqlServerOperationalMetricProjectionDetailReaderIntegrationT
     }
 
     [Fact]
-    public async Task ReadDetailAsyncReturnsNullWhenKeyIsAbsentFromCurrentManifestEvenIfPhysicalRowExists()
+    public async Task ReadDetailAsyncReturnsRetainedKeyOutsideLatestBatch()
     {
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId();
@@ -108,23 +108,15 @@ public sealed class SqlServerOperationalMetricProjectionDetailReaderIntegrationT
                 CreateCalculated(processorId, staleKey, source.Checkpoint, 0.8m),
             ]));
 
-        var header = await ReadCheckpointHeaderAsync(processorId);
-        await using (var connection = _fixture.CreateConnection())
-        {
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                DELETE m
-                FROM dbo.OperationalMetricProjectionManifest AS m
-                INNER JOIN dbo.OperationalMetricProjection AS p
-                    ON p.OperationalMetricProjectionProcessorRowId = m.OperationalMetricProjectionProcessorRowId
-                    AND p.OperationalMetricProjectionRowId = m.OperationalMetricProjectionRowId
-                WHERE m.OperationalMetricProjectionProcessorRowId = @ProcessorRowId
-                    AND p.MetricKey = N'performance';
-                """;
-            command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = header.ProjectionProcessorRowId;
-            Assert.Equal(1, await command.ExecuteNonQueryAsync());
-        }
+        var nextRevision = new MetricAggregationCheckpoint(
+            source.Checkpoint.ProcessorId, source.Checkpoint.StreamId,
+            new MetricInputPosition(source.Checkpoint.Position.Value + 1));
+        await PublishAsync(new OperationalMetricProjectionCommit(
+            processorId,
+            new OperationalMetricProjectionCheckpoint(processorId, source.Checkpoint,
+                new OperationalMetricProjectionBatchManifest([visibleKey, staleKey])),
+            new OperationalMetricProjectionCheckpoint(processorId, nextRevision),
+            []));
 
         var reader = new SqlServerOperationalMetricProjectionQueryReader(_fixture.ConnectionString);
         var detail = await reader.ReadDetailAsync(
@@ -132,7 +124,7 @@ public sealed class SqlServerOperationalMetricProjectionDetailReaderIntegrationT
             staleKey,
             CancellationToken.None);
 
-        Assert.Null(detail);
+        Assert.Equal(staleKey, Assert.IsType<OperationalMetricProjection>(detail).Key);
     }
 
     [Fact]

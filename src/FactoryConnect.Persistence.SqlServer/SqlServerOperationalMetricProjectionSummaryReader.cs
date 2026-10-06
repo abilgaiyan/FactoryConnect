@@ -54,14 +54,15 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         OperationalMetricProjectionProcessorId processorId,
         CancellationToken cancellationToken)
     {
-        var summaries = await ReadCurrentPublicationSummariesAsync(processorId, cancellationToken);
+        var summaries = await ReadCurrentPublicationSummariesAsync(processorId, cancellationToken, latestBatchOnly: true);
         return new OperationalMetricProjectionBatchManifest(
             summaries.Select(static summary => summary.Key));
     }
 
     internal async ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadCurrentPublicationSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool latestBatchOnly = false)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -85,17 +86,21 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
                     source.ProjectionProcessorRowId,
                     token);
 
-                if (manifestRowIds.Count == 0)
+                if (latestBatchOnly && manifestRowIds.Count == 0)
                 {
                     return Array.Empty<OperationalMetricProjectionSummary>();
                 }
 
-                var rows = await ReadManifestProjectionRowsAsync(
+                var rows = await ReadProjectionRowsAsync(
                     stableConnection,
                     source.ProjectionProcessorRowId,
+                    latestBatchOnly,
                     token);
 
-                ValidateManifestCoverage(manifestRowIds, rows);
+                if (latestBatchOnly)
+                {
+                    ValidateManifestCoverage(manifestRowIds, rows);
+                }
 
                 var summaries = rows
                     .Select(row => MaterializeSummary(processorId, source, row))
@@ -191,9 +196,10 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         return rowIds;
     }
 
-    private static async Task<IReadOnlyList<ProjectionRow>> ReadManifestProjectionRowsAsync(
+    private static async Task<IReadOnlyList<ProjectionRow>> ReadProjectionRowsAsync(
         SqlConnection connection,
         long projectionProcessorRowId,
+        bool latestBatchOnly,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -208,12 +214,13 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
             "p.OperatorPresent, p.OperatorId, p.OperatorOrderKey, " +
             "p.MetricKey, p.MetricKeyOrderKey, p.DefinitionVersion, p.DefinitionVersionOrderKey, " +
             "p.Status, p.MetricValue, p.Unit, p.ReasonCode, p.ReasonOperandName, p.SourceRevisionPosition " +
-            "FROM dbo.OperationalMetricProjectionManifest AS m " +
-            "INNER JOIN dbo.OperationalMetricProjection AS p " +
-            "ON p.OperationalMetricProjectionProcessorRowId = m.OperationalMetricProjectionProcessorRowId " +
-            "AND p.OperationalMetricProjectionRowId = m.OperationalMetricProjectionRowId " +
-            "WHERE m.OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
-            "ORDER BY m.OperationalMetricProjectionRowId;";
+            "FROM dbo.OperationalMetricProjection AS p " +
+            "WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
+            (latestBatchOnly ?
+                "AND EXISTS (SELECT 1 FROM dbo.OperationalMetricProjectionManifest AS m " +
+                "WHERE m.OperationalMetricProjectionProcessorRowId = p.OperationalMetricProjectionProcessorRowId " +
+                "AND m.OperationalMetricProjectionRowId = p.OperationalMetricProjectionRowId) " : string.Empty) +
+            "ORDER BY p.OperationalMetricProjectionRowId;";
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = projectionProcessorRowId;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

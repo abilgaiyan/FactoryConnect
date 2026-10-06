@@ -127,7 +127,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
         {
             command.CommandText =
                 "SELECT COUNT_BIG(*) " +
-                "FROM dbo.OperationalMetricProjectionManifest " +
+                "FROM dbo.OperationalMetricProjection " +
                 "WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId;";
         }
         else
@@ -139,16 +139,25 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                 "ON p.OperationalMetricProjectionProcessorRowId = m.OperationalMetricProjectionProcessorRowId " +
                 "AND p.OperationalMetricProjectionRowId = m.OperationalMetricProjectionRowId " +
                 "WHERE m.OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
-                "AND p.SourceRevisionPosition <> @CheckpointPosition;";
+                "AND p.SourceRevisionPosition <> @CheckpointPosition " +
+                "; SELECT COUNT_BIG(*) FROM dbo.OperationalMetricProjection AS p " +
+                "WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
+                "AND p.SourceRevisionPosition > @CheckpointPosition;";
             command.Parameters.Add(
                 SqlServerUInt64.CreateParameter(
                     "@CheckpointPosition",
                     checkpointPosition.Value));
         }
 
-        var mismatchCount = Convert.ToInt64(
-            await command.ExecuteScalarAsync(cancellationToken),
-            System.Globalization.CultureInfo.InvariantCulture);
-        return mismatchCount == 0;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        do
+        {
+            if (await reader.ReadAsync(cancellationToken) && reader.GetInt64(0) != 0)
+            {
+                return false;
+            }
+        }
+        while (await reader.NextResultAsync(cancellationToken));
+        return true;
     }
 }

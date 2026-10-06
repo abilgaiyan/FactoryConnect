@@ -1,3 +1,5 @@
+> **P0-A retention amendment:** [Historical reporting retention](FC-030-historical-reporting-retention-amendment.md) supersedes processor-wide replacement, omission-based removal, manifest-only reporting, and global equality-to-checkpoint semantics below. Existing isolation, lock ordering, atomicity, identity, and exact-batch replay guarantees remain. This document preserves the earlier contract/proof record.
+
 # FC-027 — Operational Metric Evaluation and Reporting Model
 
 ## Status

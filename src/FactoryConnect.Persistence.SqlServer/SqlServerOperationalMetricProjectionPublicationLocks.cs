@@ -29,6 +29,21 @@ internal static class SqlServerOperationalMetricProjectionPublicationLocks
             projectionPlan,
             cancellationToken).ConfigureAwait(false);
 
+        if (context.Mode == SqlServerOperationalMetricProjectionCommitMode.ReconcileProposed &&
+            !locks.ManifestProjectionRowIds.SequenceEqual(
+                projectionPlan.ProposedRows.Select(static row => row.ExistingProjectionRowId!.Value).Order()))
+        {
+            throw new InvalidOperationException(
+                "Operational metric latest-batch manifest does not exactly match replay membership.");
+        }
+
+        if (context.Mode == SqlServerOperationalMetricProjectionCommitMode.Advance &&
+            projectionPlan.ExpectedManifestRowIds is not null &&
+            !locks.ManifestProjectionRowIds.SequenceEqual(projectionPlan.ExpectedManifestRowIds))
+        {
+            throw new InvalidOperationException("Expected latest-batch manifest differs from durable membership.");
+        }
+
         return new PublicationPreparation(projectionPlan, locks);
     }
 
@@ -57,20 +72,19 @@ internal static class SqlServerOperationalMetricProjectionPublicationLocks
             projectionProcessorRowId,
             cancellationToken).ConfigureAwait(false);
 
-        // C.3 classifies the complete current durable projection set into rows that
-        // survive the proposed publication plus rows that become obsolete. Rebuild
+        // Incoming rows and unchanged retained rows form the current durable set. Rebuild
         // that set here without performing another projection-table acquisition.
         var expectedCurrentProjectionRowIds = projectionPlan.ProposedRows
             .Where(static row => row.ExistingProjectionRowId.HasValue)
             .Select(static row => row.ExistingProjectionRowId!.Value)
-            .Concat(projectionPlan.ObsoleteProjectionRowIds)
+            .Concat(projectionPlan.UnchangedProjectionRowIds)
             .Order()
             .ToArray();
 
-        if (!manifestProjectionRowIds.SequenceEqual(expectedCurrentProjectionRowIds))
+        if (manifestProjectionRowIds.Any(rowId => !expectedCurrentProjectionRowIds.Contains(rowId)))
         {
             throw new InvalidOperationException(
-                "Operational metric projection manifest does not exactly match the current durable projection set.");
+                "Operational metric projection latest-batch manifest references a missing retained projection.");
         }
 
         // Evidence acquisition is deliberately after the manifest prefix. The
@@ -79,7 +93,7 @@ internal static class SqlServerOperationalMetricProjectionPublicationLocks
         var evidenceRows = await LockEvidenceAsync(
             connection,
             transaction,
-            manifestProjectionRowIds,
+            expectedCurrentProjectionRowIds,
             cancellationToken).ConfigureAwait(false);
 
         return new PublicationLockSnapshot(manifestProjectionRowIds, evidenceRows);

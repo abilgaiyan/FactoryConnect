@@ -43,8 +43,11 @@ internal sealed record SqlServerOperationalMetricProjectionPreparedRow(
 
 internal sealed record SqlServerOperationalMetricProjectionMutationPlan(
     IReadOnlyList<SqlServerOperationalMetricProjectionPreparedRow> ProposedRows,
-    IReadOnlyList<long> ObsoleteProjectionRowIds,
-    IReadOnlyList<byte[]> LockedHashes);
+    IReadOnlyList<long> UnchangedProjectionRowIds,
+    IReadOnlyList<byte[]> LockedHashes)
+{
+    public IReadOnlyList<long>? ExpectedManifestRowIds { get; init; }
+}
 
 internal static class SqlServerOperationalMetricProjectionRows
 {
@@ -102,11 +105,9 @@ internal static class SqlServerOperationalMetricProjectionRows
 
         await ValidateCompleteCurrentSetAsync(context, existingByHash, cancellationToken);
 
-        if (context.Mode == SqlServerOperationalMetricProjectionCommitMode.ReconcileProposed &&
-            existingByHash.Count != incoming.Length)
+        if (existingByHash.Values.Any(row => context.DurablePosition is null || row.SourceRevisionPosition > context.DurablePosition))
         {
-            throw new InvalidOperationException(
-                "Operational metric projection replay does not match the durable projection-row set.");
+            throw new InvalidOperationException("Retained projection revision exceeds or lacks its durable checkpoint.");
         }
 
         var proposedRows = new List<SqlServerOperationalMetricProjectionPreparedRow>(incoming.Length);
@@ -137,22 +138,38 @@ internal static class SqlServerOperationalMetricProjectionRows
         }
 
         var incomingHashes = incomingByHash.Keys.ToHashSet(StringComparer.Ordinal);
-        var obsolete = existingByHash
+        var unchanged = existingByHash
             .Where(pair => !incomingHashes.Contains(pair.Key))
             .Select(pair => pair.Value.RowId)
             .OrderBy(static rowId => rowId)
             .ToArray();
 
-        if (context.Mode == SqlServerOperationalMetricProjectionCommitMode.ReconcileProposed && obsolete.Length != 0)
+        long[]? expectedManifestRowIds = null;
+        if (context.Mode == SqlServerOperationalMetricProjectionCommitMode.Advance && commit.ExpectedCheckpoint is not null)
         {
-            throw new InvalidOperationException(
-                "Operational metric projection replay contains obsolete durable projection rows.");
+            var expectedIds = new List<long>();
+            foreach (var key in commit.ExpectedCheckpoint.BatchManifest.ProjectionKeys)
+            {
+                var binary = OperationalMetricEvaluationKeyV1Codec.Encode(key);
+                var hash = OperationalMetricEvaluationKeyV1Codec.ComputeHash(binary);
+                if (!existingByHash.TryGetValue(Convert.ToHexString(hash), out var row) ||
+                    !row.Binary.AsSpan().SequenceEqual(binary) ||
+                    row.SourceRevisionPosition != commit.ExpectedCheckpoint.SourceRevision.Position)
+                {
+                    throw new InvalidOperationException("Expected latest-batch projection is missing or has invalid identity.");
+                }
+                expectedIds.Add(row.RowId);
+            }
+            expectedManifestRowIds = expectedIds.Order().ToArray();
         }
 
         return new SqlServerOperationalMetricProjectionMutationPlan(
             proposedRows.ToArray(),
-            obsolete,
-            affected.Select(static hash => hash.ToArray()).ToArray());
+            unchanged,
+            affected.Select(static hash => hash.ToArray()).ToArray())
+        {
+            ExpectedManifestRowIds = expectedManifestRowIds,
+        };
     }
 
     private static Dictionary<string, SqlServerOperationalMetricProjectionWriteModel> ValidateIncomingIdentitySet(

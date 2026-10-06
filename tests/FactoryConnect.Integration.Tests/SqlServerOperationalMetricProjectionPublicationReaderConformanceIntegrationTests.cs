@@ -126,17 +126,17 @@ public sealed class SqlServerOperationalMetricProjectionPublicationReaderConform
             context,
             CancellationToken.None);
 
-        Assert.Equal(2, summaries.Count);
+        Assert.Equal(3, summaries.Count);
         Assert.Equal(
-            ["availability", "quality"],
+            ["availability", "performance", "quality"],
             summaries.Select(static summary => summary.Key.DefinitionId.MetricKey));
-        Assert.All(
-            summaries,
-            summary => Assert.Equal(nextRevision, summary.SourceRevision));
+        Assert.Equal(source.Checkpoint, summaries[1].SourceRevision);
+        Assert.Equal(nextRevision, summaries[0].SourceRevision);
+        Assert.Equal(nextRevision, summaries[2].SourceRevision);
 
         var availabilitySummary = summaries[0];
         Assert.Equal(0.75m, availabilitySummary.Value);
-        var qualitySummary = summaries[1];
+        var qualitySummary = summaries[2];
         Assert.Equal(0.95m, qualitySummary.Value);
 
         var detailReader = new SqlServerOperationalMetricProjectionQueryReader(
@@ -166,7 +166,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationReaderConform
             processorId,
             performanceKey,
             CancellationToken.None);
-        Assert.Null(removedDetail);
+        AssertProjectionSemanticsEqual(initialPerformance, Assert.IsType<OperationalMetricProjection>(removedDetail));
     }
 
     private async Task PublishAsync(OperationalMetricProjectionCommit commit)
