@@ -84,12 +84,11 @@ public sealed class SqlServerOperationalMetricProjectionRecoveryIntegrationTests
     public async Task RevisionBeyondCheckpointRejectsEvenWhenRevisionExists()
     {
         var seed = await RecoveryTestData.CreateAsync(fixture.ConnectionString);
-        // Seed an older live checkpoint in this disposable fixture only.
-        await seed.ExecuteAsync("UPDATE dbo.OperationalMetricProjectionCheckpoint SET Position=0 WHERE OperationalMetricProjectionProcessorRowId=@Processor; DELETE FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@Processor; DELETE e FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId=@Processor; DELETE FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@Processor;");
+        var future = await seed.CreateFutureRequestAsync();
         var before = await seed.ReadAllAsync();
         Assert.Equal(OperationalMetricProjectionRecoveryOutcome.Conflict,
             (await new SqlServerOperationalMetricProjectionRecoveryStore(fixture.ConnectionString)
-                .RecoverAsync(seed.Request, CancellationToken.None)).Outcome);
+                .RecoverAsync(future, CancellationToken.None)).Outcome);
         Assert.Equal(before, await seed.ReadAllAsync());
     }
 
@@ -174,7 +173,7 @@ internal sealed record RecoveryTestData(string ConnectionString, OperationalMetr
         return new(connectionString, new(pp, day, r1, target), r2, commit, store, header!.ProjectionProcessorRowId);
     }
 
-    private static OperationalMetricProjection[] CreateFive(OperationalMetricProjectionProcessorId processor,
+    internal static OperationalMetricProjection[] CreateFive(OperationalMetricProjectionProcessorId processor,
         MetricAggregationCheckpoint revision, OperationalMetricPeriodId period)
     {
         var start = new DateTimeOffset(2026, 10, 4, 0, 0, 0, TimeSpan.Zero);
@@ -198,12 +197,30 @@ internal sealed record RecoveryTestData(string ConnectionString, OperationalMetr
         return [availability, performance, quality, oee, utilization];
     }
 
+    internal async Task<OperationalMetricProjectionRecoveryRequest> CreateFutureRequestAsync()
+    {
+        var start = new DateTimeOffset(2026, 10, 4, 0, 0, 0, TimeSpan.Zero);
+        var shift = new ShiftOccurrenceId(Request.ProductionDayId.SiteId, new ShiftScheduleAssignmentId("schedule"),
+            new ShiftId("SHIFT-1"), start, start.AddHours(8));
+        var fact = await new SqlServerMetricInputStore(ConnectionString).AppendAsync(
+            new DurableMetricInputAppend(Request.SourceRevision.StreamId, new DurableMetricInputFact
+            { Id=new MetricInputFactId(Guid.NewGuid().ToString("N")), Key="duration.running", Value=100m, Unit="s",
+                StartsAtUtc=start, EndsAtUtc=start.AddMinutes(10), MachineId=Request.SourceRevision.StreamId.MachineId,
+                CompanyId=new CompanyId("company"), SiteId=Request.ProductionDayId.SiteId,
+                ShiftId=shift.ShiftId, ShiftScheduleAssignmentId=shift.ShiftScheduleAssignmentId }, shift, Request.ProductionDayId),
+            CancellationToken.None);
+        var revision = new MetricAggregationCheckpoint(LiveRevision.ProcessorId, LiveRevision.StreamId, fact.Position);
+        await new SqlServerMetricAggregationStore(ConnectionString).CommitAsync(
+            new MetricAggregationCommit(revision.ProcessorId, LiveRevision, revision, [fact]), CancellationToken.None);
+        return new(Request.ProcessorId, Request.ProductionDayId, revision,
+            CreateFive(Request.ProcessorId, revision, new OperationalMetricPeriodId.ProductionDay(Request.ProductionDayId)));
+    }
+
     internal async Task InsertFixtureAsync(IReadOnlyList<OperationalMetricProjection> projections)
     {
         await using var c = new SqlConnection(ConnectionString); await c.OpenAsync();
         await using var transaction = (SqlTransaction)await c.BeginTransactionAsync();
-        var context = new SqlServerOperationalMetricProjectionCommitContext(c, transaction, ProcessorRowId,
-            SqlServerOperationalMetricProjectionCommitMode.Advance, LiveRevision.Position);
+        var context = new SqlServerOperationalMetricProjectionInsertionContext(c, transaction, ProcessorRowId);
         foreach (var p in projections)
         {
             var model = SqlServerOperationalMetricProjectionRows.Compile(p);
@@ -233,7 +250,7 @@ internal sealed record RecoveryTestData(string ConnectionString, OperationalMetr
             SELECT
             (SELECT p.* FROM dbo.OperationalMetricProjection p WHERE p.OperationalMetricProjectionProcessorRowId=@Processor AND {filter} ORDER BY p.OperationalMetricProjectionRowId FOR JSON PATH) AS Projections,
             (SELECT e.* FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId=@Processor AND {filter} ORDER BY e.OperationalMetricProjectionEvidenceRowId FOR JSON PATH) AS Evidence,
-            (SELECT c.* FROM dbo.OperationalMetricProjectionCheckpoint c WHERE c.OperationalMetricProjectionProcessorRowId=@Processor AND @Authority=1 FOR JSON PATH) AS Checkpoint,
+            (SELECT c.* FROM dbo.OperationalMetricProjectionCheckpoint c WHERE c.OperationalMetricProjectionProcessorRowId=@Processor AND @Authority=1 FOR JSON PATH) AS [Checkpoint],
             (SELECT m.* FROM dbo.OperationalMetricProjectionManifest m WHERE m.OperationalMetricProjectionProcessorRowId=@Processor AND @Authority=1 ORDER BY m.OperationalMetricProjectionRowId FOR JSON PATH) AS Manifest
             FOR JSON PATH, WITHOUT_ARRAY_WRAPPER;
             """;

@@ -66,17 +66,17 @@ public sealed class SqlServerOperationalMetricProjectionRecoveryStore : IOperati
                     request.Projections.Single(p => p.Key == projection.Key))) return await ConflictAsync(transaction);
             }
             var existingKeys = existing.Select(p => p.Key).ToHashSet();
-            var context = new SqlServerOperationalMetricProjectionCommitContext(connection, transaction,
-                header.ProjectionProcessorRowId, SqlServerOperationalMetricProjectionCommitMode.Advance, header.Position);
+            var context = new SqlServerOperationalMetricProjectionInsertionContext(connection, transaction,
+                header.ProjectionProcessorRowId);
             var inserted = 0;
             foreach (var model in models.Where(m => !existingKeys.Contains(m.Projection.Key)))
             {
                 var id = await SqlServerOperationalMetricProjectionPublication.InsertProjectionAsync(context, model, cancellationToken);
                 var row = new SqlServerOperationalMetricProjectionPublishedRow(id,
                     new SqlServerOperationalMetricProjectionPreparedRow(null, model));
-                await SqlServerOperationalMetricProjectionPublication.InsertCompleteEvidenceAsync(context, [row], cancellationToken);
                 inserted++;
                 if (AfterInsert is not null) await AfterInsert(inserted, cancellationToken);
+                await SqlServerOperationalMetricProjectionPublication.InsertCompleteEvidenceAsync(context, [row], cancellationToken);
             }
             var actual = await SqlServerOperationalMetricProjectionQueryReader.ReadProjectionsAsync(
                 connection, transaction, request.ProcessorId, cancellationToken, period);
