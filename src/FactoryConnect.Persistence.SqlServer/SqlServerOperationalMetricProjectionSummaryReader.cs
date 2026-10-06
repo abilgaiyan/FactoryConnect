@@ -94,8 +94,8 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
                 var rows = await ReadProjectionRowsAsync(
                     stableConnection,
                     source.ProjectionProcessorRowId,
-                    token,
-                    latestBatchOnly);
+                    latestBatchOnly,
+                    token);
 
                 if (latestBatchOnly)
                 {
@@ -199,8 +199,8 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
     private static async Task<IReadOnlyList<ProjectionRow>> ReadProjectionRowsAsync(
         SqlConnection connection,
         long projectionProcessorRowId,
-        CancellationToken cancellationToken,
-        bool latestBatchOnly)
+        bool latestBatchOnly,
+        CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
         command.CommandText =

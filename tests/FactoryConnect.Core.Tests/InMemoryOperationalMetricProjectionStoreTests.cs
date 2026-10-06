@@ -218,7 +218,16 @@ public sealed class InMemoryOperationalMetricProjectionStoreTests
     public async Task UnrelatedDayAndEmptyBatchPreserveOriginalProjectionAndEvidence()
     {
         var fixture = CreateFixture();
-        var first = Projection(fixture, Revision(fixture, 10), 0.5m);
+        var initial = Projection(fixture, Revision(fixture, 10), 0.5m);
+        var start = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero);
+        var evidence = new OperationalMetricComponentProjectionEvidence(
+            "running",
+            new OperationalMetricAggregateSourceIdentity(
+                fixture.SourceProcessorId, fixture.MachineId, initial.Key.PeriodId, "running-duration"),
+            initial.SourceRevision, MetricDimension.Duration, 60m, "seconds", 1, start, start.AddMinutes(1));
+        var first = new OperationalMetricProjection(
+            fixture.ProjectionProcessorId, initial.Key, initial.Status, initial.Value, initial.Unit,
+            null, null, initial.SourceRevision, [evidence]);
         var secondKey = new OperationalMetricEvaluationKey(
             fixture.MachineId,
             new OperationalMetricPeriodId.ProductionDay(
