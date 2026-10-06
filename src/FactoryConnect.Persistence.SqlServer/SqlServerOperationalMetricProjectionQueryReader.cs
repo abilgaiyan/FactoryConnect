@@ -43,65 +43,46 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        var source = await ResolveProcessorSourceAsync(connection, processorId, cancellationToken)
-            .ConfigureAwait(false);
-        if (source is null)
-        {
-            return null;
-        }
-
-        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<OperationalMetricProjection?>(
-            connection,
-            source.ProjectionProcessorRowId,
-            async (stableConnection, token) =>
+        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(connection, processorId,
+            async (c, transaction, token) =>
             {
-                var rows = await ReadRetainedProjectionRowsAsync(
-                    stableConnection,
-                    source.ProjectionProcessorRowId,
-                    token).ConfigureAwait(false);
+                var projections = await ReadProjectionsAsync(c, transaction, processorId, token, key: key);
+                return projections.SingleOrDefault(projection => projection.Key == key);
+            }, cancellationToken);
+    }
 
-                ProjectionRow? selectedRow = null;
-                OperationalMetricProjectionSummary? selectedSummary = null;
-                foreach (var row in rows)
-                {
-                    var summary = MaterializeSummary(processorId, source, row);
-                    if (summary.Key != key)
-                    {
-                        continue;
-                    }
-
-                    if (selectedRow is not null)
-                    {
-                        throw Corrupt("duplicate retained evaluation key");
-                    }
-
-                    selectedRow = row;
-                    selectedSummary = summary;
-                }
-
-                if (selectedRow is null || selectedSummary is null)
-                {
-                    return null;
-                }
-
-                var evidenceRows = await ReadEvidenceAsync(
-                    stableConnection,
-                    selectedRow.RowId,
-                    token).ConfigureAwait(false);
-
-                return MaterializeProjection(selectedSummary, evidenceRows);
-            },
-            cancellationToken).ConfigureAwait(false);
+    internal static async Task<IReadOnlyList<OperationalMetricProjection>> ReadProjectionsAsync(
+        SqlConnection connection, SqlTransaction transaction, OperationalMetricProjectionProcessorId processorId,
+        CancellationToken cancellationToken, OperationalMetricPeriodId? period = null, OperationalMetricEvaluationKey? key = null)
+    {
+        var source = await ResolveProcessorSourceAsync(connection, transaction, processorId, cancellationToken);
+        if (source is null) return Array.Empty<OperationalMetricProjection>();
+        await SqlServerOperationalMetricProjectionStableRead.ValidateRevisionCoherenceAsync(
+            connection, transaction, source.ProjectionProcessorRowId, cancellationToken);
+        var rows = await ReadRetainedProjectionRowsAsync(connection, transaction, source.ProjectionProcessorRowId, cancellationToken);
+        var projections = new List<OperationalMetricProjection>();
+        foreach (var row in rows)
+        {
+            var summary = MaterializeSummary(processorId, source, row);
+            if (period is not null && summary.Key.PeriodId != period) continue;
+            if (key is not null && summary.Key != key) continue;
+            if (projections.Any(p => p.Key == summary.Key)) throw Corrupt("duplicate retained evaluation key");
+            var evidence = await ReadEvidenceAsync(connection, transaction, row.RowId, cancellationToken);
+            projections.Add(MaterializeProjection(summary, evidence));
+        }
+        return projections;
     }
 
     private static async Task<ProcessorSource?> ResolveProcessorSourceAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         OperationalMetricProjectionProcessorId processorId,
         CancellationToken cancellationToken)
     {
         var projectionProcessorKeyBinary = StringOrderKeyV2Codec.Encode(processorId.Value);
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT pp.OperationalMetricProjectionProcessorRowId, pp.ProcessorKey, pp.ProcessorKeyBinary, " +
             "pp.MetricAggregationProcessorRowId, pp.MetricInputStreamRowId, " +
@@ -158,10 +139,12 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
 
     private static async Task<IReadOnlyList<ProjectionRow>> ReadRetainedProjectionRowsAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         long projectionProcessorRowId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT p.OperationalMetricProjectionRowId, p.EvaluationKeyCodecVersion, p.EvaluationKeyHash, p.EvaluationKeyBinary, " +
             "p.MachineId, p.PeriodKind, p.PeriodSiteId, p.PeriodSiteOrderKey, " +
@@ -443,10 +426,12 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
 
     private static async Task<IReadOnlyList<EvidenceRow>> ReadEvidenceAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         long projectionRowId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT EvidenceKind, EvidenceOrdinal, OperandName, OperandNameOrderKey, " +
             "ComponentKey, MetricDimension, ComponentValue, ComponentUnit, InputCount, " +

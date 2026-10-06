@@ -17,6 +17,10 @@ internal enum SqlServerOperationalMetricProjectionPublicationStage
     ExactStateRevalidated,
 }
 
+// Mechanical insertion context carries no checkpoint, manifest or normal commit mode.
+internal sealed record SqlServerOperationalMetricProjectionInsertionContext(
+    SqlConnection Connection, SqlTransaction Transaction, long ProjectionProcessorRowId);
+
 internal sealed record SqlServerOperationalMetricProjectionPublishedRow(
     long ProjectionRowId,
     SqlServerOperationalMetricProjectionPreparedRow PreparedRow);
@@ -89,6 +93,8 @@ internal static class SqlServerOperationalMetricProjectionPublication
         await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.RetainedSetPreserved, cancellationToken)
             .ConfigureAwait(false);
 
+        var insertionContext = new SqlServerOperationalMetricProjectionInsertionContext(
+            context.Connection, context.Transaction, context.ProjectionProcessorRowId);
         var published = new List<SqlServerOperationalMetricProjectionPublishedRow>(
             preparation.ProjectionPlan.ProposedRows.Count);
 
@@ -108,7 +114,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
                      .Where(static row => !row.ExistingProjectionRowId.HasValue)
                      .OrderBy(static row => row.EvaluationKeyHash, ByteArrayComparer.Instance))
         {
-            var rowId = await InsertProjectionAsync(context, row.WriteModel, cancellationToken)
+            var rowId = await InsertProjectionAsync(insertionContext, row.WriteModel, cancellationToken)
                 .ConfigureAwait(false);
             published.Add(new SqlServerOperationalMetricProjectionPublishedRow(rowId, row));
         }
@@ -121,7 +127,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
         await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.ManifestInserted, cancellationToken)
             .ConfigureAwait(false);
 
-        await InsertCompleteEvidenceAsync(context, published, cancellationToken).ConfigureAwait(false);
+        await InsertCompleteEvidenceAsync(insertionContext, published, cancellationToken).ConfigureAwait(false);
         await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.EvidenceInserted, cancellationToken)
             .ConfigureAwait(false);
 
@@ -217,8 +223,8 @@ internal static class SqlServerOperationalMetricProjectionPublication
         }
     }
 
-    private static async Task<long> InsertProjectionAsync(
-        SqlServerOperationalMetricProjectionCommitContext context,
+    internal static async Task<long> InsertProjectionAsync(
+        SqlServerOperationalMetricProjectionInsertionContext context,
         SqlServerOperationalMetricProjectionWriteModel model,
         CancellationToken cancellationToken)
     {
@@ -336,8 +342,8 @@ internal static class SqlServerOperationalMetricProjectionPublication
         }
     }
 
-    private static async Task InsertCompleteEvidenceAsync(
-        SqlServerOperationalMetricProjectionCommitContext context,
+    internal static async Task InsertCompleteEvidenceAsync(
+        SqlServerOperationalMetricProjectionInsertionContext context,
         IReadOnlyList<SqlServerOperationalMetricProjectionPublishedRow> publishedRows,
         CancellationToken cancellationToken)
     {
@@ -368,7 +374,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
     }
 
     private static async Task InsertComponentEvidenceAsync(
-        SqlServerOperationalMetricProjectionCommitContext context,
+        SqlServerOperationalMetricProjectionInsertionContext context,
         long projectionRowId,
         int ordinal,
         OperationalMetricComponentProjectionEvidence evidence,
@@ -427,7 +433,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
     }
 
     private static async Task InsertDependencyEvidenceAsync(
-        SqlServerOperationalMetricProjectionCommitContext context,
+        SqlServerOperationalMetricProjectionInsertionContext context,
         long projectionRowId,
         int ordinal,
         OperationalMetricDependencyProjectionEvidence evidence,

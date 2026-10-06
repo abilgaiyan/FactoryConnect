@@ -194,7 +194,7 @@ internal static class SqlServerOperationalMetricProjectionRows
         return incomingByHash;
     }
 
-    private static SqlServerOperationalMetricProjectionWriteModel Compile(OperationalMetricProjection projection)
+    internal static SqlServerOperationalMetricProjectionWriteModel Compile(OperationalMetricProjection projection)
     {
         var binary = OperationalMetricEvaluationKeyV1Codec.Encode(projection.Key);
         var hash = OperationalMetricEvaluationKeyV1Codec.ComputeHash(binary);

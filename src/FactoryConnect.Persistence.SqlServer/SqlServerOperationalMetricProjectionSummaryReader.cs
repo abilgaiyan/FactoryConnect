@@ -70,55 +70,35 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        var source = await ResolveProcessorSourceAsync(connection, processorId, cancellationToken);
-        if (source is null)
-        {
-            return Array.Empty<OperationalMetricProjectionSummary>();
-        }
+        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(connection, processorId,
+            (c, transaction, token) => ReadSummariesAsync(c, transaction, processorId, latestBatchOnly, token), cancellationToken);
+    }
 
-        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<IReadOnlyList<OperationalMetricProjectionSummary>>(
-            connection,
-            source.ProjectionProcessorRowId,
-            async (stableConnection, token) =>
-            {
-                var manifestRowIds = await ReadManifestRowIdsAsync(
-                    stableConnection,
-                    source.ProjectionProcessorRowId,
-                    token);
-
-                if (latestBatchOnly && manifestRowIds.Count == 0)
-                {
-                    return Array.Empty<OperationalMetricProjectionSummary>();
-                }
-
-                var rows = await ReadProjectionRowsAsync(
-                    stableConnection,
-                    source.ProjectionProcessorRowId,
-                    latestBatchOnly,
-                    token);
-
-                if (latestBatchOnly)
-                {
-                    ValidateManifestCoverage(manifestRowIds, rows);
-                }
-
-                var summaries = rows
-                    .Select(row => MaterializeSummary(processorId, source, row))
-                    .ToArray();
-
-                return new ReadOnlyCollection<OperationalMetricProjectionSummary>(summaries);
-            },
-            cancellationToken);
+    internal static async Task<IReadOnlyList<OperationalMetricProjectionSummary>> ReadSummariesAsync(
+        SqlConnection connection, SqlTransaction transaction, OperationalMetricProjectionProcessorId processorId,
+        bool latestBatchOnly, CancellationToken cancellationToken)
+    {
+        var source = await ResolveProcessorSourceAsync(connection, transaction, processorId, cancellationToken);
+        if (source is null) return Array.Empty<OperationalMetricProjectionSummary>();
+        await SqlServerOperationalMetricProjectionStableRead.ValidateRevisionCoherenceAsync(
+            connection, transaction, source.ProjectionProcessorRowId, cancellationToken);
+        var manifestIds = await ReadManifestRowIdsAsync(connection, transaction, source.ProjectionProcessorRowId, cancellationToken);
+        var rows = await ReadProjectionRowsAsync(connection, transaction, source.ProjectionProcessorRowId, latestBatchOnly, cancellationToken);
+        if (latestBatchOnly) ValidateManifestCoverage(manifestIds, rows);
+        return new ReadOnlyCollection<OperationalMetricProjectionSummary>(
+            rows.Select(row => MaterializeSummary(processorId, source, row)).ToArray());
     }
 
     private static async Task<ProcessorSource?> ResolveProcessorSourceAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         OperationalMetricProjectionProcessorId processorId,
         CancellationToken cancellationToken)
     {
         var projectionProcessorKeyBinary = StringOrderKeyV2Codec.Encode(processorId.Value);
 
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT pp.OperationalMetricProjectionProcessorRowId, pp.ProcessorKey, pp.ProcessorKeyBinary, " +
             "pp.MetricAggregationProcessorRowId, pp.MetricInputStreamRowId, " +
@@ -175,10 +155,12 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
 
     private static async Task<IReadOnlyList<long>> ReadManifestRowIdsAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         long projectionProcessorRowId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT OperationalMetricProjectionRowId " +
             "FROM dbo.OperationalMetricProjectionManifest " +
@@ -198,11 +180,13 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
 
     private static async Task<IReadOnlyList<ProjectionRow>> ReadProjectionRowsAsync(
         SqlConnection connection,
+        SqlTransaction transaction,
         long projectionProcessorRowId,
         bool latestBatchOnly,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT p.OperationalMetricProjectionRowId, p.EvaluationKeyCodecVersion, p.EvaluationKeyHash, p.EvaluationKeyBinary, " +
             "p.MachineId, p.PeriodKind, p.PeriodSiteId, p.PeriodSiteOrderKey, " +
