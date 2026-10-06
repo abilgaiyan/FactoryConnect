@@ -33,7 +33,9 @@ Serializable isolation and live checkpoint/CAS/replay semantics are preserved.
 Reporting uses a ReadCommitted transaction under the Shared gate: all materializing
 commands use that same connection/transaction. No snapshot database option is needed.
 The gate, rather than checkpoint equality, is the concurrency authority. Existing
-revision/manifest validation remains an integrity check. Checkpoint reads return
+revision/manifest validation remains an integrity check. Bounded checkpoint-change
+retries are retained defensively for non-participating external writers; they do not
+replace the Shared gate or make checkpoint-neutral external writes safe. Checkpoint reads return
 checkpoint plus latest manifest from the same transaction.
 
 ## Separate recovery contract

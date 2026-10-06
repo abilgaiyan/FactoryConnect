@@ -8,7 +8,6 @@ internal sealed class SqlServerOperationalMetricProjectionStore : IOperationalMe
     private readonly string _connectionString;
     private readonly SqlServerOperationalMetricProjectionCommitTransaction _commitTransaction;
     private readonly SqlServerOperationalMetricProjectionQueryReader _queryReader;
-    private readonly SqlServerOperationalMetricProjectionSummaryReader _summaryReader;
 
     public SqlServerOperationalMetricProjectionStore(string connectionString)
     {
@@ -16,7 +15,6 @@ internal sealed class SqlServerOperationalMetricProjectionStore : IOperationalMe
         _connectionString = connectionString;
         _commitTransaction = new SqlServerOperationalMetricProjectionCommitTransaction(connectionString);
         _queryReader = new SqlServerOperationalMetricProjectionQueryReader(connectionString);
-        _summaryReader = new SqlServerOperationalMetricProjectionSummaryReader(connectionString);
     }
 
     public async ValueTask<OperationalMetricProjectionCheckpoint?> ReadCheckpointAsync(

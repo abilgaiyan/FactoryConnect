@@ -38,13 +38,13 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                     return result;
                 }
                 throw new InvalidOperationException("Projection read exceeded the checkpoint retry budget.");
-            }, cancellationToken);
+            }, cancellationToken, observeCheckpointChanges: false);
     }
 
     public static async Task<T> ExecuteAsync<T>(SqlConnection connection,
         OperationalMetricProjectionProcessorId processorId,
         Func<SqlConnection, SqlTransaction, CancellationToken, Task<T>> readPublication,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool observeCheckpointChanges = true)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(readPublication);
@@ -54,16 +54,48 @@ internal static class SqlServerOperationalMetricProjectionStableRead
         {
             await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction,
                 processorId, OperationalMetricProjectionProcessorGateMode.Shared, cancellationToken);
-            var result = await readPublication(connection, transaction, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            await transaction.CommitAsync(cancellationToken);
-            return result;
+            for (var attempt = 0; attempt < MaximumAttempts; attempt++)
+            {
+                var before = observeCheckpointChanges
+                    ? await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken) : null;
+                T result;
+                try { result = await readPublication(connection, transaction, cancellationToken); }
+                catch (InvalidOperationException) when (observeCheckpointChanges)
+                {
+                    // Defensive only: a non-participating external writer may change checkpoint while a read waits.
+                    var afterFailure = await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken);
+                    if (before != afterFailure) continue;
+                    throw;
+                }
+                var after = observeCheckpointChanges
+                    ? await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken) : null;
+                if (before != after) continue;
+                cancellationToken.ThrowIfCancellationRequested();
+                await transaction.CommitAsync(cancellationToken);
+                return result;
+            }
+            throw new InvalidOperationException("Projection read exceeded the checkpoint retry budget.");
         }
         catch
         {
             try { await transaction.RollbackAsync(CancellationToken.None); } catch { /* Preserve primary failure. */ }
             throw;
         }
+    }
+
+    private static async Task<MetricInputPosition?> ReadProcessorPositionAsync(SqlConnection connection,
+        SqlTransaction transaction, OperationalMetricProjectionProcessorId processorId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT c.Position FROM dbo.OperationalMetricProjectionProcessor p " +
+            "LEFT JOIN dbo.OperationalMetricProjectionCheckpoint c ON c.OperationalMetricProjectionProcessorRowId=p.OperationalMetricProjectionProcessorRowId " +
+            "WHERE p.ProcessorKeyBinary=@Key";
+        command.Parameters.Add("@Key", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value =
+            StringOrderKeyV2Codec.Encode(processorId.Value);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? null : new MetricInputPosition(SqlServerUInt64.Materialize(
+            Convert.ToDecimal(value, System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     internal static async Task ValidateRevisionCoherenceAsync(SqlConnection connection, SqlTransaction transaction,
