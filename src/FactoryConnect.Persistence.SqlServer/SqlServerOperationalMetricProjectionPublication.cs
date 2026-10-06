@@ -217,7 +217,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
         }
     }
 
-    private static async Task<long> InsertProjectionAsync(
+    internal static async Task<long> InsertProjectionAsync(
         SqlServerOperationalMetricProjectionCommitContext context,
         SqlServerOperationalMetricProjectionWriteModel model,
         CancellationToken cancellationToken)
@@ -336,7 +336,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
         }
     }
 
-    private static async Task InsertCompleteEvidenceAsync(
+    internal static async Task InsertCompleteEvidenceAsync(
         SqlServerOperationalMetricProjectionCommitContext context,
         IReadOnlyList<SqlServerOperationalMetricProjectionPublishedRow> publishedRows,
         CancellationToken cancellationToken)

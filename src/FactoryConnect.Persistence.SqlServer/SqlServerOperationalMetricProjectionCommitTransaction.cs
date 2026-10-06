@@ -62,11 +62,19 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
     {
         ArgumentNullException.ThrowIfNull(processorId);
 
-        var keyBinary = StringOrderKeyV2Codec.Encode(processorId.Value);
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(connection, processorId,
+            (c, transaction, token) => ReadCheckpointHeaderAsync(c, transaction, processorId, token), cancellationToken);
+    }
 
+    internal static async Task<SqlServerOperationalMetricProjectionCheckpointHeader?> ReadCheckpointHeaderAsync(
+        SqlConnection connection, SqlTransaction transaction, OperationalMetricProjectionProcessorId processorId,
+        CancellationToken cancellationToken)
+    {
+        var keyBinary = StringOrderKeyV2Codec.Encode(processorId.Value);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT p.OperationalMetricProjectionProcessorRowId, " +
             "p.MetricAggregationProcessorRowId, p.MetricInputStreamRowId, c.Position, " +
@@ -141,6 +149,8 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
 
         try
         {
+            await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction,
+                commit.ProcessorId, OperationalMetricProjectionProcessorGateMode.Exclusive, cancellationToken);
             var processor = await LockProcessorSlotAsync(
                 connection,
                 transaction,
