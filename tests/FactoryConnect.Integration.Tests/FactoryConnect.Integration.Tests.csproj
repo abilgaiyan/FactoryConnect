@@ -19,5 +19,6 @@
     <ProjectReference Include="../../src/FactoryConnect.Persistence/FactoryConnect.Persistence.csproj" />
     <ProjectReference Include="../../src/FactoryConnect.Persistence.SqlServer/FactoryConnect.Persistence.SqlServer.csproj" />
     <ProjectReference Include="../../samples/FactoryConnect.Simulator/FactoryConnect.Simulator.csproj" />
+    <ProjectReference Include="../../tools/FactoryConnect.HistoricalRecovery/FactoryConnect.HistoricalRecovery.csproj" />
   </ItemGroup>
 </Project>

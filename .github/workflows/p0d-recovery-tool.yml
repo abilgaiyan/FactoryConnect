@@ -1,0 +1,39 @@
+name: P0-D recovery tool conformance
+on:
+  push:
+    branches: [feature/fc-030-p0d-factory-recovery]
+  workflow_dispatch:
+jobs:
+  tooling:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - run: dotnet test tests/FactoryConnect.HistoricalRecovery.Tests/FactoryConnect.HistoricalRecovery.Tests.csproj -c Release
+      - run: powershell -NoProfile -File tests/deployment/Invoke-HistoricalRecoveryDeploymentVerificationConformance.ps1
+      - run: dotnet run --project tools/FactoryConnect.HistoricalRecovery -c Release --no-build -- --help
+      - run: dotnet publish tools/FactoryConnect.HistoricalRecovery -c Release -r win-x64 --self-contained true
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: FactoryConnect_CI_2026!
+        ports: [1433:1433]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'FactoryConnect_CI_2026!' -C -Q 'SELECT 1' || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    env:
+      FACTORYCONNECT_SQLSERVER_TEST_CONNECTION_STRING: Server=localhost,1433;Database=master;User Id=sa;Password=FactoryConnect_CI_2026!;Encrypt=True;TrustServerCertificate=True
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - run: dotnet test tests/FactoryConnect.Core.Tests -c Release
+      - run: dotnet test tests/FactoryConnect.Edge.Tests -c Release
+      - run: dotnet test tests/FactoryConnect.Integration.Tests -c Release --filter "Category=SqlServerIntegration&FullyQualifiedName~SqlServerHistoricalRecoveryToolIntegrationTests|Category=SqlServerIntegration&FullyQualifiedName~OperationalMetric"
