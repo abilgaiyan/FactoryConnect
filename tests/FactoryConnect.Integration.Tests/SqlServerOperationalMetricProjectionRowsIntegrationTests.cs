@@ -93,7 +93,7 @@ public sealed class SqlServerOperationalMetricProjectionRowsIntegrationTests :
 
                     var prepared = Assert.Single(plan.ProposedRows);
                     Assert.Null(prepared.ExistingProjectionRowId);
-                    Assert.Empty(plan.ObsoleteProjectionRowIds);
+                    Assert.Empty(plan.UnchangedProjectionRowIds);
                     Assert.Single(plan.LockedHashes);
                     Assert.Equal(
                         prepared.EvaluationKeyHash,

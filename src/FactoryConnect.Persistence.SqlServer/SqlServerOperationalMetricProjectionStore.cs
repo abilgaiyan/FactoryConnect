@@ -25,26 +25,33 @@ internal sealed class SqlServerOperationalMetricProjectionStore : IOperationalMe
         ArgumentNullException.ThrowIfNull(sourceStreamId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var header = await _commitTransaction.ReadCheckpointHeaderAsync(processorId, cancellationToken);
-        if (header is null)
+        for (var attempt = 0; attempt < SqlServerOperationalMetricProjectionStableRead.MaximumAttempts; attempt++)
         {
-            return null;
+            var header = await _commitTransaction.ReadCheckpointHeaderAsync(processorId, cancellationToken);
+            if (header is null)
+            {
+                return null;
+            }
+
+            if (header.StreamId != sourceStreamId)
+            {
+                throw new InvalidOperationException("Projection processor checkpoint belongs to a different metric input stream.");
+            }
+
+            var manifest = await _summaryReader.ReadCurrentManifestAsync(processorId, cancellationToken);
+            var after = await _commitTransaction.ReadCheckpointHeaderAsync(processorId, cancellationToken);
+            if (header != after)
+            {
+                continue;
+            }
+
+            return new OperationalMetricProjectionCheckpoint(
+                processorId,
+                new MetricAggregationCheckpoint(header.AggregationProcessorId, header.StreamId, header.Position),
+                manifest);
         }
 
-        if (header.StreamId != sourceStreamId)
-        {
-            throw new InvalidOperationException(
-                "Projection processor checkpoint belongs to a different metric input stream.");
-        }
-
-        var manifest = await _summaryReader.ReadCurrentManifestAsync(processorId, cancellationToken);
-        return new OperationalMetricProjectionCheckpoint(
-            processorId,
-            new MetricAggregationCheckpoint(
-                header.AggregationProcessorId,
-                header.StreamId,
-                header.Position),
-            manifest);
+        throw new InvalidOperationException("Projection checkpoint and latest-batch manifest did not remain stable.");
     }
 
     public ValueTask<OperationalMetricProjection?> ReadProjectionAsync(

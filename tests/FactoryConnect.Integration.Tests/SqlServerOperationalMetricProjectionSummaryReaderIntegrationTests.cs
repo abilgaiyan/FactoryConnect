@@ -79,7 +79,7 @@ public sealed class SqlServerOperationalMetricProjectionSummaryReaderIntegration
     }
 
     [Fact]
-    public async Task ReadPeriodSummariesAsyncUsesManifestAsCurrentPublicationAuthority()
+    public async Task ReadPeriodSummariesAsyncIncludesRetainedRowsOutsideLatestBatch()
     {
         var source = await CreateSourceAsync();
         var processorId = NewProcessorId();
@@ -96,23 +96,16 @@ public sealed class SqlServerOperationalMetricProjectionSummaryReaderIntegration
                 CreateCalculated(processorId, hiddenKey, source.Checkpoint, 0.8m),
             ]));
 
+        var nextRevision = new MetricAggregationCheckpoint(
+            source.Checkpoint.ProcessorId, source.Checkpoint.StreamId,
+            new MetricInputPosition(source.Checkpoint.Position.Value + 1));
+        await PublishAsync(new OperationalMetricProjectionCommit(
+            processorId,
+            new OperationalMetricProjectionCheckpoint(processorId, source.Checkpoint,
+                new OperationalMetricProjectionBatchManifest([visibleKey, hiddenKey])),
+            new OperationalMetricProjectionCheckpoint(processorId, nextRevision),
+            []));
         var header = await ReadCheckpointHeaderAsync(processorId);
-        await using (var connection = _fixture.CreateConnection())
-        {
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                DELETE m
-                FROM dbo.OperationalMetricProjectionManifest AS m
-                INNER JOIN dbo.OperationalMetricProjection AS p
-                    ON p.OperationalMetricProjectionProcessorRowId = m.OperationalMetricProjectionProcessorRowId
-                    AND p.OperationalMetricProjectionRowId = m.OperationalMetricProjectionRowId
-                WHERE m.OperationalMetricProjectionProcessorRowId = @ProcessorRowId
-                    AND p.MetricKey = N'performance';
-                """;
-            command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = header.ProjectionProcessorRowId;
-            Assert.Equal(1, await command.ExecuteNonQueryAsync());
-        }
 
         var reader = new SqlServerOperationalMetricProjectionSummaryReader(_fixture.ConnectionString);
         var summaries = await reader.ReadPeriodSummariesAsync(
@@ -122,8 +115,7 @@ public sealed class SqlServerOperationalMetricProjectionSummaryReaderIntegration
             context,
             CancellationToken.None);
 
-        var summary = Assert.Single(summaries);
-        Assert.Equal("availability", summary.Key.DefinitionId.MetricKey);
+        Assert.Equal(["availability", "performance"], summaries.Select(static summary => summary.Key.DefinitionId.MetricKey));
 
         await using var verificationConnection = _fixture.CreateConnection();
         await verificationConnection.OpenAsync();

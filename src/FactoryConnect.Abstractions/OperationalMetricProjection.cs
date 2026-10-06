@@ -241,6 +241,7 @@ public sealed record OperationalMetricProjection
     public IReadOnlyList<OperationalMetricProjectionEvidence> Evidence { get; }
 }
 
+/// <summary>Exact latest committed batch membership, not the retained reporting universe.</summary>
 public sealed class OperationalMetricProjectionBatchManifest :
     IEquatable<OperationalMetricProjectionBatchManifest>
 {
@@ -413,6 +414,10 @@ public sealed record OperationalMetricProjectionCommit
     public IReadOnlyList<OperationalMetricProjection> Projections { get; }
 }
 
+/// <summary>
+/// Commits incoming projections and complete evidence atomically with the latest batch
+/// manifest and checkpoint. Omitted retained keys are unchanged, including for empty batches.
+/// </summary>
 public interface IOperationalMetricProjectionStore
 {
     ValueTask<OperationalMetricProjectionCheckpoint?> ReadCheckpointAsync(

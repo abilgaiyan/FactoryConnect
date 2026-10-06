@@ -9,7 +9,7 @@ internal enum SqlServerOperationalMetricProjectionPublicationStage
 {
     EvidenceDeleted,
     ManifestDeleted,
-    ObsoleteProjectionDeleted,
+    RetainedSetPreserved,
     RetainedProjectionUpdated,
     NewProjectionInserted,
     ManifestInserted,
@@ -68,26 +68,25 @@ internal static class SqlServerOperationalMetricProjectionPublication
             throw new InvalidOperationException("Unsupported operational metric projection commit mode.");
         }
 
-        var currentRowIds = preparation.Locks.ManifestProjectionRowIds
-            .OrderBy(static rowId => rowId)
+        var currentRowIds = preparation.ProjectionPlan.ProposedRows
+            .Where(static row => row.ExistingProjectionRowId.HasValue)
+            .Select(static row => row.ExistingProjectionRowId!.Value)
+            .Order()
             .ToArray();
 
         await DeleteCurrentEvidenceAsync(context, currentRowIds, cancellationToken).ConfigureAwait(false);
         await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.EvidenceDeleted, cancellationToken)
             .ConfigureAwait(false);
 
-        await DeleteObsoleteManifestMembershipAsync(
+        await DeleteLatestBatchMembershipAsync(
             context,
-            preparation.ProjectionPlan.ObsoleteProjectionRowIds,
+            preparation.Locks.ManifestProjectionRowIds,
             cancellationToken).ConfigureAwait(false);
         await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.ManifestDeleted, cancellationToken)
             .ConfigureAwait(false);
 
-        await DeleteObsoleteProjectionRowsAsync(
-            context,
-            preparation.ProjectionPlan.ObsoleteProjectionRowIds,
-            cancellationToken).ConfigureAwait(false);
-        await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.ObsoleteProjectionDeleted, cancellationToken)
+        // Omission from this batch never deletes retained projections.
+        await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.RetainedSetPreserved, cancellationToken)
             .ConfigureAwait(false);
 
         var published = new List<SqlServerOperationalMetricProjectionPublishedRow>(
@@ -118,11 +117,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
 
         published.Sort(static (left, right) => left.ProjectionRowId.CompareTo(right.ProjectionRowId));
 
-        var newRows = published
-            .Where(static row => !row.PreparedRow.ExistingProjectionRowId.HasValue)
-            .OrderBy(static row => row.ProjectionRowId)
-            .ToArray();
-        await InsertNewManifestMembershipAsync(context, newRows, cancellationToken).ConfigureAwait(false);
+        await InsertNewManifestMembershipAsync(context, published, cancellationToken).ConfigureAwait(false);
         await InjectAsync(failureInjection, SqlServerOperationalMetricProjectionPublicationStage.ManifestInserted, cancellationToken)
             .ConfigureAwait(false);
 
@@ -140,8 +135,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
     private static SqlServerOperationalMetricProjectionPublishedRow[] ResolveExistingPublishedRows(
         SqlServerOperationalMetricProjectionMutationPlan plan)
     {
-        if (plan.ObsoleteProjectionRowIds.Count != 0 ||
-            plan.ProposedRows.Any(static row => !row.ExistingProjectionRowId.HasValue))
+        if (plan.ProposedRows.Any(static row => !row.ExistingProjectionRowId.HasValue))
         {
             throw new InvalidOperationException(
                 "Operational metric projection replay does not exactly match the durable projection identity set.");
@@ -172,12 +166,12 @@ internal static class SqlServerOperationalMetricProjectionPublication
         }
     }
 
-    private static async Task DeleteObsoleteManifestMembershipAsync(
+    private static async Task DeleteLatestBatchMembershipAsync(
         SqlServerOperationalMetricProjectionCommitContext context,
-        IReadOnlyList<long> obsoleteProjectionRowIds,
+        IReadOnlyList<long> previousBatchProjectionRowIds,
         CancellationToken cancellationToken)
     {
-        foreach (var rowId in obsoleteProjectionRowIds.OrderBy(static value => value))
+        foreach (var rowId in previousBatchProjectionRowIds.OrderBy(static value => value))
         {
             await using var command = context.Connection.CreateCommand();
             command.Transaction = context.Transaction;
@@ -190,30 +184,7 @@ internal static class SqlServerOperationalMetricProjectionPublication
             if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
             {
                 throw new InvalidOperationException(
-                    "Operational metric projection manifest membership disappeared before dependency-safe deletion.");
-            }
-        }
-    }
-
-    private static async Task DeleteObsoleteProjectionRowsAsync(
-        SqlServerOperationalMetricProjectionCommitContext context,
-        IReadOnlyList<long> obsoleteProjectionRowIds,
-        CancellationToken cancellationToken)
-    {
-        foreach (var rowId in obsoleteProjectionRowIds.OrderBy(static value => value))
-        {
-            await using var command = context.Connection.CreateCommand();
-            command.Transaction = context.Transaction;
-            command.CommandText =
-                "DELETE FROM dbo.OperationalMetricProjection " +
-                "WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId " +
-                "AND OperationalMetricProjectionRowId = @ProjectionRowId;";
-            command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = context.ProjectionProcessorRowId;
-            command.Parameters.Add("@ProjectionRowId", SqlDbType.BigInt).Value = rowId;
-            if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
-            {
-                throw new InvalidOperationException(
-                    "Operational metric projection row disappeared before dependency-safe deletion.");
+                    "Operational metric projection manifest membership disappeared before latest-batch replacement.");
             }
         }
     }
@@ -537,6 +508,9 @@ internal static class SqlServerOperationalMetricProjectionPublication
                     SourceRevisionPosition
                 FROM dbo.OperationalMetricProjection
                 WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId
+                  AND OperationalMetricProjectionRowId IN
+                      (SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest
+                       WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId)
                 ORDER BY OperationalMetricProjectionRowId;
                 """;
             command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = context.ProjectionProcessorRowId;
@@ -668,6 +642,9 @@ internal static class SqlServerOperationalMetricProjectionPublication
             INNER JOIN dbo.OperationalMetricProjection AS p
                 ON p.OperationalMetricProjectionRowId = e.OperationalMetricProjectionRowId
             WHERE p.OperationalMetricProjectionProcessorRowId = @ProcessorRowId
+              AND p.OperationalMetricProjectionRowId IN
+                  (SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest
+                   WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId)
             ORDER BY e.OperationalMetricProjectionRowId, e.EvidenceKind, e.EvidenceOrdinal;
             """;
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = context.ProjectionProcessorRowId;

@@ -42,7 +42,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                         cancellationToken);
 
                     Assert.Single(prepared.ProjectionPlan.ProposedRows);
-                    Assert.Empty(prepared.ProjectionPlan.ObsoleteProjectionRowIds);
+                    Assert.Empty(prepared.ProjectionPlan.UnchangedProjectionRowIds);
                     Assert.Empty(prepared.Locks.ManifestProjectionRowIds);
                     Assert.Empty(prepared.Locks.EvidenceRows);
                     await AssertZeroPublicationMutationAsync(context, cancellationToken);
@@ -93,7 +93,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
     }
 
     [Fact]
-    public async Task ShrinkingPublicationValidatesManifestAgainstRetainedPlusObsoleteRows()
+    public async Task NewBatchLocksIncomingAndUnchangedRetainedRows()
     {
         var published = await CreatePublishedAsync(2, includeEvidence: false);
         var nextRevision = Advance(published.Source.Checkpoint);
@@ -120,7 +120,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                         Assert.Single(prepared.ProjectionPlan.ProposedRows).ExistingProjectionRowId);
                     Assert.Equal(
                         [published.RowIds[1]],
-                        prepared.ProjectionPlan.ObsoleteProjectionRowIds);
+                        prepared.ProjectionPlan.UnchangedProjectionRowIds);
                     Assert.Equal(published.RowIds, prepared.Locks.ManifestProjectionRowIds);
                     await AssertZeroPublicationMutationAsync(
                         context,
@@ -132,7 +132,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
     }
 
     [Fact]
-    public async Task EmptyReplacementValidatesEntireOldManifestAsObsolete()
+    public async Task EmptyBatchPreservesEntireRetainedSet()
     {
         var published = await CreatePublishedAsync(2, includeEvidence: false);
         var nextRevision = Advance(published.Source.Checkpoint);
@@ -152,7 +152,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                     Assert.Empty(prepared.ProjectionPlan.ProposedRows);
                     Assert.Equal(
                         published.RowIds,
-                        prepared.ProjectionPlan.ObsoleteProjectionRowIds);
+                        prepared.ProjectionPlan.UnchangedProjectionRowIds);
                     Assert.Equal(published.RowIds, prepared.Locks.ManifestProjectionRowIds);
                     await AssertZeroPublicationMutationAsync(
                         context,
@@ -187,7 +187,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationLocksIntegrat
                 CancellationToken.None));
 
         Assert.Equal(
-            "Operational metric projection manifest does not exactly match the current durable projection set.",
+            "Operational metric latest-batch manifest does not exactly match replay membership.",
             exception.Message);
         Assert.Equal(1, await CountProjectionRowsAsync(published.ProcessorId));
         Assert.Equal(1, await CountEvidenceRowsAsync(published.ProcessorId));

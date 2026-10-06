@@ -150,6 +150,8 @@ public sealed class InMemoryOperationalMetricProjectionStore :
                 projection => (commit.ProcessorId, projection.Key),
                 projection => projection);
 
+            // The dictionary is the retained reporting set. The checkpoint manifest
+            // describes only this batch; omitted keys (including empty batches) survive.
             foreach (var pair in staged)
             {
                 _projections[pair.Key] = pair.Value;
