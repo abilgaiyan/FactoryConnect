@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../../tools/FactoryConnect.HistoricalRecovery/*.cs" Link="SafetySource/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <ProjectReference Include="../../tools/FactoryConnect.HistoricalRecovery/FactoryConnect.HistoricalRecovery.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FactoryConnect.Persistence.SqlServer/FactoryConnect.Persistence.SqlServer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../scripts/deployment/Test-FactoryConnectRecoveryDeployment.ps1" Link="Test-FactoryConnectRecoveryDeployment.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
