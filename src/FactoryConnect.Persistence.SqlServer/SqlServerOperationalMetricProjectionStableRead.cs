@@ -76,6 +76,11 @@ internal static class SqlServerOperationalMetricProjectionStableRead
             }
             throw new InvalidOperationException("Projection read exceeded the checkpoint retry budget.");
         }
+        catch (SqlException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            try { await transaction.RollbackAsync(CancellationToken.None); } catch { /* Preserve cancellation. */ }
+            throw new OperationCanceledException("Operational metric projection read was cancelled.", exception, cancellationToken);
+        }
         catch
         {
             try { await transaction.RollbackAsync(CancellationToken.None); } catch { /* Preserve primary failure. */ }
