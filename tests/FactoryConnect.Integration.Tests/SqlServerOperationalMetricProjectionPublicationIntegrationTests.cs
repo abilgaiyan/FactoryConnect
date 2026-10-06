@@ -11,6 +11,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTests :
     IClassFixture<SqlServerTestDatabaseFixture>
 {
+    private static readonly string[] HistoricalMetricKeys = ["availability", "utilization.elr"];
     private readonly SqlServerTestDatabaseFixture _fixture;
 
     public SqlServerOperationalMetricProjectionPublicationIntegrationTests(
@@ -286,7 +287,7 @@ public sealed class SqlServerOperationalMetricProjectionPublicationIntegrationTe
 
         for (var index = 0; index < days.Length; index++)
         {
-            var projections = new[] { "availability", "utilization.elr" }
+            var projections = HistoricalMetricKeys
                 .Select(metric => CreateComponentProjection(
                     processorId,
                     new OperationalMetricEvaluationKey(
