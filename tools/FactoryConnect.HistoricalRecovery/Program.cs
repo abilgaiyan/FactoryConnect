@@ -50,7 +50,7 @@ internal sealed class PowerShellDeploymentVerifier(string root, string release, 
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Factory apply requires Windows deployment verification.");
         var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-File", Path.Combine(AppContext.BaseDirectory, "Test-FactoryConnectRecoveryDeployment.ps1"),
+        foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.Combine(AppContext.BaseDirectory, "Test-FactoryConnectRecoveryDeployment.ps1"),
             "-InstallRoot", root, "-ApprovedRelease", release, "-ApprovedManifestSha256", manifest }) start.ArgumentList.Add(arg);
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Deployment verifier could not start.");
         var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
