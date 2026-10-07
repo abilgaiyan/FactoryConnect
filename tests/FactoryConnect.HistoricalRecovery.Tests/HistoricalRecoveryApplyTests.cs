@@ -95,6 +95,7 @@ public sealed class HistoricalRecoveryApplyTests
         foreach (var forbidden in new[] { ".CommitAsync(", ".PrepareAsync(", ".PublishAsync(", ".ConvergeAsync(", "Host.Create", "AddHostedService", "ExecuteNonQuery", "INSERT INTO", "UPDATE dbo.", "DELETE FROM", "MERGE INTO" })
             Assert.DoesNotContain(forbidden, source, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(1, source.Split(".RecoverAsync(", StringSplitOptions.None).Length - 1);
+        Assert.Contains("\"-ExecutionPolicy\", \"Bypass\", \"-File\"", source, StringComparison.Ordinal);
     }
     internal sealed class Reporting : IReportingAuthorityReader
     {
