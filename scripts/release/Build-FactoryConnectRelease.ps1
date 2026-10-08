@@ -197,6 +197,7 @@ try {
     }
 
     $deployables = @(
+        [pscustomobject]@{ Name = 'sql-readiness'; Project = 'tools/FactoryConnect.SqlReadiness/FactoryConnect.SqlReadiness.csproj'; Executable = 'FactoryConnect.SqlReadiness.exe' },
         [pscustomobject]@{ Name = 'migrations'; Project = 'src/FactoryConnect.Migrations/FactoryConnect.Migrations.csproj'; Executable = 'FactoryConnect.Migrations.exe' },
         [pscustomobject]@{ Name = 'edge'; Project = 'src/FactoryConnect.Edge/FactoryConnect.Edge.csproj'; Executable = 'FactoryConnect.Edge.exe' },
         [pscustomobject]@{ Name = 'api'; Project = 'src/FactoryConnect.Api/FactoryConnect.Api.csproj'; Executable = 'FactoryConnect.Api.exe' },
