@@ -19,11 +19,10 @@ function Read-FactoryConnectSqlReadinessConfiguration {
             $value = [string]$configuration.PersistenceProviders.SqlServer.ConnectionString
             if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing' }
             $stage='ConnectionString'
-            $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-            $builder.ConnectionString = $value
+            $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($value)
             $stage='Target'
-            if ([string]::IsNullOrWhiteSpace($builder.DataSource) -or
-                [string]::IsNullOrWhiteSpace($builder.InitialCatalog)) { throw 'Target' }
+            if ([string]::IsNullOrWhiteSpace($builder.get_DataSource()) -or
+                [string]::IsNullOrWhiteSpace($builder.get_InitialCatalog())) { throw 'Target' }
             $targets += [pscustomobject]@{Name=$name;ConnectionString=$value}
         } catch {
             throw "SQL readiness requires valid commissioned $name SQL configuration (stage: $stage)."
@@ -35,13 +34,12 @@ function Read-FactoryConnectSqlReadinessConfiguration {
 function Invoke-FactoryConnectSqlReadinessProbe {
     param([string]$ConnectionString,[int]$BudgetMilliseconds,
           [System.Threading.CancellationToken]$CancellationToken)
-    $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-    $builder.ConnectionString = $ConnectionString
+    $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
     # Preserve authentication, target and TLS policy. Only bound connection time
     # and disable pooling so readiness requires a new authenticated connection.
-    $builder.ConnectTimeout = [Math]::Max(1,[int][Math]::Ceiling($BudgetMilliseconds / 1000.0))
-    $builder.Pooling = $false
-    $connection = New-Object System.Data.SqlClient.SqlConnection($builder.ConnectionString)
+    $builder.set_ConnectTimeout([Math]::Max(1,[int][Math]::Ceiling($BudgetMilliseconds / 1000.0)))
+    $builder.set_Pooling($false)
+    $connection = [System.Data.SqlClient.SqlConnection]::new($builder.get_ConnectionString())
     $command = $null
     $deadline = [System.Threading.CancellationTokenSource]::CreateLinkedTokenSource($CancellationToken)
     $deadline.CancelAfter($BudgetMilliseconds)
@@ -49,7 +47,7 @@ function Invoke-FactoryConnectSqlReadinessProbe {
         $connection.OpenAsync($deadline.Token).GetAwaiter().GetResult()
         $command = $connection.CreateCommand()
         $command.CommandText = 'SELECT 1'
-        $command.CommandTimeout = $builder.ConnectTimeout
+        $command.CommandTimeout = $builder.get_ConnectTimeout()
         $value = $command.ExecuteScalarAsync($deadline.Token).GetAwaiter().GetResult()
         return ([int]$value -eq 1)
     } finally {
