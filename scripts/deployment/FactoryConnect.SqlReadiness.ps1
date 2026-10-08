@@ -149,6 +149,10 @@ function Wait-FactoryConnectSqlReadiness {
             $status='Cancelled'
             throw 'SQL readiness cancelled; runtime not invoked.'
         }
+        if ($clock.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            $status='TimedOut'
+            throw 'SQL readiness timed out; runtime not invoked.'
+        }
         throw
     } finally {
         $clock.Stop()
