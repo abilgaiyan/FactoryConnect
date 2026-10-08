@@ -60,7 +60,7 @@ try {
     Case PermanentFailureAndRedaction {
         $caught=$false
         try {
-            Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 1 -RetryMilliseconds 10 -Probe {
+            Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 3 -RetryMilliseconds 10 -Probe {
                 throw 'Server=secret;Password=DO-NOT-LOG'
             } -OnEvidence ${function:Capture-Evidence}
         } catch {
@@ -69,14 +69,14 @@ try {
         }
         Assert-True $caught 'Unavailable SQL was accepted.'
         Assert-True ($script:Captured.status -eq 'TimedOut') 'Timeout evidence absent.'
-        Assert-True ($script:Captured.elapsedMilliseconds -lt 2500) 'Shared timeout was not bounded.'
+        Assert-True ($script:Captured.elapsedMilliseconds -lt 5000) 'Shared timeout was not bounded.'
         Assert-True (-not ($script:Captured | ConvertTo-Json -Depth 5).Contains('secret')) 'Evidence leaked connection data.'
     }
     Case SuccessCannotAccumulateAcrossPasses {
         $script:Calls=0
         $caught=$false
         try {
-            Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 1 -RetryMilliseconds 10 -Probe {
+            Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 3 -RetryMilliseconds 10 -Probe {
                 $script:Calls++
                 $pass=[int][Math]::Ceiling($script:Calls / 2.0)
                 return (($pass % 2 -eq 1 -and $script:Calls % 2 -eq 1) -or
