@@ -68,3 +68,58 @@ proof only, not real-machine commissioning or a rerun of B01–B12. `-ContractOn
 checks parse/package/scope contracts without claiming executable acceptance.
 Factory acquisition, task commissioning and a natural reboot remain separate gates.
 A2 and authoritative ProducedQuantity remain unchanged and blocked.
+
+## P0: bounded SQL readiness before runtime launch
+
+The SQL readiness change is isolated from reporting and machine processing.
+After successful acquisition and selected-release validation, the orchestrator
+loads `FactoryConnect.SqlReadiness.ps1` from the selected release. Both commissioned
+files under `<InstallRoot>/config` (`edge.production.json` and
+`api.production.json`) must specify SqlServer, a parseable non-placeholder
+connection string, a server and a database. Both configurations are validated
+before any SQL contact. The runtime launcher still performs its complete existing
+commissioning, ownership and health validation; this gate does not replace it.
+
+Each readiness pass opens a fresh authenticated connection for each configured
+consumer and executes only `SELECT 1`. Authentication and TLS settings are preserved.
+Pooling is disabled and connection/command timeouts are bounded by the remaining
+shared deadline. The gate uses .NET Framework System.Data.SqlClient in the existing
+Windows PowerShell host; it requires no sqlcmd installation or runtime redeployment
+helper executable. Success requires both targets to succeed in the same pass.
+
+The default overall deadline is 180 seconds, configurable through
+`-SqlReadinessTimeoutSeconds` (1–600). Attempts have a maximum five-second budget;
+retry delay is two seconds, capped by remaining time. Function-level cancellation
+interrupts retries and cancels SQL operations. Configuration failure, cancellation
+or timeout fails closed before runtime invocation. Provider exception messages and
+connection strings are not logged. `sql-readiness.json` records outcome, attempts,
+elapsed time and separate Edge/API outcomes; `system-start.json` records the
+SqlReadiness failure phase. Existing orchestration/deployment locks and runtime
+process ownership remain unchanged. The orchestration lock remains held throughout
+readiness; the runtime continues to obtain its own deployment lock.
+
+The release builder requires, copies and manifest-covers the readiness helper and
+records `sqlReadinessScript` in release metadata. Existing root orchestrator bytes
+must be updated through the reviewed installer when this release is commissioned.
+Existing releases without the helper fail closed if used with the new orchestrator.
+No installer, deployment, scheduled-task change or factory reboot is part of this
+source change. Review the scheduled task execution limit against the full chain
+before separately authorizing commissioning.
+
+Conformance commands (Windows PowerShell 5.1):
+
+```powershell
+.\tests\deployment\Invoke-SqlReadinessConformance.ps1
+.\tests\deployment\Invoke-FactoryBootOrchestrationConformance.ps1
+.\tests\deployment\Invoke-RebootStartupConformance.ps1
+.\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1
+```
+
+The helper suite injects function-level probes for delayed availability, permanent
+failure, two-target consistency, bounded retries, cancellation, invalid/missing
+configuration and secret redaction. It does not claim real SQL proof. For a real
+non-mutating SQL proof, set `FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING`
+to an authorized test database and run the helper suite with `-LiveSql`. It verifies
+authenticated SELECT and denial of a nonexistent database without creating tables
+or changing schema. The boot suite uses a packaged helper stub to prove gate ordering
+and fail-closed runtime delegation. Factory reboot acceptance remains separate.
