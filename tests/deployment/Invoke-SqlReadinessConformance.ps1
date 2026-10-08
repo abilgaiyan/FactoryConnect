@@ -5,7 +5,22 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../../scripts/deployment/FactoryConnect.SqlReadiness.ps1')
 if (-not [string]::IsNullOrWhiteSpace($ProviderExecutable)) { $script:SqlReadinessExecutable = $ProviderExecutable }
 # Synthetic, credential-free provider wiring check; exceptions here cannot contain commissioned secrets.
-[void](Invoke-FactoryConnectSqlProvider 'Validate' 'Server=edge-test;Database=commissioned;Integrated Security=True' 5000 ([Threading.CancellationToken]::None))
+$syntheticProcess=New-Object Diagnostics.Process
+$syntheticProcess.StartInfo=New-Object Diagnostics.ProcessStartInfo
+$syntheticProcess.StartInfo.FileName=$script:SqlReadinessExecutable
+$syntheticProcess.StartInfo.UseShellExecute=$false
+$syntheticProcess.StartInfo.RedirectStandardInput=$true
+$syntheticProcess.StartInfo.RedirectStandardOutput=$true
+$syntheticProcess.StartInfo.RedirectStandardError=$true
+try {
+    [void]$syntheticProcess.Start()
+    $syntheticProcess.StandardInput.WriteLine('{"Operation":"Validate","ConnectionString":"Server=edge-test;Database=commissioned;Integrated Security=True","BudgetMilliseconds":5000}')
+    $syntheticProcess.StandardInput.Close()
+    Write-Host ('Synthetic provider output: ' + $syntheticProcess.StandardOutput.ReadToEnd())
+    Write-Host ('Synthetic provider stage: ' + $syntheticProcess.StandardError.ReadToEnd())
+    $syntheticProcess.WaitForExit()
+    if ($syntheticProcess.ExitCode -ne 0) { throw 'Synthetic provider validation failed.' }
+} finally { $syntheticProcess.Dispose() }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('FactoryConnect-SqlReadiness-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $root 'config') -Force | Out-Null
 $results=[ordered]@{}
