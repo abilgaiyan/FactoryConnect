@@ -1,0 +1,56 @@
+name: P0 SQL readiness conformance
+on:
+  push:
+    branches: [feature/fc-p0-reboot-sql-readiness]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
+      - 'scripts/deployment/Start-FactoryConnectSystem.ps1'
+      - 'scripts/release/Build-FactoryConnectRelease.ps1'
+      - 'tests/deployment/*SqlReadiness*'
+      - 'tests/deployment/Invoke-FactoryBootOrchestrationConformance.ps1'
+      - 'tests/deployment/Invoke-RebootStartupReleasePackageConformance.ps1'
+      - '.github/workflows/p0-sql-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-conformance:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+      - name: SQL readiness executable conformance
+        shell: powershell
+        run: .\tests\deployment\Invoke-SqlReadinessConformance.ps1
+      - name: Existing boot and runtime contracts
+        shell: powershell
+        run: |
+          .\tests\deployment\Invoke-FactoryBootOrchestrationConformance.ps1
+          .\tests\deployment\Invoke-RebootStartupConformance.ps1
+          .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1
+      - name: Authenticated SQL readiness proof
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & SqlLocalDB.exe start MSSQLLocalDB
+          if ($LASTEXITCODE -ne 0) { throw 'CI test SQL could not start.' }
+          $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Encrypt=False'
+          .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql
+      - name: Build exact-source release and verify packaged helper
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = .\scripts\release\Build-FactoryConnectRelease.ps1 -SourceCommit $env:GITHUB_SHA -OutputRoot (Join-Path $env:RUNNER_TEMP 'p0-release')
+          .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1 -ReleaseDirectory $release.ReleaseDirectory
+          $release | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'p0-release/provenance.json')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p0-sql-readiness-release
+          path: ${{ runner.temp }}/p0-release
