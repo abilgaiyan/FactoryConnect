@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 
@@ -5,7 +6,8 @@ var stage = "Deserialize";
 // Secrets enter only through redirected stdin. Never print provider diagnostics.
 try
 {
-    var request = JsonSerializer.Deserialize<Request>(await Console.In.ReadToEndAsync());
+    using var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true);
+    var request = JsonSerializer.Deserialize<Request>((await input.ReadToEndAsync()).TrimStart('\uFEFF'));
     if (request is null || request.BudgetMilliseconds is < 1 or > 30000)
         return Reply("ConfigurationInvalid", 10);
     stage = "ConnectionString";
