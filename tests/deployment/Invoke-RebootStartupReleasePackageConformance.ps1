@@ -69,3 +69,20 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
     if ($errors.Count) { throw 'Packaged SQL readiness failed parsing.' }
     [pscustomobject]@{SqlReadinessPayload='PASS';Sha256=$hash;SourceCommit=$metadata.sourceCommit}
 }
+
+if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
+    $providerRoot = Join-Path $ReleaseDirectory 'apps/sql-readiness'
+    foreach ($name in @('FactoryConnect.SqlReadiness.exe','FactoryConnect.SqlReadiness.deps.json','FactoryConnect.SqlReadiness.runtimeconfig.json','Microsoft.Data.SqlClient.dll','Microsoft.Data.SqlClient.SNI.dll')) {
+        if (-not (Test-Path (Join-Path $providerRoot $name))) { throw "Required SQL provider payload missing: $name" }
+    }
+    $versions = [xml](Get-Content (Join-Path (Split-Path (Split-Path (Split-Path $ReleaseBuilder -Parent) -Parent) -Parent) 'Directory.Packages.props') -Raw)
+    $version = @($versions.Project.ItemGroup.PackageVersion | Where-Object { $_.Include -eq 'Microsoft.Data.SqlClient' })[0].Version
+    $dependencies = Get-Content (Join-Path $providerRoot 'FactoryConnect.SqlReadiness.deps.json') -Raw
+    if (-not $dependencies.Contains("Microsoft.Data.SqlClient/$version")) { throw 'Readiness SQL provider differs from central runtime version.' }
+    foreach ($file in Get-ChildItem $providerRoot -File -Recurse) {
+        $relative = $file.FullName.Substring($ReleaseDirectory.TrimEnd('\').Length + 1).Replace('\','/')
+        $line = (Get-FileHash $file.FullName).Hash.ToLowerInvariant() + '  ' + $relative
+        if (@(Get-Content (Join-Path $ReleaseDirectory 'MANIFEST.sha256') | Where-Object { $_ -ceq $line }).Count -ne 1) { throw 'Readiness dependency lacks exact manifest coverage.' }
+    }
+    [pscustomobject]@{SqlReadinessProviderPayload='PASS';Provider='Microsoft.Data.SqlClient';Version=$version}
+}
