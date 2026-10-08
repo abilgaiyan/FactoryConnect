@@ -1,5 +1,48 @@
 Set-StrictMode -Version Latest
-Add-Type -AssemblyName System.Data -ErrorAction Stop
+$script:SqlReadinessExecutable = Join-Path $PSScriptRoot 'apps/sql-readiness/FactoryConnect.SqlReadiness.exe'
+
+function Invoke-FactoryConnectSqlProvider {
+    param([string]$Operation,[string]$ConnectionString,[int]$BudgetMilliseconds,
+          [System.Threading.CancellationToken]$CancellationToken)
+    if (-not (Test-Path -LiteralPath $script:SqlReadinessExecutable -PathType Leaf)) {
+        throw 'Packaged SQL readiness executable missing; runtime not invoked.'
+    }
+    $start = New-Object Diagnostics.ProcessStartInfo
+    $start.FileName = $script:SqlReadinessExecutable
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $start
+    $started=$false
+    try {
+        $started=$process.Start()
+        $output = $process.StandardOutput.ReadToEndAsync()
+        $errors = $process.StandardError.ReadToEndAsync()
+        $process.StandardInput.WriteLine((@{Operation=$Operation;ConnectionString=$ConnectionString;BudgetMilliseconds=$BudgetMilliseconds} | ConvertTo-Json -Compress))
+        $process.StandardInput.Close()
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        while (-not $process.WaitForExit(20)) {
+            $CancellationToken.ThrowIfCancellationRequested()
+            if ($clock.ElapsedMilliseconds -ge $BudgetMilliseconds) {
+                throw 'SQL readiness provider deadline exceeded.'
+            }
+        }
+        $CancellationToken.ThrowIfCancellationRequested()
+        $reply = $output.GetAwaiter().GetResult() | ConvertFrom-Json
+        [void]$errors.GetAwaiter().GetResult()
+        if ($reply.Status -eq 'AuthenticationRejected' -and $process.ExitCode -eq 12) {
+            throw 'SQL readiness authentication rejected; runtime not invoked.'
+        }
+        if ($process.ExitCode -eq 0 -and $reply.Status -in @('Ready','Valid')) { return $true }
+        return $false
+    } finally {
+        if ($started -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
+        $process.Dispose()
+    }
+}
 
 function Read-FactoryConnectSqlReadinessConfiguration {
     param([Parameter(Mandatory=$true)][string]$InstallRoot)
@@ -19,10 +62,7 @@ function Read-FactoryConnectSqlReadinessConfiguration {
             $value = [string]$configuration.PersistenceProviders.SqlServer.ConnectionString
             if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing' }
             $stage='ConnectionString'
-            $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($value)
-            $stage='Target'
-            if ([string]::IsNullOrWhiteSpace($builder.get_DataSource()) -or
-                [string]::IsNullOrWhiteSpace($builder.get_InitialCatalog())) { throw 'Target' }
+            if (-not (Invoke-FactoryConnectSqlProvider 'Validate' $value 5000 ([Threading.CancellationToken]::None))) { throw 'Target' }
             $targets += [pscustomobject]@{Name=$name;ConnectionString=$value}
         } catch {
             throw "SQL readiness requires valid commissioned $name SQL configuration (stage: $stage)."
@@ -34,27 +74,7 @@ function Read-FactoryConnectSqlReadinessConfiguration {
 function Invoke-FactoryConnectSqlReadinessProbe {
     param([string]$ConnectionString,[int]$BudgetMilliseconds,
           [System.Threading.CancellationToken]$CancellationToken)
-    $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
-    # Preserve authentication, target and TLS policy. Only bound connection time
-    # and disable pooling so readiness requires a new authenticated connection.
-    $builder.set_ConnectTimeout([Math]::Max(1,[int][Math]::Ceiling($BudgetMilliseconds / 1000.0)))
-    $builder.set_Pooling($false)
-    $connection = [System.Data.SqlClient.SqlConnection]::new($builder.get_ConnectionString())
-    $command = $null
-    $deadline = [System.Threading.CancellationTokenSource]::CreateLinkedTokenSource($CancellationToken)
-    $deadline.CancelAfter($BudgetMilliseconds)
-    try {
-        $connection.OpenAsync($deadline.Token).GetAwaiter().GetResult()
-        $command = $connection.CreateCommand()
-        $command.CommandText = 'SELECT 1'
-        $command.CommandTimeout = $builder.get_ConnectTimeout()
-        $value = $command.ExecuteScalarAsync($deadline.Token).GetAwaiter().GetResult()
-        return ([int]$value -eq 1)
-    } finally {
-        if ($null -ne $command) { $command.Dispose() }
-        $connection.Dispose()
-        $deadline.Dispose()
-    }
+    return (Invoke-FactoryConnectSqlProvider 'Probe' $ConnectionString $BudgetMilliseconds $CancellationToken)
 }
 
 function Wait-FactoryConnectSqlReadiness {
@@ -100,13 +120,9 @@ function Wait-FactoryConnectSqlReadiness {
                     $CancellationToken.ThrowIfCancellationRequested()
                     # Authentication rejection is permanent for the commissioned identity.
                     # Never log the provider message or connection string.
-                    $errorObject = $_.Exception
-                    while ($null -ne $errorObject) {
-                        if ($errorObject -is [System.Data.SqlClient.SqlException] -and $errorObject.Number -eq 18456) {
-                            $status='AuthenticationRejected'
-                            throw 'SQL readiness authentication rejected; runtime not invoked.'
-                        }
-                        $errorObject = $errorObject.InnerException
+                    if ($_.Exception.Message -eq 'SQL readiness authentication rejected; runtime not invoked.') {
+                        $status='AuthenticationRejected'
+                        throw 'SQL readiness authentication rejected; runtime not invoked.'
                     }
                     $ready=$false
                     # Do not persist SQL/provider diagnostics containing secrets.
