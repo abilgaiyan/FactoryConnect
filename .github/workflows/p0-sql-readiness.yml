@@ -15,6 +15,9 @@ on:
       - 'tests/deployment/Invoke-RebootStartupReleasePackageConformance.ps1'
       - '.github/workflows/p0-sql-readiness.yml'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
