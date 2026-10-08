@@ -4,6 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../../scripts/deployment/FactoryConnect.SqlReadiness.ps1')
 if (-not [string]::IsNullOrWhiteSpace($ProviderExecutable)) { $script:SqlReadinessExecutable = $ProviderExecutable }
+# Synthetic, credential-free provider wiring check; exceptions here cannot contain commissioned secrets.
+[void](Invoke-FactoryConnectSqlProvider 'Validate' 'Server=edge-test;Database=commissioned;Integrated Security=True' 5000 ([Threading.CancellationToken]::None))
 $root = Join-Path ([IO.Path]::GetTempPath()) ('FactoryConnect-SqlReadiness-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $root 'config') -Force | Out-Null
 $results=[ordered]@{}
