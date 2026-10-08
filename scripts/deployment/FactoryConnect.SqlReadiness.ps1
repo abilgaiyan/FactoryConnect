@@ -45,7 +45,9 @@ function Invoke-FactoryConnectSqlProvider {
 }
 
 function Read-FactoryConnectSqlReadinessConfiguration {
-    param([Parameter(Mandatory=$true)][string]$InstallRoot)
+    param([Parameter(Mandatory=$true)][string]$InstallRoot,
+          [Diagnostics.Stopwatch]$Clock,[int]$TimeoutSeconds,
+          [Threading.CancellationToken]$CancellationToken)
     # Validate both configurations before any contact. Never include connection
     # strings, parser errors or provider exception messages in startup evidence.
     $targets = @()
@@ -62,7 +64,10 @@ function Read-FactoryConnectSqlReadinessConfiguration {
             $value = [string]$configuration.PersistenceProviders.SqlServer.ConnectionString
             if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing' }
             $stage='ConnectionString'
-            if (-not (Invoke-FactoryConnectSqlProvider 'Validate' $value 5000 ([Threading.CancellationToken]::None))) { throw 'Target' }
+            $CancellationToken.ThrowIfCancellationRequested()
+            $remaining=[int][Math]::Floor($TimeoutSeconds * 1000 - $Clock.Elapsed.TotalMilliseconds)
+            if ($remaining -le 0) { throw 'Deadline' }
+            if (-not (Invoke-FactoryConnectSqlProvider 'Validate' $value ([Math]::Min(5000,$remaining)) $CancellationToken)) { throw 'Target' }
             $targets += [pscustomobject]@{Name=$name;ConnectionString=$value}
         } catch {
             throw "SQL readiness requires valid commissioned $name SQL configuration (stage: $stage)."
@@ -94,7 +99,7 @@ function Wait-FactoryConnectSqlReadiness {
     $status = 'ConfigurationInvalid'
     $targetStatus = [ordered]@{edge='NotChecked';api='NotChecked'}
     try {
-        $targets = @(Read-FactoryConnectSqlReadinessConfiguration $InstallRoot)
+        $targets = @(Read-FactoryConnectSqlReadinessConfiguration $InstallRoot $clock $TimeoutSeconds $CancellationToken)
         $status = 'Waiting'
         while ($true) {
             $CancellationToken.ThrowIfCancellationRequested()
