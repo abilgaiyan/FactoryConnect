@@ -5,6 +5,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'tools/FactoryConnect.SqlReadiness/**'
+      - 'Directory.Packages.props'
       - 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
       - 'scripts/deployment/Start-FactoryConnectSystem.ps1'
       - 'scripts/release/Build-FactoryConnectRelease.ps1'
@@ -26,9 +28,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.node-version'
+      - name: Publish runtime-aligned readiness provider
+        shell: powershell
+        run: |
+          dotnet publish tools/FactoryConnect.SqlReadiness/FactoryConnect.SqlReadiness.csproj -c Release -r win-x64 --self-contained true -o "$env:RUNNER_TEMP/sql-readiness"
+          if ($LASTEXITCODE -ne 0) { throw 'SQL readiness publish failed.' }
       - name: SQL readiness executable conformance
         shell: powershell
-        run: .\tests\deployment\Invoke-SqlReadinessConformance.ps1
+        run: .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -ProviderExecutable "$env:RUNNER_TEMP/sql-readiness/FactoryConnect.SqlReadiness.exe"
       - name: Existing boot and runtime contracts
         shell: powershell
         run: |
@@ -42,13 +49,14 @@ jobs:
           & SqlLocalDB.exe start MSSQLLocalDB
           if ($LASTEXITCODE -ne 0) { throw 'CI test SQL could not start.' }
           $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Encrypt=False'
-          .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql
+          .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql -ProviderExecutable "$env:RUNNER_TEMP/sql-readiness/FactoryConnect.SqlReadiness.exe"
       - name: Build exact-source release and verify packaged helper
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           $release = .\scripts\release\Build-FactoryConnectRelease.ps1 -SourceCommit $env:GITHUB_SHA -OutputRoot (Join-Path $env:RUNNER_TEMP 'p0-release')
           .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1 -ReleaseDirectory $release.ReleaseDirectory
+          .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql -ProviderExecutable (Join-Path $release.ReleaseDirectory 'apps/sql-readiness/FactoryConnect.SqlReadiness.exe')
           $release | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'p0-release/provenance.json')
       - uses: actions/upload-artifact@v4
         with:
