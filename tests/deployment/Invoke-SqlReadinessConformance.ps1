@@ -126,10 +126,9 @@ try {
             Set-Config api $connection
             Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 30 -OnEvidence ${function:Capture-Evidence}
             Assert-True ($script:Captured.status -eq 'Ready') 'Live authenticated SELECT failed.'
-            $builder=New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-            $builder.ConnectionString=$connection
-            $builder.InitialCatalog='FactoryConnect_Readiness_Missing_' + [Guid]::NewGuid().ToString('N')
-            Set-Config api $builder.ConnectionString
+            $builder=[System.Data.SqlClient.SqlConnectionStringBuilder]::new($connection)
+            $builder.set_InitialCatalog('FactoryConnect_Readiness_Missing_' + [Guid]::NewGuid().ToString('N'))
+            Set-Config api $builder.get_ConnectionString()
             $caught=$false
             try { Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 2 -RetryMilliseconds 20 -AttemptMilliseconds 500 -OnEvidence ${function:Capture-Evidence} } catch { $caught=$true }
             Assert-True ($caught -and $script:Captured.status -eq 'TimedOut') 'Nonexistent database passed readiness.'
