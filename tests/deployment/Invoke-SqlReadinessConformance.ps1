@@ -119,6 +119,26 @@ try {
         Assert-True ($before[0] -eq (Get-FileHash (Join-Path $root 'config/edge.production.json')).Hash) 'Edge configuration changed.'
         Assert-True ($before[1] -eq (Get-FileHash (Join-Path $root 'config/api.production.json')).Hash) 'API configuration changed.'
     }
+    Case AuthenticationRejectionFailsClosed {
+        $caught=$false
+        try {
+            Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 10 -Probe {
+                throw 'SQL readiness authentication rejected; runtime not invoked.'
+            } -OnEvidence ${function:Capture-Evidence}
+        } catch { $caught=$true }
+        Assert-True ($caught -and $script:Captured.status -eq 'AuthenticationRejected') 'Permanent authentication rejection was retried or accepted.'
+        Assert-True ($script:Captured.attempts -eq 1) 'Authentication rejection did not stop the first pass.'
+    }
+    Case MissingPackagedProviderFailsClosed {
+        $saved=$script:SqlReadinessExecutable
+        try {
+            $script:SqlReadinessExecutable=Join-Path $root 'absent.exe'
+            $caught=$false
+            try { Wait-FactoryConnectSqlReadiness $root -OnEvidence ${function:Capture-Evidence} } catch { $caught=$true }
+            Assert-True ($caught -and $script:Captured.status -eq 'ConfigurationInvalid') 'Missing packaged provider did not fail closed.'
+            Assert-True ($script:Captured.attempts -eq 0) 'Missing provider attempted readiness.'
+        } finally { $script:SqlReadinessExecutable=$saved }
+    }
     if ($LiveSql) {
         Case LiveAuthenticatedSelect {
             $connection=[Environment]::GetEnvironmentVariable('FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING')
