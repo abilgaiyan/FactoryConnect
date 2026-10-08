@@ -98,6 +98,16 @@ function Wait-FactoryConnectSqlReadiness {
                     else { $ready=$false }
                 } catch {
                     $CancellationToken.ThrowIfCancellationRequested()
+                    # Authentication rejection is permanent for the commissioned identity.
+                    # Never log the provider message or connection string.
+                    $errorObject = $_.Exception
+                    while ($null -ne $errorObject) {
+                        if ($errorObject -is [System.Data.SqlClient.SqlException] -and $errorObject.Number -eq 18456) {
+                            $status='AuthenticationRejected'
+                            throw 'SQL readiness authentication rejected; runtime not invoked.'
+                        }
+                        $errorObject = $errorObject.InnerException
+                    }
                     $ready=$false
                     # Do not persist SQL/provider diagnostics containing secrets.
                 }
