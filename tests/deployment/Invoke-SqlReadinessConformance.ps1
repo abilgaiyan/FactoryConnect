@@ -1,8 +1,9 @@
 [CmdletBinding()]
-param([switch]$LiveSql)
+param([switch]$LiveSql,[string]$ProviderExecutable)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../../scripts/deployment/FactoryConnect.SqlReadiness.ps1')
+if (-not [string]::IsNullOrWhiteSpace($ProviderExecutable)) { $script:SqlReadinessExecutable = $ProviderExecutable }
 $root = Join-Path ([IO.Path]::GetTempPath()) ('FactoryConnect-SqlReadiness-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $root 'config') -Force | Out-Null
 $results=[ordered]@{}
@@ -126,9 +127,7 @@ try {
             Set-Config api $connection
             Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 30 -OnEvidence ${function:Capture-Evidence}
             Assert-True ($script:Captured.status -eq 'Ready') 'Live authenticated SELECT failed.'
-            $builder=[System.Data.SqlClient.SqlConnectionStringBuilder]::new($connection)
-            $builder.set_InitialCatalog('FactoryConnect_Readiness_Missing_' + [Guid]::NewGuid().ToString('N'))
-            Set-Config api $builder.get_ConnectionString()
+            Set-Config api ($connection + ';Initial Catalog=FactoryConnect_Readiness_Missing_' + [Guid]::NewGuid().ToString('N'))
             $caught=$false
             try { Wait-FactoryConnectSqlReadiness $root -TimeoutSeconds 2 -RetryMilliseconds 20 -AttemptMilliseconds 500 -OnEvidence ${function:Capture-Evidence} } catch { $caught=$true }
             Assert-True ($caught -and $script:Captured.status -eq 'TimedOut') 'Nonexistent database passed readiness.'
