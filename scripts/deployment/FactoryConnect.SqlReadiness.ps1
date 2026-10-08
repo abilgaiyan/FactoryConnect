@@ -21,8 +21,10 @@ function Invoke-FactoryConnectSqlProvider {
         $started=$process.Start()
         $output = $process.StandardOutput.ReadToEndAsync()
         $errors = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.WriteLine((@{Operation=$Operation;ConnectionString=$ConnectionString;BudgetMilliseconds=$BudgetMilliseconds} | ConvertTo-Json -Compress))
-        $process.StandardInput.Close()
+        $request=@{Operation=$Operation;ConnectionString=$ConnectionString;BudgetMilliseconds=$BudgetMilliseconds} | ConvertTo-Json -Compress
+        $bytes=[Text.UTF8Encoding]::new($false).GetBytes($request)
+        $process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length)
+        $process.StandardInput.BaseStream.Close()
         $clock = [Diagnostics.Stopwatch]::StartNew()
         while (-not $process.WaitForExit(20)) {
             $CancellationToken.ThrowIfCancellationRequested()
