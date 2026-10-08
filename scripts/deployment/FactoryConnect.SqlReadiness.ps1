@@ -1,4 +1,5 @@
 Set-StrictMode -Version Latest
+Add-Type -AssemblyName System.Data -ErrorAction Stop
 
 function Read-FactoryConnectSqlReadinessConfiguration {
     param([Parameter(Mandatory=$true)][string]$InstallRoot)
@@ -6,21 +7,26 @@ function Read-FactoryConnectSqlReadinessConfiguration {
     # strings, parser errors or provider exception messages in startup evidence.
     $targets = @()
     foreach ($name in @('edge','api')) {
+        $stage='ReadFile'
         try {
             $path = Join-Path $InstallRoot "config/$name.production.json"
             $text = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
             if ($text -match '__[A-Z0-9_]+__') { throw 'Placeholder' }
+            $stage='Json'
             $configuration = $text | ConvertFrom-Json -ErrorAction Stop
+            $stage='Provider'
             if ($configuration.Persistence.Provider -cne 'SqlServer') { throw 'Provider' }
             $value = [string]$configuration.PersistenceProviders.SqlServer.ConnectionString
             if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing' }
+            $stage='ConnectionString'
             $builder = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
             $builder.ConnectionString = $value
+            $stage='Target'
             if ([string]::IsNullOrWhiteSpace($builder.DataSource) -or
                 [string]::IsNullOrWhiteSpace($builder.InitialCatalog)) { throw 'Target' }
             $targets += [pscustomobject]@{Name=$name;ConnectionString=$value}
         } catch {
-            throw "SQL readiness requires valid commissioned $name SQL configuration."
+            throw "SQL readiness requires valid commissioned $name SQL configuration (stage: $stage)."
         }
     }
     return $targets
