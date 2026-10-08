@@ -59,6 +59,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $release = .\scripts\release\Build-FactoryConnectRelease.ps1 -SourceCommit $env:GITHUB_SHA -OutputRoot (Join-Path $env:RUNNER_TEMP 'p0-release')
           .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1 -ReleaseDirectory $release.ReleaseDirectory
+          $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Encrypt=False'
           .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql -ProviderExecutable (Join-Path $release.ReleaseDirectory 'apps/sql-readiness/FactoryConnect.SqlReadiness.exe')
           $release | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'p0-release/provenance.json')
       - uses: actions/upload-artifact@v4
