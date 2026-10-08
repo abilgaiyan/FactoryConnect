@@ -83,9 +83,13 @@ commissioning, ownership and health validation; this gate does not replace it.
 Each readiness pass opens a fresh authenticated connection for each configured
 consumer and executes only `SELECT 1`. Authentication and TLS settings are preserved.
 Pooling is disabled and connection/command timeouts are bounded by the remaining
-shared deadline. The gate uses .NET Framework System.Data.SqlClient in the existing
-Windows PowerShell host; it requires no sqlcmd installation or runtime redeployment
-helper executable. Success requires both targets to succeed in the same pass.
+shared deadline. The PowerShell gate invokes the selected release's self-contained .NET 10
+`apps/sql-readiness/FactoryConnect.SqlReadiness.exe`. It uses the centrally pinned
+Microsoft.Data.SqlClient version shared with runtime persistence. Dependencies,
+including native SQL client support, are published and manifest-covered; no factory
+NuGet installation or developer assembly is used. Connection strings travel only
+through redirected stdin, never process arguments. The parent enforces cancellation
+and the attempt deadline by terminating an unfinished probe. Success requires both targets to succeed in the same pass.
 
 The default overall deadline is 180 seconds, configurable through
 `-SqlReadinessTimeoutSeconds` (1–600). Attempts have a maximum five-second budget;
