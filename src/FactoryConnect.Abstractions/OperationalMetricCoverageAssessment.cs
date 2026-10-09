@@ -276,7 +276,7 @@ public sealed class OperationalMetricCoverageAssessment : IEquatable<Operational
     private static bool SameUnion(IReadOnlyList<OperationalMetricCoverageInterval> left, IReadOnlyList<OperationalMetricCoverageInterval> right) =>
         Normalize(left).SequenceEqual(Normalize(right));
 
-    private static IReadOnlyList<OperationalMetricCoverageInterval> Normalize(IReadOnlyList<OperationalMetricCoverageInterval> intervals)
+    private static List<OperationalMetricCoverageInterval> Normalize(IReadOnlyList<OperationalMetricCoverageInterval> intervals)
     {
         var result = new List<OperationalMetricCoverageInterval>();
         foreach (var interval in intervals)
