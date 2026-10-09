@@ -53,6 +53,42 @@ public sealed class OperationalMetricCoverageAssessmentTests
     }
 
     [Fact]
+    public void EstablishedEmptyCompleteDoesNotEqualUnknownOrPositiveCoverage()
+    {
+        var empty = Create(
+            classification: OperationalMetricCoverageClassification.Complete,
+            reason: OperationalMetricCoverageReason.Reconciled,
+            assessed: [], expected: [], boundary: Whole.EndsAtUtc,
+            schedule: Schedule, evidence: [Evidence]);
+        var same = Create(
+            classification: OperationalMetricCoverageClassification.Complete,
+            reason: OperationalMetricCoverageReason.Reconciled,
+            assessed: [], expected: [], boundary: Whole.EndsAtUtc,
+            schedule: Schedule, evidence: [Evidence]);
+        var positive = Complete([Whole]);
+
+        Assert.Equal(empty, same);
+        Assert.Equal(empty.GetHashCode(), same.GetHashCode());
+        Assert.NotEqual(empty, Create());
+        Assert.NotEqual(empty, positive);
+        Assert.Empty(empty.ClassifiedIntervals);
+        Assert.Empty(empty.ExpectedIntervals!);
+    }
+
+    [Fact]
+    public void IncompleteGapMustBeInsideEstablishedExpectedCoverage()
+    {
+        var expected = new OperationalMetricCoverageInterval(Start, Start.AddHours(4));
+        var outsideExpected = new OperationalMetricCoverageInterval(Start.AddHours(4), Whole.EndsAtUtc);
+
+        Assert.Throws<ArgumentException>(() => Create(
+            classification: OperationalMetricCoverageClassification.Incomplete,
+            reason: OperationalMetricCoverageReason.CoverageGapEstablished,
+            assessed: [Whole], expected: [expected], boundary: Whole.EndsAtUtc,
+            schedule: Schedule, gaps: [outsideExpected], evidence: [Evidence]));
+    }
+
+    [Fact]
     public void IncompleteRequiresContainedExplicitGap()
     {
         var gap = new OperationalMetricCoverageInterval(Start.AddHours(4), Whole.EndsAtUtc);
