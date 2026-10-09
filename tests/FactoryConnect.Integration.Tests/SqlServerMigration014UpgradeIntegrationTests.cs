@@ -13,7 +13,7 @@ public sealed class SqlServerMigration014UpgradeIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(14, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(15, catalog.Migrations[^1].MigrationId);
 
         await using (var transaction = connection.BeginTransaction())
         {

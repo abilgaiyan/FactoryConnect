@@ -7,7 +7,7 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration013UpgradeIntegrationTests
 {
     private static readonly int[] MigrationIdsThrough012 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    private static readonly int[] MigrationIdsThrough014 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+    private static readonly int[] MigrationIdsThrough015 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     private static readonly TimeSpan LockTimeout = TimeSpan.FromMinutes(2);
 
     [Fact]
@@ -17,8 +17,8 @@ public sealed class SqlServerMigration013UpgradeIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(14, catalog.Migrations.Length);
-        Assert.Equal(14, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(15, catalog.Migrations.Length);
+        Assert.Equal(15, catalog.Migrations[^1].MigrationId);
 
         await CreateExactPost012Async(connection, catalog);
         Assert.Equal(MigrationIdsThrough012, await ReadMigrationIdsAsync(connection));
@@ -29,7 +29,7 @@ public sealed class SqlServerMigration013UpgradeIntegrationTests
         var engine = new SqlServerMigrationEngine(catalog, new FixedUtcClock());
         await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough014, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough015, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 13;"));
         Assert.Equal(1, await CountAsync(connection,
@@ -47,7 +47,7 @@ public sealed class SqlServerMigration013UpgradeIntegrationTests
 
         await engine.ApplyAsync(connection, LockTimeout, CancellationToken.None);
 
-        Assert.Equal(MigrationIdsThrough014, await ReadMigrationIdsAsync(connection));
+        Assert.Equal(MigrationIdsThrough015, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountAsync(connection,
             "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 13;"));
         Assert.Equal(1, await CountAsync(connection,

@@ -261,7 +261,8 @@ public sealed class InMemoryAuthorityInstanceGraphConformanceTests
                     descriptor.ImplementationInstance)));
         var expectedCapabilities =
             PersistenceProviderCapabilities.All |
-            PersistenceProviderCapabilities.CurrentStateAuthorityReading;
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading |
+            PersistenceProviderCapabilities.OperationalMetricCoverageAssessmentStorage;
 
         Assert.Equal(expectedCapabilities, registration.Capabilities);
 

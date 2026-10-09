@@ -15,6 +15,7 @@ public enum PersistenceProviderCapabilities
     OperationalMetricReportingQuery = 1 << 8,
     MachineShiftOccurrenceRoster = 1 << 9,
     CurrentStateAuthorityReading = 1 << 10,
+    OperationalMetricCoverageAssessmentStorage = 1 << 11,
 
     Core = ObservationIngestion |
         ProductionContextProcessing |
