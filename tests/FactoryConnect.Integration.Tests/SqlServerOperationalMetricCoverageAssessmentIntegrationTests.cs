@@ -173,6 +173,75 @@ public sealed class SqlServerOperationalMetricCoverageAssessmentIntegrationTests
         Assert.Equal("0:0", await StateAsync(database.ConnectionString));
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task InFlightCancellationDuringLockWaitOrSqlExecution(bool publish, bool sqlExecution)
+    {
+        await using var database = await CreateAsync();
+        var request = Request(1);
+        await using var blocker = new SqlConnection(database.ConnectionString);
+        await blocker.OpenAsync();
+        await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using var command = blocker.CreateCommand();
+        command.Transaction = transaction;
+        if (sqlExecution)
+        {
+            // The application lock remains available; InspectAsync blocks on this table lock.
+            command.CommandText = "SELECT COUNT_BIG(*) FROM dbo.OperationalMetricCoverageSubject WITH (TABLOCKX, HOLDLOCK);";
+        }
+        else
+        {
+            command.CommandText = """
+                DECLARE @Code int;
+                EXEC @Code = sys.sp_getapplock @Resource = @Resource, @LockMode = N'Exclusive',
+                    @LockOwner = N'Transaction', @LockTimeout = 0, @DbPrincipal = N'public';
+                SELECT @Code;
+                """;
+            command.Parameters.Add("@Resource", SqlDbType.NVarChar, 255).Value =
+                "FactoryConnect.CoverageAssessment:" + Convert.ToHexString(
+                    OperationalMetricCoverageV1Codec.Hash(OperationalMetricCoverageV1Codec.EncodeSubject(request.Subject)));
+        }
+        Assert.True(Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture) >= 0);
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new SqlServerOperationalMetricCoverageAssessmentStore(database.ConnectionString,
+            OperationalMetricCoverageV1Codec.Hash, stage =>
+            {
+                if (stage == (sqlExecution ? "SubjectLockAcquired" : "SubjectLockRequested")) { reached.TrySetResult(); }
+            });
+        using var cancellation = new CancellationTokenSource();
+        var operation = publish
+            ? (Task)store.PublishAsync(request, cancellation.Token).AsTask()
+            : store.ReadExactAsync(request.Subject, request.ProposedRevision, cancellation.Token).AsTask();
+        try
+        {
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.NotSame(operation, await Task.WhenAny(operation, Task.Delay(200)));
+            cancellation.Cancel();
+            var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => operation.WaitAsync(TimeSpan.FromSeconds(20)));
+            Assert.Equal(cancellation.Token, exception.CancellationToken);
+            // SqlClient can throw OCE itself or an operational exception. Translation retains the latter.
+            if (exception.Message.StartsWith("Coverage ", StringComparison.Ordinal))
+            {
+                Assert.NotNull(exception.InnerException);
+                Assert.True(exception.InnerException is SqlException
+                    || exception.InnerException.GetType().Name == "CoverageLockException");
+            }
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await transaction.RollbackAsync();
+            try { await operation.WaitAsync(TimeSpan.FromSeconds(20)); }
+            catch (OperationCanceledException) { }
+        }
+        Assert.Equal("0:0", await StateAsync(database.ConnectionString));
+        Assert.Equal(0L, await ScalarAsync(database.ConnectionString, "SELECT COUNT_BIG(*) FROM dbo.OperationalMetricCoverageSubject;"));
+    }
+
     private static OperationalMetricCoveragePublicationRequest Request(long revision, bool changed = false, ulong position = 3243)
     {
         var assessment = CoverageTestData.Assessment(references: changed ? [new("raw", "changed", "1")] : null, position: position);

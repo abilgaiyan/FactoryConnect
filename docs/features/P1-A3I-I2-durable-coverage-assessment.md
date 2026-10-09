@@ -138,3 +138,13 @@ hash collision, cancellation, initialization, Post014 upgrade and rerun.
 Initial evidence: Core 604/604 PASS; non-SQL integration 681/681 PASS;
 Release solution build PASS with zero warnings/errors. Real-SQL conformance and
 independent review remain pending; the implementation is not I2-D closed.
+
+Cancellation correction following review of `3555f30`: reads and publication
+translate SQL/subject-lock failures observed with the caller token cancelled
+to `OperationCanceledException`, preserving that exception as the inner
+exception and retaining the caller token. Existing cancellation exceptions
+propagate. This does not establish rollback or a publication outcome. Four
+disposable-SQL cases exercise in-flight cancellation for both operations
+during subject-lock waits and blocked SQL queries; execution remains pending.
+Correction verification: Core 604/604 and non-SQL integration 681/681 PASS;
+Release build passes with zero warnings/errors. Real-SQL execution remains pending.

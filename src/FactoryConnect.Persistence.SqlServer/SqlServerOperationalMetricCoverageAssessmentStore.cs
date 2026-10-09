@@ -32,69 +32,78 @@ internal sealed class SqlServerOperationalMetricCoverageAssessmentStore : IOpera
         var identity = OperationalMetricCoverageV1Codec.EncodeSubject(request.Subject);
         var content = OperationalMetricCoverageV1Codec.EncodeContent(request.Assessment);
         var hash = GetHash(identity);
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        await AcquireAsync(connection, transaction, hash, "Exclusive", cancellationToken);
-        var source = await ResolveSourceAsync(connection, transaction, request.Subject, cancellationToken);
-        if (source is null) { return OperationalMetricCoveragePublicationOutcome.SourceRevisionAbsent; }
-        if (!source.Valid) { return OperationalMetricCoveragePublicationOutcome.IntegrityFailure; }
-        var stored = await InspectAsync(connection, transaction, request.Subject, identity, hash, request.ProposedRevision.Value, cancellationToken);
-        if (stored.Outcome == OperationalMetricCoverageReadOutcome.UnsupportedEncoding)
+        try
         {
-            return OperationalMetricCoveragePublicationOutcome.UnsupportedEncoding;
-        }
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            _publicationStage?.Invoke("SubjectLockRequested");
+            await AcquireAsync(connection, transaction, hash, "Exclusive", cancellationToken);
+            _publicationStage?.Invoke("SubjectLockAcquired");
+            var source = await ResolveSourceAsync(connection, transaction, request.Subject, cancellationToken);
+            if (source is null) { return OperationalMetricCoveragePublicationOutcome.SourceRevisionAbsent; }
+            if (!source.Valid) { return OperationalMetricCoveragePublicationOutcome.IntegrityFailure; }
+            var stored = await InspectAsync(connection, transaction, request.Subject, identity, hash, request.ProposedRevision.Value, cancellationToken);
+            if (stored.Outcome == OperationalMetricCoverageReadOutcome.UnsupportedEncoding)
+            {
+                return OperationalMetricCoveragePublicationOutcome.UnsupportedEncoding;
+            }
 
-        if (stored.Outcome == OperationalMetricCoverageReadOutcome.Corrupt)
+            if (stored.Outcome == OperationalMetricCoverageReadOutcome.Corrupt)
+            {
+                return OperationalMetricCoveragePublicationOutcome.IntegrityFailure;
+            }
+
+            var decision = ClassifyProposal(stored.ProposedContent, content, stored.Head, request.ExpectedPredecessor?.Value);
+            if (decision is { } established) { return established; }
+
+            var subjectId = stored.SubjectId;
+            if (subjectId is null)
+            {
+                await using var insert = Command(connection, transaction, """
+                    INSERT INTO dbo.OperationalMetricCoverageSubject
+                        (SubjectHash, IdentityCodecVersion, SubjectBinary, MetricAggregationProcessorRowId, MetricInputStreamRowId, SourcePosition)
+                    OUTPUT INSERTED.SubjectId
+                    VALUES (@Hash, 1, @Identity, @Processor, @Stream, @Position);
+                    """);
+                AddBytes(insert, "@Hash", hash, 32);
+                AddBytes(insert, "@Identity", identity);
+                insert.Parameters.Add("@Processor", SqlDbType.BigInt).Value = source.Processor;
+                insert.Parameters.Add("@Stream", SqlDbType.BigInt).Value = source.Stream;
+                insert.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", request.Subject.SourceRevision.Position.Value));
+                subjectId = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
+                _publicationStage?.Invoke("SubjectInserted");
+            }
+
+            await using (var insert = Command(connection, transaction, """
+                INSERT INTO dbo.OperationalMetricCoverageVersion (SubjectId, AssessmentRevision, ContentCodecVersion, ContentBinary)
+                VALUES (@Subject, @Revision, 1, @Content);
+                """))
+            {
+                AddVersionKey(insert, subjectId.Value, request.ProposedRevision.Value);
+                AddBytes(insert, "@Content", content);
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            _publicationStage?.Invoke("VersionInserted");
+            await using (var head = Command(connection, transaction, stored.Head is null
+                ? "INSERT INTO dbo.OperationalMetricCoverageHead (SubjectId, HeadRevision) VALUES (@Subject, @Revision);"
+                : "UPDATE dbo.OperationalMetricCoverageHead SET HeadRevision = @Revision WHERE SubjectId = @Subject AND HeadRevision = @Expected;"))
+            {
+                AddVersionKey(head, subjectId.Value, request.ProposedRevision.Value);
+                if (stored.Head is { } previous) { head.Parameters.Add("@Expected", SqlDbType.BigInt).Value = previous; }
+                if (await head.ExecuteNonQueryAsync(cancellationToken) != 1) { throw new InvalidDataException("Coverage head changed under subject serialization."); }
+            }
+
+            _publicationStage?.Invoke("HeadAdvanced");
+            await transaction.CommitAsync(cancellationToken);
+            _publicationStage?.Invoke("CommitAcknowledged");
+            return OperationalMetricCoveragePublicationOutcome.Appended;
+        }
+        catch (Exception exception) when (IsCanceledOperationalFailure(exception, cancellationToken))
         {
-            return OperationalMetricCoveragePublicationOutcome.IntegrityFailure;
+            throw new OperationCanceledException("Coverage publication was canceled; its commit outcome may be uncertain.", exception, cancellationToken);
         }
-
-        var decision = ClassifyProposal(stored.ProposedContent, content, stored.Head, request.ExpectedPredecessor?.Value);
-        if (decision is { } established) { return established; }
-
-        var subjectId = stored.SubjectId;
-        if (subjectId is null)
-        {
-            await using var insert = Command(connection, transaction, """
-                INSERT INTO dbo.OperationalMetricCoverageSubject
-                    (SubjectHash, IdentityCodecVersion, SubjectBinary, MetricAggregationProcessorRowId, MetricInputStreamRowId, SourcePosition)
-                OUTPUT INSERTED.SubjectId
-                VALUES (@Hash, 1, @Identity, @Processor, @Stream, @Position);
-                """);
-            AddBytes(insert, "@Hash", hash, 32);
-            AddBytes(insert, "@Identity", identity);
-            insert.Parameters.Add("@Processor", SqlDbType.BigInt).Value = source.Processor;
-            insert.Parameters.Add("@Stream", SqlDbType.BigInt).Value = source.Stream;
-            insert.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", request.Subject.SourceRevision.Position.Value));
-            subjectId = Convert.ToInt64(await insert.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
-            _publicationStage?.Invoke("SubjectInserted");
-        }
-
-        await using (var insert = Command(connection, transaction, """
-            INSERT INTO dbo.OperationalMetricCoverageVersion (SubjectId, AssessmentRevision, ContentCodecVersion, ContentBinary)
-            VALUES (@Subject, @Revision, 1, @Content);
-            """))
-        {
-            AddVersionKey(insert, subjectId.Value, request.ProposedRevision.Value);
-            AddBytes(insert, "@Content", content);
-            await insert.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        _publicationStage?.Invoke("VersionInserted");
-        await using (var head = Command(connection, transaction, stored.Head is null
-            ? "INSERT INTO dbo.OperationalMetricCoverageHead (SubjectId, HeadRevision) VALUES (@Subject, @Revision);"
-            : "UPDATE dbo.OperationalMetricCoverageHead SET HeadRevision = @Revision WHERE SubjectId = @Subject AND HeadRevision = @Expected;"))
-        {
-            AddVersionKey(head, subjectId.Value, request.ProposedRevision.Value);
-            if (stored.Head is { } previous) { head.Parameters.Add("@Expected", SqlDbType.BigInt).Value = previous; }
-            if (await head.ExecuteNonQueryAsync(cancellationToken) != 1) { throw new InvalidDataException("Coverage head changed under subject serialization."); }
-        }
-
-        _publicationStage?.Invoke("HeadAdvanced");
-        await transaction.CommitAsync(cancellationToken);
-        _publicationStage?.Invoke("CommitAcknowledged");
-        return OperationalMetricCoveragePublicationOutcome.Appended;
     }
 
     public async ValueTask<OperationalMetricCoverageReadResult> ReadExactAsync(OperationalMetricCoverageSubject subject,
@@ -110,13 +119,19 @@ internal sealed class SqlServerOperationalMetricCoverageAssessmentStore : IOpera
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
             await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            _publicationStage?.Invoke("SubjectLockRequested");
             await AcquireAsync(connection, transaction, hash, "Shared", cancellationToken);
+            _publicationStage?.Invoke("SubjectLockAcquired");
             var stored = await InspectAsync(connection, transaction, subject, identity, hash, revision.Value, cancellationToken);
             var result = stored.Assessment is null
                 ? OperationalMetricCoverageReadResult.WithoutAssessment(stored.Outcome)
                 : OperationalMetricCoverageReadResult.Found(stored.Assessment);
             await transaction.CommitAsync(cancellationToken);
             return result;
+        }
+        catch (Exception exception) when (IsCanceledOperationalFailure(exception, cancellationToken))
+        {
+            throw new OperationCanceledException("Coverage read was canceled.", exception, cancellationToken);
         }
         catch (SqlException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -143,6 +158,9 @@ internal sealed class SqlServerOperationalMetricCoverageAssessmentStore : IOpera
 
         return head != expectedPredecessor ? OperationalMetricCoveragePublicationOutcome.PredecessorConflict : null;
     }
+
+    private static bool IsCanceledOperationalFailure(Exception exception, CancellationToken cancellationToken) =>
+        cancellationToken.IsCancellationRequested && exception is SqlException or CoverageLockException;
 
     private byte[] GetHash(byte[] identity)
     {
