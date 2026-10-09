@@ -63,13 +63,13 @@ public sealed class SqlServerRuntimeSchemaCompatibilityVerifierIntegrationTests
         await ApplyCurrentAsync(connection);
         await ExecuteAsync(
             connection,
-            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 14;");
+            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 15;");
 
         var result = await VerifyAsync(connection);
 
         Assert.Equal(SqlRuntimeCompatibilityClassification.MigrationPending, result.Classification);
         Assert.False(result.IsCompatible);
-        Assert.Equal(13, await CountHistoryRowsAsync(connection));
+        Assert.Equal(14, await CountHistoryRowsAsync(connection));
     }
 
     [Fact]

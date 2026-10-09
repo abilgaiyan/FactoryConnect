@@ -15,6 +15,7 @@ public static class PersistenceServiceCollectionExtensions
         typeof(IMetricAggregationRevisionReader),
         typeof(IRevisionedOperationalMetricComponentSnapshotReader),
         typeof(IOperationalMetricProjectionStore),
+        typeof(IOperationalMetricCoverageAssessmentStore),
         typeof(IOperationalMetricProjectionQueryReader),
         typeof(IOperationalMetricReportingQueryProvider),
         typeof(IMachineShiftOccurrenceRosterStore),
@@ -30,6 +31,7 @@ public static class PersistenceServiceCollectionExtensions
         PersistenceProviderCapabilities.MetricAggregationRevisionReading,
         PersistenceProviderCapabilities.RevisionedOperationalMetricSnapshotReading,
         PersistenceProviderCapabilities.OperationalMetricProjectionStorage,
+        PersistenceProviderCapabilities.OperationalMetricCoverageAssessmentStorage,
         PersistenceProviderCapabilities.OperationalMetricProjectionQuery,
         PersistenceProviderCapabilities.OperationalMetricReportingQuery,
         PersistenceProviderCapabilities.MachineShiftOccurrenceRoster,
@@ -142,6 +144,14 @@ public static class PersistenceServiceCollectionExtensions
                     .GetRequiredService<PersistenceProviderServices>()
                     .RevisionedOperationalMetricComponentSnapshotReader
                     ?? throw MissingProviderService(nameof(IRevisionedOperationalMetricComponentSnapshotReader)));
+        }
+
+        if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetricCoverageAssessmentStorage) != 0)
+        {
+            services.AddSingleton<IOperationalMetricCoverageAssessmentStore>(
+                static serviceProvider => serviceProvider.GetRequiredService<PersistenceProviderServices>()
+                    .OperationalMetricCoverageAssessmentStore
+                    ?? throw MissingProviderService(nameof(IOperationalMetricCoverageAssessmentStore)));
         }
 
         if ((requiredCapabilities & PersistenceProviderCapabilities.OperationalMetricProjectionStorage) != 0)

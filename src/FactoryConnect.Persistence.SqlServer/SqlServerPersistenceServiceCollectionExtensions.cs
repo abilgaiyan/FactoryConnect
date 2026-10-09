@@ -27,6 +27,7 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                 PersistenceProviderCapabilities.MetricAggregationRevisionReading |
                 PersistenceProviderCapabilities.RevisionedOperationalMetricSnapshotReading |
                 PersistenceProviderCapabilities.OperationalMetricProjectionStorage |
+                PersistenceProviderCapabilities.OperationalMetricCoverageAssessmentStorage |
                 PersistenceProviderCapabilities.OperationalMetricProjectionQuery |
                 PersistenceProviderCapabilities.OperationalMetricReportingQuery |
                 PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
@@ -80,7 +81,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         productionContextActivityReader:
                             productionContextActivityReader,
                         operationalMetricProjectionPrerequisite:
-                            new SqlServerOperationalMetricProjectionPrerequisite(connectionString));
+                            new SqlServerOperationalMetricProjectionPrerequisite(connectionString),
+                        operationalMetricCoverageAssessmentStore:
+                            new SqlServerOperationalMetricCoverageAssessmentStore(connectionString));
                 },
                 _ =>
                 {

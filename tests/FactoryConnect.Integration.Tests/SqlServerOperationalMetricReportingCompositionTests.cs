@@ -29,7 +29,8 @@ public sealed class SqlServerOperationalMetricReportingCompositionTests
 
         var expected =
             PersistenceProviderCapabilities.All |
-            PersistenceProviderCapabilities.CurrentStateAuthorityReading;
+            PersistenceProviderCapabilities.CurrentStateAuthorityReading |
+            PersistenceProviderCapabilities.OperationalMetricCoverageAssessmentStorage;
 
         Assert.Equal(expected, registration.Capabilities);
         Assert.Equal(

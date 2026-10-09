@@ -6,6 +6,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <EmbeddedResource Include="Sql\015_DurableOperationalMetricCoverageAssessment.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.015_DurableOperationalMetricCoverageAssessment.sql" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Sql\001_InitialObservationIngestion.sql"

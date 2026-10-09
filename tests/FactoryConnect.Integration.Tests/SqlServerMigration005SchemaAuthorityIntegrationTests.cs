@@ -14,7 +14,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Equal(21, SqlRepositorySchemaDescriptors.Post007.Tables.Length);
         Assert.Equal(34, SqlRepositorySchemaDescriptors.Post012.Tables.Length);
         Assert.Equal(36, SqlRepositorySchemaDescriptors.Post013.Tables.Length);
-        Assert.Equal(37, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(40, SqlRepositorySchemaDescriptors.Current.Tables.Length);
 
         var legacyNames = SqlRepositorySchemaDescriptors.LegacyPost004.Tables
             .Select(static table => table.Name.ObjectName)
