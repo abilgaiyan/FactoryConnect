@@ -246,9 +246,9 @@ public sealed class OperationalMetricCoverageAssessment : IEquatable<Operational
             case OperationalMetricCoverageClassification.Incomplete:
                 if (Reason != OperationalMetricCoverageReason.CoverageGapEstablished ||
                     HistoricalScheduleAuthority is null || ExpectedIntervals is null || AssessedIntervals is null ||
-                    GapIntervals.Count == 0 || EvidenceReferences.Count == 0)
+                    CompletionBoundaryUtc is null || GapIntervals.Count == 0 || EvidenceReferences.Count == 0)
                 {
-                    throw new ArgumentException("Incomplete coverage requires established expected coverage and evidenced contained gaps.");
+                    throw new ArgumentException("Incomplete coverage requires established expected coverage, a completion boundary and evidenced contained gaps.");
                 }
 
                 break;

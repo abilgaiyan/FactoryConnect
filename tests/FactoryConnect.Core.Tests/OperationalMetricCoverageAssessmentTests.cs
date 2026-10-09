@@ -59,7 +59,7 @@ public sealed class OperationalMetricCoverageAssessmentTests
         var assessment = Create(
             classification: OperationalMetricCoverageClassification.Incomplete,
             reason: OperationalMetricCoverageReason.CoverageGapEstablished,
-            assessed: [Whole], expected: [Whole], schedule: Schedule,
+            assessed: [Whole], expected: [Whole], boundary: Whole.EndsAtUtc, schedule: Schedule,
             classified: [new(Start, gap.StartsAtUtc)], gaps: [gap], evidence: [Evidence]);
         Assert.Single(assessment.GapIntervals);
     }
@@ -99,12 +99,27 @@ public sealed class OperationalMetricCoverageAssessmentTests
         Assert.Throws<ArgumentException>(() => Create(
             classification: OperationalMetricCoverageClassification.Incomplete,
             reason: OperationalMetricCoverageReason.CoverageGapEstablished,
-            assessed: [Whole], expected: [Whole], schedule: Schedule, evidence: [Evidence]));
+            assessed: [Whole], expected: [Whole], boundary: Whole.EndsAtUtc, schedule: Schedule, evidence: [Evidence]));
+        Assert.Throws<ArgumentException>(() => Create(
+            classification: OperationalMetricCoverageClassification.Incomplete,
+            reason: OperationalMetricCoverageReason.CoverageGapEstablished,
+            assessed: [Whole], expected: [Whole], boundary: Whole.EndsAtUtc, schedule: Schedule,
+            gaps: [new(Whole.EndsAtUtc, Whole.EndsAtUtc.AddHours(1))], evidence: [Evidence]));
+    }
+
+    [Fact]
+    public void IncompleteRequiresCompletionBoundary()
+    {
         Assert.Throws<ArgumentException>(() => Create(
             classification: OperationalMetricCoverageClassification.Incomplete,
             reason: OperationalMetricCoverageReason.CoverageGapEstablished,
             assessed: [Whole], expected: [Whole], schedule: Schedule,
-            gaps: [new(Whole.EndsAtUtc, Whole.EndsAtUtc.AddHours(1))], evidence: [Evidence]));
+            gaps: [Whole], evidence: [Evidence]));
+        Assert.Throws<ArgumentException>(() => Create(
+            classification: OperationalMetricCoverageClassification.Incomplete,
+            reason: OperationalMetricCoverageReason.CoverageGapEstablished,
+            assessed: [Whole], expected: [Whole], boundary: Start.AddHours(7),
+            schedule: Schedule, gaps: [Whole], evidence: [Evidence]));
     }
 
     [Fact]
