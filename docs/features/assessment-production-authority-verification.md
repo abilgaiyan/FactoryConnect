@@ -5,7 +5,7 @@ Semantic and concrete API decisions are frozen. This implementation adds typed i
 
 ## Admission boundary
 
-The verifier issues admission for one exact claim, its complete aggregation checkpoint A, retained immutable inputs and exact policy. Admission is not a coverage classification, evidence-quality ranking, durable publication or factory authority designation. A later authority claim can describe A, but its contribution positions cannot exceed A. Unknown machine state is an accounted fragment; missing duration alone does not establish a gap. Completion requires explicit authorized fragments/gaps accounting for the period. Schedule completeness is explicit; an authorized incomplete schedule claim cannot establish empty expected production intervals.
+The verifier issues admission for one exact claim, its complete aggregation checkpoint A, retained immutable inputs and exact policy. Admission is not a coverage classification, evidence-quality ranking, durable publication or factory authority designation. A later authority claim can describe A, but its contribution positions cannot exceed A. Unknown machine state is an accounted fragment; missing duration alone does not establish a gap. Completion requires explicit authorized fragments/gaps accounting for the period, with its boundary exactly equal to that period’s end. Schedule completeness is explicit; an authorized incomplete schedule claim cannot establish empty expected production intervals.
 
 There are no production readers, trust-anchor registrations, producer/evaluator wiring, migrations, backfills or operational metric changes in this slice. Existing I1/I2 storage remains unchanged. R3243 remains **Unproven**. Synthetic references and positions used by tests establish verifier behavior only.
 
@@ -35,7 +35,7 @@ Delegation is checked at issuance, through an immutable chain terminating at a p
 
 V1 requires revocation completeness through the retained verification time for each used delegation link, applicable scope and period, from the designation's explicit revocation source. Completeness cannot claim a horizon later than its issuance, and issuance cannot follow verification. Thus this strict V1 uses an exact as-of completeness horizon; an older horizon produces `NotEstablished`. A future bounded/stale-horizon policy requires an explicitly supported different implementation. Claims issued earlier can be verified at this retained as-of time.
 
-A completeness manifest lists exact decision revisions. Known selected decisions affecting a covered link through its horizon cannot be omitted. Prospective decisions cannot become effective before issuance. Retrospective decisions require the separate retrospective permission. Relevant authorized decisions apply at the authorization's use time, including delegation issuance. Revocation findings are deferred until decision/completeness issuers' own dependencies are established. Unestablished or disqualified supporting issuer authority cannot establish rejection of the assessed claim.
+A completeness manifest lists exact decision revisions. Known selected decisions affecting a covered link through its horizon cannot be omitted. Prospective decisions cannot become effective before issuance. Retrospective decisions require the separate retrospective permission. Relevant authorized decisions apply at the authorization's use time, including delegation issuance. Any positive period overlap and intersecting explicit scope prevents admission of the whole claim; a narrower machine/line revocation also affects a broader containing scope. Adjacent half-open periods and unrelated scopes do not overlap. Revocation findings are deferred until decision/completeness issuers' own dependencies are established. Unestablished or disqualified supporting issuer authority cannot establish rejection of the assessed claim.
 
 All selected immutable references must resolve exactly once or have established absence. Conflicting content, reference substitution, malformed snapshots and static dependency cycles fail distinctly. Authority/completeness proof dependencies must also be finite and acyclic; self-issued completeness cannot bootstrap its own authorization. Different applicable claims for the same subject/kind, scope, period and A with different content remain `NotEstablished` under V1's conservative conflict policy. Distinct fragment identities do not conflict merely because they share a period. No automatic evidence preference or reassessment occurs.
 
@@ -50,8 +50,10 @@ Implementation verification in the remote workspace (.NET SDK 10.0.401, Release)
 | Check | Evidence |
 | --- | --- |
 | Solution build | PASS, 0 warnings / 0 errors |
-| Core | 651/651 PASS, 0 skipped (47 new authority cases) |
+| Core | 656/656 PASS, 0 skipped (52 new authority cases) |
 | Non-SQL integration | 681/681 PASS, 0 skipped |
 | Diff review | Implementer reviewed the final contracts, resolver, verifier, synthetic tests and documentation; independent review remains a separate acceptance action. |
 
 Package restoration required rebuilding this workspace's incomplete NuGet cache from public packages; repository dependency versions and configuration were not changed. No real-SQL or factory operations were executed. The PowerShell acceptance runner still requires execution on the local Windows checkout.
+
+Review corrections: partial-period and narrower-scope revocation now block whole-claim admission; completion cannot claim a boundary beyond its accounted period. Five regression cases cover both blockers and non-overlapping controls.

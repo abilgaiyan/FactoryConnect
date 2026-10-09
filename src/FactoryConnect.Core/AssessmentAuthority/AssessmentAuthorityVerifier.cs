@@ -203,7 +203,8 @@ public sealed class AssessmentAuthorityVerifier : IAssessmentAuthorityVerifier
                         decision.Scope, decision.ApplicablePeriod, decision.IssuedAtUtc, primary: false);
                     if (_failure is not null) { DependencyFailure(decision.Reference); return; }
                     if (decision.Targets.Contains((AuthorityAuthorizationReference)use.Authorization.Reference)
-                        && decision.Scope.Contains(use.Scope) && AuthoritySnapshotValidation.Contains(decision.ApplicablePeriod, use.Period)
+                        && ScopesOverlap(decision.Scope, use.Scope) && decision.ApplicablePeriod.StartsAtUtc < use.Period.EndsAtUtc
+                        && use.Period.StartsAtUtc < decision.ApplicablePeriod.EndsAtUtc
                         && use.UsedAt >= decision.EffectiveAtUtc)
                     {
                         if (!use.Primary)
@@ -213,6 +214,9 @@ public sealed class AssessmentAuthorityVerifier : IAssessmentAuthorityVerifier
                 }
             }
         }
+
+        private static bool ScopesOverlap(AssessmentAuthorityScope first, AssessmentAuthorityScope second) =>
+            first.Contains(second) || second.Contains(first);
 
         private static bool SameClaimSubject(AssessmentAuthorityClaim first, AssessmentAuthorityClaim second) =>
             first.Content is not AssessmentAuthorityClaimContent.Fragment fragment

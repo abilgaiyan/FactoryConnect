@@ -154,6 +154,68 @@ public sealed class AssessmentAuthorityVerificationTests
         else { Assert.IsType<AuthorityVerificationResult.Authorized>(result); }
     }
 
+    [Theory]
+    [InlineData("partial-period", true)]
+    [InlineData("narrower-scope", true)]
+    [InlineData("adjacent-period", false)]
+    [InlineData("other-machine", false)]
+    public async Task RevocationOverlapPreventsWholeClaimAdmission(string shape, bool rejected)
+    {
+        var fixture = new Fixture(true);
+        var scope = Fixture.Scope;
+        var period = Fixture.Day;
+        if (shape == "partial-period") { period = new(Fixture.Period.StartsAtUtc.AddMinutes(30), Fixture.Period.EndsAtUtc); }
+        if (shape == "adjacent-period") { period = new(Fixture.Period.EndsAtUtc, Fixture.Period.EndsAtUtc.AddHours(1)); }
+        if (shape == "narrower-scope")
+        {
+            var broad = new AssessmentAuthorityScope.SiteScope(Fixture.Scope.Company, Fixture.Scope.Site);
+            fixture.ReplaceRoot(new(Fixture.RootReference, Fixture.Root, Fixture.Root, "synthetic", Fixture.Window,
+                Fixture.Grants().Select(grant => new AssessmentAuthorityGrant(grant.Kind, broad, grant.Period, true, true))));
+            fixture.Replace(new AssessmentAuthorityAuthorization(Fixture.AuthorizationReference, Fixture.Root, Fixture.Delegate,
+                Fixture.RootReference, null, Fixture.Time.AddHours(-3), Fixture.AuthorizationWindow,
+                Fixture.Grants().Select(grant => new AssessmentAuthorityGrant(grant.Kind, broad, grant.Period, true, true))));
+            var claim = fixture.Claim;
+            fixture.ReplaceClaim(new((AuthorityClaimReference)claim.Reference, claim.Issuer, claim.Authorization,
+                claim.IssuedAtUtc, broad, claim.Period, claim.AggregationRevision, claim.Content));
+            fixture.Replace(new AssessmentAuthorityRevocationCompleteness(Fixture.CompletenessReference, Fixture.Root,
+                [Fixture.AuthorizationReference], Fixture.Time, Fixture.Root, Fixture.RootReference, Fixture.Time, broad, Fixture.Day, []));
+        }
+        if (shape == "other-machine") { scope = new AssessmentAuthorityScope.MachineScope(scope.Company, scope.Site,
+            new("line"), new(Guid.NewGuid())); }
+        var reference = new AuthorityRevocationReference(Fixture.Domain, "overlap-decision", new("1"));
+        // The decision's issuer must itself be permitted for the selected scope.
+        if (shape == "other-machine") { fixture.ReplaceRoot(new(Fixture.RootReference, Fixture.Root, Fixture.Root, "synthetic",
+            Fixture.Window, Fixture.Grants().Concat(Fixture.Grants().Select(grant =>
+                new AssessmentAuthorityGrant(grant.Kind, scope, grant.Period, true, true))))); }
+        fixture.Values.Add(new AssessmentAuthorityRevocation(reference, Fixture.Root, Fixture.RootReference,
+            [Fixture.AuthorizationReference], Fixture.Time, Fixture.Time.AddHours(-1),
+            AssessmentAuthorityRevocationEffect.Retrospective, scope, period));
+        var completeness = fixture.Values.OfType<AssessmentAuthorityRevocationCompleteness>().Single();
+        fixture.Replace(new AssessmentAuthorityRevocationCompleteness(Fixture.CompletenessReference, Fixture.Root,
+            completeness.CoveredLinks, Fixture.Time, Fixture.Root, Fixture.RootReference, Fixture.Time,
+            completeness.Scope, Fixture.Day, [reference]));
+        var result = await fixture.Verify();
+        if (rejected) { Assert.Equal(AuthorityRejectedReason.Revoked, Assert.IsType<AuthorityVerificationResult.Rejected>(result).Reason); }
+        else { Assert.IsType<AuthorityVerificationResult.Authorized>(result); }
+    }
+
+    [Fact]
+    public async Task CompletionCannotClaimBoundaryBeyondAccountedPeriod()
+    {
+        var fixture = new Fixture();
+        var gap = new AuthorityClaimReference(Fixture.Domain, "accounted-period", new("1"));
+        fixture.Values.Add(new AssessmentAuthorityClaim(gap, Fixture.Root, Fixture.RootReference,
+            Fixture.Time.AddHours(-1), Fixture.Scope, Fixture.Period, Fixture.Cut,
+            new AssessmentAuthorityClaimContent.Gap(Fixture.Period, [new("gap", "whole-period", "1")])));
+        fixture.ReplaceClaim(fixture.NewClaim(new AssessmentAuthorityClaimContent.Completion(
+            Fixture.Period.EndsAtUtc.AddTicks(1), [gap])));
+        var failure = Assert.IsType<AuthorityInputResolution.Failed>(await fixture.Resolve());
+        Assert.Equal(AuthorityDiagnosticCode.InvalidClaimContent, failure.Error.Code);
+        var inputs = new ResolvedAuthorityVerificationInputs(fixture.Request(), fixture.Values.Select(value =>
+            new AuthorityExactLookup.Found(value.Reference, value)));
+        Assert.IsType<AuthorityVerificationResult.Failed>(new AssessmentAuthorityVerifier().Verify(inputs, CancellationToken.None));
+    }
+
     [Fact]
     public async Task UnauthorizedRetrospectiveDecisionCannotEstablishRevokedFinding()
     {

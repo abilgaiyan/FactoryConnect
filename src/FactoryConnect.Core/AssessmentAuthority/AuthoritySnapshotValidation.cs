@@ -110,7 +110,7 @@ internal static class AuthoritySnapshotValidation
                         { return Error(AuthorityDiagnosticCode.InvalidClaimContent, claim.Reference); }
                         break;
                     case AssessmentAuthorityClaimContent.Completion completion:
-                        if (completion.BoundaryUtc < claim.Period.EndsAtUtc || completion.BoundaryUtc > claim.IssuedAtUtc
+                        if (completion.BoundaryUtc != claim.Period.EndsAtUtc || completion.BoundaryUtc > claim.IssuedAtUtc
                             || completion.AccountedClaims.Distinct().Count() != completion.AccountedClaims.Count)
                         { return Error(AuthorityDiagnosticCode.InvalidClaimContent, claim.Reference); }
                         break;
