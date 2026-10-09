@@ -3,4 +3,7 @@
     <RootNamespace>FactoryConnect.Abstractions</RootNamespace>
     <AssemblyName>FactoryConnect.Abstractions</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FactoryConnect.Core" />
+  </ItemGroup>
 </Project>
