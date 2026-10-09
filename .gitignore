@@ -19,3 +19,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 /src/FactoryConnect.Dashboard/wwwroot/
+
+# Local verification evidence and factory backup copies (never commit)
+/.proof/
+/factory-backups/
