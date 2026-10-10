@@ -1,3 +1,4 @@
+import { formatReportDate, formatReportTimestamp } from "../presentation/date-formatting.ts";
 import { createElement, type ChangeEvent, type ReactElement } from "react";
 
 import { ProductionDayOverviewMatrix } from "./ProductionDayOverviewMatrix.ts";
@@ -33,6 +34,7 @@ export function ProductionDayOverviewSurface({
   return createElement(
     "div",
     { "aria-busy": loading || refreshing ? "true" : "false" },
+    createElement("div", { className: "production-day-overview-controls" },
     createElement("label", { htmlFor: "production-day-overview-selector" }, "Production day"),
     createElement("input", {
       id: "production-day-overview-selector",
@@ -45,13 +47,13 @@ export function ProductionDayOverviewSurface({
       type: "button",
       onClick: handleRefresh,
       disabled: loading,
-    }, "Refresh"),
+    }, "Refresh")),
     overview.lastSuccessfulRetrieval === null
       ? null
       : createElement(
         "p",
         null,
-        `Last loaded for ${overview.lastSuccessfulRetrieval.productionDay}: ${overview.lastSuccessfulRetrieval.retrievedAt.toLocaleString()}`,
+        `Last loaded for ${formatReportDate(overview.lastSuccessfulRetrieval.productionDay)}: ${formatReportTimestamp(overview.lastSuccessfulRetrieval.retrievedAt)}`,
       ),
     createElement(ProductionDayOverviewStateView, { state: overview.state }),
   );

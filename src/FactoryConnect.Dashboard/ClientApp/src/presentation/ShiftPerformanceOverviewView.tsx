@@ -1,3 +1,4 @@
+import { formatReportDate, formatReportTimestamp } from "./date-formatting.ts";
 import type {
   PresentedMetric,
   ShiftPerformanceGroup,
@@ -15,20 +16,20 @@ export function ShiftPerformanceOverviewView({ overview }: ShiftPerformanceOverv
   return (
     <section aria-labelledby="shift-performance-title">
       <h2 id="shift-performance-title">Shift performance</h2>
-      <p>Production day: {overview.productionDay}</p>
+      <p>Production day: {formatReportDate(overview.productionDay)}</p>
       {overview.groups.length === 0
         ? <p>No configured machines.</p>
         : overview.groups.map((group, index) => (
-          <ShiftPerformanceGroupView key={`${group.groupName ?? "ungrouped"}-${index}`} group={group} />
+          <ShiftPerformanceGroupView key={`${group.groupName ?? "ungrouped"}-${index}`} group={group} showHeading={overview.groups.length > 1} />
         ))}
     </section>
   );
 }
 
-function ShiftPerformanceGroupView({ group }: { readonly group: ShiftPerformanceGroup }) {
+function ShiftPerformanceGroupView({ group, showHeading }: { readonly group: ShiftPerformanceGroup; readonly showHeading: boolean }) {
   return (
     <section aria-label={group.groupName ?? "Ungrouped machines"}>
-      <h3>{group.groupName ?? "Ungrouped"}</h3>
+      {showHeading && <h3>{group.groupName ?? "Ungrouped"}</h3>}
       {group.machines.map(machine => (
         <ShiftPerformanceMachineView
           key={`${machine.machineId}\u0000${machine.processorId}`}
@@ -50,7 +51,7 @@ function ShiftPerformanceMachineView({ machine }: { readonly machine: ShiftPerfo
             <thead>
               <tr>
                 <th scope="col">Shift</th>
-                <th scope="col">UTC interval</th>
+                <th scope="col">Interval (IST)</th>
                 <th scope="col">Availability</th>
                 <th scope="col">Utilization</th>
                 <th scope="col">Performance</th>
@@ -76,7 +77,7 @@ function ShiftOccurrenceView({ shift }: { readonly shift: ShiftPerformanceShift 
   return (
     <tr>
       <th scope="row">{shift.shift.shiftId}</th>
-      <td><time dateTime={shift.shift.startsAtUtc}>{shift.shift.startsAtUtc}</time> – <time dateTime={shift.shift.endsAtUtc}>{shift.shift.endsAtUtc}</time></td>
+      <td><time dateTime={shift.shift.startsAtUtc}>{formatReportTimestamp(shift.shift.startsAtUtc)}</time> – <time dateTime={shift.shift.endsAtUtc}>{formatReportTimestamp(shift.shift.endsAtUtc)}</time></td>
       <PresentedMetricValue metric={shift.availability} />
       <PresentedMetricValue metric={shift.utilization} />
       <PresentedMetricValue metric={shift.performance} />

@@ -85,6 +85,8 @@ test("renders the empty configured factory distinctly", () => {
 test("renders a configured machine with no authoritative occurrences distinctly", () => {
   const html = render(overview([{ groupName: "Line A", machines: [machine("M1", "Machine One")] }]));
   assert.match(html, /Machine One/);
+  assert.doesNotMatch(html, /<h3>/);
+  assert.match(html, /aria-label="Line A"/);
   assert.match(html, /No authoritative shift occurrences returned\./);
   assert.doesNotMatch(html, /No configured machines\./);
 });
@@ -104,6 +106,8 @@ test("preserves configured group and machine order", () => {
     { groupName: "Line A", machines: [machine("M1", "Machine One"), machine("M3", "Machine Three")] },
   ]));
 
+  assert.match(html, /<h3>Line B<\/h3>/);
+  assert.match(html, /<h3>Line A<\/h3>/);
   assert.ok(html.indexOf("Line B") < html.indexOf("Line A"));
   assert.ok(html.indexOf("Machine Two") < html.indexOf("Machine Four"));
   assert.ok(html.indexOf("Machine One") < html.indexOf("Machine Three"));

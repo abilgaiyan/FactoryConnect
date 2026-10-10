@@ -1,3 +1,4 @@
+import { formatReportDate, formatReportTimestamp } from "./date-formatting.ts";
 import type { DailyReportLifecycleState } from "../application/daily-report-lifecycle.ts";
 import type {
   DailyReportCell,
@@ -96,7 +97,7 @@ function DailyReportDocument({
       <header className="daily-report-document-header">
         <p>FactoryConnect</p>
         <h2 id="daily-report-document-title">Daily Report</h2>
-        <p>Production day: <time dateTime={productionDay}>{productionDay}</time></p>
+        <p>Production day: <time dateTime={productionDay}>{formatReportDate(productionDay)}</time></p>
       </header>
 
       {model.groups.length === 0
@@ -107,7 +108,7 @@ function DailyReportDocument({
               key={`${group.groupName ?? "ungrouped"}-${groupIndex}`}
               aria-label={group.groupName ?? "Ungrouped machines"}
             >
-              <h3>{group.groupName ?? "Ungrouped"}</h3>
+              {model.groups.length > 1 && <h3>{group.groupName ?? "Ungrouped"}</h3>}
               {group.machines.map(machine => (
                 <DailyReportMachineSection key={`${machine.processorId}:${machine.machineId}`} machine={machine} />
               ))}
@@ -144,9 +145,9 @@ function DailyReportShiftSection({ shift }: { readonly shift: DailyReportShift }
     <section className="daily-report-shift">
       <h6>{shift.shift.shiftId}</h6>
       <p>
-        <time dateTime={shift.shift.startsAtUtc}>{shift.shift.startsAtUtc}</time>
+        <time dateTime={shift.shift.startsAtUtc}>{formatReportTimestamp(shift.shift.startsAtUtc)}</time>
         {" – "}
-        <time dateTime={shift.shift.endsAtUtc}>{shift.shift.endsAtUtc}</time>
+        <time dateTime={shift.shift.endsAtUtc}>{formatReportTimestamp(shift.shift.endsAtUtc)}</time>
       </p>
       <MetricTable cells={shift.cells} caption={`${shift.shift.shiftId} metrics`} />
     </section>

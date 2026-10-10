@@ -122,10 +122,11 @@ test("request reporting and presentation failures are visible alerts", () => {
   }
 });
 
-test("successful surface renders the grouped production-day matrix", () => {
+test("successful surface renders the matrix without repeating a single group heading", () => {
   const html = render(binding({ kind: "success", model: successModel() }));
 
-  assert.match(html, /Line 1/);
+  assert.doesNotMatch(html, /<h2>Line 1<\/h2>/);
+  assert.match(html, /class="production-day-overview-controls"/);
   assert.match(html, /Machine 1/);
   assert.match(html, />Availability<\/th>/);
   assert.match(html, />OEE<\/th>/);
@@ -139,6 +140,14 @@ test("last successful production day and retrieval timestamp are visible", () =>
     { lastSuccessfulRetrieval: { productionDay, retrievedAt } },
   ));
 
-  assert.match(html, /Last loaded for 2026-09-01:/);
-  assert.ok(html.includes(retrievedAt.toLocaleString()));
+  assert.match(html, /Last loaded for 01\/09\/2026:/);
+  assert.ok(html.includes("01/09/2026 13:35:00 IST"));
+});
+
+test("multiple report groups retain distinct labels", () => {
+  const model = successModel();
+  model.groups.push({ ...model.groups[0], groupName: "Line 2" });
+  const html = render(binding({ kind: "success", model }));
+  assert.match(html, /<h2>Line 1<\/h2>/);
+  assert.match(html, /<h2>Line 2<\/h2>/);
 });

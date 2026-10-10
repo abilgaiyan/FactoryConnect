@@ -332,7 +332,7 @@ test("overview production modules stay inside the reporting presentation depende
     const imports = [...source.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]);
     for (const dependency of imports) {
       assert.ok(
-        dependency === "react" || allowedPrefixes.some((prefix) => dependency.startsWith(prefix)),
+        dependency === "../presentation/date-formatting.ts" || dependency === "react" || allowedPrefixes.some((prefix) => dependency.startsWith(prefix)),
         `${modulePath} imports disallowed dependency ${dependency}`,
       );
     }
