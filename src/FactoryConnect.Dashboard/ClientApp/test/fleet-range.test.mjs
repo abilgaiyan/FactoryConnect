@@ -109,3 +109,50 @@ test('decimal strings plot approximately without replacing exact values; nonzero
     assert.equal(plottedValue({ ...item, value: '0e9999' }), 0);
     assert.equal(plottedValue({ ...item, status: 'insufficient-evidence', value: null }), null);
 });
+
+test('distinct metrics in one group must share every checkpoint field, including across pages', async () => {
+    for (const changed of [{position: 2}, {processorId: 'different-aggregation'}, {streamKey: 'different-stream'}]) {
+        let calls = 0;
+        await assert.rejects(loadRange('2026-10-09', '2026-10-09', [source], {
+            queryProductionDayMetrics: async () => ++calls === 1
+                ? {items: [item], continuationToken: 'page2'}
+                : {items: [{...item, metricKey: 'utilization.elr', sourceRevision: {...item.sourceRevision, ...changed}}], continuationToken: null},
+        }, new AbortController().signal), /Mixed aggregation checkpoints/);
+        assert.equal(calls, 2);
+    }
+});
+test('same group accepts distinct metrics at equivalent exact checkpoints; different days and processors remain independent', async () => {
+    const result = await loadRange('2026-10-09', '2026-10-10', [source, {...source, processorId: 'p2'}], {
+        queryProductionDayMetrics: async request => {
+            const changed = {...item, processorId: request.sources[0].processorId,
+                productionDay: {...item.productionDay, businessDate: request.fromInclusive},
+                sourceRevision: {...item.sourceRevision, position: request.fromInclusive === '2026-10-09' ? 1 : 2,
+                    processorId: request.sources[0].processorId === 'p1' ? 'a' : 'b'}};
+            return {items: [changed, {...changed, metricKey: 'utilization.elr', sourceRevision: {...changed.sourceRevision, position: String(changed.sourceRevision.position)}}], continuationToken: null};
+        },
+    }, new AbortController().signal);
+    assert.equal(result.length, 4);
+    assert.ok(result.every(row => row.items.length === 2));
+});
+test('oversized date or source/day selections fail before any request', async () => {
+    let calls = 0;
+    const client = {queryProductionDayMetrics: async () => { ++calls; return {items: [], continuationToken: null}; }};
+    for (const [from, through, sources] of [
+        ['0001-01-01', '9999-12-30', [source]],
+        ['2024-01-01', '2025-01-01', [source]],
+        ['2024-01-01', '2024-12-31', [source, {...source, processorId: 'p2'}, {...source, processorId: 'p3'}]],
+    ]) await assert.rejects(loadRange(from, through, sources, client, new AbortController().signal), /at most/);
+    assert.equal(calls, 0);
+    assert.throws(() => selectedDays('0001-01-01', '9999-12-30'), /at most/);
+    assert.equal(selectedDays('2024-01-01', '2024-12-31').length, 366);
+});
+test('selection at source/day limit is accepted; one combination beyond it is rejected', async () => {
+    let calls = 0;
+    const client = {queryProductionDayMetrics: async () => { ++calls; return {items: [], continuationToken: null}; }};
+    const sources = Array.from({length: 10}, (_, index) => ({...source, processorId: `p${index}`}));
+    const result = await loadRange('2026-01-01', '2026-04-10', sources, client, new AbortController().signal);
+    assert.equal(result.length, 1000);
+    assert.equal(calls, 1000);
+    await assert.rejects(loadRange('2026-01-01', '2026-04-11', sources, client, new AbortController().signal), /at most/);
+    assert.equal(calls, 1000);
+});

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DashboardApplicationRuntime } from '../application/application-runtime.ts';
-import { loadRange, selectedDays, trendSegments, reportingIdentity, plottedValue, rangeMetrics, type RangeRow } from '../application/date-range-reporting.ts';
+import { loadRange, trendSegments, reportingIdentity, plottedValue, rangeMetrics, maximumRangeDays, maximumSourceDays, type RangeRow } from '../application/date-range-reporting.ts';
 export function DateRangePage({ runtime }: {
     runtime: DashboardApplicationRuntime;
 }) {
@@ -23,7 +23,6 @@ export function DateRangePage({ runtime }: {
         const own = ++generation.current;
         setState({ kind: 'loading' });
         try {
-            selectedDays(from, through);
             const sources = runtime.configuration.sources.filter(s => machines.includes(s.machineId.toLowerCase()));
             if (!sources.length)
                 throw new Error('Select at least one machine.');
@@ -45,6 +44,7 @@ export function DateRangePage({ runtime }: {
         series.set(key, values);
     }
     return <section className="fleet-range"><h1>Date-range results and trends</h1><p>Ongoing day: Undetermined — calendar provenance unavailable. Range ratios withheld — operand evidence unavailable.</p>
+    <p>Selection limit: {maximumRangeDays} inclusive days and {maximumSourceDays} reporting-source/day combinations. Each configured processor counts as a reporting source.</p>
     <form onSubmit={e => { e.preventDefault(); void submit(); }}><label>From <input type="date" required value={from} onChange={e => { invalidate(); setFrom(e.target.value); }}/></label>
     <label>Through (inclusive) <input type="date" required value={through} onChange={e => { invalidate(); setThrough(e.target.value); }}/></label>
     <fieldset><legend>Machines</legend>{[...new Set(runtime.configuration.sources.map(s => s.machineId.toLowerCase()))].map(id => <label key={id}><input type="checkbox" checked={machines.includes(id)} onChange={e => { invalidate(); setMachines(old => e.target.checked ? [...old, id] : old.filter(x => x !== id)); }}/>{id}</label>)}</fieldset>

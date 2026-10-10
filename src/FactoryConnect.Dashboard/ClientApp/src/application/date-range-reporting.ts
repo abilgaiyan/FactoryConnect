@@ -1,6 +1,19 @@
 import type { DashboardRuntimeSource } from './runtime-configuration.ts';
 import { isProductionDaySelection, queryAuthoritativeProductionDay } from './production-day-reporting.ts';
 import type { ReportingClient, OperationalMetricPage } from '../api/reporting/index.ts';
+export const maximumRangeDays = 366;
+export const maximumSourceDays = 1000;
+const millisecondsPerDay = 86_400_000;
+export function validateRangeSelection(from: string, through: string, sourceCount = 1): number {
+    if (!isProductionDaySelection(from) || !isProductionDaySelection(through) || from > through)
+        throw new Error('Select a valid inclusive date range.');
+    const count = (Date.parse(`${through}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / millisecondsPerDay + 1;
+    if (count > maximumRangeDays)
+        throw new Error(`Select at most ${maximumRangeDays} inclusive days.`);
+    if (!Number.isSafeInteger(sourceCount) || sourceCount < 0 || sourceCount > Math.floor(maximumSourceDays / count))
+        throw new Error(`Select at most ${maximumSourceDays} reporting-source/day combinations.`);
+    return count;
+}
 export const rangeMetrics = ['availability', 'utilization.elr', 'performance', 'quality', 'oee'] as const;
 export type RangeItem = OperationalMetricPage['items'][number];
 export interface RangeRow {
@@ -9,8 +22,7 @@ export interface RangeRow {
     items: RangeItem[];
 }
 export function selectedDays(from: string, through: string): string[] {
-    if (!isProductionDaySelection(from) || !isProductionDaySelection(through) || from > through)
-        throw new Error('Select a valid inclusive date range.');
+    validateRangeSelection(from, through);
     const days: string[] = [];
     for (let day = from; day <= through;) {
         days.push(day);
@@ -29,6 +41,7 @@ export function exactItemContent(item: RangeItem): string {
         item.sourceRevision.processorId, item.sourceRevision.machineId.toLowerCase(), item.sourceRevision.streamKey, item.sourceRevision.position]);
 }
 export async function loadRange(from: string, through: string, sources: readonly DashboardRuntimeSource[], client: ReportingClient, signal: AbortSignal): Promise<RangeRow[]> {
+    validateRangeSelection(from, through, sources.length);
     const rows: RangeRow[] = [];
     const days = selectedDays(from, through);
     for (const source of sources)
@@ -36,6 +49,7 @@ export async function loadRange(from: string, through: string, sources: readonly
             signal.throwIfAborted();
             const result = await queryAuthoritativeProductionDay(day, [source], client, { signal });
             const exact = new Map<string, RangeItem>();
+            let checkpoint: string | undefined;
             for (const item of result.items) {
                 if (item.scope !== 'production-day' || item.machineId.toLowerCase() !== source.machineId.toLowerCase() || item.processorId !== source.processorId
                     || item.productionDay?.businessDate !== day || item.productionDay.siteId !== source.siteId
@@ -46,6 +60,11 @@ export async function loadRange(from: string, through: string, sources: readonly
                 const previous = exact.get(key);
                 if (previous && exactItemContent(previous) !== exactItemContent(item))
                     throw new Error('Conflicting results for the same exact reporting identity.');
+                const revision = item.sourceRevision;
+                const fullCheckpoint = JSON.stringify([revision.processorId, revision.machineId.toLowerCase(), revision.streamKey, BigInt(revision.position).toString()]);
+                if (checkpoint !== undefined && checkpoint !== fullCheckpoint)
+                    throw new Error('Mixed aggregation checkpoints within one reporting source/site/day/context group.');
+                checkpoint = fullCheckpoint;
                 exact.set(key, item);
             }
             rows.push({ source, day, items: [...exact.values()] });

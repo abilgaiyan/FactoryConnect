@@ -61,3 +61,25 @@ test('failed range renders request failure and no absence rows or graph', async 
     assert.equal(h.document.querySelector('table'), null);
     assert.equal(h.document.querySelector('svg'), null);
 });
+
+test('mixed daily checkpoints produce an explicit error with no table or trend', async t => {
+    const r = runtime();
+    r.reportingClient.queryProductionDayMetrics = async () => ({items: [item, {...item, metricKey: 'utilization.elr', sourceRevision: {...item.sourceRevision, position: '2'}}], continuationToken: null});
+    const h = await mountInDom(React.createElement(App, {runtime: r}), 'http://factory-dashboard/reports/range');
+    t.after(() => h.dispose());
+    const inputs = h.document.querySelectorAll('input[type=date]');
+    await h.changeInput(inputs[0], '2026-10-09'); await h.changeInput(inputs[1], '2026-10-09'); await h.submit(inputs[0].form);
+    assert.match(h.document.querySelector('[role=alert]').textContent, /Mixed aggregation checkpoints/);
+    assert.equal(h.document.querySelector('table'), null); assert.equal(h.document.querySelector('svg'), null);
+});
+test('UI explains selection bounds and rejects oversized range without a request', async t => {
+    const r = runtime(); let calls = 0;
+    r.reportingClient.queryProductionDayMetrics = async () => { ++calls; return {items: [], continuationToken: null}; };
+    const h = await mountInDom(React.createElement(App, {runtime: r}), 'http://factory-dashboard/reports/range');
+    t.after(() => h.dispose());
+    assert.match(h.document.body.textContent, /366 inclusive days and 1000 reporting-source\/day combinations/);
+    const inputs = h.document.querySelectorAll('input[type=date]');
+    await h.changeInput(inputs[0], '0001-01-01'); await h.changeInput(inputs[1], '9999-12-30'); await h.submit(inputs[0].form);
+    assert.match(h.document.querySelector('[role=alert]').textContent, /at most 366/);
+    assert.equal(calls, 0);
+});
