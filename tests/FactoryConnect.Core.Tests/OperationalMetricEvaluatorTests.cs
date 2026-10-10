@@ -198,6 +198,46 @@ public sealed class OperationalMetricEvaluatorTests
     }
 
     [Fact]
+    public async Task Revision3243CandidateAvailabilityOperandsFailValidatedDomain()
+    {
+        // Isolated evaluator reproduction of the supplied committed-cut totals.
+        // Counts and timestamps below are fixture metadata, not factory ledger proof.
+        var machineId = new MachineId(Guid.Parse("de2fd552-9bc5-45ed-9a7c-0c4a2cd3e9ed"));
+        var processorId = new MetricAggregationProcessorId(
+            "metric-aggregation:de2fd552-9bc5-45ed-9a7c-0c4a2cd3e9ed");
+        var revision = new MetricAggregationCheckpoint(
+            processorId,
+            new MetricInputStreamId(machineId, "metric-inputs"),
+            new MetricInputPosition(3243));
+        var reader = new FakeOperationalMetricComponentSnapshotReader(revision);
+        const decimal actualProductionSeconds = 58_280.460536m;
+        const decimal plannedOperatingSeconds = 28_800m;
+        reader.Set(MetricInputKeys.ActualProductionTime,
+            Aggregate(actualProductionSeconds, MetricInputFactUnits.Seconds));
+        reader.Set(MetricInputKeys.PlannedOperatingTime,
+            Aggregate(plannedOperatingSeconds, MetricInputFactUnits.Seconds));
+        var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
+        var evaluator = new OperationalMetricEvaluator(catalog, reader, processorId);
+        var key = new OperationalMetricEvaluationKey(
+            machineId,
+            new OperationalMetricPeriodId.ProductionDay(
+                new ProductionDayId(new SiteId("isolated-r3243-fixture"), new DateOnly(2026, 10, 5))),
+            BuiltInOperationalMetricDefinitions.AvailabilityId,
+            OperationalMetricEvaluationContextKey.Unpartitioned);
+
+        Assert.Equal(2.02362710m,
+            decimal.Round(actualProductionSeconds / plannedOperatingSeconds, 8));
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            await evaluator.EvaluateAsync(key, CancellationToken.None));
+
+        Assert.Contains("outside its validated domain constraints", exception.Message);
+        Assert.Equal(1, reader.ReadCount);
+        var request = Assert.IsType<OperationalMetricComponentSnapshotRequest>(reader.LastRequest);
+        Assert.Equal(processorId, request.ProcessorId);
+        Assert.Equal(key, request.EvaluationKey);
+    }
+
+    [Fact]
     public async Task IncompatibleDurableComponentUnitFailsProcessing()
     {
         var fixture = CreateFixture();
