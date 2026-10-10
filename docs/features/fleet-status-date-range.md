@@ -29,3 +29,11 @@ Focused model and mounted-route fixtures cover duplicate machine sources, metada
 Remote workspace validation: TypeScript checks PASS; frontend production build PASS; complete frontend suite 375/375 PASS (24 new tests), zero skipped. Diff whitespace check PASS. .NET Release/Core/non-SQL integration and OpenAPI contract regeneration require local verification; no .NET SDK is available in the remote workspace. No SQL execution or factory operation is part of this change.
 
 Run `tests/deployment/Invoke-FleetRangeDashboardConformance.ps1 -ExpectedSha <exact implementation SHA>` from a clean checkout with .NET 10 and the repository's supported Node version. Review the exact implementation diff against the entry baseline. Synthetic tests do not establish factory authority. R3243 remains Unproven.
+
+## Report presentation review
+
+Shared report styles cover overview, shifts, daily report, fleet and range routes. Display dates use DD/MM/YYYY; timestamps explicitly identify IST while exact timestamp attributes remain unchanged. The browser civil date is only a range-selection default; ongoing-day authority remains Undetermined. Header metadata is labeled reporting groups/sites, because the source contract does not provide a company identity.
+
+Range ratios display percentages using the existing exact decimal formatter, alongside original API value/unit. Chart coordinates remain approximate. SVG labels have internal bottom space. Missing metric rows remain adjacent to their day. Fleet/range tables use keyboard-focusable scrolling containers and retain native table display for accessible layout. Print rules remove scrolling constraints.
+
+Final presentation checks: frontend 378/378 PASS, zero skipped; TypeScript PASS; production build PASS; diff check PASS. Earlier supplied local conformance at ebe3472 covered Release, Core, non-SQL integration and contract regeneration. The later presentation commits need final CI/local verification; no new .NET execution is claimed.

@@ -46,7 +46,7 @@
 .fleet-range > section { margin-top: 2rem; }
 .fleet-range table {
   width: 100%; border-collapse: separate; border-spacing: 0;
-  display: block; overflow-x: auto; margin: 1.5rem 0;
+  display: table; margin: 1.5rem 0;
   background: white; border: 1px solid var(--border); border-radius: .6rem;
 }
 .fleet-range caption { text-align: left; font-weight: 700; padding: 1rem; color: #172b3a; }
@@ -84,3 +84,7 @@
   .fleet-range th, .fleet-range td { min-width: 0; padding: .4rem; }
   .fleet-range figure, .fleet-counts > section { break-inside: avoid; }
 }
+
+.report-table-scroll { overflow-x: auto; margin-block: 1rem; }
+.report-table-scroll table { min-width: 52rem; }
+@media print { .report-table-scroll { overflow: visible; } .report-table-scroll table { min-width: 0; } }

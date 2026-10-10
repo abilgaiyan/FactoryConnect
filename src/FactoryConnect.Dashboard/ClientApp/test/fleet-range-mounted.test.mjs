@@ -26,7 +26,8 @@ test('fleet route exposes metadata conflict and keeps read-as-of evidence after 
     await h.click([...h.document.querySelectorAll('button')].find(x => x.textContent === 'Refresh fleet'));
     assert.match(h.document.body.textContent, /State unavailable/);
     assert.match(h.document.body.textContent, /Retained evidence/);
-    assert.match(h.document.body.textContent, /2026-10-09T00:00:00Z/);
+    assert.match(h.document.body.textContent, /09\/10\/2026 05:30:00 IST/);
+    assert.equal(h.document.querySelector("aside time").getAttribute("datetime"), evidence.evidence.readAsOf);
 });
 test('range route renders separate sources, exact decimal/revision, missing days, gaps and withheld totals', async (t) => {
     const r = runtime([source, { ...source, processorId: 'p2' }]);
@@ -82,4 +83,17 @@ test('UI explains selection bounds and rejects oversized range without a request
     await h.changeInput(inputs[0], '0001-01-01'); await h.changeInput(inputs[1], '9999-12-30'); await h.submit(inputs[0].form);
     assert.match(h.document.querySelector('[role=alert]').textContent, /at most 366/);
     assert.equal(calls, 0);
+});
+
+test('range formatting shows percentages with exact API values and keeps missing metrics in date order', async t => {
+    const h = await mountInDom(React.createElement(App, {runtime: runtime()}), 'http://factory-dashboard/reports/range');
+    t.after(() => h.dispose());
+    const inputs = h.document.querySelectorAll('input[type=date]');
+    await h.changeInput(inputs[0], '2026-10-09'); await h.changeInput(inputs[1], '2026-10-10'); await h.submit(inputs[0].form);
+    assert.match(h.document.body.textContent, /calculated: 50%/);
+    assert.match(h.document.body.textContent, /API value: 0.50 ratio/);
+    const dates = [...h.document.querySelectorAll('tbody tr')].map(row => row.cells[0].textContent);
+    assert.deepEqual(dates, [...dates].sort());
+    assert.equal(h.document.querySelector('[aria-label="Daily reporting results"]').tabIndex, 0);
+    assert.equal(h.document.querySelector('svg').getAttribute('viewBox'), '0 0 600 210');
 });

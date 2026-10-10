@@ -30,7 +30,7 @@ function createRuntime({ sources = [source], queryProductionDayShiftMetrics } = 
 function deferred() { let resolve; let reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; }
 async function settle(action) { await act(async () => { action(); await Promise.resolve(); }); }
 function shiftInput(document) { return document.querySelector("#shift-production-day"); }
-function selectedDayText(document) { return document.querySelector("time")?.textContent ?? null; }
+function selectedDayText(document) { return document.querySelector("time")?.getAttribute("datetime") ?? null; }
 function refreshButton(document) { return [...document.querySelectorAll("button")].find((button) => button.textContent === "Refresh"); }
 function text(document) { return document.body.textContent ?? ""; }
 function assertExactShiftRequest(call, day) {

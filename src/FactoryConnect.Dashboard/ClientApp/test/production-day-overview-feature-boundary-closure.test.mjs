@@ -163,6 +163,7 @@ test("production-day overview modules use only the exact approved dependency set
   ];
 
   const allowedDependencies = new Set([
+    "../presentation/date-formatting.ts",
     "react",
     "../api/reporting/index.ts",
     "../query/query-state.ts",

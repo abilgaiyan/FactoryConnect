@@ -36,13 +36,13 @@ export function App({ runtime }: AppProps) {
   const { route, navigate } = useApplicationRouter();
 
   return (
-    <div>
+    <div className="dashboard-shell">
       <header>
         <a href="#main-content">Skip to content</a>
         <p>FactoryConnect</p>
-        <div className="dashboard-site-heading" aria-label="Configured companies and sites">
+        <div className="dashboard-site-heading" aria-label="Configured reporting groups and sites">
           {[...new Set(runtime.configuration.sources.map(source =>
-            `${source.groupName ?? 'Company not configured'} · ${source.siteId}`,
+            `${source.groupName ?? 'Group not configured'} · ${source.siteId}`,
           ))].map(label => <span key={label}>{label}</span>)}
         </div>
         <nav aria-label="Dashboard">

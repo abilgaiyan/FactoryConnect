@@ -139,6 +139,6 @@ test("last successful production day and retrieval timestamp are visible", () =>
     { lastSuccessfulRetrieval: { productionDay, retrievedAt } },
   ));
 
-  assert.match(html, /Last loaded for 2026-09-01:/);
-  assert.ok(html.includes(retrievedAt.toLocaleString()));
+  assert.match(html, /Last loaded for 01\/09\/2026:/);
+  assert.ok(html.includes("01/09/2026 13:35:00 IST"));
 });

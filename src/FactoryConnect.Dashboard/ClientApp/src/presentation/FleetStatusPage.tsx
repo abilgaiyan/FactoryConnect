@@ -13,7 +13,7 @@ export function FleetStatusPage({ runtime }: {
     return <section className="fleet-range"><h1>Fleet status</h1><p>{machines.length} configured machines. Each count group reconciles independently; groups overlap.</p>
     <button onClick={() => void controller.refresh()}>Refresh fleet</button>
     <div className="fleet-counts">{Object.entries(fleetCounts(machines, attempts)).map(([group, counts]) => <section key={group}><h2>{group}</h2><ul>{Object.entries(counts).map(([bucket, count]) => <li key={bucket}>{bucket}: {count}</li>)}</ul></section>)}</div>
-    <table><caption>Reported state and current request outcome</caption><thead><tr><th>Machine</th><th>Configuration</th><th>Request</th><th>Evidence</th></tr></thead><tbody>
+    <div className="report-table-scroll" role="region" aria-label="Fleet machine rows" tabIndex={0}><table><caption>Reported state and current request outcome</caption><thead><tr><th>Machine</th><th>Configuration</th><th>Request</th><th>Evidence</th></tr></thead><tbody>
       {machines.map(machine => {
             const attempt = attempts[machine.machineId];
             return <tr key={machine.machineId}>
@@ -23,7 +23,7 @@ export function FleetStatusPage({ runtime }: {
         <td>{attempt?.request === 'success' && attempt.current ? <Evidence value={attempt.current}/> : <p>State unavailable for this attempt.</p>}
         {attempt?.retained && <aside><strong>Retained evidence from a previous successful read</strong><Evidence value={attempt.retained}/></aside>}</td>
       </tr>;
-        })}</tbody></table></section>;
+        })}</tbody></table></div></section>;
 }
 function Evidence({ value }: {
     value: CurrentMachineStateResponse;
