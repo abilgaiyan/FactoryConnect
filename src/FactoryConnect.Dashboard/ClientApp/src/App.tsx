@@ -1,3 +1,5 @@
+import { FleetStatusPage } from "./presentation/FleetStatusPage.tsx";
+import { DateRangePage } from "./presentation/DateRangePage.tsx";
 import {
   type FormEvent,
   type MouseEvent,
@@ -38,6 +40,8 @@ export function App({ runtime }: AppProps) {
         <a href="#main-content">Skip to content</a>
         <p>FactoryConnect</p>
         <nav aria-label="Dashboard">
+          <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
+          <ApplicationLink href="/reports/range" navigate={navigate} current={route.kind === "dateRange"}>Date-range report</ApplicationLink>{" "}
           <ApplicationLink href="/" navigate={navigate} current={route.kind === "productionDayOverview"}>
             Production days
           </ApplicationLink>
@@ -82,6 +86,8 @@ interface RouteViewProps {
 
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
+    case "fleet": return <FleetStatusPage runtime={runtime} />;
+    case "dateRange": return <DateRangePage runtime={runtime} />;
     case "productionDayOverview":
       return <ProductionDaySelection navigate={navigate} sourceCount={runtime.configuration.sources.length} />;
     case "productionDayDetail":

@@ -1,0 +1,12 @@
+.fleet-range { max-width: 90rem; margin: auto; padding: 1rem; }
+.fleet-range form { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; margin-block: 1rem; }
+.fleet-range fieldset { flex-basis: 100%; }
+.fleet-range label { display: inline-block; margin-right: 1rem; }
+.fleet-range input[type=date] { display: block; padding: .4rem; }
+.fleet-range table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; margin-block: 1rem; }
+.fleet-range td, .fleet-range th { text-align: left; vertical-align: top; padding: .7rem; border: 1px solid #777; overflow-wrap: anywhere; }
+.fleet-range aside { border-left: .3rem solid #777; padding-left: .7rem; }
+.fleet-counts { display: flex; flex-wrap: wrap; gap: 2rem; }
+.fleet-range dl { margin: .5rem 0; }
+.fleet-range dt { font-weight: bold; }
+.fleet-range figure { margin-inline: 0; }
