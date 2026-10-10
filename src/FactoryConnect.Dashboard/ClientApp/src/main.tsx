@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App.tsx";
 import { createDashboardApplicationRuntime } from "./application/application-runtime.ts";
+import "./presentation/dashboard.css";
 import "./presentation/daily-report.css";
 import "./presentation/fleet-range.css";
 
