@@ -81,7 +81,8 @@ test("successful Daily Report renders hierarchy and metric states and wires Prin
     const article = rendered.container.querySelector("article.daily-report-document");
     assert.ok(article);
     assert.equal(article.querySelector("h2")?.textContent, "Daily Report");
-    assert.equal(article.querySelector("h3")?.textContent, "Line A");
+    assert.equal(article.querySelector("h3"), null);
+    assert.equal(article.querySelector(".daily-report-group")?.getAttribute("aria-label"), "Line A");
     assert.equal(article.querySelector("h4")?.textContent, "Machine 1");
     assert.equal(article.querySelector("h6")?.textContent, "Shift A");
     assert.equal(article.querySelector("time")?.getAttribute("datetime"), day);

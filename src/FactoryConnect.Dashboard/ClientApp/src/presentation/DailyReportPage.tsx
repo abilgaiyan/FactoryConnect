@@ -108,7 +108,7 @@ function DailyReportDocument({
               key={`${group.groupName ?? "ungrouped"}-${groupIndex}`}
               aria-label={group.groupName ?? "Ungrouped machines"}
             >
-              <h3>{group.groupName ?? "Ungrouped"}</h3>
+              {model.groups.length > 1 && <h3>{group.groupName ?? "Ungrouped"}</h3>}
               {group.machines.map(machine => (
                 <DailyReportMachineSection key={`${machine.processorId}:${machine.machineId}`} machine={machine} />
               ))}

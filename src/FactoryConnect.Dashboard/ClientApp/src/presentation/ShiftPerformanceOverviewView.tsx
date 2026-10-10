@@ -20,16 +20,16 @@ export function ShiftPerformanceOverviewView({ overview }: ShiftPerformanceOverv
       {overview.groups.length === 0
         ? <p>No configured machines.</p>
         : overview.groups.map((group, index) => (
-          <ShiftPerformanceGroupView key={`${group.groupName ?? "ungrouped"}-${index}`} group={group} />
+          <ShiftPerformanceGroupView key={`${group.groupName ?? "ungrouped"}-${index}`} group={group} showHeading={overview.groups.length > 1} />
         ))}
     </section>
   );
 }
 
-function ShiftPerformanceGroupView({ group }: { readonly group: ShiftPerformanceGroup }) {
+function ShiftPerformanceGroupView({ group, showHeading }: { readonly group: ShiftPerformanceGroup; readonly showHeading: boolean }) {
   return (
     <section aria-label={group.groupName ?? "Ungrouped machines"}>
-      <h3>{group.groupName ?? "Ungrouped"}</h3>
+      {showHeading && <h3>{group.groupName ?? "Ungrouped"}</h3>}
       {group.machines.map(machine => (
         <ShiftPerformanceMachineView
           key={`${machine.machineId}\u0000${machine.processorId}`}
