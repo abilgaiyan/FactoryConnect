@@ -1,3 +1,4 @@
+import { formatReportDate, formatReportTimestamp } from "../presentation/date-formatting.ts";
 import { createElement, type ChangeEvent, type ReactElement } from "react";
 
 import { ProductionDayOverviewMatrix } from "./ProductionDayOverviewMatrix.ts";
@@ -51,7 +52,7 @@ export function ProductionDayOverviewSurface({
       : createElement(
         "p",
         null,
-        `Last loaded for ${overview.lastSuccessfulRetrieval.productionDay}: ${overview.lastSuccessfulRetrieval.retrievedAt.toLocaleString()}`,
+        `Last loaded for ${formatReportDate(overview.lastSuccessfulRetrieval.productionDay)}: ${formatReportTimestamp(overview.lastSuccessfulRetrieval.retrievedAt)}`,
       ),
     createElement(ProductionDayOverviewStateView, { state: overview.state }),
   );

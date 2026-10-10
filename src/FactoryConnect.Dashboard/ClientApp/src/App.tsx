@@ -1,3 +1,4 @@
+import { formatReportDate } from "./presentation/date-formatting.ts";
 import { FleetStatusPage } from "./presentation/FleetStatusPage.tsx";
 import { DateRangePage } from "./presentation/DateRangePage.tsx";
 import {
@@ -39,6 +40,11 @@ export function App({ runtime }: AppProps) {
       <header>
         <a href="#main-content">Skip to content</a>
         <p>FactoryConnect</p>
+        <div className="dashboard-site-heading" aria-label="Configured companies and sites">
+          {[...new Set(runtime.configuration.sources.map(source =>
+            `${source.groupName ?? 'Company not configured'} · ${source.siteId}`,
+          ))].map(label => <span key={label}>{label}</span>)}
+        </div>
         <nav aria-label="Dashboard">
           <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
           <ApplicationLink href="/reports/range" navigate={navigate} current={route.kind === "dateRange"}>Date-range report</ApplicationLink>{" "}
@@ -189,7 +195,7 @@ function ShiftPerformanceSelection({ productionDay, navigate, runtime }: ShiftPe
       {validSelection
         ? (
           <>
-            <p>Selected production day: <time dateTime={productionDay}>{productionDay}</time></p>
+            <p>Selected production day: <time dateTime={productionDay}>{formatReportDate(productionDay)}</time></p>
             <nav aria-label="Production-day views">
               <ApplicationLink href={dailyReportPath(productionDay)} navigate={navigate}>
                 Daily report

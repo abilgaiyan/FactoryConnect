@@ -1,3 +1,4 @@
+import { formatReportTimestamp } from "./date-formatting.ts";
 import type { DashboardRuntimeSource } from "../application/runtime-configuration.ts";
 import type { MachineCurrentStateViewState } from "../application/use-machine-current-state.ts";
 
@@ -35,7 +36,7 @@ export function MachineCurrentStatePage(props: {
             <dt>Machine state</dt><dd>{response.evidence.machineState}</dd>
             <dt>Freshness</dt><dd>{response.evidence.freshness}</dd>
             <dt>Usability</dt><dd>{response.evidence.usability}</dd>
-            <dt>Read as of</dt><dd><time dateTime={response.evidence.readAsOf}>{response.evidence.readAsOf}</time></dd>
+            <dt>Read as of</dt><dd><time dateTime={response.evidence.readAsOf}>{formatReportTimestamp(response.evidence.readAsOf)}</time></dd>
           </>
         )}
       </dl>

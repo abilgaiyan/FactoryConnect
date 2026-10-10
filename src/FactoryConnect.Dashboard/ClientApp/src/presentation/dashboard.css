@@ -48,3 +48,9 @@ body { margin: 0; background: #f4f7fb; color: #172b3a; font: 16px/1.6 system-ui,
   #main-content table { font-size: 9pt; }
   #main-content th, #main-content td { padding: .4rem; }
 }
+
+.dashboard-site-heading { display: flex; flex-wrap: wrap; gap: .3rem 1rem; color: #d5e5f2; font-size: .95rem; }
+#root > div > header nav { margin-left: auto; }
+@media (max-width: 760px) {
+  #root > div > header nav { margin-left: 0; width: 100%; }
+}

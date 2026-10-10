@@ -1,3 +1,4 @@
+import { formatReportTimestamp } from "./date-formatting.ts";
 import { useEffect, useMemo, useState } from 'react';
 import type { DashboardApplicationRuntime } from '../application/application-runtime.ts';
 import { fleetMachines, fleetCounts, FleetRefresh, type FleetAttempt } from '../application/fleet-status.ts';
@@ -29,5 +30,5 @@ function Evidence({ value }: {
 }) {
     return <dl><dt>Outcome</dt><dd>{value.outcome}</dd><dt>Coverage</dt><dd>{value.coverage}</dd>{value.evidence ? <>
     <dt>Reported state</dt><dd>{value.evidence.machineState}</dd><dt>Freshness</dt><dd>{value.evidence.freshness}</dd>
-    <dt>Usability</dt><dd>{value.evidence.usability}</dd><dt>Read as of</dt><dd><time dateTime={value.evidence.readAsOf}>{value.evidence.readAsOf}</time></dd></> : <><dt>Evidence</dt><dd>No evidence</dd></>}</dl>;
+    <dt>Usability</dt><dd>{value.evidence.usability}</dd><dt>Read as of</dt><dd><time dateTime={value.evidence.readAsOf}>{formatReportTimestamp(value.evidence.readAsOf)}</time></dd></> : <><dt>Evidence</dt><dd>No evidence</dd></>}</dl>;
 }
