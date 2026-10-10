@@ -54,3 +54,8 @@ body { margin: 0; background: #f4f7fb; color: #172b3a; font: 16px/1.6 system-ui,
 @media (max-width: 760px) {
   #root > div > header nav { margin-left: 0; width: 100%; }
 }
+
+/* Keep the date label, selector and action separated on every viewport. */
+.production-day-overview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem; margin-block: 1.25rem; }
+.production-day-overview-controls label { font-weight: 600; }
+@media (max-width: 480px) { .production-day-overview-controls label { flex-basis: 100%; } }

@@ -17,11 +17,11 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
     ...model.groups.map((group) => createElement(
       "section",
       { key: JSON.stringify([group.groupName]) },
-      createElement("h2", null, group.groupName ?? "Ungrouped"),
+      model.groups.length > 1 ? createElement("h2", null, group.groupName ?? "Ungrouped") : null,
       createElement(
         "table",
         null,
-        createElement("caption", null, `Production-day operational metrics for ${group.groupName ?? "ungrouped machines"}`),
+        createElement("caption", null, model.groups.length > 1 ? `Production-day operational metrics for ${group.groupName ?? "ungrouped machines"}` : "Production-day operational metrics"),
         createElement(
           "thead",
           null,
