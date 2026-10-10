@@ -4,8 +4,13 @@ import { loadRange, trendSegments, reportingIdentity, plottedValue, rangeMetrics
 export function DateRangePage({ runtime }: {
     runtime: DashboardApplicationRuntime;
 }) {
-    const [from, setFrom] = useState('');
-    const [through, setThrough] = useState('');
+    // A local civil date is a selection default, not production-calendar authority.
+    const [defaultDate] = useState(() => {
+        const now = new Date();
+        return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    });
+    const [from, setFrom] = useState(defaultDate);
+    const [through, setThrough] = useState(defaultDate);
     const [machines, setMachines] = useState<string[]>([...new Set(runtime.configuration.sources.map(s => s.machineId.toLowerCase()))]);
     const [state, setState] = useState<{
         kind: 'idle' | 'loading' | 'success' | 'failure';
