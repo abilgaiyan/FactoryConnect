@@ -25,7 +25,7 @@ $roots = New-Object 'Collections.Generic.List[string]'
 $results = [ordered]@{}
 $id = '1111111111111111111111111111111111111111'
 function Assert-True([bool]$Value,[string]$Message) { if (-not $Value) { throw $Message } }
-function New-Fixture([int]$AcquisitionExit=0,[int]$RuntimeExit=0) {
+function New-Fixture([int]$AcquisitionExit=0,[int]$RuntimeExit=0,[switch]$SqlUnavailable) {
     $root = Join-Path ([IO.Path]::GetTempPath()) ('FactoryConnect-Boot-' + [Guid]::NewGuid().ToString('N'))
     $roots.Add($root)
     foreach ($part in @('deployment',"releases/$id",'config')) { New-Item -ItemType Directory -Force (Join-Path $root $part) | Out-Null }
@@ -43,6 +43,14 @@ Add-Content (Join-Path `$InstallRoot 'trace.txt') 'Runtime'
 [pscustomobject]@{Status='AlreadyRunning'}
 exit $RuntimeExit
 "@ | Set-Content (Join-Path $release 'Start-FactoryConnectRuntime.ps1')
+    $sqlBody = if ($SqlUnavailable) { "throw 'SQL readiness fixture unavailable'" } else { "& `$OnEvidence @{status='Ready'} | Out-Null" }
+    @"
+function Wait-FactoryConnectSqlReadiness {
+    param([string]`$InstallRoot,[int]`$TimeoutSeconds,[scriptblock]`$OnEvidence)
+    Add-Content (Join-Path `$InstallRoot 'trace.txt') 'SqlReadiness'
+    $sqlBody
+}
+"@ | Set-Content (Join-Path $release 'FactoryConnect.SqlReadiness.ps1')
     '{"ownership":"preserve"}' | Set-Content (Join-Path $root 'deployment/runtime.json')
     '{"commissioned":"preserve"}' | Set-Content (Join-Path $root 'config/sentinel.json')
     @{sourceCommit=$id;systemStartupScript='Start-FactoryConnectSystem.ps1'} | ConvertTo-Json | Set-Content (Join-Path $release 'release.json')
@@ -104,10 +112,23 @@ try {
         Remove-Item (Join-Path $r "releases/$id/Start-FactoryConnectRuntime.ps1")
         Assert-True ((Invoke-Orchestrator $r) -ne 0) 'Missing runtime authority accepted.'
     }
+    Case SqlReadinessFailure {
+        $r=New-Fixture -SqlUnavailable
+        Assert-True ((Invoke-Orchestrator $r) -ne 0) 'SQL failure accepted.'
+        Assert-True ((@(Get-Content (Join-Path $r 'trace.txt')) -join ',') -eq 'Acquisition,SqlReadiness') 'Runtime ran before SQL was ready.'
+        $evidence=@(Get-ChildItem (Join-Path $r 'deployment/logs') -Recurse -Filter system-start.json)
+        Assert-True ((Get-Content $evidence[0].FullName -Raw | ConvertFrom-Json).phase -eq 'SqlReadiness') 'SQL failure phase missing.'
+    }
+    Case MissingSqlReadinessAuthority {
+        $r=New-Fixture
+        Remove-Item (Join-Path $r "releases/$id/FactoryConnect.SqlReadiness.ps1")
+        Assert-True ((Invoke-Orchestrator $r) -ne 0) 'Missing SQL helper accepted.'
+        Assert-True ((Get-Content (Join-Path $r 'trace.txt') -Raw).Trim() -eq 'Acquisition') 'Runtime ran without SQL authority.'
+    }
     Case RuntimeFailure {
         $r=New-Fixture 0 9
         Assert-True ((Invoke-Orchestrator $r) -eq 9) 'Runtime failure code not propagated.'
-        Assert-True ((@(Get-Content (Join-Path $r 'trace.txt')) -join ',') -eq 'Acquisition,Runtime') 'Startup ordering incorrect.'
+        Assert-True ((@(Get-Content (Join-Path $r 'trace.txt')) -join ',') -eq 'Acquisition,SqlReadiness,Runtime') 'Startup ordering incorrect.'
     }
     Case VerifiedAlreadyRunning {
         $r=New-Fixture
@@ -115,7 +136,7 @@ try {
         $config=(Get-FileHash (Join-Path $r 'config/sentinel.json')).Hash
         $batch=(Get-FileHash (Join-Path $r 'Start-Acquisition.bat')).Hash
         Assert-True ((Invoke-Orchestrator $r) -eq 0) 'Verified chain failed.'
-        Assert-True ((@(Get-Content (Join-Path $r 'trace.txt')) -join ',') -eq 'Acquisition,Runtime') 'Startup ordering incorrect.'
+        Assert-True ((@(Get-Content (Join-Path $r 'trace.txt')) -join ',') -eq 'Acquisition,SqlReadiness,Runtime') 'Startup ordering incorrect.'
         Assert-True ((Get-FileHash (Join-Path $r 'deployment/runtime.json')).Hash -eq $runtime) 'Orchestration changed runtime evidence.'
         Assert-True ((Get-FileHash (Join-Path $r 'config/sentinel.json')).Hash -eq $config) 'Configuration changed.'
         Assert-True ((Get-FileHash (Join-Path $r 'Start-Acquisition.bat')).Hash -eq $batch) 'Acquisition authority changed.'
