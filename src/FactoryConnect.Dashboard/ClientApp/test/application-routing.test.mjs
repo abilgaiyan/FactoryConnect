@@ -243,3 +243,16 @@ function createFakeBrowser(initialHref) {
     },
   };
 }
+
+test("machine report routes round-trip exact identities and reject malformed paths", () => {
+  for (const [kind, suffix] of [["machineActivity", "activity"], ["machineCounter", "counter"]]) {
+    for (const machineId of ["11111111-1111-1111-1111-111111111111", "Line 1 / Machine A"]) {
+      const route = { kind, machineId };
+      assert.equal(routePath(route), `/machines/${encodeURIComponent(machineId)}/${suffix}`);
+      assert.deepEqual(parseApplicationRoute(routePath(route)), route);
+    }
+    for (const path of [`/machines//${suffix}`, `/machines/%ZZ/${suffix}`, `/machines/x/${suffix}/`, `/machines/x/${suffix}/extra`, `/machines/x/${suffix.toUpperCase()}`]) {
+      assert.deepEqual(parseApplicationRoute(path), { kind: "notFound", path });
+    }
+  }
+});

@@ -5,6 +5,8 @@ export type ApplicationRoute =
   | { kind: "productionDayDetail"; productionDay: string }
   | { kind: "shiftPerformance"; productionDay: string }
   | { kind: "machineDetail"; machineId: string }
+  | { kind: "machineActivity"; machineId: string }
+  | { kind: "machineCounter"; machineId: string }
   | { kind: "dailyReport"; productionDay: string }
   | { kind: "notFound"; path: string };
 
@@ -69,6 +71,11 @@ export function parseApplicationRoute(pathname: string): ApplicationRoute {
     return { kind: "dailyReport", productionDay: second };
   }
 
+  if (segments.length === 3 && first === "machines" && second !== undefined && second !== "") {
+    if (third === "activity") return { kind: "machineActivity", machineId: second };
+    if (third === "counter") return { kind: "machineCounter", machineId: second };
+  }
+
   return { kind: "notFound", path: pathname };
 }
 
@@ -84,6 +91,10 @@ export function routePath(route: Exclude<ApplicationRoute, { kind: "notFound" }>
       return `/production-days/${encodeURIComponent(route.productionDay)}/shifts`;
     case "machineDetail":
       return `/machines/${encodeURIComponent(route.machineId)}`;
+    case "machineActivity":
+      return `/machines/${encodeURIComponent(route.machineId)}/activity`;
+    case "machineCounter":
+      return `/machines/${encodeURIComponent(route.machineId)}/counter`;
     case "dailyReport":
       return `/production-days/${encodeURIComponent(route.productionDay)}/report`;
   }

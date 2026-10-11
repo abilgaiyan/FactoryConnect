@@ -50,7 +50,7 @@ export function MachineActivityReportPage({ machineId, timeoutMilliseconds }: { 
     {error && <p role="alert">{error}</p>}
     {report && <>
       <p>Selected interval: <time dateTime={report.fromInclusive}>{formatReportTimestamp(report.fromInclusive)}</time> – <time dateTime={report.toExclusive}>{formatReportTimestamp(report.toExclusive)}</time> (exclusive end).</p>
-      <p>Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>. State processor {report.stateProcessorId}; stream {report.streamKey}; checkpoint {report.throughPosition ?? 'No evaluation'}. Freshness is shown separately in the current-state panel.</p>
+      <p>Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>. State processor {report.stateProcessorId}; stream {report.streamKey}; checkpoint {report.throughPosition ?? 'No evaluation'}. Freshness is shown separately on the Machine status page.</p>
       <div className="activity-totals">{report.totals.map(total => <div key={total.state}><strong>{total.state}</strong><span>{formatActivityDuration(total.durationTicks)}</span></div>)}
         <div><strong>No stored interval</strong><span>{formatActivityDuration(report.unrepresentedTicks)}</span></div></div>
       <h3>Stored state timeline</h3>

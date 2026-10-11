@@ -29,3 +29,11 @@ Management requested that good quantity default to admitted produced quantity an
 Added Enumeration regression cases matching the supplied `M01_p1_part_count_complete` integer-text representation (151 → 152), with no claim that the synthetic fixture reproduces all 404 snapshot samples. Coverage includes leading zeroes, arbitrary-precision values, invalid tokens, decreases, instance/type changes and poor-quality predecessors. Added Core tests for exact values, signal isolation, predecessor selection, decreases, instance changes, missing/poor-quality evidence, timestamp ordering and boundary integrity. Added API tests for raw boundary exclusion, missing authority, later-page failure, premature history end and invalid selection. Frontend tests check exact references, timestamp precision, signal binding, missing values, failed retrieval and cancellation. Full .NET/frontend/typecheck/build/SQL validation runs in remote CI; results must be recorded against the exact tested commit.
 
 No migration, factory operation, schedule change, projection change or R3243 repair is included. R3243 remains Unproven.
+
+## Separate machine pages
+
+The machine status page at `/machines/{machineId}` links to activity history at `/machines/{machineId}/activity` and raw counter inspection at `/machines/{machineId}/counter`. Each page has the shared company/site header and links to all three machine views. Direct URLs and browser navigation are supported. Unconfigured machine identities do not mount report forms.
+
+Only the status page retrieves current state. The report pages retain independent editable IST date selections, existing pagination, exact evidence and limitations. Leaving a report cancels its pending request; late results cannot populate another page. Navigating back to a report starts a fresh selection rather than implying retention of a prior loaded snapshot.
+
+The editable `part_count` default remains an example, not an approved signal mapping. For the inspected M01 snapshot, choose the discovered exact address `M01_p1_part_count_complete` under source `mtconnect` to inspect those observations.
