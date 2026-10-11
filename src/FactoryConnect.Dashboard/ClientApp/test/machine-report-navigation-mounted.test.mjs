@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
+import { after, beforeEach, afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import React, { act } from "react";
 import { createServer } from "vite";
@@ -8,6 +8,9 @@ import { mountInDom } from "./dom-test-harness.mjs";
 const vite = await createServer({ root: fileURLToPath(new URL("../", import.meta.url)), server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
 const { App } = await vite.ssrLoadModule("/src/App.tsx");
 after(async () => vite.close());
+const realFetch = globalThis.fetch;
+beforeEach(() => { globalThis.fetch = async () => new Response('', {status: 503}); });
+afterEach(() => { globalThis.fetch = realFetch; });
 const machineId = "11111111-1111-1111-1111-111111111111";
 const basePath = `/machines/${machineId}`;
 function runtime() {
@@ -101,3 +104,4 @@ test("leaving each report cancels its pending read and late failures cannot affe
     } finally { await h.dispose(); }
   }
 });
+
