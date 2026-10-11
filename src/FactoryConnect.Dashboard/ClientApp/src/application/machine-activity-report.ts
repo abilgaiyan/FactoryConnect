@@ -70,11 +70,15 @@ export function decodeActivityReport(value: unknown, machineId: string, range: R
 }
 export async function loadActivityReport(machineId: string, range: ReturnType<typeof activityDateRange>, signal: AbortSignal,
   fetchImplementation: typeof fetch = globalThis.fetch): Promise<ActivityReport> {
+  signal.throwIfAborted();
   const response = await fetchImplementation(`/api/machines/v1/${encodeURIComponent(machineId)}/activity/query`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(range), signal,
   });
+  signal.throwIfAborted();
   if (!response.ok) throw new Error(`Activity request failed (${response.status}); no report established.`);
-  return decodeActivityReport(await response.json(), machineId, range);
+  const body: unknown = await response.json();
+  signal.throwIfAborted();
+  return decodeActivityReport(body, machineId, range);
 }
 export function formatActivityDuration(ticks: number): string {
   const seconds = ticks / 10000000;

@@ -73,6 +73,29 @@ public sealed class ApiMachineActivityReportTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode); Assert.Equal(0, reader.ReadCount);
     }
 
+    [Fact]
+    public async Task LaterPageFailureCannotPublishPartialIntervalsOrAbsence()
+    {
+        using var factory = Factory(new Cut(new(2000)), new FailingSecondPage());
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync(Path, Request);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("unrepresentedTicks", body);
+    }
+
+    private sealed class FailingSecondPage : IProductionContextActivityReader
+    {
+        public Task<IReadOnlyList<DurableMachineActivityPeriod>> ReadAsync(
+            ObservationStreamId streamId, ObservationPosition? afterPosition, int batchSize, CancellationToken cancellationToken)
+        {
+            if (afterPosition is not null) throw new IOException("Injected second-page read failure.");
+            return Task.FromResult<IReadOnlyList<DurableMachineActivityPeriod>>(Enumerable.Range(1, batchSize)
+                .Select(i => new DurableMachineActivityPeriod(Processor, new((ulong)i), Stream, 1, (ulong)i,
+                    new(Machine, MachineState.Running, Start.AddTicks(i - 1), Start.AddTicks(i)))).ToArray());
+        }
+    }
+
     private sealed class Owner : ICurrentStateOwnerResolver
     {
         public CurrentStateOwnerResolution Resolve(MachineId machineId) => new CurrentStateExactlyOneOwner(Binding);

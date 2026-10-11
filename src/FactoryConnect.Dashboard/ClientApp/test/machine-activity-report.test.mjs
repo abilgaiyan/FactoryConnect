@@ -36,3 +36,13 @@ test('failed retrieval remains failure and request carries exact interval', asyn
   }), /503/);
   assert.deepEqual(JSON.parse(request.options.body), range); assert.equal(request.options.signal, controller.signal);
 });
+
+test('cancellation propagates and a response arriving after cancellation cannot become a report', async () => {
+  const controller = new AbortController(); let finish;
+  const pending = loadActivityReport(id, range, controller.signal, () => new Promise(resolve => {finish = resolve;}));
+  controller.abort(); finish(Response.json(fixture()));
+  await assert.rejects(pending, error => error.name === 'AbortError');
+  let called = false;
+  await assert.rejects(loadActivityReport(id, range, controller.signal, async () => {called = true; return Response.json(fixture());}));
+  assert.equal(called, false);
+});
