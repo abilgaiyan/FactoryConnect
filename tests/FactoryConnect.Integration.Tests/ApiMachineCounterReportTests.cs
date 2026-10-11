@@ -73,6 +73,34 @@ public sealed class ApiMachineCounterReportTests
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode); Assert.Equal(0, reader.ReadCount);
     }
 
+
+    [Fact]
+    public async Task EnumerationCounterDiscoveryAndArithmeticRetainExactRawRepresentation()
+    {
+        var first = Sample(1);
+        var second = Sample(2);
+        var observations = new[]
+        {
+            new DurableMachineObservation(first.Position, Stream, first.InstanceId, first.Sequence,
+                first.Observation with { Type = SignalType.Enumeration, Value = "00151", Address = "M01_p1_part_count_complete" }),
+            new DurableMachineObservation(second.Position, Stream, second.InstanceId, second.Sequence,
+                second.Observation with { Type = SignalType.Enumeration, Value = "00152", Address = "M01_p1_part_count_complete" }),
+        };
+        using var factory = Factory(new Cut(new(2)), new Reader(observations));
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync(Path,
+            new { fromInclusive = Start, toExclusive = Start.AddHours(1), source = "mtconnect", address = "M01_p1_part_count_complete" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("M01_p1_part_count_complete", json.GetProperty("availableSignals")[0].GetProperty("address").GetString());
+        var row = json.GetProperty("samples")[1];
+        Assert.Equal("00152", row.GetProperty("rawValue").GetString());
+        Assert.Equal("Enumeration", row.GetProperty("signalType").GetString());
+        Assert.Equal("1", row.GetProperty("arithmeticDifference").GetString());
+        Assert.Contains(row.GetProperty("flags").EnumerateArray(), f => f.GetString() == "ContinuityNotEstablished");
+        Assert.Contains(row.GetProperty("flags").EnumerateArray(), f => f.GetString() == "AttributionNotEstablished");
+    }
+
     private sealed class Owner : ICurrentStateOwnerResolver
     {
         public CurrentStateOwnerResolution Resolve(MachineId machineId) => new CurrentStateExactlyOneOwner(Binding);

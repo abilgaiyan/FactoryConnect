@@ -33,7 +33,7 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   const visiblePage = Math.min(page, pages); const start = (visiblePage - 1) * pageSize;
   return <section className="activity-report" aria-labelledby="counter-title">
     <h2 id="counter-title">Raw counter inspection</h2>
-    <p>Inspect the machine's quantity signal using its exact source and address. Defaults are editable examples, not an approved mapping. Numeric signals can also describe speed or feed; they do not automatically represent produced quantity.</p>
+    <p>Inspect the machine's quantity signal using its exact source and address. Defaults are editable examples, not an approved mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
     <p>Arithmetic differences are diagnostic only. Continuity, counter meaning and shift attribution are not established; production totals are withheld.</p>
     <form onSubmit={submit} className="activity-filters">
       <label>Counter from<input type="date" required value={from} onChange={e => setFrom(e.currentTarget.value)} /></label>
@@ -47,7 +47,7 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
     {report && <>
       <p>Loaded signal: {report.source} / {report.address}. Stream {report.streamKey}; raw position {report.throughPosition}; acquisition revision {report.acquisitionRevision}.</p>
       <p>Selected IST calendar interval: {formatReportTimestamp(report.fromInclusive)} – {formatReportTimestamp(report.toExclusive)} (exclusive end). Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>.</p>
-      <details><summary>Numeric signals stored in this selection</summary><ul>{report.availableSignals.map(s => <li key={JSON.stringify([s.source, s.address])}>{s.source} / {s.address} <button type="button" onClick={() => { setSource(s.source); setAddress(s.address); }}>Select signal</button></li>)}</ul><p>Selection changes the form; press Load counter to read that signal. Numeric type does not certify a quantity mapping.</p></details>
+      <details><summary>Numeric and Enumeration signals stored in this selection</summary><ul>{report.availableSignals.map(s => <li key={JSON.stringify([s.source, s.address])}>{s.source} / {s.address} <button type="button" onClick={() => { setSource(s.source); setAddress(s.address); }}>Select signal</button></li>)}</ul><p>Selection changes the form; press Load counter to read that signal. Signal type or integer text does not certify a quantity mapping.</p></details>
       {count === 0 && <p>No stored observations for this exact signal and selection at the pinned boundary. This does not establish zero production or an acquisition gap.</p>}
       <nav className="activity-pagination" aria-label="Counter table pagination">
         <label>Counter rows per page<select value={pageSize} onChange={e => { const size = Number(e.currentTarget.value); if ([25,50,100].includes(size)) { setPageSize(size); setPage(1); } }}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>

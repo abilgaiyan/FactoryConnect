@@ -38,3 +38,31 @@ test('exact source selection is sent and cancelled late replies are rejected', a
   assert.deepEqual(JSON.parse(sent.options.body), selection); assert.equal(sent.options.signal, controller.signal);
   controller.abort(); finish(Response.json(fixture())); await assert.rejects(pending, e => e.name === 'AbortError');
 });
+
+test('Enumeration integer text keeps leading zeroes and exact large values alongside diagnostic differences', () => {
+  const f = fixture(); const row = f.samples[0];
+  row.signalType = 'Enumeration'; row.rawValue = '0009007199254740993'; row.arithmeticDifference = '1';
+  const decoded = decodeCounterReport(f, id, selection);
+  assert.equal(decoded.samples[0].rawValue, '0009007199254740993');
+  assert.equal(decoded.samples[0].signalType, 'Enumeration');
+  assert.equal(decoded.samples[0].arithmeticDifference, '1');
+});
+test('invalid or missing Enumeration text and bad quality cannot carry a diagnostic difference', () => {
+  for (const token of [null, '', 'UNAVAILABLE', '-1', '+1', '1.0', '1e3', ' 1', '1 ', '١']) {
+    const f = fixture(); f.samples[0].signalType = 'Enumeration'; f.samples[0].rawValue = token;
+    assert.throws(() => decodeCounterReport(f, id, selection));
+    f.samples[0].arithmeticDifference = null;
+    f.samples[0].flags.push(token === null ? 'MissingValue' : 'NotUsableAsCounter');
+    assert.equal(decodeCounterReport(f, id, selection).samples[0].rawValue, token);
+  }
+  const f = fixture(); f.samples[0].signalType = 'Enumeration'; f.samples[0].quality = 'Uncertain';
+  assert.throws(() => decodeCounterReport(f, id, selection));
+});
+test('representation changes are explicit and cannot carry cross-type differences', () => {
+  const f = fixture(); f.samples[0].signalType = 'Enumeration'; f.samples[0].flags.push('SignalTypeChanged');
+  assert.throws(() => decodeCounterReport(f, id, selection));
+  f.samples[0].arithmeticDifference = null;
+  assert.ok(decodeCounterReport(f, id, selection).samples[0].flags.includes('SignalTypeChanged'));
+  f.samples[0].signalType = 'Text'; f.samples[0].flags = ['ContinuityNotEstablished','AttributionNotEstablished'];
+  f.samples[0].arithmeticDifference = '1'; assert.throws(() => decodeCounterReport(f, id, selection));
+});

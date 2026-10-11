@@ -74,4 +74,103 @@ public sealed class MachineCounterReportTests
         Assert.Throws<InvalidDataException>(() => Report(Sample(1, 10), Sample(1, 11)));
         Assert.Empty(Report(Sample(1, 10, time: Start.AddHours(1))).Samples);
     }
+
+    private static DurableMachineObservation EnumerationSample(ulong position, string? value, ulong instance = 1,
+        ObservationQuality quality = ObservationQuality.Good, DateTimeOffset? time = null) =>
+        new(new(position), Stream, instance, position, new MachineObservation
+        {
+            MachineId = Machine, Source = "mtconnect", Address = "part_count", Type = SignalType.Enumeration,
+            Value = value, Quality = quality, Timestamp = time ?? Start.AddMinutes(position),
+        });
+
+    [Fact]
+    public void EnumerationIntegerTextIsDiscoveredAndComparedWithoutChangingRawContent()
+    {
+        var report = Report(EnumerationSample(1, "00151", time: Start.AddTicks(-1)), EnumerationSample(2, "00152"));
+        var row = Assert.Single(report.Samples);
+        Assert.Equal("00152", row.RawValue);
+        Assert.Equal("Enumeration", row.SignalType);
+        Assert.Equal("1", row.ArithmeticDifference);
+        Assert.Equal("1", row.PreviousPosition);
+        Assert.DoesNotContain("NotUsableAsCounter", row.Flags);
+        Assert.DoesNotContain("PreviousEvidenceUnusable", row.Flags);
+        Assert.Contains("ContinuityNotEstablished", row.Flags);
+        Assert.Contains("AttributionNotEstablished", row.Flags);
+        Assert.Equal(new CounterSignal("mtconnect", "part_count"), Assert.Single(report.AvailableSignals));
+    }
+
+    [Fact]
+    public void EnumerationDifferencesPreserveValuesBeyondDecimalAndJavascriptRanges()
+    {
+        const string before = "99999999999999999999999999999999999999999999999999";
+        const string after = "100000000000000000000000000000000000000000000000001";
+        var report = Report(EnumerationSample(1, before), EnumerationSample(2, after));
+        Assert.Equal(before, report.Samples[0].RawValue);
+        Assert.Equal(after, report.Samples[1].RawValue);
+        Assert.Equal("2", report.Samples[1].ArithmeticDifference);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("UNAVAILABLE")]
+    [InlineData("-1")]
+    [InlineData("+1")]
+    [InlineData("1.0")]
+    [InlineData("1e3")]
+    [InlineData(" 1")]
+    [InlineData("1 ")]
+    [InlineData("١")]
+    public void InvalidEnumerationTokensRemainRawAndBreakTheComparisonChain(string token)
+    {
+        var report = Report(EnumerationSample(1, "151"), EnumerationSample(2, token), EnumerationSample(3, "153"));
+        Assert.Equal(token, report.Samples[1].RawValue);
+        Assert.Contains("NotUsableAsCounter", report.Samples[1].Flags);
+        Assert.Contains("PreviousEvidenceUnusable", report.Samples[2].Flags);
+        Assert.Null(report.Samples[1].ArithmeticDifference);
+        Assert.Null(report.Samples[2].ArithmeticDifference);
+        Assert.Single(report.AvailableSignals);
+    }
+
+    [Fact]
+    public void EnumerationDecreaseAndInstanceChangeRemainSeparateFromArithmetic()
+    {
+        var report = Report(EnumerationSample(1, "300"), EnumerationSample(2, "0"), EnumerationSample(3, "1", 2));
+        Assert.Contains("CounterDecreased", report.Samples[1].Flags);
+        Assert.Contains("InstanceChanged", report.Samples[2].Flags);
+        Assert.All(report.Samples, row => Assert.Null(row.ArithmeticDifference));
+    }
+
+    [Fact]
+    public void EnumerationMissingAndPoorQualityValuesAreNotSkippedToBridgeEvidence()
+    {
+        var report = Report(EnumerationSample(1, "151"), EnumerationSample(2, null),
+            EnumerationSample(3, "153"), EnumerationSample(4, "154", quality: ObservationQuality.Uncertain),
+            EnumerationSample(5, "155"));
+        Assert.Contains("MissingValue", report.Samples[1].Flags);
+        Assert.Contains("NonGoodEvidence", report.Samples[3].Flags);
+        Assert.Contains("PreviousEvidenceUnusable", report.Samples[2].Flags);
+        Assert.Contains("PreviousEvidenceUnusable", report.Samples[4].Flags);
+        Assert.All(report.Samples, row => Assert.Null(row.ArithmeticDifference));
+    }
+
+    [Fact]
+    public void SignalTypeChangesAndNonIncreasingTimeSuppressEnumerationDifferences()
+    {
+        var report = Report(Sample(1, 151), EnumerationSample(2, "152"),
+            EnumerationSample(3, "153", time: Start.AddMinutes(2)));
+        Assert.Contains("SignalTypeChanged", report.Samples[1].Flags);
+        Assert.Contains("NonIncreasingTimestamp", report.Samples[2].Flags);
+        Assert.All(report.Samples, row => Assert.Null(row.ArithmeticDifference));
+    }
+
+    [Fact]
+    public void TextSignalsAreNotImplicitlyParsedAsEnumerationCounters()
+    {
+        var source = EnumerationSample(1, "151");
+        var text = new DurableMachineObservation(source.Position, source.StreamId, source.InstanceId, source.Sequence,
+            source.Observation with { Type = SignalType.Text });
+        var report = Report(text, EnumerationSample(2, "152"));
+        Assert.Contains("NotUsableAsCounter", report.Samples[0].Flags);
+        Assert.Null(report.Samples[1].ArithmeticDifference);
+    }
 }
