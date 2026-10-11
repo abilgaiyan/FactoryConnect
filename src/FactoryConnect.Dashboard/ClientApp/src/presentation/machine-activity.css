@@ -18,3 +18,8 @@
 .activity-legend { display: flex; flex-wrap: wrap; gap: 1rem; list-style: none; padding: 0; }
 .activity-swatch { display: inline-block; width: 1rem; height: 1rem; margin-right: .4rem; }
 .activity-unrepresented { background: #e2e8f0; }
+
+.activity-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin: 1rem 0; }
+.activity-pagination label { display: flex; align-items: center; gap: .5rem; }
+.activity-pagination p { margin: 0; }
+.activity-page-note { font-size: .9rem; color: #475569; }

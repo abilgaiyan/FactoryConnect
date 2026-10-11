@@ -82,5 +82,7 @@ export async function loadActivityReport(machineId: string, range: ReturnType<ty
 }
 export function formatActivityDuration(ticks: number): string {
   const seconds = ticks / 10000000;
-  return `${(seconds / 3600).toFixed(2)} h (${seconds.toFixed(7)} s)`;
+  if (seconds < 60) return `${seconds.toFixed(2)} seconds (${seconds.toFixed(7)} s exact)`;
+  if (seconds < 3600) return `${(seconds / 60).toFixed(2)} minutes (${seconds.toFixed(7)} s exact)`;
+  return `${(seconds / 3600).toFixed(2)} hours (${seconds.toFixed(7)} s exact)`;
 }

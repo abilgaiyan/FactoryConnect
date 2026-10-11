@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityDateRange, activityStates, decodeActivityReport, loadActivityReport } from '../src/application/machine-activity-report.ts';
+import { activityDateRange, activityStates, decodeActivityReport, loadActivityReport, formatActivityDuration } from '../src/application/machine-activity-report.ts';
 const id = 'de2fd552-9bc5-45ed-9a7c-0c4a2cd3e9ed';
 const range = activityDateRange('2026-10-06', '2026-10-06');
 function fixture() {
@@ -45,4 +45,10 @@ test('cancellation propagates and a response arriving after cancellation cannot 
   let called = false;
   await assert.rejects(loadActivityReport(id, range, controller.signal, async () => {called = true; return Response.json(fixture());}));
   assert.equal(called, false);
+});
+
+test('durations use readable units while retaining exact seconds', () => {
+  assert.equal(formatActivityDuration(24537280), '2.45 seconds (2.4537280 s exact)');
+  assert.equal(formatActivityDuration(6000000000), '10.00 minutes (600.0000000 s exact)');
+  assert.equal(formatActivityDuration(36000000000), '1.00 hours (3600.0000000 s exact)');
 });

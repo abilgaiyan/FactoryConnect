@@ -13,6 +13,13 @@ export function MachineActivityReportPage({ machineId, timeoutMilliseconds }: { 
   const [report, setReport] = useState<ActivityReport | null>(null);
   const [request, setRequest] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle');
   const [error, setError] = useState('');
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
+  const rowCount = report?.intervals.length ?? 0;
+  const pageCount = Math.max(1, Math.ceil(rowCount / pageSize));
+  const visiblePage = Math.min(page, pageCount);
+  const rowStart = (visiblePage - 1) * pageSize;
+  const visibleIntervals = report?.intervals.slice(rowStart, rowStart + pageSize) ?? [];
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => { active.current?.abort(); active.current = null; }, []);
   async function submit(event: FormEvent) {
@@ -24,7 +31,7 @@ export function MachineActivityReportPage({ machineId, timeoutMilliseconds }: { 
       const range = activityDateRange(from, through); setRequest('loading');
       timer = setTimeout(() => controller.abort(), timeoutMilliseconds);
       const result = await loadActivityReport(machineId, range, controller.signal);
-      if (active.current === controller) { setReport(result); setRequest('success'); }
+      if (active.current === controller) { setReport(result); setPage(1); setRequest('success'); }
     } catch (failure) {
       if (active.current === controller) {
         setRequest('failure'); setError(controller.signal.aborted ? 'Activity request timed out; no report established.' : failure instanceof Error ? failure.message : 'Activity request failed.');
@@ -59,9 +66,19 @@ export function MachineActivityReportPage({ machineId, timeoutMilliseconds }: { 
         })}
       </svg>
       {report.intervals.length === 0 && <p>No closed stored intervals returned for this selection.</p>}
+      <nav className="activity-pagination" aria-label="Activity table pagination">
+        <label>Rows per page<select value={pageSize} onChange={event => {
+          const size = Number(event.currentTarget.value);
+          if (size === 25 || size === 50 || size === 100) { setPageSize(size); setPage(1); }
+        }}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
+        <p role="status">Rows {rowCount === 0 ? 0 : rowStart + 1}–{Math.min(rowStart + pageSize, rowCount)} of {rowCount.toLocaleString('en-IN')} · Page {visiblePage} of {pageCount}</p>
+        <button type="button" disabled={visiblePage === 1} aria-controls="activity-interval-table" onClick={() => setPage(visiblePage - 1)}>Previous</button>
+        <button type="button" disabled={visiblePage === pageCount} aria-controls="activity-interval-table" onClick={() => setPage(visiblePage + 1)}>Next</button>
+      </nav>
+      <p className="activity-page-note">Only the interval table is paged. Totals and timeline cover the entire loaded range.</p>
       <div className="activity-table-scroll" role="region" aria-label="Exact stored activity intervals" tabIndex={0}>
-        <table><caption>Exact stored activity intervals (displayed in IST)</caption><thead><tr><th>State</th><th>From</th><th>To</th><th>Duration</th><th>Source details</th></tr></thead>
-          <tbody>{report.intervals.map(i => <tr key={i.position}><td>{i.state}</td>
+        <table id="activity-interval-table"><caption>Exact stored activity intervals (displayed in IST)</caption><thead><tr><th>State</th><th>From</th><th>To</th><th>Duration</th><th>Source details</th></tr></thead>
+          <tbody>{visibleIntervals.map(i => <tr key={i.position}><td>{i.state}</td>
             <td><time dateTime={i.startedAtUtc}>{formatReportTimestamp(i.startedAtUtc)}</time></td>
             <td><time dateTime={i.endedAtUtc}>{formatReportTimestamp(i.endedAtUtc)}</time></td>
             <td>{formatActivityDuration(i.durationTicks)}</td><td><details><summary>Position {i.position}</summary>
