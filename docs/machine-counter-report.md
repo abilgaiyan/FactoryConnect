@@ -39,3 +39,9 @@ Only the status page retrieves current state. The report pages retain independen
 ### Signal dropdowns
 
 Choose IST dates, press **Find signals**, select an exact source, then select its exact address and press **Load counter**. Changing the source clears the address; changing dates invalidates discovery and cancels pending requests. Empty discovery and failed discovery remain distinct. Discovery uses the existing exact-query API (`mtconnect` / `part_count` as an internal probe); its samples are discarded, and the range-wide signal list alone populates the controls. Existing API limits apply; selecting a discovered signal does not certify counter meaning or admit production quantity. For the inspected M01 snapshot, select `mtconnect` / `M01_p1_part_count_complete`.
+
+## Diagnostic summary and table filter
+
+The summary counts every retained observation as exactly one of increasing comparison, unchanged comparison, or no arithmetic comparison. Increasing comparisons count observation pairs, never produced units; differences are not summed into production totals. Flag counts overlap and include baseline-only readings; a decrease is not a confirmed reset. Universal ContinuityNotEstablished/AttributionNotEstablished flags remain on every row but are excluded from the diagnostic-issue filter so they do not select all rows.
+
+The optional table filter selects rows with additional diagnostic flags. It resets pagination and does not alter the full loaded summary. Page changes likewise preserve the summary; loading a new report restores the unfiltered first page. A filtered empty table is distinct from a successful report containing no observations. Failed reads still remove results. No quantity admission, OEE policy, persistence migration or R3243 repair is included.
