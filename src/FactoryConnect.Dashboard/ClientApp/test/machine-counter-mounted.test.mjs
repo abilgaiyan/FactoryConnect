@@ -25,7 +25,7 @@ async function choose(h, label, value) { const select=field(h,label); await act(
 async function discover(h) { await h.click(button(h,'Find signals')); }
 async function selectSignal(h, source='mtconnect', address='part_count') { await choose(h,'Exact source',source); await choose(h,'Exact address',address); }
 
-test('counter UI pages only retained rows; signal selection is explicit; failed reads remove results', async t => {
+test('counter UI pages only retained rows; defaults do not load rows; failed reads remove results', async t => {
   const original = globalThis.fetch; t.after(() => {globalThis.fetch=original;});
   let failed=false;let count=121;let calls=0;let sent;
   globalThis.fetch=async (_, options) => {calls++;sent=JSON.parse(options.body);return failed ? new Response('',{status:503}) : Response.json(fixture(sent,count));};
@@ -38,7 +38,7 @@ test('counter UI pages only retained rows; signal selection is explicit; failed 
   assert.match(summary.textContent,/Increasing comparisons120/);
   assert.match(summary.textContent,/No arithmetic comparison1/);
   const next=() => [...h.document.querySelectorAll('button')].find(b=>b.textContent==='Next counter page');
-  await h.click(next());await h.click(next());assert.equal(h.document.querySelectorAll('tbody tr').length,21);assert.equal(next().disabled,true);assert.equal(calls,2);
+  await h.click(next());await h.click(next());assert.equal(h.document.querySelectorAll('tbody tr').length,21);assert.equal(next().disabled,true);assert.equal(calls,3);
   const issueFilter=h.document.querySelector('input[type=checkbox]');
   await h.click(issueFilter);
   assert.equal(h.document.querySelectorAll('tbody tr').length,1);
@@ -46,36 +46,36 @@ test('counter UI pages only retained rows; signal selection is explicit; failed 
   assert.match(summary.textContent,/Stored observations121/);
   await h.click(issueFilter);
   assert.equal(h.document.querySelectorAll('tbody tr').length,50);
-  assert.equal(calls,2);
+  assert.equal(calls,3);
   assert.match(h.document.body.textContent,/Numeric and Enumeration signals are listed/);
   assert.match(h.document.body.textContent,/Enumeration/);
   assert.match(h.document.body.textContent,/M01_p1_part_count_complete/);
   assert.match(h.document.body.textContent,/policy assumption/);assert.match(h.document.body.textContent,/06\/10\/2026/);
   assert.equal(h.document.querySelector('[aria-label="Exact raw counter observations"]').tabIndex,0);
   await choose(h,'Exact address','M01_p1_part_count_complete');
-  assert.match(h.document.body.textContent,/Loaded signal: mtconnect \/ part_count/);assert.equal(calls,2);
+  assert.match(h.document.body.textContent,/Loaded signal: mtconnect \/ part_count/);assert.equal(calls,3);
   count=0;await h.submit(dates[0].form);assert.equal(sent.address,'M01_p1_part_count_complete');assert.equal(h.document.querySelectorAll('tbody tr').length,0);
   assert.match(h.document.body.textContent,/does not establish zero production/);assert.equal(next().disabled,true);
   failed=true;await h.submit(dates[0].form);assert.match(h.document.querySelector('[role=alert]').textContent,/503/);assert.equal(h.document.querySelector('table'),null);
 });
 
-test('source and address dropdowns require explicit selection and never combine unrelated sources', async t => {
+test('automatic discovery defaults the pair and source changes never combine unrelated addresses', async t => {
   const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
   let sent;let calls=0;
   globalThis.fetch=async (_,options)=>{sent=JSON.parse(options.body);calls++;return Response.json(fixture(sent,0));};
   const h=await mountInDom(React.createElement(MachineCounterReportPage,{machineId,timeoutMilliseconds:1000}));t.after(()=>h.dispose());
-  assert.equal(field(h,'Exact source').disabled,true);
-  assert.equal(button(h,'Load counter').disabled,true);
-  await discover(h);
-  assert.equal(field(h,'Exact source').value,'');
+  assert.equal(calls,1);
+  assert.equal(field(h,'Exact source').value,'mtconnect');
+  assert.equal(field(h,'Exact address').value,'part_count');
+  assert.equal(button(h,'Load counter').disabled,false);
   assert.equal(h.document.querySelector('table'),null);
   await choose(h,'Exact source','mtconnect');
   assert.deepEqual([...field(h,'Exact address').options].map(o=>o.value),['','part_count','M01_p1_part_count_complete']);
   await choose(h,'Exact address','M01_p1_part_count_complete');
   await choose(h,'Exact source','other');
-  assert.equal(field(h,'Exact address').value,'');
+  assert.equal(field(h,'Exact address').value,'other_count');
   assert.deepEqual([...field(h,'Exact address').options].map(o=>o.value),['','other_count']);
-  assert.equal(button(h,'Load counter').disabled,true);
+  assert.equal(button(h,'Load counter').disabled,false);
   await choose(h,'Exact address','other_count');
   assert.equal(calls,1);
   await h.submit(h.document.querySelector('form'));
@@ -115,4 +115,44 @@ test('date changes cancel discovery and ignore its late result', async t => {
   assert.equal(field(h,'Exact source').disabled,true);
   assert.equal(h.document.querySelector('[role=alert]'),null);
   assert.doesNotMatch(h.document.body.textContent,/discovery succeeded/);
+});
+
+
+ test('rediscovery restores only a still-available saved pair and otherwise defaults to first discovered pair', async t => {
+  const original=globalThis.fetch; t.after(()=>{globalThis.fetch=original;});
+  let signals=[{source:'mtconnect',address:'part_count'},{source:'other',address:'other_count'}];
+  globalThis.fetch=async (_,options)=>Response.json({...fixture(JSON.parse(options.body),0),availableSignals:signals});
+  const h=await mountInDom(React.createElement(MachineCounterReportPage,{machineId,timeoutMilliseconds:1000})); t.after(()=>h.dispose());
+  await choose(h,'Exact source','other');
+  await h.changeInput(h.document.querySelector('input[type=date]'),'2026-10-01');
+  await discover(h);
+  assert.equal(field(h,'Exact source').value,'other'); assert.equal(field(h,'Exact address').value,'other_count');
+  assert.equal(h.document.querySelector('table'),null);
+  signals=[{source:'mtconnect',address:'part_count'}]; await discover(h);
+  assert.equal(field(h,'Exact source').value,'mtconnect'); assert.equal(field(h,'Exact address').value,'part_count');
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem(`factoryconnect:counter-selection:${machineId}`)),{source:'mtconnect',address:'part_count'});
+ });
+
+test('opening the page restores the machine-specific browser preference without loading counter rows', async t => {
+  const original=globalThis.fetch; t.after(()=>{globalThis.fetch=original;}); let calls=0;
+  globalThis.fetch=async (_,options)=>{calls++;return Response.json(fixture(JSON.parse(options.body),0));};
+  function SeededPage() {
+    window.localStorage.setItem(`factoryconnect:counter-selection:${machineId}`,JSON.stringify({source:'other',address:'other_count'}));
+    return React.createElement(MachineCounterReportPage,{machineId,timeoutMilliseconds:1000});
+  }
+  const h=await mountInDom(React.createElement(SeededPage)); t.after(()=>h.dispose());
+  assert.equal(calls,1); assert.equal(field(h,'Exact source').value,'other'); assert.equal(field(h,'Exact address').value,'other_count');
+  assert.equal(h.document.querySelector('table'),null); assert.equal(button(h,'Load counter').disabled,false);
+});
+
+test('blocked browser storage does not prevent automatic discovery and default selection', async t => {
+  const original=globalThis.fetch; t.after(()=>{globalThis.fetch=original;});
+  globalThis.fetch=async (_,options)=>Response.json(fixture(JSON.parse(options.body),0));
+  function BlockedStoragePage() {
+    Object.defineProperty(window,'localStorage',{configurable:true,get(){throw new Error('storage denied');}});
+    return React.createElement(MachineCounterReportPage,{machineId,timeoutMilliseconds:1000});
+  }
+  const h=await mountInDom(React.createElement(BlockedStoragePage)); t.after(()=>h.dispose());
+  assert.equal(field(h,'Exact source').value,'mtconnect'); assert.equal(field(h,'Exact address').value,'part_count');
+  assert.equal(h.document.querySelector('[role=alert]'),null);
 });

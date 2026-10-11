@@ -19,7 +19,23 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   const [issuesOnly, setIssuesOnly] = useState(false);
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50);
   const active = useRef<AbortController | null>(null);
-  useEffect(() => () => { active.current?.abort(); active.current = null; }, []);
+  const preferenceKey = `factoryconnect:counter-selection:${machineId}`;
+  const preferred = useRef<{ source: string; address: string } | null>(null);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(preferenceKey) ?? 'null');
+      preferred.current = saved && typeof saved.source === 'string' && typeof saved.address === 'string' ? saved : null;
+    } catch { preferred.current = null; }
+    void read(true);
+    return () => { active.current?.abort(); active.current = null; };
+  }, [machineId]);
+  function selectSignal(nextSource: string, nextAddress: string) {
+    setSource(nextSource); setAddress(nextAddress);
+    preferred.current = nextSource && nextAddress ? { source: nextSource, address: nextAddress } : null;
+    if (preferred.current) {
+      try { window.localStorage.setItem(preferenceKey, JSON.stringify(preferred.current)); } catch { /* Selection works when browser storage is unavailable. */ }
+    }
+  }
   function changeDates(nextFrom: string, nextThrough: string) {
     active.current?.abort(); active.current = null;
     setFrom(nextFrom); setThrough(nextThrough); setSignals(null);
@@ -35,12 +51,18 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
         throw new Error('Find signals and select an exact source and address first.');
       setRequest('loading');
       timer = setTimeout(() => controller.abort(), timeoutMilliseconds);
+      controller.signal.addEventListener('abort', () => { if (timer !== undefined) clearTimeout(timer); }, { once: true });
       // The existing exact-query API also returns range-wide signal discovery.
       // Probe samples are discarded; the probe is not a selected quantity mapping.
       const selection = { ...range, source: discover ? 'mtconnect' : source, address: discover ? 'part_count' : address };
       const result = await loadCounterReport(machineId, selection, controller.signal);
       if (active.current === controller) {
-        if (discover) { setSignals(result.availableSignals); }
+        if (discover) {
+          setSignals(result.availableSignals);
+          const selected = result.availableSignals.find(s => s.source === preferred.current?.source && s.address === preferred.current?.address)
+            ?? result.availableSignals[0];
+          selectSignal(selected?.source ?? '', selected?.address ?? '');
+        }
         else { setReport(result); setPage(1); setIssuesOnly(false); }
         setRequest('success');
       }
@@ -57,21 +79,21 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   const visiblePage = Math.min(page, pages); const start = (visiblePage - 1) * pageSize;
   return <section className="activity-report" aria-labelledby="counter-title">
     <h2 id="counter-title">Raw counter inspection</h2>
-    <p>Inspect the machine's quantity signal using its exact source and address. Find signals for the selected dates, then choose a source and address. Discovery is not an approved quantity mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
+    <p>Inspect the machine's quantity signal using its exact source and address. Signals are discovered automatically on opening this page. The previous available selection or first discovered signal is selected for convenience; change it before loading if needed. Use Find signals after changing dates. Discovery is not an approved quantity mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
     <p>Arithmetic differences are diagnostic only. Continuity, counter meaning and shift attribution are not established; production totals are withheld.</p>
     <form onSubmit={submit} className="activity-filters">
       <label>Counter from<input type="date" required value={from} onChange={e => changeDates(e.currentTarget.value, through)} /></label>
       <label>Counter through (inclusive)<input type="date" required value={through} onChange={e => changeDates(from, e.currentTarget.value)} /></label>
       <button type="button" onClick={() => void read(true)}>Find signals</button>
-      <label>Exact source<select required value={source} disabled={sources.length === 0} onChange={e => { setSource(e.currentTarget.value); setAddress(''); }}>
+      <label>Exact source<select required value={source} disabled={sources.length === 0} onChange={e => { const nextSource = e.currentTarget.value; selectSignal(nextSource, (signals ?? []).find(s => s.source === nextSource)?.address ?? ''); }}>
         <option value="">Select source</option>{sources.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
-      <label>Exact address<select required value={address} disabled={addresses.length === 0} onChange={e => setAddress(e.currentTarget.value)}>
+      <label>Exact address<select required value={address} disabled={addresses.length === 0} onChange={e => selectSignal(source, e.currentTarget.value)}>
         <option value="">Select address</option>{addresses.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
       <button type="submit" disabled={!signals?.some(s => s.source === source && s.address === address)}>Load counter</button>
     </form>
-    <p role="status">{request === 'loading' ? 'Loading raw counter signals or rows…' : request === 'success' ? report ? 'Counter read succeeded.' : 'Signal discovery succeeded. Select a source and address.' : ''}</p>
+    <p role="status">{request === 'loading' ? 'Loading raw counter signals or rows…' : request === 'success' ? report ? 'Counter read succeeded.' : 'Signal discovery succeeded. Review the source and address, then load the counter.' : ''}</p>
     {error && <p role="alert">{error}</p>}
     {signals !== null && signals.length === 0 && <p>No Numeric or Enumeration signals returned for these dates. This does not establish zero production or an acquisition gap.</p>}
     {report && <>
@@ -111,3 +133,4 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
     <p>Management's proposed all-good Quality policy means good quantity equals admitted produced quantity and rejected quantity defaults to zero. It is a policy assumption, separate from measured good quantity. This inspection does not apply that policy or publish Quality/OEE.</p>
   </section>;
 }
+
