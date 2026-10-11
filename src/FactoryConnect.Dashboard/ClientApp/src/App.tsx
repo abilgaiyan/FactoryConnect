@@ -1,3 +1,4 @@
+import { MachineActivityReportPage } from "./presentation/MachineActivityReportPage.tsx";
 import { formatReportDate } from "./presentation/date-formatting.ts";
 import { FleetStatusPage } from "./presentation/FleetStatusPage.tsx";
 import { DateRangePage } from "./presentation/DateRangePage.tsx";
@@ -250,7 +251,10 @@ function ConfiguredMachineDetail(props: {
   readonly runtime: DashboardApplicationRuntime;
 }) {
   const currentState = useMachineCurrentState(props.source.machineId, props.runtime);
-  return <MachineCurrentStatePage source={props.source} state={currentState.state} refresh={currentState.refresh} />;
+  return <>
+    <MachineCurrentStatePage source={props.source} state={currentState.state} refresh={currentState.refresh} />
+    <MachineActivityReportPage machineId={props.source.machineId} timeoutMilliseconds={props.runtime.configuration.requestTimeoutMilliseconds} />
+  </>;
 }
 
 interface DailyReportSelectionProps {

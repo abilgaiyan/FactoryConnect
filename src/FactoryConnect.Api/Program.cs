@@ -1,3 +1,4 @@
+using FactoryConnect.Abstractions;
 using FactoryConnect.Api;
 using FactoryConnect.Api.Machines;
 using FactoryConnect.Api.Reporting;
@@ -13,6 +14,7 @@ builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer<OperationalMetricStatusOpenApiTransformer>();
     options.AddSchemaTransformer<CurrentMachineStateOpenApiTransformer>();
 });
+builder.Services.AddOpenApi("activity-v1");
 builder.Services.AddSingleton<IApiStartupCancellationRegistrationFactory,
     ApiStartupCancellationRegistrationFactory>();
 builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
@@ -23,6 +25,9 @@ builder.Services.AddFactoryConnectPersistence(
     PersistenceProviderCapabilities.MachineShiftOccurrenceRoster |
     PersistenceProviderCapabilities.CurrentStateAuthorityReading);
 builder.Services.AddFactoryConnectOperationalMetricReporting();
+builder.Services.AddSingleton<IProductionContextActivityReader>(provider =>
+    provider.GetRequiredService<PersistenceProviderServices>().ProductionContextActivityReader
+    ?? throw new InvalidOperationException("Selected provider has no machine activity reader."));
 
 var currentStateInventory =
     MtConnectMachineInventory.FromConfiguration(builder.Configuration);
@@ -46,6 +51,7 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapOpenApi();
 app.MapOperationalMetricReportingEndpoints();
 app.MapCurrentMachineStateEndpoints();
+app.MapMachineActivityReports();
 
 await ApiPersistenceStartup.RunAsync(
     app.Services,

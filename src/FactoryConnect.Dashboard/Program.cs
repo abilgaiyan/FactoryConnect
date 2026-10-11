@@ -87,6 +87,18 @@ app.MapGet("/api/machines/v1/{machineId}/current-state", async (
         .ConfigureAwait(false);
 });
 
+app.MapPost("/api/machines/v1/{machineId}/activity/query", async (
+    HttpContext context, string machineId, ReportingGateway gateway) =>
+{
+    var expectedPath = "/api/machines/v1/" + machineId + "/activity/query";
+    if (!string.Equals(context.Request.Path.Value, expectedPath, StringComparison.Ordinal))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await gateway.ForwardAsync(context, expectedPath.TrimStart('/')).ConfigureAwait(false);
+});
+
 app.Map("{*path:nonfile}", (HttpContext context, IWebHostEnvironment environment) =>
 {
     var path = context.Request.Path;
