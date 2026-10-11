@@ -15,6 +15,7 @@ builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer<CurrentMachineStateOpenApiTransformer>();
 });
 builder.Services.AddOpenApi("activity-v1");
+builder.Services.AddOpenApi("counter-v1");
 builder.Services.AddSingleton<IApiStartupCancellationRegistrationFactory,
     ApiStartupCancellationRegistrationFactory>();
 builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
@@ -28,6 +29,10 @@ builder.Services.AddFactoryConnectOperationalMetricReporting();
 builder.Services.AddSingleton<IProductionContextActivityReader>(provider =>
     provider.GetRequiredService<PersistenceProviderServices>().ProductionContextActivityReader
     ?? throw new InvalidOperationException("Selected provider has no machine activity reader."));
+
+builder.Services.AddSingleton<IDurableObservationReader>(provider =>
+    provider.GetRequiredService<PersistenceProviderServices>().ObservationIngestionStore as IDurableObservationReader
+    ?? throw new InvalidOperationException("Selected provider has no raw observation reader."));
 
 var currentStateInventory =
     MtConnectMachineInventory.FromConfiguration(builder.Configuration);
@@ -52,6 +57,7 @@ app.MapOpenApi();
 app.MapOperationalMetricReportingEndpoints();
 app.MapCurrentMachineStateEndpoints();
 app.MapMachineActivityReports();
+app.MapMachineCounterReports();
 
 await ApiPersistenceStartup.RunAsync(
     app.Services,
