@@ -43,11 +43,11 @@ export function decodeCounterReport(value: unknown, machineId: string, selection
         !['Good', 'Uncertain', 'Bad'].includes(s.quality) || (s.rawValue !== null && typeof s.rawValue !== 'string') ||
         (s.previousPosition !== null && (!uint(s.previousPosition, true) || BigInt(s.previousPosition) >= BigInt(s.position))) ||
         (s.arithmeticDifference !== null && (typeof s.arithmeticDifference !== 'string' || !/^(0|[1-9]\d*)$/.test(s.arithmeticDifference))) ||
-        !Array.isArray(s.flags) || new Set(s.flags).size !== s.flags.length || s.flags.some(f => !counterFlags.includes(f as typeof counterFlags[number])) ||
+        !Array.isArray(s.flags) || new Set(s.flags).size !== s.flags.length || s.flags.some((f: unknown) => !counterFlags.includes(f as typeof counterFlags[number])) ||
         !s.flags.includes('ContinuityNotEstablished') || !s.flags.includes('AttributionNotEstablished') ||
         instant(s.observedAtUtc) < from || instant(s.observedAtUtc) >= to) return fail();
     if (s.arithmeticDifference !== null && (s.signalType !== 'Numeric' || s.quality !== 'Good' ||
-        s.flags.some(f => !['ContinuityNotEstablished', 'AttributionNotEstablished'].includes(f)))) return fail();
+        s.flags.some((f: unknown) => !['ContinuityNotEstablished', 'AttributionNotEstablished'].includes(f as string)))) return fail();
     previous = BigInt(s.position);
   }
   const channels = new Set<string>();
