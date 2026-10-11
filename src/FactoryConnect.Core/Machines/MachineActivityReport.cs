@@ -67,7 +67,7 @@ public static class MachineActivityReportComposer
             represented = checked(represented + interval.DurationTicks);
         }
         var totals = Enum.GetValues<MachineState>().Select(state => new ActivityReportTotal(
-            state.ToString().ToLowerInvariant(), intervals.Where(i => i.State == state.ToString().ToLowerInvariant())
+            state.ToString().ToLowerInvariant(), intervals.Where(i => string.Equals(i.State, state.ToString(), StringComparison.OrdinalIgnoreCase))
                 .Sum(i => i.DurationTicks))).ToArray();
         return new MachineActivityReport(binding.MachineId.ToString(), binding.StateProcessorId.Value,
             binding.ObservationStreamId.StreamKey, through?.ToString(), from, to, readAsOf,
