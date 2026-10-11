@@ -1,7 +1,7 @@
 import { activityDateRange } from './machine-activity-report.ts';
 
 export const counterFlags = ['ContinuityNotEstablished', 'AttributionNotEstablished', 'MissingValue', 'NonGoodEvidence',
-  'NotUsableAsCounter', 'BaselineOnly', 'InstanceChanged', 'NonIncreasingTimestamp', 'PreviousEvidenceUnusable', 'CounterDecreased'] as const;
+  'NotUsableAsCounter', 'BaselineOnly', 'InstanceChanged', 'NonIncreasingTimestamp', 'PreviousEvidenceUnusable', 'CounterDecreased', 'SignalTypeChanged'] as const;
 export interface CounterSample {
   readonly position: string; readonly instanceId: string; readonly sequence: string;
   readonly observedAtUtc: string; readonly signalType: string; readonly quality: string; readonly rawValue: string | null;
@@ -46,7 +46,8 @@ export function decodeCounterReport(value: unknown, machineId: string, selection
         !Array.isArray(s.flags) || new Set(s.flags).size !== s.flags.length || s.flags.some((f: unknown) => !counterFlags.includes(f as typeof counterFlags[number])) ||
         !s.flags.includes('ContinuityNotEstablished') || !s.flags.includes('AttributionNotEstablished') ||
         instant(s.observedAtUtc) < from || instant(s.observedAtUtc) >= to) return fail();
-    if (s.arithmeticDifference !== null && (s.signalType !== 'Numeric' || s.quality !== 'Good' ||
+    if (s.arithmeticDifference !== null && (!['Numeric', 'Enumeration'].includes(s.signalType) || s.quality !== 'Good' ||
+        s.previousPosition === null || typeof s.rawValue !== 'string' || !/^[0-9]+$/.test(s.rawValue) ||
         s.flags.some((f: unknown) => !['ContinuityNotEstablished', 'AttributionNotEstablished'].includes(f as string)))) return fail();
     previous = BigInt(s.position);
   }

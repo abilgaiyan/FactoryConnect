@@ -12,6 +12,8 @@ public sealed class DashboardApplicationRouteHostTests
     [InlineData("/")]
     [InlineData("/production-days/2026-08-30")]
     [InlineData("/machines/11111111-1111-1111-1111-111111111111")]
+    [InlineData("/machines/11111111-1111-1111-1111-111111111111/activity")]
+    [InlineData("/machines/11111111-1111-1111-1111-111111111111/counter")]
     [InlineData("/production-days/2026-08-30/report")]
     public async Task ApplicationRoutesServeProductionFrontendEntry(string path)
     {

@@ -26,7 +26,7 @@ import { DailyReportPage } from "./presentation/DailyReportPage.tsx";
 import { ShiftPerformancePage } from "./presentation/ShiftPerformancePage.tsx";
 import { MachineCurrentStatePage } from "./presentation/MachineCurrentStatePage.tsx";
 import { useMachineCurrentState } from "./application/use-machine-current-state.ts";
-import type { ApplicationRoute } from "./routing/application-route.ts";
+import { routePath, type ApplicationRoute } from "./routing/application-route.ts";
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
 
@@ -104,6 +104,10 @@ function RouteView({ route, navigate, runtime }: RouteViewProps) {
       return <ShiftPerformanceSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "machineDetail":
       return <MachineDetail key={route.machineId} machineId={route.machineId} navigate={navigate} runtime={runtime} />;
+    case "machineActivity":
+      return <MachineDetail key={`activity:${route.machineId}`} view="activity" machineId={route.machineId} navigate={navigate} runtime={runtime} />;
+    case "machineCounter":
+      return <MachineDetail key={`counter:${route.machineId}`} view="counter" machineId={route.machineId} navigate={navigate} runtime={runtime} />;
     case "dailyReport":
       return <DailyReportSelection key={route.productionDay} productionDay={route.productionDay} navigate={navigate} runtime={runtime} />;
     case "notFound":
@@ -226,23 +230,38 @@ function ShiftPerformanceSelection({ productionDay, navigate, runtime }: ShiftPe
 }
 
 interface MachineDetailProps {
+  readonly view?: "status" | "activity" | "counter";
   readonly machineId: string;
   readonly navigate: (href: string) => void;
   readonly runtime: DashboardApplicationRuntime;
 }
 
-function MachineDetail({ machineId, navigate, runtime }: MachineDetailProps) {
+function MachineDetail({ machineId, navigate, runtime, view = "status" }: MachineDetailProps) {
   const source = runtime.configuration.sources.find(
     candidate => candidate.machineId.toLowerCase() === machineId.toLowerCase(),
   );
 
+  const title = view === "activity" ? "Machine activity history" : view === "counter" ? "Raw counter inspection" : "Machine";
   return (
     <section aria-labelledby="route-title">
-      <RouteContext current="Machine" navigate={navigate} />
-      <h1 id="route-title">Machine</h1>
+      <RouteContext current={title} navigate={navigate} />
+      <h1 id="route-title">{title}</h1>
       {source === undefined
         ? <p role="alert">This machine is not configured for the dashboard.</p>
-        : <ConfiguredMachineDetail source={source} runtime={runtime} />}
+        : <>
+          <nav aria-label="Machine views">
+            <ApplicationLink href={routePath({ kind: "machineDetail", machineId: source.machineId })} current={view === "status"} navigate={navigate}>Machine status</ApplicationLink>{" "}
+            <ApplicationLink href={routePath({ kind: "machineActivity", machineId: source.machineId })} current={view === "activity"} navigate={navigate}>Activity history</ApplicationLink>{" "}
+            <ApplicationLink href={routePath({ kind: "machineCounter", machineId: source.machineId })} current={view === "counter"} navigate={navigate}>Counter inspection</ApplicationLink>
+          </nav>
+          {view === "status" ? <ConfiguredMachineDetail source={source} runtime={runtime} />
+            : <>
+              <p>{source.displayName} · {source.siteId} / {source.productionLineId}</p>
+              {view === "activity"
+                ? <MachineActivityReportPage machineId={source.machineId} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} />
+                : <MachineCounterReportPage machineId={source.machineId} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} />}
+            </>}
+        </>}
     </section>
   );
 }
@@ -252,11 +271,7 @@ function ConfiguredMachineDetail(props: {
   readonly runtime: DashboardApplicationRuntime;
 }) {
   const currentState = useMachineCurrentState(props.source.machineId, props.runtime);
-  return <>
-    <MachineCurrentStatePage source={props.source} state={currentState.state} refresh={currentState.refresh} />
-    <MachineActivityReportPage machineId={props.source.machineId} timeoutMilliseconds={props.runtime.configuration.requestTimeoutMilliseconds} />
-    <MachineCounterReportPage machineId={props.source.machineId} timeoutMilliseconds={props.runtime.configuration.requestTimeoutMilliseconds} />
-  </>;
+  return <MachineCurrentStatePage source={props.source} state={currentState.state} refresh={currentState.refresh} />;
 }
 
 interface DailyReportSelectionProps {

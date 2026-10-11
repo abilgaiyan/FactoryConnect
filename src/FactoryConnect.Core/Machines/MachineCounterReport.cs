@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core.Machines;
@@ -40,14 +41,13 @@ public static class MachineCounterReportComposer
             if (!Enum.IsDefined(raw.Type) || !Enum.IsDefined(raw.Quality))
                 throw new InvalidDataException("Unsupported observation classification.");
             var selected = raw.Timestamp >= from && raw.Timestamp < to;
-            if (selected && raw.Type == SignalType.Numeric)
+            if (selected && raw.Type is SignalType.Numeric or SignalType.Enumeration)
                 signals.Add(new(raw.Source, raw.Address));
             if (!string.Equals(raw.Source, source, StringComparison.Ordinal) ||
                 !string.Equals(raw.Address, address, StringComparison.Ordinal)) continue;
             var flags = new List<string> { "ContinuityNotEstablished", "AttributionNotEstablished" };
             string? difference = null;
-            var valid = raw.Type == SignalType.Numeric && raw.Quality == ObservationQuality.Good &&
-                raw.Value is decimal number && number >= 0 && number == decimal.Truncate(number);
+            var valid = TryCounterValue(raw, out var number);
             if (raw.Value is null) flags.Add("MissingValue");
             if (raw.Quality != ObservationQuality.Good) flags.Add("NonGoodEvidence");
             if (!valid && raw.Value is not null) flags.Add("NotUsableAsCounter");
@@ -57,14 +57,14 @@ public static class MachineCounterReportComposer
                 var prior = previous.Observation;
                 if (item.InstanceId != previous.InstanceId) flags.Add("InstanceChanged");
                 if (raw.Timestamp <= prior.Timestamp) flags.Add("NonIncreasingTimestamp");
-                var priorValid = prior.Type == SignalType.Numeric && prior.Quality == ObservationQuality.Good &&
-                    prior.Value is decimal priorNumber && priorNumber >= 0 && priorNumber == decimal.Truncate(priorNumber);
+                if (raw.Type != prior.Type) flags.Add("SignalTypeChanged");
+                var priorValid = TryCounterValue(prior, out var priorNumber);
                 if (!priorValid) flags.Add("PreviousEvidenceUnusable");
-                if (valid && priorValid && item.InstanceId == previous.InstanceId && raw.Timestamp > prior.Timestamp)
+                if (valid && priorValid && raw.Type == prior.Type && item.InstanceId == previous.InstanceId && raw.Timestamp > prior.Timestamp)
                 {
-                    var change = (decimal)raw.Value! - (decimal)prior.Value!;
+                    var change = number - priorNumber;
                     if (change < 0) flags.Add("CounterDecreased");
-                    else difference = change.ToString("G29", CultureInfo.InvariantCulture);
+                    else difference = change.ToString(CultureInfo.InvariantCulture);
                 }
             }
             if (selected)
@@ -78,6 +78,21 @@ public static class MachineCounterReportComposer
             from, to, readAsOf, source, address,
             Array.AsReadOnly(signals.OrderBy(s => s.Source, StringComparer.Ordinal).ThenBy(s => s.Address, StringComparer.Ordinal).ToArray()),
             samples.AsReadOnly());
+    }
+
+    private static bool TryCounterValue(MachineObservation observation, out BigInteger value)
+    {
+        value = BigInteger.Zero;
+        if (observation.Quality != ObservationQuality.Good) return false;
+        if (observation.Type == SignalType.Numeric && observation.Value is decimal number &&
+            number >= 0 && number == decimal.Truncate(number))
+        {
+            value = new BigInteger(number);
+            return true;
+        }
+        return observation.Type == SignalType.Enumeration && observation.Value is string text &&
+            text.Length > 0 && text.All(char.IsAsciiDigit) &&
+            BigInteger.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 
     private static string? RawText(object? value) => value switch
