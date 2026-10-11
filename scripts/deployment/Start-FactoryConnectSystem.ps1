@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([string]$InstallRoot = 'D:\FactoryConnect')
+param(
+    [string]$InstallRoot = 'D:\FactoryConnect',
+    [ValidateRange(1,600)][int]$SqlReadinessTimeoutSeconds = 180
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { throw 'Factory boot orchestration requires Windows.' }
@@ -52,6 +55,16 @@ try {
     if ($releaseId -cnotmatch '^[0-9a-f]{40}$') { throw 'current must select one non-nested release identity.' }
     $runtime = Join-Path $current 'Start-FactoryConnectRuntime.ps1'
     if (-not (Test-Path -LiteralPath $runtime -PathType Leaf)) { throw 'Selected release does not contain the runtime startup authority.' }
+    $phase = 'SqlReadiness'
+    $sqlReadiness = Join-Path $target 'FactoryConnect.SqlReadiness.ps1'
+    if (-not (Test-Path -LiteralPath $sqlReadiness -PathType Leaf)) {
+        throw 'Selected release does not contain the SQL readiness authority.'
+    }
+    . $sqlReadiness
+    Wait-FactoryConnectSqlReadiness -InstallRoot $root -TimeoutSeconds $SqlReadinessTimeoutSeconds -OnEvidence {
+        param($value)
+        $value | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $logRoot 'sql-readiness.json') -Encoding UTF8
+    }
     $phase = 'Runtime'
     $powershell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
     # Redirect at cmd level so children inheriting handles do not stall logging.
