@@ -143,4 +143,3 @@ static bool IsReservedPath(PathString path) =>
     path.StartsWithSegments("/configuration", StringComparison.OrdinalIgnoreCase);
 
 public partial class Program;
-

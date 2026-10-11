@@ -11,6 +11,12 @@ The machine detail page now offers an explicit date-range read of closed persist
 - Totals are durations of stored intervals, not OEE operands or evidence of planned eligibility. Freshness remains in the separate current-state panel.
 - Limits: 31 selected days, 100,000 traversed history records, 5,000 selected intervals. The existing reader traverses the complete historical prefix; very large histories need a future indexed date reader. A smaller date range does not necessarily reduce prefix traversal.
 
+## Table pagination
+
+The interval table defaults to 50 rows per page, with 25/50/100 options, row ranges, page numbers and Previous/Next controls. Page changes do not perform retrieval or change the full-range totals and timeline. Successful loads and page-size changes reset the table to page 1. Empty results disable navigation. The 5,000-interval response limit remains unchanged.
+
+Durations lead with seconds, minutes or hours, with exact seconds retained alongside the readable value. Source details retain exact UTC bounds and duration ticks.
+
 ## HTTP
 
 `POST /api/machines/v1/{machineId}/activity/query`
@@ -23,7 +29,14 @@ This selects 6 October 2026 in IST. Response identity includes machine, state pr
 
 ## Validation
 
-Focused frontend evidence/date/transport tests ran here: 5 passed. Core clipping/overlap/checkpoint tests and API composition tests are included. The authoring environment has no .NET SDK or installed React/TypeScript toolchain; full compilation, mounted UI validation and live SQL snapshot validation remain required.
+Verified implementation revision: `859636edb282d5ac482d1fba62f125d28b140466` (11 October 2026).
+
+- CI passed: 388 frontend tests, 1,707 ordinary .NET tests, Release/Vite builds, reporting-contract/type checks and the SQL integration job.
+- Mounted tests cover table page sizes, navigation boundaries, full-range summary/timeline preservation, reload reset, empty results and request failure. Seven focused frontend tests also passed in the authoring workspace.
+- The developer snapshot returned 1,416 intervals for 4–6 October, with exact state totals plus unrepresented time reconciling to 72 hours. The user subsequently confirmed local pagination works.
+- Visual browser review, narrow-screen/keyboard checks and manual failure-path checks remain separate and outstanding. These results do not certify historical coverage or establish the R3243 stall.
+
+The following commands are available for local verification:
 
 Run on a developer machine:
 

@@ -58,4 +58,3 @@ await ApiPersistenceStartup.RunAsync(
     () => app.RunAsync());
 
 public partial class Program;
-

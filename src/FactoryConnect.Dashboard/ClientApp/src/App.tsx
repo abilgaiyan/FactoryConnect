@@ -327,4 +327,3 @@ interface RouteContextProps {
 function RouteContext({ current, navigate }: RouteContextProps) {
   return <nav aria-label="Breadcrumb"><ApplicationLink href="/" navigate={navigate}>Production days</ApplicationLink><span aria-current="page">{current}</span></nav>;
 }
-
