@@ -1,10 +1,10 @@
 # Raw counter inspection
 
-The machine detail page provides a read-only counter inspection below activity history. It is a quantity-discovery surface, not a production-admission processor or OEE repair.
+The dedicated `/machines/{machineId}/counter` page provides read-only counter inspection, linked from Machine status and Activity history. It is a quantity-discovery surface, not a production-admission processor or OEE repair.
 
 ## Inputs and read boundary
 
-`POST /api/machines/v1/{machineId}/counter/query` accepts positive half-open UTC bounds of at most 31 days and an exact, case-sensitive source/address pair. The form defaults to today's IST calendar date and editable `mtconnect` / `part_count` examples; these do not designate a production quantity mapping. Returned Numeric and Enumeration signal names help select the deployed raw address, including Enumeration signals whose values are missing or nonnumeric. These types do not designate counter meaning; signals may also represent speed, feed or machine status.
+`POST /api/machines/v1/{machineId}/counter/query` accepts positive half-open UTC bounds of at most 31 days and an exact, case-sensitive source/address pair. The form defaults to today's IST calendar date. Press **Find signals** to populate source/address dropdowns, then explicitly select an exact pair. Discovery uses an internal `mtconnect` / `part_count` query whose samples are discarded; this probe designates no production quantity mapping. Returned Numeric and Enumeration signal names help select the deployed raw address, including Enumeration signals whose values are missing or nonnumeric. These types do not designate counter meaning; signals may also represent speed, feed or machine status.
 
 The single configured machine owner selects the observation stream. A stable authority read pins its acquisition revision and raw accepted-through position. State evaluation does not select the raw boundary. The reader is the selected persistence provider's own observation store; no alternate provider or fixture reader is used in production.
 
@@ -36,8 +36,6 @@ The machine status page at `/machines/{machineId}` links to activity history at 
 
 Only the status page retrieves current state. The report pages retain independent editable IST date selections, existing pagination, exact evidence and limitations. Leaving a report cancels its pending request; late results cannot populate another page. Navigating back to a report starts a fresh selection rather than implying retention of a prior loaded snapshot.
 
-Choose dates and press **Find signals**, then explicitly select a source and one of its addresses from the dropdowns. Sources are deduplicated; addresses are filtered by exact source. Discovery uses the existing counter-query response's Numeric/Enumeration list; probe samples are discarded. It selects no signal automatically and confers no quantity mapping. Date changes clear choices/results and cancel pending reads; empty successful discovery remains distinct from failure. Existing traversal/sample limits also apply to discovery. For the inspected M01 snapshot, choose `mtconnect` / `M01_p1_part_count_complete`.
-
 ### Signal dropdowns
 
-Choose IST dates, press **Find signals**, select an exact source, then select its exact address and press **Load counter**. Changing the source clears the address; changing dates invalidates discovery and cancels pending requests. Empty discovery and failed discovery remain distinct. Discovery uses the existing exact-query API (`mtconnect` / `part_count` as an internal probe); its samples are discarded, and the range-wide signal list alone populates the controls. Existing API limits apply; selecting a discovered signal does not certify counter meaning or admit production quantity.
+Choose IST dates, press **Find signals**, select an exact source, then select its exact address and press **Load counter**. Changing the source clears the address; changing dates invalidates discovery and cancels pending requests. Empty discovery and failed discovery remain distinct. Discovery uses the existing exact-query API (`mtconnect` / `part_count` as an internal probe); its samples are discarded, and the range-wide signal list alone populates the controls. Existing API limits apply; selecting a discovered signal does not certify counter meaning or admit production quantity. For the inspected M01 snapshot, select `mtconnect` / `M01_p1_part_count_complete`.
