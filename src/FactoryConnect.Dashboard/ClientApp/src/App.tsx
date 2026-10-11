@@ -1,3 +1,4 @@
+import { MachineCounterReportPage } from "./presentation/MachineCounterReportPage.tsx";
 import { MachineActivityReportPage } from "./presentation/MachineActivityReportPage.tsx";
 import { formatReportDate } from "./presentation/date-formatting.ts";
 import { FleetStatusPage } from "./presentation/FleetStatusPage.tsx";
@@ -254,6 +255,7 @@ function ConfiguredMachineDetail(props: {
   return <>
     <MachineCurrentStatePage source={props.source} state={currentState.state} refresh={currentState.refresh} />
     <MachineActivityReportPage machineId={props.source.machineId} timeoutMilliseconds={props.runtime.configuration.requestTimeoutMilliseconds} />
+    <MachineCounterReportPage machineId={props.source.machineId} timeoutMilliseconds={props.runtime.configuration.requestTimeoutMilliseconds} />
   </>;
 }
 
