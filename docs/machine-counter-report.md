@@ -36,4 +36,8 @@ The machine status page at `/machines/{machineId}` links to activity history at 
 
 Only the status page retrieves current state. The report pages retain independent editable IST date selections, existing pagination, exact evidence and limitations. Leaving a report cancels its pending request; late results cannot populate another page. Navigating back to a report starts a fresh selection rather than implying retention of a prior loaded snapshot.
 
-The editable `part_count` default remains an example, not an approved signal mapping. For the inspected M01 snapshot, choose the discovered exact address `M01_p1_part_count_complete` under source `mtconnect` to inspect those observations.
+Choose dates and press **Find signals**, then explicitly select a source and one of its addresses from the dropdowns. Sources are deduplicated; addresses are filtered by exact source. Discovery uses the existing counter-query response's Numeric/Enumeration list; probe samples are discarded. It selects no signal automatically and confers no quantity mapping. Date changes clear choices/results and cancel pending reads; empty successful discovery remains distinct from failure. Existing traversal/sample limits also apply to discovery. For the inspected M01 snapshot, choose `mtconnect` / `M01_p1_part_count_complete`.
+
+### Signal dropdowns
+
+Choose IST dates, press **Find signals**, select an exact source, then select its exact address and press **Load counter**. Changing the source clears the address; changing dates invalidates discovery and cancels pending requests. Empty discovery and failed discovery remain distinct. Discovery uses the existing exact-query API (`mtconnect` / `part_count` as an internal probe); its samples are discarded, and the range-wide signal list alone populates the controls. Existing API limits apply; selecting a discovered signal does not certify counter meaning or admit production quantity.

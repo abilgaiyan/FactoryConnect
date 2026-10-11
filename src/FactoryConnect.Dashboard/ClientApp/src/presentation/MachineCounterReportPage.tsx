@@ -11,43 +11,68 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
     return `${part('year')}-${part('month')}-${part('day')}`;
   };
   const [from, setFrom] = useState(today); const [through, setThrough] = useState(today);
-  const [source, setSource] = useState('mtconnect'); const [address, setAddress] = useState('part_count');
+  const [source, setSource] = useState(''); const [address, setAddress] = useState('');
+  const [signals, setSignals] = useState<CounterReport['availableSignals'] | null>(null);
   const [report, setReport] = useState<CounterReport | null>(null);
   const [request, setRequest] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle'); const [error, setError] = useState('');
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => { active.current?.abort(); active.current = null; }, []);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); active.current?.abort(); const controller = new AbortController(); active.current = controller;
+  function changeDates(nextFrom: string, nextThrough: string) {
+    active.current?.abort(); active.current = null;
+    setFrom(nextFrom); setThrough(nextThrough); setSignals(null);
+    setSource(''); setAddress(''); setReport(null); setRequest('idle'); setError('');
+  }
+  async function read(discover: boolean) {
+    active.current?.abort(); const controller = new AbortController(); active.current = controller;
     let timer: ReturnType<typeof setTimeout> | undefined; setReport(null); setError('');
+    if (discover) { setSignals(null); setSource(''); setAddress(''); }
     try {
-      const selection = { ...activityDateRange(from, through), source, address }; setRequest('loading');
+      const range = activityDateRange(from, through);
+      if (!discover && !signals?.some(s => s.source === source && s.address === address))
+        throw new Error('Find signals and select an exact source and address first.');
+      setRequest('loading');
       timer = setTimeout(() => controller.abort(), timeoutMilliseconds);
+      // The existing exact-query API also returns range-wide signal discovery.
+      // Probe samples are discarded; the probe is not a selected quantity mapping.
+      const selection = { ...range, source: discover ? 'mtconnect' : source, address: discover ? 'part_count' : address };
       const result = await loadCounterReport(machineId, selection, controller.signal);
-      if (active.current === controller) { setReport(result); setPage(1); setRequest('success'); }
+      if (active.current === controller) {
+        if (discover) { setSignals(result.availableSignals); }
+        else { setReport(result); setPage(1); }
+        setRequest('success');
+      }
     } catch (failure) {
       if (active.current === controller) { setRequest('failure'); setError(controller.signal.aborted ? 'Counter request timed out; no report established.' : failure instanceof Error ? failure.message : 'Counter request failed.'); }
     } finally { if (timer !== undefined) clearTimeout(timer); }
   }
+  async function submit(event: FormEvent) { event.preventDefault(); await read(false); }
+  const sources = [...new Set((signals ?? []).map(s => s.source))];
+  const addresses = (signals ?? []).filter(s => s.source === source).map(s => s.address);
   const count = report?.samples.length ?? 0; const pages = Math.max(1, Math.ceil(count / pageSize));
   const visiblePage = Math.min(page, pages); const start = (visiblePage - 1) * pageSize;
   return <section className="activity-report" aria-labelledby="counter-title">
     <h2 id="counter-title">Raw counter inspection</h2>
-    <p>Inspect the machine's quantity signal using its exact source and address. Defaults are editable examples, not an approved mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
+    <p>Inspect the machine's quantity signal using its exact source and address. Find signals for the selected dates, then choose a source and address. Discovery is not an approved quantity mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
     <p>Arithmetic differences are diagnostic only. Continuity, counter meaning and shift attribution are not established; production totals are withheld.</p>
     <form onSubmit={submit} className="activity-filters">
-      <label>Counter from<input type="date" required value={from} onChange={e => setFrom(e.currentTarget.value)} /></label>
-      <label>Counter through (inclusive)<input type="date" required value={through} onChange={e => setThrough(e.currentTarget.value)} /></label>
-      <label>Exact source<input required maxLength={256} value={source} onChange={e => setSource(e.currentTarget.value)} /></label>
-      <label>Exact address<input required maxLength={256} value={address} onChange={e => setAddress(e.currentTarget.value)} /></label>
-      <button type="submit">Load counter</button>
+      <label>Counter from<input type="date" required value={from} onChange={e => changeDates(e.currentTarget.value, through)} /></label>
+      <label>Counter through (inclusive)<input type="date" required value={through} onChange={e => changeDates(from, e.currentTarget.value)} /></label>
+      <button type="button" onClick={() => void read(true)}>Find signals</button>
+      <label>Exact source<select required value={source} disabled={sources.length === 0} onChange={e => { setSource(e.currentTarget.value); setAddress(''); }}>
+        <option value="">Select source</option>{sources.map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>
+      <label>Exact address<select required value={address} disabled={addresses.length === 0} onChange={e => setAddress(e.currentTarget.value)}>
+        <option value="">Select address</option>{addresses.map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>
+      <button type="submit" disabled={!signals?.some(s => s.source === source && s.address === address)}>Load counter</button>
     </form>
-    <p role="status">{request === 'loading' ? 'Loading raw counter…' : request === 'success' ? 'Counter read succeeded.' : ''}</p>
+    <p role="status">{request === 'loading' ? 'Loading raw counter signals or rows…' : request === 'success' ? report ? 'Counter read succeeded.' : 'Signal discovery succeeded. Select a source and address.' : ''}</p>
     {error && <p role="alert">{error}</p>}
+    {signals !== null && signals.length === 0 && <p>No Numeric or Enumeration signals returned for these dates. This does not establish zero production or an acquisition gap.</p>}
     {report && <>
       <p>Loaded signal: {report.source} / {report.address}. Stream {report.streamKey}; raw position {report.throughPosition}; acquisition revision {report.acquisitionRevision}.</p>
       <p>Selected IST calendar interval: {formatReportTimestamp(report.fromInclusive)} – {formatReportTimestamp(report.toExclusive)} (exclusive end). Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>.</p>
-      <details><summary>Numeric and Enumeration signals stored in this selection</summary><ul>{report.availableSignals.map(s => <li key={JSON.stringify([s.source, s.address])}>{s.source} / {s.address} <button type="button" onClick={() => { setSource(s.source); setAddress(s.address); }}>Select signal</button></li>)}</ul><p>Selection changes the form; press Load counter to read that signal. Signal type or integer text does not certify a quantity mapping.</p></details>
       {count === 0 && <p>No stored observations for this exact signal and selection at the pinned boundary. This does not establish zero production or an acquisition gap.</p>}
       <nav className="activity-pagination" aria-label="Counter table pagination">
         <label>Counter rows per page<select value={pageSize} onChange={e => { const size = Number(e.currentTarget.value); if ([25,50,100].includes(size)) { setPageSize(size); setPage(1); } }}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>

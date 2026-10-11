@@ -88,7 +88,8 @@ test("leaving each report cancels its pending read and late failures cannot affe
     const r = runtime();
     const h = await mountInDom(React.createElement(App, { runtime: r.value }), `http://factory-dashboard${basePath}/${suffix}`);
     try {
-      await h.submit(h.document.querySelector("form"));
+      if (suffix === "counter") await h.click([...h.document.querySelectorAll("button")].find(b => b.textContent === "Find signals"));
+      else await h.submit(h.document.querySelector("form"));
       assert.ok(signal);
       assert.equal(signal.aborted, false);
       await h.click(link(h, "Machine status"));
