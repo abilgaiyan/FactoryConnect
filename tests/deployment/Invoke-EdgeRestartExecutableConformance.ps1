@@ -58,6 +58,9 @@ function New-Root([string]$Name,[string]$Failure='') {
     $r = Join-Path ([IO.Path]::GetTempPath()) ("FactoryConnect-RBS-$Name-" + [Guid]::NewGuid().ToString('N'))
     $roots.Add($r)
     foreach ($part in @('config','deployment','releases')) { New-Item -ItemType Directory -Force (Join-Path $r $part) | Out-Null }
+    # Model the existing installation lock even when a case constructs runtime
+    # evidence directly (R08) rather than invoking restart first.
+    [IO.File]::WriteAllBytes((Join-Path $r 'deployment/deployment.lock'),[byte[]]@())
     foreach ($n in @('edge','api','dashboard')) {
         $dir = Join-Path $r "releases\$releaseId\apps\$n"
         New-Item -ItemType Directory -Force $dir | Out-Null
