@@ -41,6 +41,10 @@ $required = @(
     "Copy(`$sqlReadinessScriptPath, (Join-Path `$stagingRoot 'FactoryConnect.SqlReadiness.ps1'), `$false)",
     "processTerminationScript = 'FactoryConnect.ProcessTermination.ps1'",
     "scripts/deployment/Restart-FactoryConnectEdge.ps1",
+    "`$runtimeFrameworkVersion = '10.0.13'",
+    "[version]'10.0.402'",
+    "-p:RuntimeFrameworkVersion=`$runtimeFrameworkVersion",
+    "Assert-FactoryConnectPkcsPayload -AppRoot `$appRoot",
     "scripts/deployment/Get-FactoryConnectEdgeRestartAssessment.ps1",
     "edgeRestartScript = 'Restart-FactoryConnectEdge.ps1'",
     "edgeRestartAssessmentScript = 'Get-FactoryConnectEdgeRestartAssessment.ps1'",
@@ -114,56 +118,11 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
-    $repoRoot = Split-Path (Split-Path (Split-Path $ReleaseBuilder -Parent) -Parent) -Parent
-    $versions = [xml](Get-Content (Join-Path $repoRoot 'Directory.Packages.props') -Raw)
-    $pkcsVersion = @($versions.Project.ItemGroup.PackageVersion | Where-Object { $_.Include -eq 'System.Security.Cryptography.Pkcs' })[0].Version
-    $sqlApplications = [ordered]@{'sql-readiness'='SqlReadiness';migrations='Migrations';edge='Edge';api='Api'}
-    foreach ($application in $sqlApplications.Keys) {
-        $appRoot = Join-Path $ReleaseDirectory "apps/$application"
-        $deps = Join-Path $appRoot "FactoryConnect.$($sqlApplications[$application]).deps.json"
-        $graph = Get-Content -Raw -LiteralPath $deps | ConvertFrom-Json
-        $pkcs = @($graph.libraries.PSObject.Properties | Where-Object { $_.Name.StartsWith('System.Security.Cryptography.Pkcs/', [StringComparison]::Ordinal) })
-        if ($application -ne 'api') {
-            if ($pkcs.Count -ne 1 -or $pkcs[0].Name -cne "System.Security.Cryptography.Pkcs/$pkcsVersion") {
-                throw "$application does not resolve the central patched Pkcs version."
-            }
-        }
-        else {
-            # Self-contained Web SDK publish can select the ASP.NET Core runtime-pack
-            # assembly over the NuGet asset. Prove exact ownership, not DLL presence.
-            if ($pkcs.Count -ne 0) { throw 'API has ambiguous NuGet and runtime-pack Pkcs ownership.' }
-            $owners = @(
-                foreach ($target in $graph.targets.PSObject.Properties) {
-                    foreach ($library in $target.Value.PSObject.Properties) {
-                        $runtimeProperty = $library.Value.PSObject.Properties['runtime']
-                        $runtime = if ($null -ne $runtimeProperty) { $runtimeProperty.Value } else { $null }
-                        if ($null -ne $runtime -and
-                            $null -ne $runtime.PSObject.Properties['System.Security.Cryptography.Pkcs.dll']) {
-                            [pscustomobject]@{ Target=$target.Name; Library=$library.Name }
-                        }
-                    }
-                }
-            )
-            if ($owners.Count -ne 1 -or
-                $owners[0].Target -cne '.NETCoreApp,Version=v10.0/win-x64' -or
-                $owners[0].Library -cne 'runtimepack.Microsoft.AspNetCore.App.Runtime.win-x64/10.0.7' -or
-                $null -eq $graph.libraries.PSObject.Properties[$owners[0].Library]) {
-                throw 'API Pkcs runtime-pack ownership is absent, ambiguous or unrecognized.'
-            }
-            $runtimeVersion = $owners[0].Library.Split('/')[-1]
-            $dllPath = Join-Path $appRoot 'System.Security.Cryptography.Pkcs.dll'
-            if (-not (Test-Path -LiteralPath $dllPath -PathType Leaf)) { throw 'API runtime-pack Pkcs DLL is missing.' }
-            $productVersion = (Get-Item -LiteralPath $dllPath).VersionInfo.ProductVersion
-            $assemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($dllPath).Version.ToString()
-            if (-not $productVersion.StartsWith("$runtimeVersion+", [StringComparison]::Ordinal) -or
-                $assemblyVersion -cne '10.0.0.0') {
-                throw 'API Pkcs assembly identity does not match its runtime-pack authority.'
-            }
-        }
-        $dll = Join-Path $appRoot 'System.Security.Cryptography.Pkcs.dll'
-        $hash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
-        $line = "$hash  apps/$application/System.Security.Cryptography.Pkcs.dll"
-        if (@(Get-Content (Join-Path $ReleaseDirectory 'MANIFEST.sha256') | Where-Object { $_ -ceq $line }).Count -ne 1) { throw "$application Pkcs assembly lacks exact manifest coverage." }
+    $repoRoot=Split-Path (Split-Path (Split-Path $ReleaseBuilder -Parent) -Parent) -Parent
+    . (Join-Path $repoRoot 'scripts/deployment/FactoryConnect.PkcsPayload.ps1')
+    $applications=[ordered]@{'sql-readiness'='SqlReadiness';migrations='Migrations';edge='Edge';api='Api';dashboard='Dashboard'}
+    foreach ($application in $applications.Keys) {
+        $appRoot=Join-Path $ReleaseDirectory "apps/$application"
+        Assert-FactoryConnectPkcsPayload -AppRoot $appRoot -DepsPath (Join-Path $appRoot "FactoryConnect.$($applications[$application]).deps.json") -ManifestPath (Join-Path $ReleaseDirectory 'MANIFEST.sha256') -Application $application
     }
-    [pscustomobject]@{PkcsPayload='PASS';Version=$pkcsVersion;Applications=$sqlApplications.Count}
 }
