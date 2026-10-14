@@ -158,6 +158,75 @@ public sealed class ProductionConfigurationCompositionTests
         Assert.Throws<InvalidOperationException>(() => Compose(values));
     }
 
+    [Theory]
+    [InlineData("06:00:00", "14:00:00", "10:00:00", "10:30:00", 0)]
+    [InlineData("22:00:00", "06:00:00", "02:00:00", "02:30:00", 1)]
+    [InlineData("22:00:00", "06:00:00", "23:45:00", "00:15:00", 0)]
+    public async Task ConfiguredBreakIsExcludedFromPlannedTime(
+        string startsAt, string endsAt, string breakStart, string breakEnd, int breakDayOffset)
+    {
+        var values = BaseValues();
+        const string prefix = "ProductionProcessing:PlannedProduction";
+        values[$"{prefix}:StartsAtLocal"] = startsAt;
+        values[$"{prefix}:EndsAtLocal"] = endsAt;
+        values[$"{prefix}:BreakWindows:0:StartsAtLocal"] = breakStart;
+        values[$"{prefix}:BreakWindows:0:EndsAtLocal"] = breakEnd;
+        using var provider = Compose(values);
+        var date = new DateOnly(2026, 8, 27);
+        var reader = provider.GetRequiredService<IPlannedProductionScheduleReader>();
+        var assignments = await reader.ReadAssignmentsAsync(
+            new SiteId("SITE-1"), date, date.AddDays(1), CancellationToken.None);
+        Assert.Single(Assert.Single(assignments).BreakWindows);
+        var intervals = await new PlannedProductionIntervalResolver(reader).ResolveAsync(
+            new SiteId("SITE-1"), new ProductionLineId("LINE-1"),
+            date, date.AddDays(1), CancellationToken.None);
+        Assert.Equal(2, intervals.Count);
+        Assert.Equal(TimeSpan.FromHours(7.5),
+            TimeSpan.FromTicks(intervals.Sum(static interval =>
+                (interval.EndsAtUtc - interval.StartsAtUtc).Ticks)));
+        var expectedBreakStart = new DateTimeOffset(
+            date.AddDays(breakDayOffset).ToDateTime(TimeOnly.Parse(breakStart)), TimeSpan.Zero);
+        Assert.Equal(expectedBreakStart, intervals[0].EndsAtUtc);
+        Assert.Equal(expectedBreakStart.AddMinutes(30), intervals[1].StartsAtUtc);
+        Assert.All(intervals, interval => Assert.Equal(date, interval.FactoryDate));
+    }
+
+    [Theory]
+    [InlineData("10:00:00", "10:00:00")]
+    [InlineData("05:00:00", "05:30:00")]
+    [InlineData("13:45:00", "14:15:00")]
+    [InlineData("invalid", "10:30:00")]
+    [InlineData("10:00:00", null)]
+    public void InvalidConfiguredBreakIsRejected(string startsAt, string? endsAt)
+    {
+        var values = BaseValues();
+        values["ProductionProcessing:PlannedProduction:BreakWindows:0:StartsAtLocal"] = startsAt;
+        values["ProductionProcessing:PlannedProduction:BreakWindows:0:EndsAtLocal"] = endsAt;
+        Assert.ThrowsAny<Exception>(() => Compose(values));
+    }
+
+    [Theory]
+    [InlineData("10:15:00", false)]
+    [InlineData("10:30:00", true)]
+    public void ConfiguredBreakOverlapIsRejectedButAdjacentBreaksAreAllowed(
+        string secondStart, bool accepted)
+    {
+        var values = BaseValues();
+        values["ProductionProcessing:PlannedProduction:BreakWindows:0:StartsAtLocal"] = "10:00:00";
+        values["ProductionProcessing:PlannedProduction:BreakWindows:0:EndsAtLocal"] = "10:30:00";
+        values["ProductionProcessing:PlannedProduction:BreakWindows:1:StartsAtLocal"] = secondStart;
+        values["ProductionProcessing:PlannedProduction:BreakWindows:1:EndsAtLocal"] = "11:00:00";
+        if (accepted)
+        {
+            using var provider = Compose(values);
+            Assert.NotNull(provider.GetRequiredService<IPlannedProductionScheduleReader>());
+        }
+        else
+        {
+            Assert.Throws<InvalidOperationException>(() => Compose(values));
+        }
+    }
+
     private static ServiceProvider Compose(Dictionary<string, string?> values)
     {
         var configuration = new ConfigurationBuilder()

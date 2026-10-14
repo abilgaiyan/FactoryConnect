@@ -372,6 +372,14 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             EffectiveFrom = DateOnly.Parse(
                 Required(plannedSection, "EffectiveFrom"),
                 CultureInfo.InvariantCulture),
+            BreakWindows = plannedSection.GetSection("BreakWindows").GetChildren()
+                .Select(window => new PlannedProductionWindow
+                {
+                    StartsAtLocal = TimeOnly.Parse(
+                        Required(window, "StartsAtLocal"), CultureInfo.InvariantCulture),
+                    EndsAtLocal = TimeOnly.Parse(
+                        Required(window, "EndsAtLocal"), CultureInfo.InvariantCulture),
+                }).ToArray(),
             PlannedWindows =
             [
                 new PlannedProductionWindow
@@ -386,6 +394,9 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             ],
         };
 
+        plannedAssignment.Validate();
+        ValidateConfiguredBreakWindows(plannedAssignment);
+
         var quantityStreamId = new ObservationStreamId(
             machineId,
             section["QuantityStreamKey"] ?? "production-quantity");
@@ -395,6 +406,30 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             quantityStreamId,
             contexts,
             plannedAssignment);
+    }
+
+    private static void ValidateConfiguredBreakWindows(PlannedProductionScheduleAssignment assignment)
+    {
+        var planned = assignment.PlannedWindows[0];
+        var duration = (planned.EndsAtLocal.Ticks - planned.StartsAtLocal.Ticks +
+            TimeSpan.TicksPerDay) % TimeSpan.TicksPerDay;
+        var breaks = assignment.BreakWindows.Select(window =>
+        {
+            var start = (window.StartsAtLocal.Ticks - planned.StartsAtLocal.Ticks +
+                TimeSpan.TicksPerDay) % TimeSpan.TicksPerDay;
+            var length = (window.EndsAtLocal.Ticks - window.StartsAtLocal.Ticks +
+                TimeSpan.TicksPerDay) % TimeSpan.TicksPerDay;
+            return (Start: start, End: start + length);
+        }).OrderBy(static window => window.Start).ToArray();
+        for (var index = 0; index < breaks.Length; index++)
+        {
+            if (breaks[index].End > duration ||
+                (index > 0 && breaks[index].Start < breaks[index - 1].End))
+            {
+                throw new InvalidOperationException(
+                    $"Planned production assignment '{assignment.Id}' break windows must be contained in the planned window and must not overlap.");
+            }
+        }
     }
 
     private static ProductionContextAssignment ReadProductionContextAssignment(

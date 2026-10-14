@@ -108,27 +108,29 @@ public sealed class PlannedProductionIntervalResolver
             }
 
             var plannedWindows = calendarOverride?.ReplacementPlannedWindows ?? assignment.PlannedWindows;
-            var planned = plannedWindows
-                .Select(window => ResolveWindow(assignment, date, window))
-                .OrderBy(static interval => interval.Start)
-                .ToList();
-            var breaks = assignment.BreakWindows
-                .Select(window => ResolveWindow(assignment, date, window))
-                .OrderBy(static interval => interval.Start)
-                .ToArray();
-
-            foreach (var interval in Subtract(planned, breaks))
+            foreach (var window in plannedWindows)
             {
-                output.Add(new PlannedProductionInterval
+                var planned = ResolveWindow(assignment, date, window);
+                var breaks = assignment.BreakWindows
+                    .Select(pause => ResolveWindow(assignment,
+                        window.IsOvernight && pause.StartsAtLocal < window.StartsAtLocal
+                            ? date.AddDays(1) : date, pause))
+                    .OrderBy(static interval => interval.Start)
+                    .ToArray();
+
+                foreach (var interval in Subtract([planned], breaks))
                 {
-                    SourceAssignmentId = assignment.Id,
-                    CompanyId = assignment.CompanyId,
-                    SiteId = assignment.SiteId,
-                    ProductionLineId = productionLineId ?? assignment.ProductionLineId,
-                    FactoryDate = date,
-                    StartsAtUtc = interval.Start,
-                    EndsAtUtc = interval.End,
-                });
+                    output.Add(new PlannedProductionInterval
+                    {
+                        SourceAssignmentId = assignment.Id,
+                        CompanyId = assignment.CompanyId,
+                        SiteId = assignment.SiteId,
+                        ProductionLineId = productionLineId ?? assignment.ProductionLineId,
+                        FactoryDate = date,
+                        StartsAtUtc = interval.Start,
+                        EndsAtUtc = interval.End,
+                    });
+                }
             }
         }
 
