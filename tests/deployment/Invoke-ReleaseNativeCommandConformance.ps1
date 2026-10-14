@@ -30,5 +30,17 @@ try{
     try{Invoke-External ('missing-native-'+[Guid]::NewGuid().ToString('N'))|Out-Null}catch{$failed=$true}
     if(-not $failed){throw 'Missing command was accepted.'}
     $results.MissingCommandRejected='PASS'
+    # Model Windows npm.cmd/npm discovery without requiring duplicate tools.
+    $realCommand=Get-Command -Name $shell -CommandType Application -ErrorAction Stop|Select-Object -First 1
+    function Get-Command {
+        param([string]$Name,[string]$CommandType,[string]$ErrorAction)
+        [pscustomobject]@{Source=$realCommand.Source}
+        [pscustomobject]@{Source='unusable-second-discovery-entry'}
+    }
+    '[Console]::Out.WriteLine("first-path-proof");exit 0'|Set-Content $child
+    $output=@(Invoke-External 'duplicate-native-fixture' @('-NoProfile','-File',$child))
+    if(-not($output -contains 'first-path-proof')){throw 'Multiple command discovery did not select the first executable.'}
+    $results.MultipleDiscoveryUsesFirst='PASS'
+
 }finally{Remove-Item -LiteralPath $root -Recurse -Force}
 [pscustomobject]$results

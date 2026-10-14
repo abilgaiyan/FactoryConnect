@@ -26,7 +26,7 @@ function Invoke-External {
     # Windows PowerShell turns redirected native stderr into ErrorRecords.
     # Capture it even under the caller's Stop preference, then use the actual
     # process exit code as authority. NuGet/build failures remain fatal.
-    $command = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop
+    $command = @(Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop)[0]
     $savedPreference = $ErrorActionPreference
     $PSNativeCommandUseErrorActionPreference = $false
     $global:LASTEXITCODE = $null
