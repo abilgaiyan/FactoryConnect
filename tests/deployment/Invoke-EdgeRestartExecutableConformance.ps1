@@ -44,7 +44,11 @@ function Assert-True([bool]$Value,[string]$Message) { if (-not $Value) { throw $
 function Invoke-Case([string]$Id,[scriptblock]$Body) {
     Write-Host "Running $Id"
     try { & $Body; $results[$Id] = 'PASS'; Write-Host "$Id PASS" }
-    catch { $results[$Id] = "FAIL: $($_.Exception.Message)"; throw }
+    catch {
+        $results[$Id] = "FAIL: $($_.Exception.Message)"
+        Write-Warning "$Id primary failure: $($_.Exception.Message)`n$($_.InvocationInfo.PositionMessage)`n$($_.ScriptStackTrace)"
+        throw
+    }
 }
 function Free-Port {
     $l = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
@@ -111,6 +115,7 @@ function Write-Runtime([string]$Root,$Records) {
 function Start-Fixture([string]$Root,[string]$Name) {
     $cfg = Get-Content -Raw (Join-Path $Root "config\$Name.production.json") | ConvertFrom-Json
     $savedUrl = $env:Urls; $savedFailure = $env:RbsFixtureFailure
+    $p=$null
     try {
         if ($Name -ne 'edge') { $env:Urls = $cfg.Urls }
         $env:RbsFixtureFailure = $cfg.RbsFixtureFailure
@@ -118,7 +123,7 @@ function Start-Fixture([string]$Root,[string]$Name) {
         $exe = Join-Path $Root "releases\$releaseId\apps\$Name\FactoryConnect.$role.exe"
         $p = Start-Process $exe -PassThru -WindowStyle Hidden
         return @{name=$Name;pid=$p.Id;executablePath=$exe;startTimeUtc=$p.StartTime.ToUniversalTime().ToString('o')}
-    } finally { $env:Urls=$savedUrl; $env:RbsFixtureFailure=$savedFailure }
+    } finally { if ($null -ne $p) { $p.Dispose() }; $env:Urls=$savedUrl; $env:RbsFixtureFailure=$savedFailure }
 }
 function Wait-FixtureHealth([string]$Root) {
     $api = Get-Content -Raw (Join-Path $Root 'config\api.production.json') | ConvertFrom-Json
@@ -149,7 +154,8 @@ function Assert-Preservation($Before,$After) {
     foreach ($n in @('api','dashboard')) {
         Assert-True (($Before.$n|ConvertTo-Json -Compress) -ceq ($After.$n|ConvertTo-Json -Compress)) "$n identity changed."
         $live=Get-Process -Id $After.$n.pid -ErrorAction Stop
-        Assert-True ($live.StartTime.ToUniversalTime().ToString('o') -ceq $After.$n.startTimeUtc) "$n process instance changed."
+        try { Assert-True ($live.StartTime.ToUniversalTime().ToString('o') -ceq $After.$n.startTimeUtc) "$n process instance changed." }
+        finally { $live.Dispose() }
     }
 }
 function Assert-Rejected([string]$Root) {
@@ -158,7 +164,9 @@ function Assert-Rejected([string]$Root) {
     Invoke-Restart $Root $true
     Assert-True ($before -ceq (Get-Content -Raw (Join-Path $Root 'deployment/runtime.json'))) 'Rejection changed durable evidence.'
     foreach ($n in @('edge','api','dashboard')) {
-        Assert-True ($null -ne (Get-Process -Id $records.$n.pid -ErrorAction SilentlyContinue)) "Rejection terminated $n."
+        $live=Get-Process -Id $records.$n.pid -ErrorAction SilentlyContinue
+        try { Assert-True ($null -ne $live) "Rejection terminated $n." }
+        finally { if ($null -ne $live) { $live.Dispose() } }
     }
 }
 
@@ -177,7 +185,7 @@ function Assert-ReadOnlyAssessment([string]$Root,[string]$Classification) {
     foreach ($file in @(Get-ChildItem (Join-Path $Root 'deployment') -File)) { $before[$file.FullName]=(Get-FileHash $file.FullName).Hash }
     $processes=@{}
     foreach ($p in @(Get-Process)) {
-        try { if ($p.Path.StartsWith($Root+'\',[StringComparison]::OrdinalIgnoreCase)) { $processes[$p.Id]=$p.StartTime.ToUniversalTime().ToString('o') } } catch { }
+        try { if ($p.Path.StartsWith($Root+'\',[StringComparison]::OrdinalIgnoreCase)) { $processes[$p.Id]=$p.StartTime.ToUniversalTime().ToString('o') } } catch { } finally { $p.Dispose() }
     }
     $report=& $AssessmentScript -InstallRoot $Root
     Assert-True ($report.classification -ceq $Classification) "Unexpected assessment: $($report|ConvertTo-Json -Depth 10 -Compress)"
@@ -187,7 +195,8 @@ function Assert-ReadOnlyAssessment([string]$Root,[string]$Classification) {
     foreach ($file in $after) { Assert-True ($before[$file.FullName] -ceq (Get-FileHash $file.FullName).Hash) 'Assessment changed evidence bytes.' }
     foreach ($id in $processes.Keys) {
         $live=Get-Process -Id $id -ErrorAction Stop
-        Assert-True ($live.StartTime.ToUniversalTime().ToString('o') -ceq $processes[$id]) 'Assessment changed a process instance.'
+        try { Assert-True ($live.StartTime.ToUniversalTime().ToString('o') -ceq $processes[$id]) 'Assessment changed a process instance.' }
+        finally { $live.Dispose() }
     }
     return $report
 }
@@ -211,6 +220,24 @@ function Invoke-InterruptedRestart([string]$Root,[string]$OperationScript) {
         $hostProcess.Dispose()
     }
 }
+
+function Remove-FixtureDirectory([string]$Path) {
+    for ($attempt=0;$attempt -lt 6;$attempt++) {
+        try {
+            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop }
+            return
+        } catch {
+            if ($attempt -eq 5) { throw }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+function Complete-FixtureRun($PrimaryFailure,$CleanupFailures) {
+    if ($null -ne $PrimaryFailure) { throw $PrimaryFailure }
+    if ($CleanupFailures.Count -gt 0) { throw ("Fixture cleanup failed: " + ($CleanupFailures -join '; ')) }
+}
+$primaryFailure=$null
+$cleanupFailures=[Collections.Generic.List[string]]::new()
 
 try {
     Invoke-Case 'Executable-E01-E10' {
@@ -370,7 +397,8 @@ try {
             @($report.reasons|Where-Object{$_ -like 'OldAndReplacementLive:*'}).Count -eq 1) 'Exact dual-Edge conflict was not explicitly classified.'
         Assert-Rejected $r
         $old=Get-Process -Id $before.edge.pid -ErrorAction Stop
-        Assert-True ($old.StartTime.ToUniversalTime().ToString('o') -ceq $before.edge.startTimeUtc) 'Assessment/retry changed the old Edge instance.'
+        try { Assert-True ($old.StartTime.ToUniversalTime().ToString('o') -ceq $before.edge.startTimeUtc) 'Assessment/retry changed the old Edge instance.' }
+        finally { $old.Dispose() }
     }
     Invoke-Case 'Executable-E11' {
         $r=New-HealthyRoot E11; $v=Read-Runtime $r; $v.selectedRelease='2'*40
@@ -385,23 +413,48 @@ try {
         $second.deploymentStatus='EdgeRestarting'
         $second|ConvertTo-Json -Depth 30|Set-Content (Join-Path $r 'deployment/runtime.json'); Assert-Rejected $r
     }
+ } catch {
+    $primaryFailure=$_
 } finally {
-    # Enumerate every child launched from a disposable root, including processes
-    # that never reached runtime.json. Revalidate PID/path/start before stopping.
-    foreach($r in $roots) {
-        foreach($p in @(Get-Process)) {
-            try { $path=$p.Path; $start=$p.StartTime.ToUniversalTime().ToString('o') } catch { continue }
-            if ([string]::IsNullOrEmpty($path) -or -not $path.StartsWith($r + '\',[StringComparison]::OrdinalIgnoreCase)) { continue }
+    # Cleanup errors are secondary: never mask the test failure or abandon later
+    # roots. Pin, stop and wait on the exact fixture instance, then release every
+    # process handle before attempting to delete its executable image.
+    foreach ($fixtureRoot in $roots) {
+        $rootCleanupFailed=$false
+        foreach ($process in @(Get-Process)) {
+            $isFixture=$false
             try {
-                $live=Get-Process -Id $p.Id -ErrorAction SilentlyContinue
-                if($null -ne $live -and $live.Path -eq $path -and $live.StartTime.ToUniversalTime().ToString('o') -eq $start){Stop-Process -InputObject $live -Force; $live.WaitForExit()}
-            } catch { throw "Fixture cleanup failed: $($_.Exception.Message)" }
+                [void]$process.Handle
+                $process.Refresh()
+                if ($process.HasExited) { continue }
+                $path=$process.Path
+                if ([string]::IsNullOrWhiteSpace($path) -or -not $path.StartsWith($fixtureRoot+'\',[StringComparison]::OrdinalIgnoreCase)) { continue }
+                $isFixture=$true
+                # Path was read from the pinned instance. Stop and observe that
+                # same instance, never a PID reacquired after termination.
+                Stop-Process -InputObject $process -Force -ErrorAction Stop
+                if (-not $process.WaitForExit(5000)) { throw "Fixture process $($process.Id) did not exit within five seconds." }
+            } catch {
+                if ($isFixture) {
+                    $rootCleanupFailed=$true
+                    $cleanupFailures.Add("$fixtureRoot process cleanup: $($_.Exception.Message)")
+                }
+            } finally { $process.Dispose() }
         }
-        foreach ($file in @(Get-ChildItem -LiteralPath $r -File -Recurse)) {
-            [IO.File]::SetAttributes($file.FullName,([IO.File]::GetAttributes($file.FullName) -band (-bnot [IO.FileAttributes]::ReadOnly)))
-        }
-        Remove-Item -LiteralPath $r -Recurse -Force
+        if ($rootCleanupFailed) { continue }
+        try {
+            # Earlier assertions and production helpers can have collectible
+            # Process wrappers. Release them so Windows can unmap exited images.
+            [GC]::Collect(); [GC]::WaitForPendingFinalizers(); [GC]::Collect()
+            foreach ($file in @(Get-ChildItem -LiteralPath $fixtureRoot -File -Recurse)) {
+                [IO.File]::SetAttributes($file.FullName,([IO.File]::GetAttributes($file.FullName) -band (-bnot [IO.FileAttributes]::ReadOnly)))
+            }
+            Remove-FixtureDirectory $fixtureRoot
+        } catch { $cleanupFailures.Add("$fixtureRoot file cleanup: $($_.Exception.Message)") }
     }
-    Remove-Item -LiteralPath $build -Recurse -Force
+    try { Remove-FixtureDirectory $build }
+    catch { $cleanupFailures.Add("$build file cleanup: $($_.Exception.Message)") }
+    foreach ($message in $cleanupFailures) { Write-Warning "Secondary fixture cleanup failure: $message" }
 }
+Complete-FixtureRun $primaryFailure $cleanupFailures
 [pscustomobject]$results

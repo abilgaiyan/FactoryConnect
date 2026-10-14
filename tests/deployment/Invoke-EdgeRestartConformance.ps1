@@ -254,6 +254,7 @@ try {
 }
 [pscustomobject]$results
 & (Join-Path $PSScriptRoot 'Invoke-EdgeRestartAssessmentConformance.ps1')
+& (Join-Path $PSScriptRoot 'Invoke-EdgeRestartFixtureCleanupConformance.ps1')
 if ($Executable) {
     & (Join-Path $PSScriptRoot 'Invoke-EdgeRestartExecutableConformance.ps1') -RestartScript $RestartScript
 }
