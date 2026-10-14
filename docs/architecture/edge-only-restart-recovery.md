@@ -104,3 +104,32 @@ and PowerShell parsing, as well as the existing release requirements. Production
 acceptance remains held until this actual-payload proof and the new executable
 fixture results are reviewed. No factory restart or deployment is part of these
 commands.
+
+## Patched self-contained runtime requirement
+
+The `fd4384b…` artifact's API Pkcs owner was ASP.NET Core runtime pack 10.0.7.
+It remains held and immutable. Provenance alone does not remediate the affected
+Pkcs assembly; see Microsoft's [CVE-2026-70162 advisory](https://github.com/dotnet/announcements/issues/454)
+and [CVE-2026-84008 advisory](https://github.com/dotnet/announcements/issues/468).
+
+Release production now requires stable SDK 10.0.402 or newer in the 10.0 series
+and explicitly requests runtime framework 10.0.13. Before final publication,
+`FactoryConnect.PkcsPayload.ps1` checks all five staged applications. It requires
+patched runtime-pack identities, selects the actual Pkcs runtime asset owner,
+accepts patched NuGet 9.0.21+ or 10.0.13+ and ASP.NET Core 10.0.13+ owners in
+those supported series, and checks DLL identity/product version plus manifest
+coverage. A package library entry without a selected runtime asset is not a
+second owner. Optional native-only dependency entries are handled under strict
+mode. Missing/ambiguous ownership, affected versions and inconsistent DLLs fail
+before the immutable release directory/archive is created.
+
+Run the security cases on the new exact commit before producing its artifact:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\deployment\Invoke-PkcsPayloadConformance.ps1 -Executable
+```
+
+This Windows PowerShell 5.1 mode compiles disposable PE assembly fixtures;
+without `-Executable`, identity observations are controlled fixtures. Neither
+mode proves an actual application publish. A new artifact, its actual-payload
+conformance result, SHA256 and clean exact-source evidence remain required.
