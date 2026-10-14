@@ -73,10 +73,10 @@ function Write-Config([string]$Root,[int]$ApiPort,[int]$DashboardPort,[bool]$Val
     $edge|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'config\edge.production.json');$api|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'config\api.production.json');$dash|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'config\dashboard.production.json')
 }
 
-function Invoke-Restart([string]$Root,[bool]$ExpectFailure=$false) {
+function Invoke-Restart([string]$Root,[bool]$ExpectFailure=$false,[string]$OperationScript=$RestartScript) {
     $out = Join-Path $Root ('out-' + [Guid]::NewGuid().ToString('N') + '.txt')
     $err = $out + '.err'
-    $args = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2 -ShutdownTimeoutSeconds 2' -f $RestartScript,$Root
+    $args = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2 -ShutdownTimeoutSeconds 2' -f $OperationScript,$Root
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $shell = (Get-Command powershell.exe).Source
     $info.FileName = $env:ComSpec
@@ -161,6 +161,57 @@ function Assert-Rejected([string]$Root) {
         Assert-True ($null -ne (Get-Process -Id $records.$n.pid -ErrorAction SilentlyContinue)) "Rejection terminated $n."
     }
 }
+
+$AssessmentScript=Join-Path (Split-Path $RestartScript -Parent) 'Get-FactoryConnectEdgeRestartAssessment.ps1'
+Copy-Item (Join-Path (Split-Path $RestartScript -Parent) 'FactoryConnect.ProcessTermination.ps1') (Join-Path $build 'FactoryConnect.ProcessTermination.ps1')
+function New-FaultScript([string]$Name,[string]$Anchor,[string]$Injection) {
+    $source=Get-Content -Raw -LiteralPath $RestartScript
+    Assert-True (($source.Split(@($Anchor),[StringSplitOptions]::None).Count - 1) -eq 1) "Fault anchor is not unique: $Name"
+    $source=$source.Replace($Anchor,$Injection+"`r`n"+$Anchor)
+    $path=Join-Path $build ("Restart-$Name.ps1")
+    Set-Content -LiteralPath $path -Value $source -Encoding UTF8
+    return $path
+}
+function Assert-ReadOnlyAssessment([string]$Root,[string]$Classification) {
+    $before=@{}
+    foreach ($file in @(Get-ChildItem (Join-Path $Root 'deployment') -File)) { $before[$file.FullName]=(Get-FileHash $file.FullName).Hash }
+    $processes=@{}
+    foreach ($p in @(Get-Process)) {
+        try { if ($p.Path.StartsWith($Root+'\',[StringComparison]::OrdinalIgnoreCase)) { $processes[$p.Id]=$p.StartTime.ToUniversalTime().ToString('o') } } catch { }
+    }
+    $report=& $AssessmentScript -InstallRoot $Root
+    Assert-True ($report.classification -ceq $Classification) "Unexpected assessment: $($report|ConvertTo-Json -Depth 10 -Compress)"
+    Assert-True (-not $report.mutationAuthorized -and $report.recoveryRequired) 'Assessment authorized mutation or omitted recovery requirement.'
+    $after=@(Get-ChildItem (Join-Path $Root 'deployment') -File)
+    Assert-True ($after.Count -eq $before.Count) 'Assessment changed the evidence file inventory.'
+    foreach ($file in $after) { Assert-True ($before[$file.FullName] -ceq (Get-FileHash $file.FullName).Hash) 'Assessment changed evidence bytes.' }
+    foreach ($id in $processes.Keys) {
+        $live=Get-Process -Id $id -ErrorAction Stop
+        Assert-True ($live.StartTime.ToUniversalTime().ToString('o') -ceq $processes[$id]) 'Assessment changed a process instance.'
+    }
+    return $report
+}
+function Invoke-InterruptedRestart([string]$Root,[string]$OperationScript) {
+    $marker=Join-Path $Root 'interruption-marker.json'
+    $info=New-Object Diagnostics.ProcessStartInfo
+    $info.FileName=(Get-Command powershell.exe).Source
+    $info.Arguments='-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2 -ShutdownTimeoutSeconds 2' -f $OperationScript,$Root
+    $info.UseShellExecute=$false; $info.CreateNoWindow=$true
+    $hostProcess=[Diagnostics.Process]::Start($info)
+    try {
+        $deadline=[DateTime]::UtcNow.AddSeconds(20)
+        while (-not (Test-Path -LiteralPath $marker) -and -not $hostProcess.HasExited -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
+        Assert-True (Test-Path -LiteralPath $marker) 'Restart did not reach the interruption marker.'
+        # Terminate only the test PowerShell host, never its fixture child. This
+        # bypasses catch/finally and exercises an actual post-launch interruption.
+        $hostProcess.Kill(); [void]$hostProcess.WaitForExit(5000)
+        return (Get-Content -Raw -LiteralPath $marker | ConvertFrom-Json)
+    } finally {
+        if (-not $hostProcess.HasExited) { $hostProcess.Kill(); [void]$hostProcess.WaitForExit(5000) }
+        $hostProcess.Dispose()
+    }
+}
+
 try {
     Invoke-Case 'Executable-E01-E10' {
         $r=New-HealthyRoot E01; $before=Read-Runtime $r
@@ -206,6 +257,99 @@ try {
         Assert-True (Test-Path (Join-Path $r 'deployment/runtime-start.intent.json')) 'Failed launch lost intent.'
         Assert-Preservation $before $after; Wait-FixtureHealth $r
     }
+
+    Invoke-Case 'Executable-R01-TerminationInterruption' {
+        $r=New-HealthyRoot R01; $before=Read-Runtime $r
+        $injection='[IO.File]::WriteAllText((Join-Path $root ''interruption-marker.json''), ''{"terminated":true}''); [Threading.Thread]::Sleep([Threading.Timeout]::Infinite)'
+        $fault=New-FaultScript R01 '$terminationConfirmed = $true' $injection
+        [void](Invoke-InterruptedRestart $r $fault)
+        $after=Read-Runtime $r
+        Assert-True ($after.deploymentStatus -eq 'EdgeRestarting' -and -not $after.edgeRestart.terminationConfirmed) 'Interruption invented termination publication.'
+        Assert-True ($null -eq (Get-Process -Id $before.edge.pid -ErrorAction SilentlyContinue)) 'Old Edge survived termination.'
+        Assert-Preservation $before $after
+        $report=Assert-ReadOnlyAssessment $r 'AbsentReplacement'
+        Assert-True ($report.identityStates.oldEdge -eq 'Absent' -and -not $report.launchIntentPresent) 'Termination interruption was not distinguished.'
+    }
+    Invoke-Case 'Executable-R02-PostLaunchInterruption' {
+        $r=New-HealthyRoot R02; $before=Read-Runtime $r
+        $injection='[IO.File]::WriteAllText((Join-Path $root ''interruption-marker.json''), ($replacement|ConvertTo-Json -Depth 10)); [Threading.Thread]::Sleep([Threading.Timeout]::Infinite)'
+        $fault=New-FaultScript R02 "`$phase = 'Stabilization'" $injection
+        $child=Invoke-InterruptedRestart $r $fault
+        $after=Read-Runtime $r
+        Assert-True ($null -eq $after.edge -and (Test-Path (Join-Path $r 'deployment/runtime-start.intent.json'))) 'Post-launch interruption lost intent or invented ownership.'
+        Assert-Preservation $before $after
+        $report=Assert-ReadOnlyAssessment $r 'AmbiguousOwnership'
+        Assert-True ($report.candidates.Count -eq 1 -and $report.candidates[0].pid -eq $child.pid -and $report.candidates[0].startTimeUtc -ceq $child.startTimeUtc) 'Exact live candidate was not discovered.'
+        $evidence=Get-Content -Raw (Join-Path $r 'deployment/runtime.json')
+        Invoke-Restart $r $true
+        Assert-True ($evidence -ceq (Get-Content -Raw (Join-Path $r 'deployment/runtime.json'))) 'Retry changed interrupted evidence.'
+        Assert-True ((Get-Process -Id $child.pid).StartTime.ToUniversalTime().ToString('o') -ceq $child.startTimeUtc) 'Retry changed the unrecorded child.'
+    }
+    Invoke-Case 'Executable-R03-OwnershipPublicationFailure' {
+        $r=New-HealthyRoot R03; $before=Read-Runtime $r
+        $injection='[IO.File]::SetAttributes($runtimePath, ([IO.File]::GetAttributes($runtimePath) -bor [IO.FileAttributes]::ReadOnly)); $script:fixturePublicationLock = [IO.File]::Open($runtimePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)'
+        $fault=New-FaultScript R03 "    `$replacementPublished = `$true" $injection
+        Invoke-Restart $r $true $fault
+        $path=Join-Path $r 'deployment/runtime.json'
+        [IO.File]::SetAttributes($path,([IO.File]::GetAttributes($path) -band (-bnot [IO.FileAttributes]::ReadOnly)))
+        $after=Read-Runtime $r; Assert-Preservation $before $after
+        Assert-True ($null -eq $after.edge -and (Test-Path (Join-Path $r 'deployment/runtime-start.intent.json'))) 'Failed ownership publication lost intent or claimed ownership.'
+        $report=Assert-ReadOnlyAssessment $r 'AmbiguousOwnership'
+        Assert-True ($report.candidates.Count -eq 1) 'Unrecorded live replacement was not discovered.'
+    }
+    Invoke-Case 'Executable-R04-FinalPublicationFailure' {
+        $r=New-HealthyRoot R04; $before=Read-Runtime $r
+        $injection='[IO.File]::SetAttributes($runtimePath, ([IO.File]::GetAttributes($runtimePath) -bor [IO.FileAttributes]::ReadOnly)); $script:fixturePublicationLock = [IO.File]::Open($runtimePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)'
+        $fault=New-FaultScript R04 "    Write-JsonFileAtomic `$runtimePath (New-EdgeRestartRuntime 'Succeeded' 'Complete')" $injection
+        Invoke-Restart $r $true $fault
+        $path=Join-Path $r 'deployment/runtime.json'
+        [IO.File]::SetAttributes($path,([IO.File]::GetAttributes($path) -band (-bnot [IO.FileAttributes]::ReadOnly)))
+        $after=Read-Runtime $r; Assert-Preservation $before $after
+        Assert-True ($after.deploymentStatus -ne 'Succeeded' -and $after.edgeRestart.replacementPublished -and -not (Test-Path (Join-Path $r 'deployment/runtime-start.intent.json'))) 'Final publication failure did not retain its blocked owned state.'
+        $report=Assert-ReadOnlyAssessment $r 'VerifiablyOwnedReplacement'
+        Assert-True ($report.identityStates.recordedEdge -eq 'Verified') 'Durable replacement could not be verified.'
+        Assert-Rejected $r
+    }
+    Invoke-Case 'Executable-R05-FinalVerificationFailure' {
+        $r=New-HealthyRoot R05; $before=Read-Runtime $r
+        $fault=New-FaultScript R05 "    `$phase = 'FinalVerification'" "    `$phase = 'FinalVerification'; throw 'Injected final-verification interruption after intent clear.'"
+        Invoke-Restart $r $true $fault
+        $after=Read-Runtime $r; Assert-Preservation $before $after
+        Assert-True ($after.deploymentStatus -eq 'Failed' -and $after.failurePhase -eq 'FinalVerification' -and -not (Test-Path (Join-Path $r 'deployment/runtime-start.intent.json'))) 'Final verification failure was not durably recorded.'
+        [void](Assert-ReadOnlyAssessment $r 'VerifiablyOwnedReplacement'); Assert-Rejected $r
+    }
+
+
+    Invoke-Case 'Executable-R06-OwnedWithIntentInterruption' {
+        $r=New-HealthyRoot R06; $before=Read-Runtime $r
+        $injection='[IO.File]::WriteAllText((Join-Path $root ''interruption-marker.json''), ($replacement|ConvertTo-Json -Depth 10)); [Threading.Thread]::Sleep([Threading.Timeout]::Infinite)'
+        $fault=New-FaultScript R06 "    `$phase = 'IntentClear'" $injection
+        $child=Invoke-InterruptedRestart $r $fault
+        $after=Read-Runtime $r; Assert-Preservation $before $after
+        $report=Assert-ReadOnlyAssessment $r 'VerifiablyOwnedReplacement'
+        Assert-True ($report.launchIntentPresent -and $report.launchIntentConsistent -and $after.edge.pid -eq $child.pid) 'Owned replacement/intent interruption was not distinguished.'
+        Assert-Rejected $r
+    }
+    Invoke-Case 'Executable-R07-AbsentWithIntent' {
+        $r=New-HealthyRoot R07; $before=Read-Runtime $r
+        $injection='[IO.File]::WriteAllText((Join-Path $root ''interruption-marker.json''), ($replacement|ConvertTo-Json -Depth 10)); [Threading.Thread]::Sleep([Threading.Timeout]::Infinite)'
+        $fault=New-FaultScript R07 "`$phase = 'Stabilization'" $injection
+        $child=Invoke-InterruptedRestart $r $fault
+        # Fixture-only exit simulation. Never a production recovery action.
+        $live=Get-Process -Id $child.pid -ErrorAction Stop
+        [void]$live.Handle
+        Assert-True ($live.Path -eq $child.executablePath -and $live.StartTime.ToUniversalTime().ToString('o') -ceq $child.startTimeUtc) 'Fixture identity changed before exit simulation.'
+        Stop-Process -InputObject $live -ErrorAction Stop
+        Assert-True ($live.WaitForExit(5000)) 'Fixture replacement did not exit.'
+        $live.Dispose()
+        $after=Read-Runtime $r; Assert-Preservation $before $after
+        $report=Assert-ReadOnlyAssessment $r 'AbsentReplacement'
+        Assert-True ($report.launchIntentPresent -and $report.candidates.Count -eq 0) 'Absent replacement with retained intent was not distinguished.'
+        $beforeBytes=Get-Content -Raw (Join-Path $r 'deployment/runtime.json')
+        Invoke-Restart $r $true
+        Assert-True ($beforeBytes -ceq (Get-Content -Raw (Join-Path $r 'deployment/runtime.json'))) 'Retry bypassed the absent replacement intent barrier.'
+    }
+
     Invoke-Case 'Executable-E11' {
         $r=New-HealthyRoot E11; $v=Read-Runtime $r; $v.selectedRelease='2'*40
         $v|ConvertTo-Json -Depth 30|Set-Content (Join-Path $r 'deployment/runtime.json'); Assert-Rejected $r
@@ -230,6 +374,9 @@ try {
                 $live=Get-Process -Id $p.Id -ErrorAction SilentlyContinue
                 if($null -ne $live -and $live.Path -eq $path -and $live.StartTime.ToUniversalTime().ToString('o') -eq $start){Stop-Process -InputObject $live -Force; $live.WaitForExit()}
             } catch { throw "Fixture cleanup failed: $($_.Exception.Message)" }
+        }
+        foreach ($file in @(Get-ChildItem -LiteralPath $r -File -Recurse)) {
+            [IO.File]::SetAttributes($file.FullName,([IO.File]::GetAttributes($file.FullName) -band (-bnot [IO.FileAttributes]::ReadOnly)))
         }
         Remove-Item -LiteralPath $r -Recurse -Force
     }

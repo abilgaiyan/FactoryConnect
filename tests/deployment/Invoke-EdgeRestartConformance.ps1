@@ -253,6 +253,7 @@ try {
     foreach ($root in $roots) { Remove-Item -LiteralPath $root -Recurse -Force }
 }
 [pscustomobject]$results
+& (Join-Path $PSScriptRoot 'Invoke-EdgeRestartAssessmentConformance.ps1')
 if ($Executable) {
     & (Join-Path $PSScriptRoot 'Invoke-EdgeRestartExecutableConformance.ps1') -RestartScript $RestartScript
 }
