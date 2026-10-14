@@ -23,13 +23,29 @@ function Invoke-External {
         [Parameter()][string[]]$Arguments = @()
     )
 
-    $output = & $FilePath @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $rendered = ($output | Out-String).Trim()
-        throw "'$FilePath $($Arguments -join ' ')' failed with exit code $LASTEXITCODE.$([Environment]::NewLine)$rendered"
+    # Windows PowerShell turns redirected native stderr into ErrorRecords.
+    # Capture it even under the caller's Stop preference, then use the actual
+    # process exit code as authority. NuGet/build failures remain fatal.
+    $command = Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop
+    $savedPreference = $ErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+    $global:LASTEXITCODE = $null
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& $command.Source @Arguments 2>&1)
+        $exitCode = $global:LASTEXITCODE
     }
+    finally { $ErrorActionPreference = $savedPreference }
+    $lines = @($output | ForEach-Object { $_.ToString() })
+    $rendered = ($lines -join [Environment]::NewLine).Trim()
+    if ($null -eq $exitCode) {
+        throw "'$FilePath $($Arguments -join ' ')' did not provide a native exit code.$([Environment]::NewLine)$rendered"
+    }
+    if ($exitCode -ne 0) {
+        throw "'$FilePath $($Arguments -join ' ')' failed with exit code $exitCode.$([Environment]::NewLine)$rendered"
+    }
+    return $lines
 
-    return @($output)
 }
 
 function Get-Sha256 {
