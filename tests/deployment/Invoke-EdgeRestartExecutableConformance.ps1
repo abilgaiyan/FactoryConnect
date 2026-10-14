@@ -350,6 +350,28 @@ try {
         Assert-True ($beforeBytes -ceq (Get-Content -Raw (Join-Path $r 'deployment/runtime.json'))) 'Retry bypassed the absent replacement intent barrier.'
     }
 
+    Invoke-Case 'Executable-R08-OldAndReplacementLive' {
+        $r=New-HealthyRoot R08; $before=Read-Runtime $r
+        # Deliberately contradictory evidence over two real isolated Edge
+        # instances: verify the assessor does not hide the surviving old Edge.
+        $replacement=Start-Fixture $r edge
+        $value=Read-Runtime $r
+        $value.edge=$replacement;$value.deploymentStatus='Failed'
+        $value|Add-Member -MemberType NoteProperty -Name edgeRestart -Value @{
+            schemaVersion='1.0';attemptId='fixture-dual-edge';status='Failed';phase='FinalVerification'
+            oldEdge=$before.edge;replacementPublished=$true;terminationConfirmed=$true
+            replacementObservation=@{record=$replacement;state='Owned'}
+        }
+        $value|ConvertTo-Json -Depth 30|Set-Content (Join-Path $r 'deployment/runtime.json')
+        Assert-Preservation $before (Read-Runtime $r)
+        $report=Assert-ReadOnlyAssessment $r 'AmbiguousOwnership'
+        Assert-True ($report.oldAndReplacementLive -and $report.identityStates.oldEdge -eq 'Verified' -and
+            $report.identityStates.recordedEdge -eq 'Verified' -and $report.candidates.Count -eq 1 -and
+            @($report.reasons|Where-Object{$_ -like 'OldAndReplacementLive:*'}).Count -eq 1) 'Exact dual-Edge conflict was not explicitly classified.'
+        Assert-Rejected $r
+        $old=Get-Process -Id $before.edge.pid -ErrorAction Stop
+        Assert-True ($old.StartTime.ToUniversalTime().ToString('o') -ceq $before.edge.startTimeUtc) 'Assessment/retry changed the old Edge instance.'
+    }
     Invoke-Case 'Executable-E11' {
         $r=New-HealthyRoot E11; $v=Read-Runtime $r; $v.selectedRelease='2'*40
         $v|ConvertTo-Json -Depth 30|Set-Content (Join-Path $r 'deployment/runtime.json'); Assert-Rejected $r

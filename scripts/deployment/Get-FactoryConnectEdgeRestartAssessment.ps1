@@ -127,6 +127,9 @@ try {
         if (-not $intentConsistent) { $reasons.Add('Startup intent does not match this Edge restart.') }
     }
     $candidates=@($inventory | Where-Object { $_.observation -eq 'VerifiedIdentity' -and $_.executablePath -eq $expected -and -not (Test-AssessmentSameRecord $_ $oldEdge) })
+    $oldObservedInInventory=(@($inventory | Where-Object { $_.observation -eq 'VerifiedIdentity' -and (Test-AssessmentSameRecord $_ $oldEdge) }).Count -gt 0)
+    $oldAndReplacementLive=($candidates.Count -gt 0 -and ($states.oldEdge -eq 'Verified' -or $oldObservedInInventory))
+    if ($oldAndReplacementLive) { $reasons.Add('OldAndReplacementLive: the exact old Edge and a replacement candidate are simultaneously live.') }
     $classification='AmbiguousOwnership'
     $published=($null -ne $restart -and (Get-AssessmentProperty $restart 'replacementPublished') -eq $true)
     $recordIsReplacement=($null -ne $record -and -not (Test-AssessmentSameRecord $record $oldEdge))
@@ -136,7 +139,8 @@ try {
         catch { }
     }
     if ($selectionVerified -and $inventoryComplete -and $inventoryStable -and $intentConsistent -and $null -ne $restart) {
-        if ($published -and $recordIsReplacement -and $recordAtExpectedPath -and $states.recordedEdge -eq 'Verified' -and
+        if (-not $oldAndReplacementLive -and $states.oldEdge -eq 'Absent' -and -not $oldObservedInInventory -and
+            $published -and $recordIsReplacement -and $recordAtExpectedPath -and $states.recordedEdge -eq 'Verified' -and
             $candidates.Count -eq 1 -and (Test-AssessmentSameRecord $candidates[0] $record)) {
             $classification='VerifiablyOwnedReplacement'
         } elseif ($candidates.Count -eq 0 -and $states.recordedEdge -in @('NoRecord','Absent','Verified') -and
@@ -148,8 +152,9 @@ try {
     # A point-in-time observation is never authority to alter durable evidence.
     [pscustomobject]@{
         schemaVersion='1.0';operation='EdgeRestartReadOnlyAssessment';observedAtUtc=[DateTime]::UtcNow.ToString('o')
-        classification=$classification;recoveryRequired=([string]$runtime.deploymentStatus -cne 'Succeeded' -or $null -ne $intent -or
+        classification=$classification;recoveryRequired=($classification -eq 'AmbiguousOwnership' -or [string]$runtime.deploymentStatus -cne 'Succeeded' -or $null -ne $intent -or
             ($null -ne $restart -and [string](Get-AssessmentProperty $restart 'status') -cne 'Succeeded'))
+        oldAndReplacementLive=$oldAndReplacementLive
         mutationAuthorized=$false;installRoot=$root;selectedRelease=[string]$runtime.selectedRelease
         runtimeStatus=[string]$runtime.deploymentStatus;restartPhase=(Get-AssessmentProperty $restart 'phase')
         launchIntentPresent=($null -ne $intent);launchIntentConsistent=$intentConsistent

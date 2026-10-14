@@ -38,13 +38,13 @@ and never deletes an intent or changes a runtime status.
 | Classification | Meaning | Next boundary |
 | --- | --- | --- |
 | `AbsentReplacement` | Stable, accessible inventory contains no replacement at the selected executable; relevant exact records are absent or identify the old Edge | Inspect `identityStates.oldEdge`: an old Edge still alive and an old Edge already stopped are different recovery situations. A separate authorized repair is required. |
-| `VerifiablyOwnedReplacement` | One candidate exactly matches the durably published replacement PID/path/start time; release and any surviving intent agree | The existing process is identified. Repair of durable completion/intent state remains a separate authorized operation; this report does not restore `Succeeded`. |
-| `AmbiguousOwnership` | Unpublished candidate, conflicting identity, multiple candidates, inaccessible/unstable inventory, foreign intent, or release mismatch | Preserve evidence and investigate. Do not adopt by executable name/path, infer origin from parent PID, or launch another Edge. |
+| `VerifiablyOwnedReplacement` | One candidate exactly matches the durably published replacement PID/path/start time; the exact old Edge is confirmed absent; release and any surviving intent agree | The existing process is identified. Repair of durable completion/intent state remains a separate authorized operation; this report does not restore `Succeeded`. |
+| `AmbiguousOwnership` | Simultaneously live old/replacement Edge, unpublished candidate, conflicting identity, multiple candidates, inaccessible/unstable inventory, foreign intent, or release mismatch | Preserve evidence and investigate. Do not adopt by executable name/path, infer origin from parent PID, or launch another Edge. |
 
 `candidates` provides observed identities for investigation. A diagnostic record
 may yield `diagnosticReplacement = Verified` while classification remains
 `AmbiguousOwnership`: exact observation and durable ownership are distinct.
-Inventory/access errors never become absence proof. Reports are point-in-time
+When the exact old Edge and a replacement candidate are both live, `oldAndReplacementLive = true`, the reason includes `OldAndReplacementLive`, and classification remains `AmbiguousOwnership` even if replacement ownership or `Succeeded` was previously recorded. An unproven or mismatched old identity also prevents `VerifiablyOwnedReplacement`. Inventory/access errors never become absence proof. Reports are point-in-time
 observations, not durable guarantees of future liveness. API/Dashboard identity
 states are reported; their HTTP health is not assessed by this read-only tool.
 
@@ -75,6 +75,7 @@ also runs real fixture processes, then exercises:
 - R05: inject a final-verification exception after intent clear; verify a durable `Failed` state with the owned replacement preserved.
 - R06: kill the restart host after ownership publication, before intent clear; verify ownership while preserving the correlated intent.
 - R07: let an interrupted, unrecorded fixture replacement exit; distinguish absence while retaining its unresolved intent.
+- R08: keep the exact old and replacement Edge instances simultaneously live; explicitly report the ownership conflict without changing either process or evidence.
 
 Fault hooks exist only in temporary instrumented copies made by the test
 harness. The repository operation has no production fault-injection switch.

@@ -102,6 +102,17 @@ try {
         finally {$held.Dispose()}
         Assert-True $failed 'Read-only operation ignored lock contention.'
     }
+    Invoke-Case A13-OldAndReplacementLive {
+        foreach ($published in @($true,$false)) {
+            $proof=New-Proof;$proof.live[100]=$proof.old.Clone()
+            $proof.runtime.edgeRestart.replacementPublished=$published
+            # Even an erroneous Succeeded marker must not conceal this conflict.
+            $proof.runtime.deploymentStatus='Succeeded';$proof.runtime.edgeRestart.status='Succeeded'
+            $report=Assert-Assessment 'AmbiguousOwnership'
+            Assert-True ($report.oldAndReplacementLive -and $report.identityStates.oldEdge -eq 'Verified' -and
+                $report.candidates.Count -eq 1 -and @($report.reasons | Where-Object { $_ -like 'OldAndReplacementLive:*' }).Count -eq 1) 'Simultaneously live old/replacement conflict was not explicit.'
+        }
+    }
     Invoke-Case A12-MissingLock {
         $proof=New-Proof;Publish-Proof;$path=Join-Path $proof.root 'deployment/deployment.lock';Remove-Item $path
         $failed=$false;try{& $operation -InstallRoot $proof.root|Out-Null}catch{$failed=$true}
