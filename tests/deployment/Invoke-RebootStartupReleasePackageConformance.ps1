@@ -112,3 +112,22 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
         [pscustomobject]@{EdgeRestartPayload='PASS';Name=$name;Sha256=$hash;SourceCommit=$metadata.sourceCommit}
     }
 }
+
+if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
+    $repoRoot = Split-Path (Split-Path (Split-Path $ReleaseBuilder -Parent) -Parent) -Parent
+    $versions = [xml](Get-Content (Join-Path $repoRoot 'Directory.Packages.props') -Raw)
+    $pkcsVersion = @($versions.Project.ItemGroup.PackageVersion | Where-Object { $_.Include -eq 'System.Security.Cryptography.Pkcs' })[0].Version
+    $sqlApplications = [ordered]@{'sql-readiness'='SqlReadiness';migrations='Migrations';edge='Edge';api='Api'}
+    foreach ($application in $sqlApplications.Keys) {
+        $appRoot = Join-Path $ReleaseDirectory "apps/$application"
+        $deps = Join-Path $appRoot "FactoryConnect.$($sqlApplications[$application]).deps.json"
+        $graph = Get-Content -Raw -LiteralPath $deps | ConvertFrom-Json
+        $pkcs = @($graph.libraries.PSObject.Properties | Where-Object { $_.Name.StartsWith('System.Security.Cryptography.Pkcs/', [StringComparison]::Ordinal) })
+        if ($pkcs.Count -ne 1 -or $pkcs[0].Name -cne "System.Security.Cryptography.Pkcs/$pkcsVersion") { throw "$application does not resolve the central patched Pkcs version." }
+        $dll = Join-Path $appRoot 'System.Security.Cryptography.Pkcs.dll'
+        $hash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+        $line = "$hash  apps/$application/System.Security.Cryptography.Pkcs.dll"
+        if (@(Get-Content (Join-Path $ReleaseDirectory 'MANIFEST.sha256') | Where-Object { $_ -ceq $line }).Count -ne 1) { throw "$application Pkcs assembly lacks exact manifest coverage." }
+    }
+    [pscustomobject]@{PkcsPayload='PASS';Version=$pkcsVersion;Applications=$sqlApplications.Count}
+}
