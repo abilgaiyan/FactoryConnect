@@ -23,13 +23,29 @@ function Invoke-External {
         [Parameter()][string[]]$Arguments = @()
     )
 
-    $output = & $FilePath @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $rendered = ($output | Out-String).Trim()
-        throw "'$FilePath $($Arguments -join ' ')' failed with exit code $LASTEXITCODE.$([Environment]::NewLine)$rendered"
+    # Windows PowerShell turns redirected native stderr into ErrorRecords.
+    # Capture it even under the caller's Stop preference, then use the actual
+    # process exit code as authority. NuGet/build failures remain fatal.
+    $command = @(Get-Command -Name $FilePath -CommandType Application -ErrorAction Stop)[0]
+    $savedPreference = $ErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+    $global:LASTEXITCODE = $null
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& $command.Source @Arguments 2>&1)
+        $exitCode = $global:LASTEXITCODE
     }
+    finally { $ErrorActionPreference = $savedPreference }
+    $lines = @($output | ForEach-Object { $_.ToString() })
+    $rendered = ($lines -join [Environment]::NewLine).Trim()
+    if ($null -eq $exitCode) {
+        throw "'$FilePath $($Arguments -join ' ')' did not provide a native exit code.$([Environment]::NewLine)$rendered"
+    }
+    if ($exitCode -ne 0) {
+        throw "'$FilePath $($Arguments -join ' ')' failed with exit code $exitCode.$([Environment]::NewLine)$rendered"
+    }
+    return $lines
 
-    return @($output)
 }
 
 function Get-Sha256 {
@@ -111,6 +127,7 @@ $buildStartedAtUtc = [DateTime]::UtcNow
 $runtimeIdentifier = 'win-x64'
 $configuration = 'Release'
 $targetFramework = 'net10.0'
+$runtimeFrameworkVersion = '10.0.13'
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
     $OutputRoot = Join-Path $repoRoot 'artifacts/releases'
@@ -137,6 +154,8 @@ $systemStartupScriptPath = Join-Path $repoRoot 'scripts/deployment/Start-Factory
 $systemStartupInstallerPath = Join-Path $repoRoot 'scripts/deployment/Install-FactoryConnectSystemStartup.ps1'
 $sqlReadinessScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
 $processTerminationScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect.ProcessTermination.ps1'
+$edgeRestartScriptPath = Join-Path $repoRoot 'scripts/deployment/Restart-FactoryConnectEdge.ps1'
+$edgeRestartAssessmentScriptPath = Join-Path $repoRoot 'scripts/deployment/Get-FactoryConnectEdgeRestartAssessment.ps1'
 
 Push-Location $repoRoot
 try {
@@ -171,6 +190,10 @@ try {
         throw "FactoryConnect release production requires a stable .NET 10.0.x SDK. Resolved '$dotnetVersion'."
     }
 
+    if ([version]$dotnetVersion -lt [version]'10.0.402') {
+        throw 'Release production requires stable .NET SDK 10.0.402 or newer in the 10.0 series.'
+    }
+
     $nodeVersionFile = Join-Path $repoRoot '.node-version'
     if (-not (Test-Path -LiteralPath $nodeVersionFile -PathType Leaf)) {
         throw '.node-version is required for FactoryConnect release production.'
@@ -190,7 +213,7 @@ try {
         throw "The reboot-safe package contract requires the runtime startup script, but it was not found at '$RuntimeStartupScriptPath'."
     }
 
-    foreach ($requiredPath in @($systemStartupScriptPath, $systemStartupInstallerPath, $processTerminationScriptPath, $sqlReadinessScriptPath)) {
+    foreach ($requiredPath in @($systemStartupScriptPath, $systemStartupInstallerPath, $processTerminationScriptPath, $sqlReadinessScriptPath, $edgeRestartScriptPath, $edgeRestartAssessmentScriptPath)) {
         if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
             throw "Required boot orchestration input missing: '$requiredPath'."
         }
@@ -256,6 +279,7 @@ try {
             '--framework', $targetFramework,
             '--runtime', $runtimeIdentifier,
             '--self-contained', 'true',
+            "-p:RuntimeFrameworkVersion=$runtimeFrameworkVersion",
             '--nologo',
             '--output', $publishDirectory
         )
@@ -288,6 +312,9 @@ try {
     [System.IO.File]::Copy($sqlReadinessScriptPath, (Join-Path $stagingRoot 'FactoryConnect.SqlReadiness.ps1'), $false)
     [System.IO.File]::Copy($processTerminationScriptPath, (Join-Path $stagingRoot 'FactoryConnect.ProcessTermination.ps1'), $false)
 
+    [System.IO.File]::Copy($edgeRestartScriptPath, (Join-Path $stagingRoot 'Restart-FactoryConnectEdge.ps1'), $false)
+    [System.IO.File]::Copy($edgeRestartAssessmentScriptPath, (Join-Path $stagingRoot 'Get-FactoryConnectEdgeRestartAssessment.ps1'), $false)
+
     $release = [ordered]@{
         schemaVersion = '1.0'
         sourceCommit = $SourceCommit
@@ -298,6 +325,7 @@ try {
             targetFramework = $targetFramework
             runtimeIdentifier = $runtimeIdentifier
             selfContained = $true
+            runtimeFrameworkVersion = $runtimeFrameworkVersion
         }
         toolchain = [ordered]@{
             dotNetSdkVersion = $dotnetVersion
@@ -320,6 +348,8 @@ try {
         )
         deploymentScript = 'Deploy-FactoryConnect.ps1'
         runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'
+        edgeRestartScript = 'Restart-FactoryConnectEdge.ps1'
+        edgeRestartAssessmentScript = 'Get-FactoryConnectEdgeRestartAssessment.ps1'
         systemStartupScript = 'Start-FactoryConnectSystem.ps1'
         systemStartupInstaller = 'Install-FactoryConnectSystemStartup.ps1'
         sqlReadinessScript = 'FactoryConnect.SqlReadiness.ps1'
@@ -342,6 +372,13 @@ try {
         "$(Get-Sha256 -Path $file.FullName)  $relative"
     }
     Write-Utf8NoBom -Path (Join-Path $stagingRoot 'MANIFEST.sha256') -Text (($manifestLines -join "`n") + "`n")
+
+    . (Join-Path $repoRoot 'scripts/deployment/FactoryConnect.PkcsPayload.ps1')
+    foreach ($deployable in $deployables) {
+        $appRoot = Join-Path $stagingRoot "apps/$($deployable.Name)"
+        $depsName = [IO.Path]::GetFileNameWithoutExtension($deployable.Executable) + '.deps.json'
+        [void](Assert-FactoryConnectPkcsPayload -AppRoot $appRoot -DepsPath (Join-Path $appRoot $depsName) -ManifestPath (Join-Path $stagingRoot 'MANIFEST.sha256') -Application $deployable.Name)
+    }
 
     [System.IO.Directory]::CreateDirectory($OutputRoot) | Out-Null
     [System.IO.Directory]::Move($stagingRoot, $finalRoot)
