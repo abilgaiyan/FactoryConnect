@@ -135,7 +135,8 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
             $owners = @(
                 foreach ($target in $graph.targets.PSObject.Properties) {
                     foreach ($library in $target.Value.PSObject.Properties) {
-                        $runtime = $library.Value.runtime
+                        $runtimeProperty = $library.Value.PSObject.Properties['runtime']
+                        $runtime = if ($null -ne $runtimeProperty) { $runtimeProperty.Value } else { $null }
                         if ($null -ne $runtime -and
                             $null -ne $runtime.PSObject.Properties['System.Security.Cryptography.Pkcs.dll']) {
                             [pscustomobject]@{ Target=$target.Name; Library=$library.Name }
