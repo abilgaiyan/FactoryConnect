@@ -185,7 +185,7 @@ public sealed class ProductionConfigurationCompositionTests
             TimeSpan.FromTicks(intervals.Sum(static interval =>
                 (interval.EndsAtUtc - interval.StartsAtUtc).Ticks)));
         var expectedBreakStart = new DateTimeOffset(
-            date.AddDays(breakDayOffset).ToDateTime(TimeOnly.Parse(breakStart)), TimeSpan.Zero);
+            date.AddDays(breakDayOffset).ToDateTime(TimeOnly.Parse(breakStart, System.Globalization.CultureInfo.InvariantCulture)), TimeSpan.Zero);
         Assert.Equal(expectedBreakStart, intervals[0].EndsAtUtc);
         Assert.Equal(expectedBreakStart.AddMinutes(30), intervals[1].StartsAtUtc);
         Assert.All(intervals, interval => Assert.Equal(date, interval.FactoryDate));
