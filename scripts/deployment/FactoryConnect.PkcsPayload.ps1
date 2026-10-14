@@ -40,10 +40,19 @@ function Assert-FactoryConnectPkcsPayload {
     )
     if ($owners.Count -ne 1) { throw 'Pkcs published asset ownership is absent or ambiguous.' }
     $owner=$owners[0]
-    if ($owner.Asset.Name -cne 'System.Security.Cryptography.Pkcs.dll' -or $null -eq $graph.libraries.PSObject.Properties[$owner.Library]) { throw 'Pkcs owner or canonical asset path is invalid.' }
+    if ($null -eq $graph.libraries.PSObject.Properties[$owner.Library]) { throw "$Application Pkcs owner is absent from libraries: $($owner.Library)" }
     if ($owner.Library -cmatch '^System\.Security\.Cryptography\.Pkcs/(\d+\.\d+\.\d+)$') { $version=$Matches[1];$kind='NuGet' }
     elseif ($owner.Library -cmatch '^runtimepack\.Microsoft\.AspNetCore\.App\.Runtime\.win-x64/(\d+\.\d+\.\d+)$') { $version=$Matches[1];$kind='RuntimePack' }
     else { throw "Unrecognized Pkcs asset owner: $($owner.Library)" }
+    # NuGet runtime asset keys retain package-relative paths even when SDK
+    # publish places the selected DLL at the application root. Runtime packs use
+    # the bare filename. Reject foreign RIDs, traversal and unexpected layouts.
+    $assetPath=[string]$owner.Asset.Name
+    $validAssetPath=($assetPath -ceq 'System.Security.Cryptography.Pkcs.dll')
+    if ($kind -eq 'NuGet') {
+        $validAssetPath=$validAssetPath -or $assetPath -cmatch '^(?:runtimes/win(?:-x64)?/)?lib/net(?:8|9|10)\.0/System\.Security\.Cryptography\.Pkcs\.dll$'
+    }
+    if (-not $validAssetPath) { throw "$Application Pkcs owner/asset layout is invalid: $($owner.Library), $assetPath" }
     Assert-FactoryConnectPatchedPkcsVersion $version
     $dll=Join-Path $AppRoot 'System.Security.Cryptography.Pkcs.dll'
     $identity=Get-FactoryConnectPkcsMetadata $dll
@@ -58,5 +67,5 @@ function Assert-FactoryConnectPkcsPayload {
     $hash=(Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
     $line="$hash  apps/$Application/System.Security.Cryptography.Pkcs.dll"
     if (@(Get-Content -LiteralPath $ManifestPath|Where-Object{$_ -ceq $line}).Count -ne 1) { throw 'Pkcs assembly lacks exact manifest coverage.' }
-    [pscustomobject]@{PkcsPayload='PASS';Application=$Application;Owner=$owner.Library;OwnerKind=$kind;Version=$version;Sha256=$hash}
+    [pscustomobject]@{PkcsPayload='PASS';Application=$Application;Owner=$owner.Library;OwnerKind=$kind;AssetPath=$assetPath;Version=$version;Sha256=$hash}
 }

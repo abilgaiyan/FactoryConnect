@@ -41,6 +41,11 @@ function Invoke-Case([string]$Name,$Case,[bool]$Reject=$false){
 }
 try{
     Invoke-Case PatchedNuGet (New-Case 'System.Security.Cryptography.Pkcs/9.0.21' '9.0.21')
+    foreach($assetPath in @('lib/net9.0/System.Security.Cryptography.Pkcs.dll','runtimes/win/lib/net9.0/System.Security.Cryptography.Pkcs.dll','runtimes/win-x64/lib/net9.0/System.Security.Cryptography.Pkcs.dll','../System.Security.Cryptography.Pkcs.dll','runtimes/linux/lib/net9.0/System.Security.Cryptography.Pkcs.dll')) {
+        $c=New-Case 'System.Security.Cryptography.Pkcs/9.0.21' '9.0.21'
+        $c.graph.targets['.NETCoreApp,Version=v10.0/win-x64']['System.Security.Cryptography.Pkcs/9.0.21'].runtime=@{$assetPath=@{}}
+        Invoke-Case $assetPath $c ($assetPath.StartsWith('../') -or $assetPath.StartsWith('runtimes/linux/'))
+    }
     Invoke-Case PatchedRuntime (New-Case 'runtimepack.Microsoft.AspNetCore.App.Runtime.win-x64/10.0.13' '10.0.13')
     Invoke-Case AffectedNuGet (New-Case 'System.Security.Cryptography.Pkcs/9.0.13' '9.0.13') $true
     $c=New-Case 'runtimepack.Microsoft.AspNetCore.App.Runtime.win-x64/10.0.7' '10.0.7';$c.graph.libraries.Remove('runtimepack.Microsoft.AspNetCore.App.Runtime.win-x64/10.0.13');Invoke-Case AffectedRuntime $c $true
