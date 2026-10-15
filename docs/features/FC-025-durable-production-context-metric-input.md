@@ -178,3 +178,24 @@ FC-025 does not include:
 - SQL persistence for FC-025 projection outputs;
 - production master-data editing workflows;
 - UI or authorization.
+
+### Edge planned break configuration
+
+Configure optional `BreakWindows` under each machine's `ProductionProcessing:Machines:<index>:PlannedProduction` section (or `ProductionProcessing:PlannedProduction` for the single-machine configuration). Omit `BreakWindows` when no breaks apply; omission preserves the existing uninterrupted planned window. Non-null section values are rejected, including empty strings. The JSON configuration provider represents an empty array as an empty string, so explicit `BreakWindows: []` is also rejected; use omission instead.
+
+```json
+"PlannedProduction": {
+  "AssignmentId": "POT-LINE-1",
+  "TimeZoneId": "Asia/Kolkata",
+  "StartsAtLocal": "22:00:00",
+  "EndsAtLocal": "06:00:00",
+  "EffectiveFrom": "2026-01-01",
+  "BreakWindows": [
+    { "StartsAtLocal": "02:00:00", "EndsAtLocal": "02:30:00" }
+  ]
+}
+```
+
+This is an illustrative configuration, not approved factory timing. Breaks use the planned schedule's local time zone and must have distinct start/end times, lie wholly inside its planned window, and not overlap. Adjacent breaks are allowed. Invalid configuration fails during composition. For an overnight planned window, breaks starting after midnight belong to the following calendar day; a break may itself cross midnight. Resolved intervals retain the originating factory date and exclude the break duration. An eight-hour window with a thirty-minute break therefore contributes seven and a half hours of planned time.
+
+Machines sharing a planned assignment ID must configure the same breaks. Shift boundaries remain configured separately in `ShiftSchedules`; breaks alter planned production eligibility, not shift identity. No production quality assumption is enabled by this configuration.
