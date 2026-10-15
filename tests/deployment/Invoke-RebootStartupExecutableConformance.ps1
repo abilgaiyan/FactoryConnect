@@ -70,10 +70,10 @@ function Write-Config([string]$Root,[int]$ApiPort,[int]$DashboardPort,[bool]$Val
     $edge|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'config\edge.production.json');$api|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'config\api.production.json');$dash|ConvertTo-Json -Depth 20|Set-Content (Join-Path $Root 'config\dashboard.production.json')
 }
 
-function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false) {
+function Invoke-Startup([string]$Root,[bool]$ExpectFailure=$false,[string]$Mode='Reconcile') {
     $out = Join-Path $Root ('out-' + [Guid]::NewGuid().ToString('N') + '.txt')
     $err = $out + '.err'
-    $args = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2' -f $StartupScript,$Root
+    $args = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -EdgeStabilizationSeconds 1 -HealthTimeoutSeconds 2 -StartupMode {2}' -f $StartupScript,$Root,$Mode
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $shell = (Get-Command powershell.exe).Source
     $info.FileName = $env:ComSpec
@@ -134,6 +134,82 @@ function Assert-NoChildren([string]$Root) {
     Assert-True ($found.Count -eq 0) 'Failed startup leaked a fixture child.'
 }
 try {
+    # Run boot-only cases first, before other cases leave live disposable stacks.
+    Invoke-Case BootSafeExecutable {
+        foreach ($kind in @('cold','healthy','duplicate','partial','unhealthy','unrecorded','mismatch','intent','lock')) {
+            $r=New-Root "BootSafe-$kind" $(if($kind -eq 'unhealthy'){'api'}else{''})
+            $records=@{edge=$null;api=$null;dashboard=$null}
+            $children=@()
+            $heldLock=$null
+            try {
+                if ($kind -in @('healthy','duplicate','partial','unhealthy','unrecorded','mismatch')) {
+                    $records.edge=Start-Fixture $r edge
+                    $children+= $records.edge
+                    if ($kind -in @('healthy','duplicate','unhealthy')) {
+                        $records.api=Start-Fixture $r api
+                        $records.dashboard=Start-Fixture $r dashboard
+                        $children+= $records.api
+                        $children+= $records.dashboard
+                    }
+                    if ($kind -in @('healthy','duplicate')) { Wait-FixtureHealth $r }
+                    if ($kind -eq 'duplicate') {
+                        # Additional process from a different disposable release root.
+                        $other=New-Root BootSafeDuplicateOther
+                        $children+= (Start-Fixture $other edge)
+                    }
+                    if ($kind -eq 'unrecorded') { $records.edge=$null }
+                    if ($kind -eq 'mismatch') {
+                        $records.edge=@{} + $records.edge
+                        $records.edge.startTimeUtc='2000-01-01T00:00:00.0000000Z'
+                    }
+                }
+                if ($kind -ne 'cold') { Write-Runtime $r $records }
+                $runtimeFile=Join-Path $r 'deployment/runtime.json'
+                $before=if(Test-Path $runtimeFile){Get-Content -Raw $runtimeFile}else{$null}
+                $intentFile=Join-Path $r 'deployment/runtime-start.intent.json'
+                if ($kind -eq 'intent') { '{"attemptId":"foreign","processName":"edge"}' | Set-Content $intentFile }
+                if ($kind -eq 'lock') {
+                    $heldLock=[IO.File]::Open((Join-Path $r 'deployment/deployment.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+                }
+                $reject=$kind -notin @('cold','healthy')
+                Invoke-Startup $r $reject BootSafe
+                if ($kind -eq 'cold') {
+                    Assert-True ((Read-Runtime $r).deploymentStatus -eq 'Succeeded') 'BootSafe cold startup failed.'
+                    Wait-FixtureHealth $r
+                    $runtime=Read-Runtime $r
+                    $children+= $runtime.edge
+                    $children+= $runtime.api
+                    $children+= $runtime.dashboard
+                } else {
+                    Assert-True ($before -ceq (Get-Content -Raw $runtimeFile)) "BootSafe $kind changed runtime evidence."
+                }
+                foreach ($record in $children) {
+                    $live=Get-Process -Id $record.pid -ErrorAction Stop
+                    Assert-True ($live.Path -eq $record.executablePath -and $live.StartTime.ToUniversalTime().ToString('o') -eq $record.startTimeUtc) "BootSafe $kind did not preserve a process."
+                }
+                if ($kind -eq 'intent') {
+                    Assert-True ((Get-Content -Raw $intentFile | ConvertFrom-Json).attemptId -eq 'foreign') 'BootSafe changed foreign intent.'
+                }
+                if ($reject) {
+                    $allowed=@($children | ForEach-Object { [int]$_.pid })
+                    $unexpected=@(Get-Process | Where-Object {
+                        try { $_.Path.StartsWith($r + '\',[StringComparison]::OrdinalIgnoreCase) -and $_.Id -notin $allowed } catch { $false }
+                    })
+                    Assert-True ($unexpected.Count -eq 0) "BootSafe $kind launched a process."
+                }
+                Write-Host "BootSafe executable $kind PASS"
+            } finally {
+                if ($null -ne $heldLock) { $heldLock.Dispose() }
+                foreach ($record in $children) {
+                    $live=Get-Process -Id $record.pid -ErrorAction SilentlyContinue
+                    if ($null -ne $live -and $live.Path -eq $record.executablePath -and $live.StartTime.ToUniversalTime().ToString('o') -eq $record.startTimeUtc) {
+                        Stop-Process -InputObject $live -Force
+                        $live.WaitForExit()
+                    }
+                }
+            }
+        }
+    }
     Invoke-Case B01 { $r=New-Root B01; Invoke-Startup $r; Assert-True ((Read-Runtime $r).deploymentStatus -eq 'Succeeded') 'Clean startup failed.' }
     Invoke-Case B02 {
         $r=New-Root B02; Invoke-Startup $r

@@ -228,25 +228,34 @@ continue};
 $records[$n]=$r;
 $states[$n]=(Get-RecordedProcessState $r).State};
 if(@($states.Values|Where-Object{$_-eq'Mismatch'}).Count-gt0){throw 'Runtime identity mismatch detected; no process will be stopped or started.'}
+ # Inventory precedes even healthy reuse. Enumerate all processes so discovery
+ # errors fail closed instead of being mistaken for an empty inventory.
+ if ($StartupMode -eq 'BootSafe') {
+     $runtimeNames = @('FactoryConnect.Edge','FactoryConnect.Api','FactoryConnect.Dashboard')
+     foreach ($process in @(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -in $runtimeNames })) {
+         $matched = $false
+         foreach ($n in @('edge','api','dashboard')) {
+             if ($states[$n] -eq 'Owned' -and $null -ne $records[$n] -and
+                 [int]$records[$n].pid -eq $process.Id -and
+                 (Get-RecordedProcessState $records[$n]).State -eq 'Owned') {
+                 $matched = $true
+                 break
+             }
+         }
+         if (-not $matched) {
+             throw "Boot-safe startup detected an unrecorded runtime process '$($process.ProcessName)'. Manual reconciliation is required."
+         }
+     }
+ }
  $allOwned=@($states.Values|Where-Object{$_-eq'Owned'}).Count-eq3;
 if($allOwned-and(Test-HttpOk $apiHealth)-and(Test-HttpOk $live)-and(Test-HttpOk $ready)){[pscustomobject]@{Status='AlreadyRunning';
 SourceCommit=$releaseId;
 InstallRoot=$root;
 Current=$current};
 return}
- # Boot startup may only reuse a healthy complete runtime or start a cold one.
  # Reject before mutationStarted, durable publication, or reconciliation stops.
- if ($StartupMode -eq 'BootSafe') {
-     if (@($states.Values | Where-Object { $_ -ne 'Absent' }).Count -gt 0) {
-         throw 'Boot-safe startup requires all runtime processes absent or all healthy. Manual reconciliation is required; existing processes were not stopped.'
-     }
-     # Missing/stale runtime records are not sufficient proof of a cold runtime.
-     # Enumerate by application name across releases and fail closed on unknown ownership.
-     foreach ($name in @('FactoryConnect.Edge','FactoryConnect.Api','FactoryConnect.Dashboard')) {
-         if (@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count -gt 0) {
-             throw "Boot-safe startup detected an unrecorded runtime process '$name'. Manual reconciliation is required."
-         }
-     }
+ if ($StartupMode -eq 'BootSafe' -and @($states.Values | Where-Object { $_ -ne 'Absent' }).Count -gt 0) {
+     throw 'Boot-safe startup requires all runtime processes absent or all healthy. Manual reconciliation is required; existing processes were not stopped.'
  }
  $failurePhase='Reconciliation';
 $mutationStarted=$true;

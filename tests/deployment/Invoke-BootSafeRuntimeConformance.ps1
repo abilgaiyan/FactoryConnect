@@ -15,22 +15,32 @@ if ($start -lt 0 -or $end -le $start) { throw 'Production admission boundary not
 $admission=[scriptblock]::Create($text.Substring($start,$end-$start))
 function Get-RecordedProcessState($Record) { [pscustomobject]@{State=$script:fixtureStates[$Record.name]} }
 function Test-HttpOk($Uri) { $script:healthy }
-function Get-Process { param($Name,$ErrorAction) if ($script:unrecorded) { [pscustomobject]@{Id=123} } }
+function Get-Process {
+    param($ErrorAction)
+    if ($script:inventoryFailure) { throw 'Injected inventory failure.' }
+    foreach ($n in @('edge','api','dashboard')) {
+        if ($script:fixtureStates[$n] -eq 'Owned') {
+            [pscustomobject]@{Id=$oldRuntime[$n].pid;ProcessName="FactoryConnect.$n"}
+        }
+    }
+    if ($script:unrecorded) { [pscustomobject]@{Id=123;ProcessName='FactoryConnect.Edge'} }
+}
 function Stop-RecordedOwnedProcess($Record) { $script:stops++ }
 $results=[ordered]@{}
 foreach ($mode in @('BootSafe','Reconcile')) {
-    foreach ($case in @('Healthy','Unhealthy','Cold','Partial','Mismatch','Unrecorded')) {
+    foreach ($case in @('Healthy','Unhealthy','Cold','Partial','Mismatch','Unrecorded','HealthyDuplicate','InventoryFailure')) {
         $StartupMode=$mode
-        $script:healthy=$case -eq 'Healthy'
-        $script:unrecorded=$case -eq 'Unrecorded'
+        $script:healthy=$case -in @('Healthy','HealthyDuplicate')
+        $script:unrecorded=$case -in @('Unrecorded','HealthyDuplicate')
+        $script:inventoryFailure=$case -eq 'InventoryFailure'
         $script:fixtureStates=@{edge='Absent';api='Absent';dashboard='Absent'}
-        if ($case -in @('Healthy','Unhealthy')) { foreach ($n in @('edge','api','dashboard')) { $script:fixtureStates[$n]='Owned' } }
+        if ($case -in @('Healthy','Unhealthy','HealthyDuplicate')) { foreach ($n in @('edge','api','dashboard')) { $script:fixtureStates[$n]='Owned' } }
         if ($case -eq 'Partial') { $script:fixtureStates.edge='Owned' }
         if ($case -eq 'Mismatch') { $script:fixtureStates.edge='Mismatch' }
-        $expected=@{}; $oldRuntime=@{}
+        $expected=@{}; $oldRuntime=@{}; $fixturePid=1000
         foreach ($n in @('edge','api','dashboard')) {
             $expected[$n]=Join-Path ([IO.Path]::GetTempPath()) "$n.exe"
-            $oldRuntime[$n]=@{name=$n;executablePath=$expected[$n]}
+            $oldRuntime[$n]=@{name=$n;executablePath=$expected[$n];pid=$fixturePid++}
         }
         $records=@{}; $states=@{}
         $script:stops=0; $mutationStarted=$false
@@ -38,7 +48,7 @@ foreach ($mode in @('BootSafe','Reconcile')) {
         $releaseId='fixture'; $root='fixture'; $current='fixture'
         $rejected=$false; $output=$null
         try { $output=. $admission } catch { $rejected=$true }
-        $mustReject=($case -eq 'Mismatch') -or ($mode -eq 'BootSafe' -and $case -in @('Unhealthy','Partial','Unrecorded'))
+        $mustReject=($case -eq 'Mismatch') -or ($mode -eq 'BootSafe' -and $case -in @('Unhealthy','Partial','Unrecorded','HealthyDuplicate','InventoryFailure'))
         if ($rejected -ne $mustReject) { throw "$mode/$case rejection incorrect." }
         if ($mustReject -and ($script:stops -ne 0 -or $mutationStarted)) { throw "$mode/$case mutated before rejection." }
         if ($case -eq 'Healthy' -and ($output.Status -ne 'AlreadyRunning' -or $script:stops -ne 0 -or $mutationStarted)) { throw "$mode healthy reuse failed." }
