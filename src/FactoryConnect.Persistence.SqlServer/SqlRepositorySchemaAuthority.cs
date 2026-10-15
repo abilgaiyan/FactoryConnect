@@ -43,6 +43,8 @@ internal static class SqlRepositorySchemaAuthority
         Table("ProductionStandardAuthorityRevision"),
         Table("ProductionStandardVersion"),
         Table("ProductionTimeEligibilityOutput"),
+        Table("QualityAssessment"),
+        Table("QualityPolicy"),
         Table("ShiftMetricAggregate")
     ]);
 
