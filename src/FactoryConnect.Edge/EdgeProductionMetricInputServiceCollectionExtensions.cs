@@ -360,6 +360,13 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             .ToArray();
 
         var plannedSection = section.GetRequiredSection("PlannedProduction");
+        var breakWindowsSection = plannedSection.GetSection("BreakWindows");
+        if (breakWindowsSection.Value is not null)
+        {
+            throw new InvalidOperationException(
+                $"Configuration '{breakWindowsSection.Path}' must be an array of break windows, not a scalar value.");
+        }
+
         var plannedAssignment = new PlannedProductionScheduleAssignment
         {
             Id = new PlannedProductionScheduleAssignmentId(
@@ -372,7 +379,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             EffectiveFrom = DateOnly.Parse(
                 Required(plannedSection, "EffectiveFrom"),
                 CultureInfo.InvariantCulture),
-            BreakWindows = plannedSection.GetSection("BreakWindows").GetChildren()
+            BreakWindows = breakWindowsSection.GetChildren()
                 .Select(window => new PlannedProductionWindow
                 {
                     StartsAtLocal = TimeOnly.Parse(

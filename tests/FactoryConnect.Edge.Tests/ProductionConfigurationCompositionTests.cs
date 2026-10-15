@@ -159,14 +159,19 @@ public sealed class ProductionConfigurationCompositionTests
     }
 
     [Theory]
-    [InlineData("06:00:00", "14:00:00", "10:00:00", "10:30:00", 0)]
-    [InlineData("22:00:00", "06:00:00", "02:00:00", "02:30:00", 1)]
-    [InlineData("22:00:00", "06:00:00", "23:45:00", "00:15:00", 0)]
+    [InlineData("06:00:00", "14:00:00", "10:00:00", "10:30:00", 0, "UTC", 0)]
+    [InlineData("22:00:00", "06:00:00", "02:00:00", "02:30:00", 1, "UTC", 0)]
+    [InlineData("22:00:00", "06:00:00", "23:45:00", "00:15:00", 0, "UTC", 0)]
+    [InlineData("06:00:00", "14:00:00", "10:00:00", "10:30:00", 0, "Asia/Kolkata", 330)]
+    [InlineData("22:00:00", "06:00:00", "02:00:00", "02:30:00", 1, "Asia/Kolkata", 330)]
+    [InlineData("22:00:00", "06:00:00", "23:45:00", "00:15:00", 0, "Asia/Kolkata", 330)]
     public async Task ConfiguredBreakIsExcludedFromPlannedTime(
-        string startsAt, string endsAt, string breakStart, string breakEnd, int breakDayOffset)
+        string startsAt, string endsAt, string breakStart, string breakEnd, int breakDayOffset,
+        string timeZoneId, int offsetMinutes)
     {
         var values = BaseValues();
         const string prefix = "ProductionProcessing:PlannedProduction";
+        values[$"{prefix}:TimeZoneId"] = timeZoneId;
         values[$"{prefix}:StartsAtLocal"] = startsAt;
         values[$"{prefix}:EndsAtLocal"] = endsAt;
         values[$"{prefix}:BreakWindows:0:StartsAtLocal"] = breakStart;
@@ -185,7 +190,8 @@ public sealed class ProductionConfigurationCompositionTests
             TimeSpan.FromTicks(intervals.Sum(static interval =>
                 (interval.EndsAtUtc - interval.StartsAtUtc).Ticks)));
         var expectedBreakStart = new DateTimeOffset(
-            date.AddDays(breakDayOffset).ToDateTime(TimeOnly.Parse(breakStart, System.Globalization.CultureInfo.InvariantCulture)), TimeSpan.Zero);
+            date.AddDays(breakDayOffset).ToDateTime(TimeOnly.Parse(breakStart, System.Globalization.CultureInfo.InvariantCulture)),
+            TimeSpan.FromMinutes(offsetMinutes)).ToUniversalTime();
         Assert.Equal(expectedBreakStart, intervals[0].EndsAtUtc);
         Assert.Equal(expectedBreakStart.AddMinutes(30), intervals[1].StartsAtUtc);
         Assert.All(intervals, interval => Assert.Equal(date, interval.FactoryDate));
@@ -227,11 +233,65 @@ public sealed class ProductionConfigurationCompositionTests
         }
     }
 
-    private static ServiceProvider Compose(Dictionary<string, string?> values)
+    [Theory]
+    [InlineData("10:00–10:30")]
+    [InlineData("")]
+    public void ScalarBreakWindowsIsRejectedEvenWithValidChildren(string scalar)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(values)
-            .Build();
+        var values = BaseValues();
+        const string prefix = "ProductionProcessing:PlannedProduction:BreakWindows";
+        values[prefix] = scalar;
+        values[$"{prefix}:0:StartsAtLocal"] = "10:00:00";
+        values[$"{prefix}:0:EndsAtLocal"] = "10:30:00";
+        var exception = Assert.Throws<InvalidOperationException>(() => Compose(values));
+        Assert.Contains(prefix, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("\"10:00–10:30\"", false)]
+    [InlineData("true", false)]
+    [InlineData("30", false)]
+    [InlineData("\"\"", false)]
+    [InlineData("[]", true)]
+    [InlineData(null, true)]
+    public async Task JsonBreakWindowsShapeIsValidated(string? jsonValue, bool accepted)
+    {
+        var json = jsonValue is null ? "{}" :
+            "{\"ProductionProcessing\":{\"PlannedProduction\":{\"BreakWindows\":" + jsonValue + "}}}";
+        if (!accepted)
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() => Compose(BaseValues(), json));
+            Assert.Contains("BreakWindows", exception.Message, StringComparison.Ordinal);
+            return;
+        }
+
+        using var provider = Compose(BaseValues(), json);
+        var date = new DateOnly(2026, 8, 27);
+        var reader = provider.GetRequiredService<IPlannedProductionScheduleReader>();
+        var assignments = await reader.ReadAssignmentsAsync(
+            new SiteId("SITE-1"), date, date.AddDays(1), CancellationToken.None);
+        Assert.Empty(Assert.Single(assignments).BreakWindows);
+        var intervals = await new PlannedProductionIntervalResolver(reader).ResolveAsync(
+            new SiteId("SITE-1"), new ProductionLineId("LINE-1"),
+            date, date.AddDays(1), CancellationToken.None);
+        Assert.Equal(TimeSpan.FromHours(8), Assert.Single(intervals).Duration);
+    }
+
+    private static ServiceProvider Compose(Dictionary<string, string?> values, string? json = null)
+    {
+        var builder = new ConfigurationBuilder().AddInMemoryCollection(values);
+        if (json is not null)
+        {
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+            builder.AddJsonStream(stream);
+            return ComposeConfiguration(builder.Build());
+        }
+
+        return ComposeConfiguration(builder.Build());
+    }
+
+    private static ServiceProvider ComposeConfiguration(IConfiguration configuration)
+    {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddFactoryConnectProductionMetricInputs(
