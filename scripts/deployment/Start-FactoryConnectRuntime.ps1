@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
+    [Parameter()][ValidateSet('Reconcile','BootSafe')][string]$StartupMode = 'Reconcile',
     [Parameter()][ValidateRange(1,300)][int]$EdgeStabilizationSeconds = 5,
     [Parameter()][ValidateRange(1,300)][int]$HealthTimeoutSeconds = 60,
     [Parameter()][ValidateRange(1,600)][int]$ShutdownTimeoutSeconds
@@ -233,6 +234,20 @@ SourceCommit=$releaseId;
 InstallRoot=$root;
 Current=$current};
 return}
+ # Boot startup may only reuse a healthy complete runtime or start a cold one.
+ # Reject before mutationStarted, durable publication, or reconciliation stops.
+ if ($StartupMode -eq 'BootSafe') {
+     if (@($states.Values | Where-Object { $_ -ne 'Absent' }).Count -gt 0) {
+         throw 'Boot-safe startup requires all runtime processes absent or all healthy. Manual reconciliation is required; existing processes were not stopped.'
+     }
+     # Missing/stale runtime records are not sufficient proof of a cold runtime.
+     # Enumerate by application name across releases and fail closed on unknown ownership.
+     foreach ($name in @('FactoryConnect.Edge','FactoryConnect.Api','FactoryConnect.Dashboard')) {
+         if (@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count -gt 0) {
+             throw "Boot-safe startup detected an unrecorded runtime process '$name'. Manual reconciliation is required."
+         }
+     }
+ }
  $failurePhase='Reconciliation';
 $mutationStarted=$true;
 foreach($n in @('dashboard','api','edge')){if($states[$n]-eq'Owned'){Stop-RecordedOwnedProcess $records[$n];

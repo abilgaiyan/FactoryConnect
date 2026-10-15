@@ -9,6 +9,8 @@ on:
       - 'Directory.Packages.props'
       - 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
       - 'scripts/deployment/Start-FactoryConnectSystem.ps1'
+      - 'scripts/deployment/Start-FactoryConnectRuntime.ps1'
+      - 'tests/deployment/*BootSafe*'
       - 'scripts/release/Build-FactoryConnectRelease.ps1'
       - 'tests/deployment/*SqlReadiness*'
       - 'tests/deployment/Invoke-FactoryBootOrchestrationConformance.ps1'
@@ -44,6 +46,8 @@ jobs:
         run: |
           .\tests\deployment\Invoke-FactoryBootOrchestrationConformance.ps1
           .\tests\deployment\Invoke-RebootStartupConformance.ps1
+          .\tests\deployment\Invoke-BootSafeRuntimeConformance.ps1
+          .\tests\deployment\Invoke-RebootStartupIntentConformance.ps1
           .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1
       - name: Authenticated SQL readiness proof
         shell: powershell

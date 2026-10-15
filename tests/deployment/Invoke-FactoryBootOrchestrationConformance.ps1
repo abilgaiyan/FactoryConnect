@@ -38,7 +38,8 @@ function New-Fixture([int]$AcquisitionExit=0,[int]$RuntimeExit=0,[switch]$SqlUna
 exit /b $AcquisitionExit
 "@ | Set-Content (Join-Path $root 'Start-Acquisition.bat') -Encoding ASCII
     @"
-param([string]`$InstallRoot)
+param([string]`$InstallRoot,[ValidateSet('BootSafe')][string]`$StartupMode)
+if (`$StartupMode -ne 'BootSafe') { exit 88 }
 Add-Content (Join-Path `$InstallRoot 'trace.txt') 'Runtime'
 [pscustomobject]@{Status='AlreadyRunning'}
 exit $RuntimeExit
