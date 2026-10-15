@@ -10,6 +10,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     [
         "AcquisitionContactAuthority",
         "ContextualizedActivityOutput",
+        "DerivedOeeAssessment",
         "MachineActivityPeriodHistory",
         "MachineObservation",
         "MachineShiftOccurrenceRoster",
@@ -57,7 +58,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(42, ownedTables.Length);
+        Assert.Equal(43, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }

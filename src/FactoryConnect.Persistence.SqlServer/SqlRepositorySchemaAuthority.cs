@@ -6,6 +6,7 @@ internal static class SqlRepositorySchemaAuthority
     [
         Table("AcquisitionContactAuthority"),
         Table("ContextualizedActivityOutput"),
+        Table("DerivedOeeAssessment"),
         Table("MachineActivityPeriodHistory"),
         Table("MachineObservation"),
         Table("MachineShiftOccurrenceRoster"),

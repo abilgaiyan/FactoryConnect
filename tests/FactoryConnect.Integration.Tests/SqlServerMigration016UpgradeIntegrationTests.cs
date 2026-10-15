@@ -15,7 +15,7 @@ public sealed class SqlServerMigration016UpgradeIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(16, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(17, catalog.Migrations[^1].MigrationId);
         if (upgrade)
         {
             await using var transaction = connection.BeginTransaction();
@@ -32,7 +32,7 @@ public sealed class SqlServerMigration016UpgradeIntegrationTests
         var engine = new SqlServerMigrationEngine(catalog, new Clock());
         await engine.ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
         await engine.ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
-        await AssertSchemaAsync(connection, SqlRepositorySchemaDescriptors.Post016);
+        await AssertSchemaAsync(connection, SqlRepositorySchemaDescriptors.Current);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT (SELECT COUNT_BIG(*) FROM dbo.QualityPolicy) + (SELECT COUNT_BIG(*) FROM dbo.QualityAssessment);";
         Assert.Equal(0L, (long)(await command.ExecuteScalarAsync())!);
