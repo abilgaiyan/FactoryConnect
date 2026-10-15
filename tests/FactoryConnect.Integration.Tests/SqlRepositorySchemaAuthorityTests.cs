@@ -47,6 +47,8 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "ProductionStandardAuthorityRevision",
         "ProductionStandardVersion",
         "ProductionTimeEligibilityOutput",
+        "QualityAssessment",
+        "QualityPolicy",
         "ShiftMetricAggregate"
     ];
 
@@ -55,7 +57,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(40, ownedTables.Length);
+        Assert.Equal(42, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
