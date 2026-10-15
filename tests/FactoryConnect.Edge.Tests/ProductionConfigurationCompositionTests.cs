@@ -252,7 +252,7 @@ public sealed class ProductionConfigurationCompositionTests
     [InlineData("true", false)]
     [InlineData("30", false)]
     [InlineData("\"\"", false)]
-    [InlineData("[]", true)]
+    [InlineData("[]", false)]
     [InlineData(null, true)]
     public async Task JsonBreakWindowsShapeIsValidated(string? jsonValue, bool accepted)
     {

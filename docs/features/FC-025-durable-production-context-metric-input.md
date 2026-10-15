@@ -181,7 +181,7 @@ FC-025 does not include:
 
 ### Edge planned break configuration
 
-Configure optional `BreakWindows` under each machine's `ProductionProcessing:Machines:<index>:PlannedProduction` section (or `ProductionProcessing:PlannedProduction` for the single-machine configuration). Missing break windows preserve the existing uninterrupted planned window.
+Configure optional `BreakWindows` under each machine's `ProductionProcessing:Machines:<index>:PlannedProduction` section (or `ProductionProcessing:PlannedProduction` for the single-machine configuration). Omit `BreakWindows` when no breaks apply; omission preserves the existing uninterrupted planned window. Non-null section values are rejected, including empty strings. The JSON configuration provider represents an empty array as an empty string, so explicit `BreakWindows: []` is also rejected; use omission instead.
 
 ```json
 "PlannedProduction": {
