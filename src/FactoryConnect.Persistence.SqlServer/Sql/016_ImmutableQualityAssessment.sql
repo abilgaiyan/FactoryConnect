@@ -27,4 +27,3 @@ CREATE TABLE dbo.QualityAssessment
     CONSTRAINT CK_QualityAssessment_IdentitySize CHECK (DATALENGTH(IdentityBinary) BETWEEN 1 AND 16777216),
     CONSTRAINT CK_QualityAssessment_PayloadSize CHECK (DATALENGTH(PayloadBinary) BETWEEN 1 AND 16777216)
 );
-
