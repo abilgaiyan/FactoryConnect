@@ -9,6 +9,8 @@ on:
       - 'Directory.Packages.props'
       - 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
       - 'scripts/deployment/Start-FactoryConnectSystem.ps1'
+      - 'scripts/deployment/Start-FactoryConnectRuntime.ps1'
+      - 'tests/deployment/*BootSafe*'
       - 'scripts/release/Build-FactoryConnectRelease.ps1'
       - 'tests/deployment/*SqlReadiness*'
       - 'tests/deployment/Invoke-FactoryBootOrchestrationConformance.ps1'
@@ -25,6 +27,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.x'
@@ -44,25 +48,39 @@ jobs:
         run: |
           .\tests\deployment\Invoke-FactoryBootOrchestrationConformance.ps1
           .\tests\deployment\Invoke-RebootStartupConformance.ps1
+          .\tests\deployment\Invoke-BootSafeRuntimeConformance.ps1
+          .\tests\deployment\Invoke-RebootStartupIntentConformance.ps1
+          .\tests\deployment\Invoke-RebootStartupExecutableConformance.ps1
+          .\tests\deployment\Invoke-RebootStartupDeploymentExclusionConformance.ps1
           .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1
       - name: Authenticated SQL readiness proof
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & SqlLocalDB.exe start MSSQLLocalDB
-          if ($LASTEXITCODE -ne 0) { throw 'CI test SQL could not start.' }
-          $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Encrypt=False'
+          & SqlLocalDB.exe create FactoryConnectCI -s
+          if (-not $?) { throw 'CI named SQL LocalDB instance could not be created/started.' }
+          & SqlLocalDB.exe info FactoryConnectCI
+          if (-not $?) { throw 'CI named SQL LocalDB instance could not be inspected.' }
+          $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\FactoryConnectCI;Database=master;Integrated Security=True;Encrypt=False'
           .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql -ProviderExecutable "$env:RUNNER_TEMP/sql-readiness/FactoryConnect.SqlReadiness.exe"
       - name: Build exact-source release and verify packaged helper
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $release = .\scripts\release\Build-FactoryConnectRelease.ps1 -SourceCommit $env:GITHUB_SHA -OutputRoot (Join-Path $env:RUNNER_TEMP 'p0-release')
+          $release = .\scripts\release\Build-FactoryConnectRelease.ps1 -SourceCommit (git rev-parse HEAD) -OutputRoot (Join-Path $env:RUNNER_TEMP 'p0-release')
           .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1 -ReleaseDirectory $release.ReleaseDirectory
-          $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\MSSQLLocalDB;Database=master;Integrated Security=True;Encrypt=False'
+          $env:FACTORYCONNECT_SQL_READINESS_TEST_CONNECTION_STRING = 'Server=(localdb)\FactoryConnectCI;Database=master;Integrated Security=True;Encrypt=False'
           .\tests\deployment\Invoke-SqlReadinessConformance.ps1 -LiveSql -ProviderExecutable (Join-Path $release.ReleaseDirectory 'apps/sql-readiness/FactoryConnect.SqlReadiness.exe')
           $release | ConvertTo-Json | Set-Content (Join-Path $env:RUNNER_TEMP 'p0-release/provenance.json')
       - uses: actions/upload-artifact@v4
         with:
           name: p0-sql-readiness-release
           path: ${{ runner.temp }}/p0-release
+      - name: Stop disposable CI SQL instance
+        if: always()
+        shell: powershell
+        run: |
+          & SqlLocalDB.exe stop FactoryConnectCI -k
+          & SqlLocalDB.exe delete FactoryConnectCI
+          # Cleanup is best effort; proof failures remain authoritative.
+          exit 0

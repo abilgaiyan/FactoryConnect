@@ -59,3 +59,32 @@ unchanged child ownership. It also checks that migration never starts and the
 lock is released. Its package sentinel deliberately exercises rejection before
 package validation; it does not claim a disposable-SQL integration test. Existing
 Scenario 4 and SQL regression requirements remain separate acceptance gates.
+
+
+### RBS-DW.8H: unattended admission
+
+The system boot launcher invokes the selected runtime authority with
+`-StartupMode BootSafe`, after the existing bounded authenticated SQL readiness
+check. The default `Reconcile` mode retains the explicit operational recovery
+behavior. BootSafe returns AlreadyRunning only for three owned, healthy
+processes after a successful full process inventory that contains no additional
+runtime application processes. Inventory enumeration errors fail closed. Otherwise it requires all records to resolve absent and no process
+with a runtime application name to exist, including processes from other releases
+or without durable records. Partial ownership, unhealthy owned processes,
+identity mismatch, unresolved startup intent, and lock contention fail closed.
+Preflight rejection preserves runtime and intent evidence; attempt logs may be
+created. No pre-existing process is terminated. A failed cold start retains the
+existing cleanup restricted to children started by that attempt and the durable
+intent barrier for an uncertain launch outcome.
+
+Acquisition remains a separate authority and is not changed by this mode.
+No server installation, scheduled task update, restart, or reboot is part of
+this source change.
+
+CI creates a disposable named LocalDB instance explicitly; authenticated Edge/API
+readiness and packaged-provider validation remain required. CI checks out the PR
+head and builds release provenance from that exact checkout. The executable
+Windows fixture suite covers BootSafe cold startup, healthy reuse, duplicate
+processes across release roots, partial/unhealthy/unrecorded processes, identity
+mismatch, interrupted intent and lock contention, including process survival and
+evidence preservation, followed by the existing Reconcile scenarios.

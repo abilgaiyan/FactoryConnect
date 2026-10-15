@@ -68,7 +68,7 @@ try {
     $phase = 'Runtime'
     $powershell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
     # Redirect at cmd level so children inheriting handles do not stall logging.
-    $arguments = '/d /v:off /s /c ""{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}" -InstallRoot "{2}" >"{3}" 2>"{4}""' -f $powershell,$runtime,$root,(Join-Path $logRoot 'runtime.out.log'),(Join-Path $logRoot 'runtime.err.log')
+    $arguments = '/d /v:off /s /c ""{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}" -InstallRoot "{2}" -StartupMode BootSafe >"{3}" 2>"{4}""' -f $powershell,$runtime,$root,(Join-Path $logRoot 'runtime.out.log'),(Join-Path $logRoot 'runtime.err.log')
     $exitCode = Invoke-SystemChild $cmd $arguments
     if ($exitCode -ne 0) { throw "Runtime startup failed with exit code $exitCode." }
     $phase = 'Completed'
