@@ -101,9 +101,11 @@ public static class AssumedBreakAssessmentV1Codec
         w.Write(t.ShiftStartUtc.UtcTicks);
         w.Write(t.ShiftEndUtc.UtcTicks);
         w.Write(t.ScheduleId);
+        w.Write(t.ScheduleVersion);
         w.Write(t.CalendarVersion);
         w.Write(t.CalculationRuleVersion);
         w.Write(t.AdmissionMode);
+        w.Write(t.AssessmentStage);
         w.Write(t.PolicyId);
         w.Write(t.PolicyVersion);
         w.Write(t.PolicyEffectiveFrom.DayNumber);
@@ -129,9 +131,11 @@ public static class AssumedBreakAssessmentV1Codec
         var start = new DateTimeOffset(r.ReadInt64(), TimeSpan.Zero);
         var end = new DateTimeOffset(r.ReadInt64(), TimeSpan.Zero);
         var schedule = r.ReadString();
+        var scheduleVersion = r.ReadString();
         var calendar = r.ReadString();
         var rule = r.ReadString();
         var admission = r.ReadString();
+        var stage = r.ReadString();
         var policy = r.ReadString();
         var policyVersion = r.ReadString();
         var effectiveFrom = DateOnly.FromDayNumber(r.ReadInt32());
@@ -144,7 +148,7 @@ public static class AssumedBreakAssessmentV1Codec
         var position = new MetricInputPosition(r.ReadUInt64());
         var running = r.ReadBoolean() ? r.ReadString() : null;
         var exclusions = r.ReadString();
-        return new(site, machine, date, start, end, schedule, calendar, rule, admission,
+        return new(site, machine, date, start, end, schedule, scheduleVersion, calendar, rule, admission, stage,
             policy, policyVersion, effectiveFrom, effectiveTo, allowance, instruction,
             new(processor, new(streamMachine, streamKey), position), running, exclusions);
     }
