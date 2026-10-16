@@ -10,9 +10,11 @@ public sealed record AssumedBreakAssessmentTarget(
     DateTimeOffset ShiftStartUtc,
     DateTimeOffset ShiftEndUtc,
     string ScheduleId,
+    string ScheduleVersion,
     string CalendarVersion,
     string CalculationRuleVersion,
     string AdmissionMode,
+    string AssessmentStage,
     string PolicyId,
     string PolicyVersion,
     DateOnly PolicyEffectiveFrom,
@@ -31,8 +33,10 @@ public sealed record AssumedBreakAssessmentTarget(
             ShiftStartUtc >= ShiftEndUtc || PolicyAllowance < TimeSpan.Zero ||
             PolicyEffectiveFrom > ProductionDate ||
             (PolicyEffectiveTo is { } end && (end <= PolicyEffectiveFrom || ProductionDate >= end)) ||
-            string.IsNullOrWhiteSpace(ScheduleId) || string.IsNullOrWhiteSpace(CalendarVersion) ||
+            string.IsNullOrWhiteSpace(ScheduleId) || string.IsNullOrWhiteSpace(ScheduleVersion) ||
+            string.IsNullOrWhiteSpace(CalendarVersion) ||
             string.IsNullOrWhiteSpace(CalculationRuleVersion) || string.IsNullOrWhiteSpace(AdmissionMode) ||
+            AssessmentStage is not ("Forecast" or "Completed") ||
             string.IsNullOrWhiteSpace(PolicyId) || string.IsNullOrWhiteSpace(PolicyVersion) ||
             string.IsNullOrWhiteSpace(PolicyInstructionReference) ||
             string.IsNullOrWhiteSpace(ExclusionEvidenceFingerprint) ||
@@ -54,17 +58,28 @@ public sealed record DurableAssumedBreakAssessment(
     {
         ArgumentNullException.ThrowIfNull(Target);
         Target.Validate();
-        if (string.IsNullOrWhiteSpace(AvailabilityReason) ||
+        var scheduled = Target.ShiftEndUtc - Target.ShiftStartUtc;
+        if (AvailabilityPercentage is not null ||
+            string.IsNullOrWhiteSpace(AvailabilityReason) ||
             (ObservedRunningDuration is { } running && running < TimeSpan.Zero) ||
             ObservedRunningDuration.HasValue != (Target.RunningEvidenceReference is not null) ||
-            AvailabilityPercentage is < 0 or > 100 ||
-            (AvailabilityPercentage.HasValue && (!ObservedRunningDuration.HasValue || PlannedTime is null ||
-                PlannedTime.IsForecast || PlannedTime.PlannedProductionDuration <= TimeSpan.Zero)) ||
-            (PlannedTime is { } planned &&
-                (planned.EligibleScheduledDuration < TimeSpan.Zero ||
-                 planned.AssumedBreakDeduction < TimeSpan.Zero ||
-                 planned.PlannedProductionDuration < TimeSpan.Zero ||
-                 planned.EligibleScheduledDuration != planned.AssumedBreakDeduction + planned.PlannedProductionDuration)))
+            (PlannedTime is { } p &&
+                (p.EligibleScheduledDuration < TimeSpan.Zero ||
+                 p.EligibleScheduledDuration > scheduled ||
+                 p.AssumedBreakDeduction !=
+                     (p.IsPolicyAssumed
+                         ? (p.EligibleScheduledDuration < Target.PolicyAllowance
+                             ? p.EligibleScheduledDuration : Target.PolicyAllowance)
+                         : TimeSpan.Zero) ||
+                 p.PlannedProductionDuration != p.EligibleScheduledDuration - p.AssumedBreakDeduction ||
+                 p.IsForecast != (Target.AssessmentStage == "Forecast"))) ||
+            (PlannedTime is null && AvailabilityReason is not
+                ("PolicyNotEstablished" or "ExclusionAuthorityAmbiguous")) ||
+            (PlannedTime is not null && AvailabilityReason !=
+                (Target.AssessmentStage == "Forecast" ? "BreakTimingNotEstablished" :
+                 PlannedTime.PlannedProductionDuration == TimeSpan.Zero ? "ZeroDenominator" :
+                 ObservedRunningDuration is null ? "RunningEvidenceNotEstablished" :
+                 "BreakAttributionNotEstablished")))
             throw new InvalidDataException("Inconsistent assumed-break assessment result.");
     }
 }
