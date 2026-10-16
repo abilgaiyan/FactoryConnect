@@ -234,9 +234,11 @@ internal sealed partial class SqlServerMetricAggregationStore
         long processorRowId,
         long streamRowId,
         MetricInputPosition throughPosition,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SqlTransaction? transaction = null)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             "SELECT s.MachineId, s.StreamKey, f.Position, f.FactId, f.MetricInputKey, " +
             "f.MetricValue, f.Unit, f.StartsAtUtc, f.EndsAtUtc, f.CompanyId, f.SiteId, " +
