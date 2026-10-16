@@ -42,22 +42,23 @@ public static class AssumedBreakReportingConsumer
             return Unavailable("ExclusionAuthorityAmbiguous", request, policy);
         }
 
-        // A duration without an exact Running evidence reference is not measured evidence.
-        if (string.IsNullOrWhiteSpace(request.RunningEvidenceReference))
-        {
-            return Unavailable("RunningEvidenceNotEstablished", request, policy);
-        }
-
         var planned = AssumedShiftBreakPolicy.Evaluate(
             request.ShiftEndsAtUtc - request.ShiftStartsAtUtc,
             excludedDuration,
             request.IsCompleted,
             request.IsScheduled);
-        var availability = AssumedBreakAvailabilityAdmission.Evaluate(
-            planned, request.ObservedRunningDuration);
+        var hasRunningEvidence = !string.IsNullOrWhiteSpace(request.RunningEvidenceReference);
+        var availability = hasRunningEvidence
+            ? AssumedBreakAvailabilityAdmission.Evaluate(planned, request.ObservedRunningDuration)
+            : null;
+        var reason = availability?.UnavailableReason ??
+            (planned.IsForecast ? "BreakTimingNotEstablished" :
+             planned.PlannedProductionDuration == TimeSpan.Zero ? "ZeroDenominator" :
+             "RunningEvidenceNotEstablished");
         return new AssumedBreakReportingAssessment(
-            policy.Id, policy.Version, planned, availability.UnavailableReason,
-            availability.AvailabilityPercentage, availability.ObservedRunningDuration)
+            policy.Id, policy.Version, planned, reason,
+            availability?.AvailabilityPercentage,
+            hasRunningEvidence ? request.ObservedRunningDuration : null)
         {
             SiteId = request.SiteId,
             MachineId = request.MachineId,
@@ -72,7 +73,7 @@ public static class AssumedBreakReportingConsumer
     private static AssumedBreakReportingAssessment Unavailable(
         string reason, AssumedBreakReportingRequest request, AssumedBreakReportingPolicy? policy) =>
         new(policy?.Id ?? string.Empty, policy?.Version ?? string.Empty, null, reason, null,
-            string.IsNullOrWhiteSpace(request.RunningEvidenceReference) ? TimeSpan.Zero : request.ObservedRunningDuration)
+            string.IsNullOrWhiteSpace(request.RunningEvidenceReference) ? null : request.ObservedRunningDuration)
         {
             SiteId = request.SiteId,
             MachineId = request.MachineId,
@@ -228,9 +229,9 @@ public sealed record AssumedBreakReportingAssessment(
     AssumedShiftBreakResult? PlannedTime,
     string AvailabilityReason,
     decimal? AvailabilityPercentage,
-    TimeSpan ObservedRunningDuration)
+    TimeSpan? ObservedRunningDuration)
 {
-    public SiteId SiteId { get; init; }
+    public SiteId { get; init; }
     public MachineId MachineId { get; init; }
     public DateOnly FactoryDate { get; init; }
     public DateTimeOffset ShiftStartsAtUtc { get; init; }
