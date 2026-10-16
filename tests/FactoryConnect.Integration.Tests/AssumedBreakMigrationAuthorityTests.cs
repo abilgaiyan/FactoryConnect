@@ -12,7 +12,7 @@ public sealed class AssumedBreakMigrationAuthorityTests
         Assert.Equal(44, current.Tables.Length);
         Assert.Equal(previous.Tables, current.Tables.Take(previous.Tables.Length));
         Assert.Equal("AssumedBreakAssessment", current.Tables[^1].Name.ObjectName);
-        Assert.Same(current, SqlRepositorySchemaDescriptors.Current);
-        Assert.Equal("ImmutableAssumedBreakAssessment", SqlMigrationCatalog.Load().Migrations[^1].Name);
+        Assert.Same(SqlRepositorySchemaDescriptors.Post019, SqlRepositorySchemaDescriptors.Current);
+        Assert.Equal("ImmutableAssumedBreakAssessment", SqlMigrationCatalog.Load().Migrations.Single(x => x.MigrationId == 18).Name);
     }
 }

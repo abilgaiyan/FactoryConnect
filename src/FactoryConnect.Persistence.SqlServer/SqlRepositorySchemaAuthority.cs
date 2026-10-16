@@ -6,6 +6,8 @@ internal static class SqlRepositorySchemaAuthority
     [
         Table("AcquisitionContactAuthority"),
         Table("AssumedBreakAssessment"),
+        Table("AssumedBreakConfigurationAdmission"),
+        Table("AssumedBreakConfigurationSnapshot"),
         Table("ContextualizedActivityOutput"),
         Table("DerivedOeeAssessment"),
         Table("MachineActivityPeriodHistory"),
