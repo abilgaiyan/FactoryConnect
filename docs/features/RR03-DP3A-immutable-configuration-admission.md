@@ -1,6 +1,6 @@
 # RR03-DP.3A — Immutable resolved configuration and admission
 
-Status: implementation proposed for review; local library/integration-test builds, seven new Core tests and 704 ordinary integration tests passed. CI and SQL acceptance pending. No factory authority has been imported or activated.
+Status: implementation proposed for review; local library/integration-test builds, 11 Core authority tests and 704 ordinary integration tests passed. CI and SQL acceptance pending. No factory authority has been imported or activated.
 
 ## Two independent immutable records
 
@@ -16,7 +16,7 @@ A content change produces a new identity. Publication also requires an expected 
 
 The manifest distinguishes Missing, CompleteEmpty and CompleteIntervals. A Missing snapshot may be retained as configuration evidence but cannot be admitted and cannot establish zero exclusions. Complete manifests require source references; the empty state is an explicit completeness assertion.
 
-All intervals must be UTC, positive and contained in the resolved shift. Overlaps are unioned rather than summed. ActualBreak evidence may be preserved in a snapshot, but admission rejects it while this duration-assumed default policy is active, avoiding a second deduction. A future actual-break precedence rule requires its own explicit contract.
+All intervals must be UTC, positive and contained in the resolved shift. Overlaps are unioned rather than summed. ActualBreak evidence may be preserved in a snapshot, but admission rejects every ActualBreak interval in either admission mode, regardless of source identity, ordering or overlap with OtherExclusion intervals, while this duration-assumed default policy is active, avoiding a second deduction. A future actual-break precedence rule requires its own explicit contract.
 
 Admission validates snapshot identity, scope and the snapshot production date against inclusive effective start / exclusive effective end. Source policy effective dates are independently validated in the snapshot. Competing applicable admissions for the same exact snapshot return Ambiguous. The selector never chooses one by row order, issue time or latest version.
 
@@ -24,7 +24,7 @@ Admission validates snapshot identity, scope and the snapshot production date ag
 
 Migration 019 adds separate snapshot and admission envelopes. The admission's snapshot hash has a foreign key and a lookup index. Existing SQL migrations and canonical metric projections are unchanged.
 
-Publication uses a transaction-owned exclusive application lock per immutable identity. An admission additionally reads and validates its exact snapshot within the same transaction with HOLDLOCK. Identical publication replays; conflicting, corrupt, unsupported or inadmissible publication fails without rewriting records. Admission selection holds a serializable indexed range for its snapshot candidate set and fails closed on corrupt or unsupported candidates.
+Publication uses a transaction-owned exclusive application lock per immutable identity. An admission additionally reads and validates its exact snapshot within the same transaction with HOLDLOCK. Identical publication replays; conflicting, corrupt, unsupported or inadmissible publication fails without rewriting records. Admission selection reads its snapshot, enumerates its indexed candidate set, and validates every candidate against that same snapshot on one connection and one serializable transaction. Exact admission/dependency reads also use one serializable transaction. Both fail closed on corrupt or unsupported records. A SQL barrier regression verifies that the snapshot remains protected while candidate selection is blocked.
 
 Exact reads verify identity and payload hashes, versions, canonical decoded identity and admission dependency binding. Outcomes include Absent, Found, Corrupt, UnsupportedEncoding, IncomparableEvidence and Ambiguous. SQL availability errors and cancellation propagate. Read results do not establish CNC Running completeness.
 

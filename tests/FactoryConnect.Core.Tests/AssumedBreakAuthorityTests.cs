@@ -68,6 +68,24 @@ public sealed class AssumedBreakAuthorityTests
         Assert.Throws<InvalidDataException>(() => Admission(actual).ValidateAgainst(actual));
     }
 
+    [Theory]
+    [InlineData(BreakAuthorityAdmissionMode.DemoProvisional, false)]
+    [InlineData(BreakAuthorityAdmissionMode.DemoProvisional, true)]
+    [InlineData(BreakAuthorityAdmissionMode.FormallyApproved, false)]
+    [InlineData(BreakAuthorityAdmissionMode.FormallyApproved, true)]
+    public void AnyActualBreakIsInadmissibleRegardlessOfOverlapOrAdmissionMode(BreakAuthorityAdmissionMode mode, bool overlaps)
+    {
+        var other = new AuthorityExclusion("other-source", Start.AddMinutes(10), Start.AddMinutes(20), AuthorityExclusionClassification.OtherExclusion);
+        var actual = new AuthorityExclusion("actual-break-source", Start.AddMinutes(overlaps ? 15 : 30),
+            Start.AddMinutes(overlaps ? 25 : 40), AuthorityExclusionClassification.ActualBreak);
+        foreach (var exclusions in new[] { new[] { other, actual }, new[] { actual, other } })
+        {
+            var snapshot = Snapshot() with { ExclusionState = ExclusionManifestState.CompleteIntervals, Exclusions = [.. exclusions] };
+            snapshot.Validate(); // Capturing evidence is independent of admitting the assumed-break calculation.
+            Assert.Throws<InvalidDataException>(() => (Admission(snapshot) with { Mode = mode }).ValidateAgainst(snapshot));
+        }
+    }
+
     [Fact]
     public void AdmissionScopeAndExclusiveEffectiveEndAreValidated()
     {

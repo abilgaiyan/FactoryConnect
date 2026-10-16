@@ -83,13 +83,15 @@ public sealed class SqlServerAssumedBreakAuthorityStore : IAssumedBreakAuthority
         {
             _ = AssumedBreakAuthorityV1Codec.Key(identity, snapshot);
             await using var connection = new SqlConnection(_connectionString); await connection.OpenAsync(token);
-            var value = await ReadCoreAsync(connection, null, identity, snapshot, token);
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, token);
+            var value = await ReadCoreAsync(connection, transaction, identity, snapshot, token);
             if (value is AssumedBreakConfigurationAdmission admission)
             {
-                var source = await ReadCoreAsync(connection, null, admission.SnapshotIdentity, true, token);
+                var source = await ReadCoreAsync(connection, transaction, admission.SnapshotIdentity, true, token);
                 if (source is not AssumedBreakConfigurationSnapshot configuration) throw new InvalidDataException("Missing admitted snapshot.");
                 admission.ValidateAgainst(configuration);
             }
+            await transaction.CommitAsync(token);
             return new(value is null ? BreakAuthorityReadOutcome.Absent : BreakAuthorityReadOutcome.Found, value);
         }
         catch (NotSupportedException) { return new(BreakAuthorityReadOutcome.UnsupportedEncoding, null); }
@@ -100,33 +102,43 @@ public sealed class SqlServerAssumedBreakAuthorityStore : IAssumedBreakAuthority
         string snapshotIdentity, SiteId siteId, MachineId machineId, DateOnly productionDate, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var source = await ReadSnapshotAsync(snapshotIdentity, cancellationToken);
-        if (source.Value is null) return new(source.Outcome, null);
-        if (source.Value.SiteId != siteId || source.Value.MachineId != machineId || source.Value.ProductionDate != productionDate)
-            return new(BreakAuthorityReadOutcome.IncomparableEvidence, null);
-        var key = AssumedBreakAuthorityV1Codec.Key(snapshotIdentity, true);
-        await using var connection = new SqlConnection(_connectionString); await connection.OpenAsync(cancellationToken);
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var identities = new List<string>();
-        await using (var command = new SqlCommand("SELECT IdentityHash FROM dbo.AssumedBreakConfigurationAdmission WHERE SnapshotIdentityHash = @Snapshot;", connection, transaction))
+        try
         {
-            Bytes(command, "@Snapshot", key, 32);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-                identities.Add("assumed-break-admission:v1:" + Convert.ToHexString((byte[])reader.GetValue(0)));
+            var key = AssumedBreakAuthorityV1Codec.Key(snapshotIdentity, true);
+            await using var connection = new SqlConnection(_connectionString); await connection.OpenAsync(cancellationToken);
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+            var source = await ReadCoreAsync(connection, transaction, snapshotIdentity, true, cancellationToken);
+            if (source is not AssumedBreakConfigurationSnapshot configuration) return new(BreakAuthorityReadOutcome.Absent, null);
+            if (configuration.SiteId != siteId || configuration.MachineId != machineId || configuration.ProductionDate != productionDate)
+                return new(BreakAuthorityReadOutcome.IncomparableEvidence, null);
+            var identities = new List<string>();
+            await using (var command = new SqlCommand("SELECT IdentityHash FROM dbo.AssumedBreakConfigurationAdmission WHERE SnapshotIdentityHash = @Snapshot;", connection, transaction))
+            {
+                Bytes(command, "@Snapshot", key, 32);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    identities.Add("assumed-break-admission:v1:" + Convert.ToHexString((byte[])reader.GetValue(0)));
+            }
+            var matches = new List<AssumedBreakConfigurationAdmission>();
+            foreach (var identity in identities)
+            {
+                var candidate = await ReadCoreAsync(connection, transaction, identity, false, cancellationToken);
+                if (candidate is not AssumedBreakConfigurationAdmission admission)
+                    throw new InvalidDataException("Admission disappeared from a serializable candidate set.");
+                admission.ValidateAgainst(configuration);
+                if (admission.SiteId == siteId && admission.MachineId == machineId && productionDate >= admission.EffectiveFrom &&
+                    (admission.EffectiveTo is null || productionDate < admission.EffectiveTo.Value)) matches.Add(admission);
+            }
+            await transaction.CommitAsync(cancellationToken);
+            return matches.Count switch
+            {
+                0 => new(BreakAuthorityReadOutcome.Absent, null),
+                1 => new(BreakAuthorityReadOutcome.Found, matches[0]),
+                _ => new(BreakAuthorityReadOutcome.Ambiguous, null),
+            };
         }
-        AssumedBreakConfigurationAdmission? selected = null;
-        foreach (var identity in identities)
-        {
-            var read = await ReadAdmissionAsync(identity, cancellationToken);
-            if (read.Value is null) return new(read.Outcome == BreakAuthorityReadOutcome.Absent ? BreakAuthorityReadOutcome.Corrupt : read.Outcome, null);
-            var value = read.Value;
-            if (value.SiteId != siteId || value.MachineId != machineId || productionDate < value.EffectiveFrom ||
-                (value.EffectiveTo is { } end && productionDate >= end)) continue;
-            if (selected is not null) return new(BreakAuthorityReadOutcome.Ambiguous, null);
-            selected = value;
-        }
-        return new(selected is null ? BreakAuthorityReadOutcome.Absent : BreakAuthorityReadOutcome.Found, selected);
+        catch (NotSupportedException) { return new(BreakAuthorityReadOutcome.UnsupportedEncoding, null); }
+        catch (InvalidDataException) { return new(BreakAuthorityReadOutcome.Corrupt, null); }
     }
 
     private static async Task<AssumedBreakAuthorityRecord?> ReadCoreAsync(SqlConnection connection, SqlTransaction? transaction,

@@ -155,6 +155,75 @@ public sealed class SqlServerAssumedBreakAuthorityIntegrationTests
         Assert.Equal(TimeSpan.FromMinutes(30), (await store.ReadSnapshotAsync(s.Identity, CancellationToken.None)).Value!.ExcludedDuration());
     }
 
+    [Fact]
+    public async Task SelectionProtectsSnapshotWhileBlockedOnAdmissionCandidates()
+    {
+        await using var db = await CreateAsync();
+        var store = new SqlServerAssumedBreakAuthorityStore(db.ConnectionString);
+        var snapshot = Snapshot(); var admission = Admission(snapshot);
+        await store.PublishSnapshotAsync(snapshot, snapshot.Identity, CancellationToken.None);
+        await store.PublishAdmissionAsync(admission, admission.Identity, CancellationToken.None);
+        var applicationName = "AuthoritySelection_" + Guid.NewGuid().ToString("N");
+        var selectedStore = new SqlServerAssumedBreakAuthorityStore(new SqlConnectionStringBuilder(db.ConnectionString)
+            { ApplicationName = applicationName }.ConnectionString);
+        await using var blocker = new SqlConnection(db.ConnectionString); await blocker.OpenAsync();
+        await using var barrier = (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using (var command = new SqlCommand(
+            "SELECT IdentityHash FROM dbo.AssumedBreakConfigurationAdmission WITH (XLOCK, HOLDLOCK);", blocker, barrier))
+            await command.ExecuteScalarAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var selection = selectedStore.SelectAdmissionAsync(snapshot.Identity, snapshot.SiteId, snapshot.MachineId,
+            snapshot.ProductionDate, timeout.Token).AsTask();
+        try
+        {
+            var waiting = false;
+            for (var attempt = 0; attempt < 100 && !waiting; attempt++)
+            {
+                await using var command = new SqlCommand("""
+                    SELECT COUNT(*) FROM sys.dm_exec_requests r
+                    JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id
+                    WHERE s.program_name = @Application AND r.wait_type LIKE N'LCK%';
+                    """, blocker, barrier);
+                command.Parameters.Add("@Application", System.Data.SqlDbType.NVarChar, 128).Value = applicationName;
+                waiting = (int)(await command.ExecuteScalarAsync(timeout.Token))! > 0;
+                if (!waiting) await Task.Delay(50, timeout.Token);
+            }
+            Assert.True(waiting, "Selector must be observed waiting on the admission barrier.");
+            Assert.False(selection.IsCompleted);
+            await using var probe = new SqlConnection(db.ConnectionString); await probe.OpenAsync();
+            await using var update = new SqlCommand("""
+                SET LOCK_TIMEOUT 0;
+                UPDATE dbo.AssumedBreakConfigurationSnapshot SET PayloadBinary = PayloadBinary;
+                """, probe);
+            var error = await Assert.ThrowsAsync<SqlException>(() => update.ExecuteNonQueryAsync());
+            Assert.Equal(1222, error.Number); // The selection must retain its snapshot lock until validation completes.
+        }
+        finally
+        {
+            await barrier.RollbackAsync();
+            await selection;
+        }
+        Assert.Equal(admission.Identity, (await selection).Value?.Identity);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualBreakFromDifferentSourceIsNeverAdmittedEvenWhenIntervalsOverlap(bool reverse)
+    {
+        await using var db = await CreateAsync();
+        var store = new SqlServerAssumedBreakAuthorityStore(db.ConnectionString);
+        var other = new AuthorityExclusion("other", Start.AddMinutes(10), Start.AddMinutes(30), AuthorityExclusionClassification.OtherExclusion);
+        var actual = new AuthorityExclusion("actual", Start.AddMinutes(20), Start.AddMinutes(40), AuthorityExclusionClassification.ActualBreak);
+        var snapshot = Snapshot() with { ExclusionState = ExclusionManifestState.CompleteIntervals,
+            Exclusions = reverse ? [actual, other] : [other, actual] };
+        var admission = Admission(snapshot);
+        await store.PublishSnapshotAsync(snapshot, snapshot.Identity, CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.PublishAdmissionAsync(admission, admission.Identity, CancellationToken.None).AsTask());
+        Assert.Equal(BreakAuthorityReadOutcome.Absent, (await store.ReadAdmissionAsync(admission.Identity, CancellationToken.None)).Outcome);
+        Assert.Equal(BreakAuthorityReadOutcome.Found, (await store.ReadSnapshotAsync(snapshot.Identity, CancellationToken.None)).Outcome);
+    }
+
     private static async Task<SqlStartupIsolatedDatabase> CreateAsync()
     {
         var db = await SqlStartupIsolatedDatabase.CreateAsync();
