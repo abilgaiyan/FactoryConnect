@@ -63,13 +63,30 @@ public sealed class SqlServerRuntimeSchemaCompatibilityVerifierIntegrationTests
         await ApplyCurrentAsync(connection);
         await ExecuteAsync(
             connection,
-            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 17;");
+            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = (SELECT MAX(MigrationId) FROM dbo.FactoryConnectMigrationHistory);");
 
         var result = await VerifyAsync(connection);
 
         Assert.Equal(SqlRuntimeCompatibilityClassification.MigrationPending, result.Classification);
         Assert.False(result.IsCompatible);
-        Assert.Equal(16, await CountHistoryRowsAsync(connection));
+        Assert.Equal(SqlMigrationCatalog.Load().Migrations.Length - 1, await CountHistoryRowsAsync(connection));
+    }
+
+    [Fact]
+    public async Task InteriorHistoryGapIsMismatchAndVerifierDoesNotRepairIt()
+    {
+        await using var database = await IsolatedRuntimeCompatibilityDatabase.CreateAsync();
+        await using var connection = database.CreateConnection();
+        await connection.OpenAsync();
+        await ApplyCurrentAsync(connection);
+        await ExecuteAsync(connection,
+            "DELETE FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId = 1;");
+
+        var result = await VerifyAsync(connection);
+
+        Assert.Equal(SqlRuntimeCompatibilityClassification.MigrationIdentityMismatch, result.Classification);
+        Assert.False(result.IsCompatible);
+        Assert.Equal(SqlMigrationCatalog.Load().Migrations.Length - 1, await CountHistoryRowsAsync(connection));
     }
 
     [Fact]
