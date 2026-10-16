@@ -91,3 +91,68 @@ public static class AssumedBreakAssessmentV1Codec
         if (stream.Length > MaximumBytes) throw new InvalidDataException("V1 payload too large.");
         return stream.ToArray();
     }
+
+    private static void WriteTarget(BinaryWriter w, AssumedBreakAssessmentTarget t)
+    {
+        w.Write(Version);
+        w.Write(t.SiteId.Value);
+        w.Write(t.MachineId.Value.ToByteArray());
+        w.Write(t.ProductionDate.DayNumber);
+        w.Write(t.ShiftStartUtc.UtcTicks);
+        w.Write(t.ShiftEndUtc.UtcTicks);
+        w.Write(t.ScheduleId);
+        w.Write(t.CalendarVersion);
+        w.Write(t.CalculationRuleVersion);
+        w.Write(t.AdmissionMode);
+        w.Write(t.PolicyId);
+        w.Write(t.PolicyVersion);
+        w.Write(t.PolicyEffectiveFrom.DayNumber);
+        w.Write(t.PolicyEffectiveTo.HasValue);
+        if (t.PolicyEffectiveTo is { } end) w.Write(end.DayNumber);
+        w.Write(t.PolicyAllowance.Ticks);
+        w.Write(t.PolicyInstructionReference);
+        w.Write(t.AggregationRevision.ProcessorId.Value);
+        w.Write(t.AggregationRevision.StreamId.MachineId.Value.ToByteArray());
+        w.Write(t.AggregationRevision.StreamId.StreamKey);
+        w.Write(t.AggregationRevision.Position.Value);
+        w.Write(t.RunningEvidenceReference is not null);
+        if (t.RunningEvidenceReference is not null) w.Write(t.RunningEvidenceReference);
+        w.Write(t.ExclusionEvidenceFingerprint);
+    }
+
+    private static AssumedBreakAssessmentTarget ReadTarget(BinaryReader r)
+    {
+        if (r.ReadInt32() != Version) throw new NotSupportedException("Unsupported target version.");
+        var site = new SiteId(r.ReadString());
+        var machine = new MachineId(ReadGuid(r));
+        var date = DateOnly.FromDayNumber(r.ReadInt32());
+        var start = new DateTimeOffset(r.ReadInt64(), TimeSpan.Zero);
+        var end = new DateTimeOffset(r.ReadInt64(), TimeSpan.Zero);
+        var schedule = r.ReadString();
+        var calendar = r.ReadString();
+        var rule = r.ReadString();
+        var admission = r.ReadString();
+        var policy = r.ReadString();
+        var policyVersion = r.ReadString();
+        var effectiveFrom = DateOnly.FromDayNumber(r.ReadInt32());
+        DateOnly? effectiveTo = r.ReadBoolean() ? DateOnly.FromDayNumber(r.ReadInt32()) : null;
+        var allowance = TimeSpan.FromTicks(r.ReadInt64());
+        var instruction = r.ReadString();
+        var processor = new MetricAggregationProcessorId(r.ReadString());
+        var streamMachine = new MachineId(ReadGuid(r));
+        var streamKey = r.ReadString();
+        var position = new MetricInputPosition(r.ReadUInt64());
+        var running = r.ReadBoolean() ? r.ReadString() : null;
+        var exclusions = r.ReadString();
+        return new(site, machine, date, start, end, schedule, calendar, rule, admission,
+            policy, policyVersion, effectiveFrom, effectiveTo, allowance, instruction,
+            new(processor, new(streamMachine, streamKey), position), running, exclusions);
+    }
+
+    private static Guid ReadGuid(BinaryReader r)
+    {
+        var bytes = r.ReadBytes(16);
+        if (bytes.Length != 16) throw new InvalidDataException("Truncated GUID.");
+        return new Guid(bytes);
+    }
+}
