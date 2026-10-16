@@ -15,16 +15,10 @@ public static class AssumedShiftBreakPolicy
         bool isCompleted,
         bool isScheduled = true)
     {
-        if (scheduledDuration < TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(scheduledDuration));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(scheduledDuration, TimeSpan.Zero);
 
-        if (otherExcludedDuration < TimeSpan.Zero ||
-            otherExcludedDuration > scheduledDuration)
-        {
-            throw new ArgumentOutOfRangeException(nameof(otherExcludedDuration));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(otherExcludedDuration, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(otherExcludedDuration, scheduledDuration);
 
         var eligible = isScheduled ? scheduledDuration - otherExcludedDuration : TimeSpan.Zero;
         var deduction = eligible < DefaultAllowance ? eligible : DefaultAllowance;
