@@ -13,9 +13,12 @@ public static class AssumedBreakReportingConsumer
         AssumedBreakReportingRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(request.Policy);
         ArgumentNullException.ThrowIfNull(request.Exclusions);
-        var policy = request.Policy;
+        var policy = SelectPolicy(request);
+        if (policy is null)
+        {
+            return Unavailable("PolicyNotEstablished", request, null);
+        }
 
         if (string.IsNullOrWhiteSpace(policy.Id) ||
             string.IsNullOrWhiteSpace(policy.Version) ||
@@ -29,12 +32,12 @@ public static class AssumedBreakReportingConsumer
             !policy.IsDemoProvisional ||
             policy.Allowance != AssumedShiftBreakPolicy.DefaultAllowance)
         {
-            return Unavailable("PolicyNotEstablished", policy, request.ObservedRunningDuration);
+            return Unavailable("PolicyNotEstablished", request, policy);
         }
 
         if (!TryUnionExclusions(request, out var excludedDuration))
         {
-            return Unavailable("ExclusionAuthorityAmbiguous", policy, request.ObservedRunningDuration);
+            return Unavailable("ExclusionAuthorityAmbiguous", request, policy);
         }
 
         var planned = AssumedShiftBreakPolicy.Evaluate(
@@ -46,12 +49,53 @@ public static class AssumedBreakReportingConsumer
             planned, request.ObservedRunningDuration);
         return new AssumedBreakReportingAssessment(
             policy.Id, policy.Version, planned, availability.UnavailableReason,
-            availability.AvailabilityPercentage, availability.ObservedRunningDuration);
+            availability.AvailabilityPercentage, availability.ObservedRunningDuration)
+        {
+            SiteId = request.SiteId,
+            MachineId = request.MachineId,
+            FactoryDate = request.FactoryDate,
+            ShiftStartsAtUtc = request.ShiftStartsAtUtc,
+            ShiftEndsAtUtc = request.ShiftEndsAtUtc,
+            ExclusionEvidence = SnapshotEvidence(request.Exclusions),
+            RunningEvidenceReference = request.RunningEvidenceReference,
+        };
     }
 
     private static AssumedBreakReportingAssessment Unavailable(
-        string reason, AssumedBreakReportingPolicy policy, TimeSpan running) =>
-        new(policy.Id, policy.Version, null, reason, null, running);
+        string reason, AssumedBreakReportingRequest request, AssumedBreakReportingPolicy? policy) =>
+        new(policy?.Id ?? string.Empty, policy?.Version ?? string.Empty, null, reason, null, request.ObservedRunningDuration)
+        {
+            SiteId = request.SiteId,
+            MachineId = request.MachineId,
+            FactoryDate = request.FactoryDate,
+            ShiftStartsAtUtc = request.ShiftStartsAtUtc,
+            ShiftEndsAtUtc = request.ShiftEndsAtUtc,
+            ExclusionEvidence = SnapshotEvidence(request.Exclusions),
+            RunningEvidenceReference = request.RunningEvidenceReference,
+        };
+
+    private static IReadOnlyList<AssumedBreakReportingExclusion> SnapshotEvidence(
+        IReadOnlyList<AssumedBreakReportingExclusion> exclusions) =>
+        Array.AsReadOnly(exclusions.OrderBy(static x => x.EvidenceId, StringComparer.Ordinal)
+            .ThenBy(static x => x.StartsAtUtc).ThenBy(static x => x.EndsAtUtc).ToArray());
+
+    private static AssumedBreakReportingPolicy? SelectPolicy(AssumedBreakReportingRequest request)
+    {
+        var policies = request.CandidatePolicies ?? (request.Policy is null ? [] : [request.Policy]);
+        // Competing eligible policies are not resolved by caller ordering.
+        // This demo policy is machine-specific; no site-wide fallback is permitted.
+        var eligible = policies.Where(policy => policy is not null &&
+            policy.SiteId == request.SiteId &&
+            policy.MachineId == request.MachineId &&
+            policy.EffectiveFrom <= request.FactoryDate &&
+            (policy.EffectiveTo is null || request.FactoryDate < policy.EffectiveTo.Value) &&
+            policy.IsDemoProvisional &&
+            policy.Allowance == AssumedShiftBreakPolicy.DefaultAllowance &&
+            !string.IsNullOrWhiteSpace(policy.Id) &&
+            !string.IsNullOrWhiteSpace(policy.Version) &&
+            !string.IsNullOrWhiteSpace(policy.InstructionReference)).Take(2).ToArray();
+        return eligible.Length == 1 ? eligible[0] : null;
+    }
 
     private static bool TryUnionExclusions(
         AssumedBreakReportingRequest request, out TimeSpan excludedDuration)
@@ -135,7 +179,11 @@ public sealed record AssumedBreakReportingRequest(
     bool IsCompleted,
     bool IsScheduled,
     TimeSpan ObservedRunningDuration,
-    IReadOnlyList<AssumedBreakReportingExclusion> Exclusions);
+    IReadOnlyList<AssumedBreakReportingExclusion> Exclusions)
+{
+    public IReadOnlyList<AssumedBreakReportingPolicy>? CandidatePolicies { get; init; }
+    public string? RunningEvidenceReference { get; init; }
+}
 
 public sealed record AssumedBreakReportingAssessment(
     string PolicyId,
@@ -143,4 +191,13 @@ public sealed record AssumedBreakReportingAssessment(
     AssumedShiftBreakResult? PlannedTime,
     string AvailabilityReason,
     decimal? AvailabilityPercentage,
-    TimeSpan ObservedRunningDuration);
+    TimeSpan ObservedRunningDuration)
+{
+    public SiteId SiteId { get; init; }
+    public MachineId MachineId { get; init; }
+    public DateOnly FactoryDate { get; init; }
+    public DateTimeOffset ShiftStartsAtUtc { get; init; }
+    public DateTimeOffset ShiftEndsAtUtc { get; init; }
+    public IReadOnlyList<AssumedBreakReportingExclusion> ExclusionEvidence { get; init; } = [];
+    public string? RunningEvidenceReference { get; init; }
+}
