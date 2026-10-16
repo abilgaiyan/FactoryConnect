@@ -12,6 +12,7 @@
     <EmbeddedResource Include="Sql\016_ImmutableQualityAssessment.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.016_ImmutableQualityAssessment.sql" />
     <EmbeddedResource Include="Sql\015_DurableOperationalMetricCoverageAssessment.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.015_DurableOperationalMetricCoverageAssessment.sql" />
     <EmbeddedResource Include="Sql\018_ImmutableAssumedBreakAssessment.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.018_ImmutableAssumedBreakAssessment.sql" />
+    <EmbeddedResource Include="Sql\019_ImmutableAssumedBreakAuthority.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.019_ImmutableAssumedBreakAuthority.sql" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Sql\001_InitialObservationIngestion.sql"
