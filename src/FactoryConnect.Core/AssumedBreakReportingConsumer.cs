@@ -231,7 +231,7 @@ public sealed record AssumedBreakReportingAssessment(
     decimal? AvailabilityPercentage,
     TimeSpan? ObservedRunningDuration)
 {
-    public SiteId { get; init; }
+    public SiteId SiteId { get; init; }
     public MachineId MachineId { get; init; }
     public DateOnly FactoryDate { get; init; }
     public DateTimeOffset ShiftStartsAtUtc { get; init; }
