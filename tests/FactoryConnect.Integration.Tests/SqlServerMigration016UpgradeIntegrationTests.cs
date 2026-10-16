@@ -15,7 +15,7 @@ public sealed class SqlServerMigration016UpgradeIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(17, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(18, catalog.Migrations[^1].MigrationId);
         if (upgrade)
         {
             await using var transaction = connection.BeginTransaction();
