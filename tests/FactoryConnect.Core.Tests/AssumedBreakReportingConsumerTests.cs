@@ -175,9 +175,9 @@ public sealed class AssumedBreakReportingConsumerTests
             RunningEvidenceReference = reference,
         });
         Assert.Equal("RunningEvidenceNotEstablished", result.AvailabilityReason);
-        Assert.Null(result.PlannedTime);
+        Assert.Equal(TimeSpan.FromMinutes(450), result.PlannedTime!.PlannedProductionDuration);
         Assert.Null(result.AvailabilityPercentage);
-        Assert.Equal(TimeSpan.Zero, result.ObservedRunningDuration);
+        Assert.Null(result.ObservedRunningDuration);
     }
 
     [Theory]
@@ -204,6 +204,79 @@ public sealed class AssumedBreakReportingConsumerTests
         var reverse = AssumedBreakReportingConsumer.Evaluate(Request(exclusions: [conflict, first]));
         Assert.Equal(forward.ExclusionEvidenceFingerprint, reverse.ExclusionEvidenceFingerprint);
         Assert.Equal(forward.AvailabilityReason, reverse.AvailabilityReason);
+    }
+
+
+    [Fact]
+    public void EvidenceBackedZeroRunningRemainsNumericZero()
+    {
+        var result = AssumedBreakReportingConsumer.Evaluate(Request() with
+        {
+            ObservedRunningDuration = TimeSpan.Zero,
+            RunningEvidenceReference = "MEASURED-RUNNING-ZERO",
+        });
+
+        Assert.Equal(TimeSpan.Zero, result.ObservedRunningDuration);
+        Assert.Equal(TimeSpan.FromMinutes(450), result.PlannedTime!.PlannedProductionDuration);
+        Assert.Equal("BreakAttributionNotEstablished", result.AvailabilityReason);
+        Assert.Null(result.AvailabilityPercentage);
+    }
+
+    [Fact]
+    public void MissingRunningDoesNotOverrideInvalidPolicy()
+    {
+        var result = AssumedBreakReportingConsumer.Evaluate(Request() with
+        {
+            CandidatePolicies = [],
+            RunningEvidenceReference = null,
+        });
+
+        Assert.Null(result.PlannedTime);
+        Assert.Null(result.ObservedRunningDuration);
+        Assert.Equal("PolicyNotEstablished", result.AvailabilityReason);
+    }
+
+    [Fact]
+    public void MissingRunningDoesNotOverrideConflictingExclusions()
+    {
+        var exclusion = new AssumedBreakReportingExclusion(
+            "E1", Start.AddHours(1), Start.AddMinutes(90), false);
+        var result = AssumedBreakReportingConsumer.Evaluate(Request(exclusions:
+            [exclusion, exclusion with { IsBreak = true }]) with
+        {
+            RunningEvidenceReference = null,
+        });
+
+        Assert.Null(result.PlannedTime);
+        Assert.Null(result.ObservedRunningDuration);
+        Assert.Equal("ExclusionAuthorityAmbiguous", result.AvailabilityReason);
+    }
+
+    [Fact]
+    public void ForecastPrecedenceRemainsExplicitWhenRunningEvidenceMissing()
+    {
+        var result = AssumedBreakReportingConsumer.Evaluate(Request(completed: false) with
+        {
+            RunningEvidenceReference = null,
+        });
+
+        Assert.True(result.PlannedTime!.IsForecast);
+        Assert.Null(result.ObservedRunningDuration);
+        Assert.Equal("BreakTimingNotEstablished", result.AvailabilityReason);
+    }
+
+    [Fact]
+    public void ZeroDenominatorPrecedesMissingRunning()
+    {
+        var result = AssumedBreakReportingConsumer.Evaluate(Request() with
+        {
+            ShiftEndsAtUtc = Start.AddMinutes(20),
+            RunningEvidenceReference = null,
+        });
+
+        Assert.Equal(TimeSpan.Zero, result.PlannedTime!.PlannedProductionDuration);
+        Assert.Null(result.ObservedRunningDuration);
+        Assert.Equal("ZeroDenominator", result.AvailabilityReason);
     }
 
     private static AssumedBreakReportingPolicy Policy() =>
