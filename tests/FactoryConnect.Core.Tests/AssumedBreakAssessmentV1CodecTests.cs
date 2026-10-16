@@ -11,15 +11,15 @@ public sealed class AssumedBreakAssessmentV1CodecTests
 
     private static AssumedBreakAssessmentTarget Target(string? running = "RUN-1") =>
         new(new SiteId("GG-SITE"), Machine, new DateOnly(2026, 10, 16),
-            Start, Start.AddHours(8), "SHIFT-1", "calendar-v1", "break-rule-v1",
-            "DemoProvisional", "POLICY-1", "policy-v1", new DateOnly(2026, 10, 1),
+            Start, Start.AddHours(8), "SHIFT-1", "schedule-v1", "calendar-v1", "break-rule-v1",
+            "DemoProvisional", "Completed", "POLICY-1", "policy-v1", new DateOnly(2026, 10, 1),
             null, TimeSpan.FromMinutes(30), "Gajra-demo-instruction",
             new(new MetricAggregationProcessorId("metric-aggregation-v1"),
                 MetricInputStreamId.ForMachine(Machine), new MetricInputPosition(534)),
             running, new string('A', 64));
 
     private static DurableAssumedBreakAssessment Assessment(string? running = "RUN-1", bool forecast = false) =>
-        new(Target(running),
+        new(Target(running) with { AssessmentStage = forecast ? "Forecast" : "Completed" },
             new(TimeSpan.FromMinutes(480), TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(450), forecast, true),
             running is null ? null : TimeSpan.Zero,
             forecast ? "BreakTimingNotEstablished" :
@@ -42,6 +42,8 @@ public sealed class AssumedBreakAssessmentV1CodecTests
         var changed = new[]
         {
             t with { CalendarVersion = "v2" },
+            t with { ScheduleVersion = "v2" },
+            t with { AssessmentStage = "Forecast" },
             t with { CalculationRuleVersion = "v2" },
             t with { AdmissionMode = "Approved" },
             t with { ExclusionEvidenceFingerprint = new string('B', 64) },
@@ -85,6 +87,51 @@ public sealed class AssumedBreakAssessmentV1CodecTests
         Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Decode(bytes[..^1]));
         Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Decode(bytes,
             AssumedBreakAssessmentV1Codec.Identity(Target() with { CalendarVersion = "v2" })));
+    }
+
+
+    [Fact]
+    public void UnsupportedNumericAvailabilityAndInvalidReasonFail()
+    {
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Encode(
+            Assessment() with { AvailabilityPercentage = 100m }));
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Encode(
+            Assessment() with { AvailabilityReason = "Calculated" }));
+    }
+
+    [Fact]
+    public void DeductionAndEligibleDurationMustFollowPolicy()
+    {
+        var baseline = Assessment();
+        var invalidDeduction = baseline with
+        {
+            PlannedTime = baseline.PlannedTime! with
+            {
+                AssumedBreakDeduction = TimeSpan.Zero,
+                PlannedProductionDuration = TimeSpan.FromMinutes(480),
+            },
+        };
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Encode(invalidDeduction));
+        var excessive = baseline with
+        {
+            PlannedTime = new(TimeSpan.FromMinutes(510), TimeSpan.FromMinutes(30),
+                TimeSpan.FromMinutes(480), false, true),
+        };
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Encode(excessive));
+    }
+
+    [Fact]
+    public void ForecastToCompletedUsesSeparateImmutableIdentities()
+    {
+        var forecast = Assessment(forecast: true);
+        var completed = Assessment(forecast: false);
+        Assert.NotEqual(forecast.Identity, completed.Identity);
+        Assert.True(AssumedBreakAssessmentV1Codec.Decode(
+            AssumedBreakAssessmentV1Codec.Encode(forecast)).PlannedTime!.IsForecast);
+        Assert.False(AssumedBreakAssessmentV1Codec.Decode(
+            AssumedBreakAssessmentV1Codec.Encode(completed)).PlannedTime!.IsForecast);
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Decode(
+            AssumedBreakAssessmentV1Codec.Encode(forecast), completed.Identity));
     }
 
 }
