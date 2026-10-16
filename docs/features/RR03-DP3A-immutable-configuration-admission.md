@@ -1,6 +1,6 @@
 # RR03-DP.3A — Immutable resolved configuration and admission
 
-Status: implementation proposed for review; CI and SQL acceptance pending. No factory authority has been imported or activated.
+Status: implementation proposed for review; local library/integration-test builds, seven new Core tests and 704 ordinary integration tests passed. CI and SQL acceptance pending. No factory authority has been imported or activated.
 
 ## Two independent immutable records
 

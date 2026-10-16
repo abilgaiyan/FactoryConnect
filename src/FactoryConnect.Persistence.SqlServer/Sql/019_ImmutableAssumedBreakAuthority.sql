@@ -30,4 +30,3 @@ CREATE TABLE dbo.AssumedBreakConfigurationAdmission
     CONSTRAINT CK_AssumedBreakConfigurationAdmission_PayloadSize CHECK (DATALENGTH(PayloadBinary) BETWEEN 1 AND 1048576)
 );
 CREATE INDEX IX_AssumedBreakConfigurationAdmission_Snapshot ON dbo.AssumedBreakConfigurationAdmission (SnapshotIdentityHash);
-
