@@ -163,6 +163,49 @@ public sealed class AssumedBreakReportingConsumerTests
         Assert.NotEqual(a, b);
     }
 
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void MissingOrBlankRunningEvidenceDoesNotExposeMeasuredDuration(string? reference)
+    {
+        var result = AssumedBreakReportingConsumer.Evaluate(Request() with
+        {
+            RunningEvidenceReference = reference,
+        });
+        Assert.Equal("RunningEvidenceNotEstablished", result.AvailabilityReason);
+        Assert.Null(result.PlannedTime);
+        Assert.Null(result.AvailabilityPercentage);
+        Assert.Equal(TimeSpan.Zero, result.ObservedRunningDuration);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConflictingEvidenceDefinitionsAreRejectedInBothOrders(bool reverse)
+    {
+        var first = new AssumedBreakReportingExclusion("E1", Start.AddHours(1), Start.AddMinutes(90), false);
+        var conflict = first with { IsBreak = true };
+        AssumedBreakReportingExclusion[] exclusions = reverse ? [conflict, first] : [first, conflict];
+
+        var result = AssumedBreakReportingConsumer.Evaluate(Request(exclusions: exclusions));
+        Assert.Equal("ExclusionAuthorityAmbiguous", result.AvailabilityReason);
+        Assert.Null(result.PlannedTime);
+        Assert.Null(result.AvailabilityPercentage);
+    }
+
+    [Fact]
+    public void ConflictingClassificationsDoNotDependOnInputOrder()
+    {
+        var first = new AssumedBreakReportingExclusion("E1", Start.AddHours(1), Start.AddMinutes(90), false);
+        var conflict = first with { IsBreak = true };
+        var forward = AssumedBreakReportingConsumer.Evaluate(Request(exclusions: [first, conflict]));
+        var reverse = AssumedBreakReportingConsumer.Evaluate(Request(exclusions: [conflict, first]));
+        Assert.Equal(forward.ExclusionEvidenceFingerprint, reverse.ExclusionEvidenceFingerprint);
+        Assert.Equal(forward.AvailabilityReason, reverse.AvailabilityReason);
+    }
+
     private static AssumedBreakReportingPolicy Policy() =>
         new("GG003-DEFAULT-BREAK", "demo-v1", Site, Machine,
             Day, null, TimeSpan.FromMinutes(30),
@@ -173,5 +216,8 @@ public sealed class AssumedBreakReportingConsumerTests
         IReadOnlyList<AssumedBreakReportingExclusion>? exclusions = null,
         bool completed = true) =>
         new(policy ?? Policy(), Site, Machine, Day, Start, Start.AddHours(8),
-            completed, true, TimeSpan.FromHours(6), exclusions ?? []);
+            completed, true, TimeSpan.FromHours(6), exclusions ?? [])
+        {
+            RunningEvidenceReference = "RUN-EVIDENCE-001",
+        };
 }
