@@ -1,4 +1,6 @@
 using FactoryConnect.Abstractions;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace FactoryConnect.Core;
 
@@ -56,7 +58,7 @@ public static class AssumedBreakReportingConsumer
             FactoryDate = request.FactoryDate,
             ShiftStartsAtUtc = request.ShiftStartsAtUtc,
             ShiftEndsAtUtc = request.ShiftEndsAtUtc,
-            ExclusionEvidence = SnapshotEvidence(request.Exclusions),
+            ExclusionEvidenceFingerprint = FingerprintEvidence(request.Exclusions),
             RunningEvidenceReference = request.RunningEvidenceReference,
         };
     }
@@ -70,14 +72,27 @@ public static class AssumedBreakReportingConsumer
             FactoryDate = request.FactoryDate,
             ShiftStartsAtUtc = request.ShiftStartsAtUtc,
             ShiftEndsAtUtc = request.ShiftEndsAtUtc,
-            ExclusionEvidence = SnapshotEvidence(request.Exclusions),
+            ExclusionEvidenceFingerprint = FingerprintEvidence(request.Exclusions),
             RunningEvidenceReference = request.RunningEvidenceReference,
         };
 
-    private static IReadOnlyList<AssumedBreakReportingExclusion> SnapshotEvidence(
-        IReadOnlyList<AssumedBreakReportingExclusion> exclusions) =>
-        Array.AsReadOnly(exclusions.OrderBy(static x => x.EvidenceId, StringComparer.Ordinal)
-            .ThenBy(static x => x.StartsAtUtc).ThenBy(static x => x.EndsAtUtc).ToArray());
+    private static string FingerprintEvidence(IReadOnlyList<AssumedBreakReportingExclusion> exclusions)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
+        {
+            foreach (var exclusion in exclusions.OrderBy(static x => x.EvidenceId, StringComparer.Ordinal)
+                .ThenBy(static x => x.StartsAtUtc).ThenBy(static x => x.EndsAtUtc))
+            {
+                writer.Write(exclusion.EvidenceId ?? string.Empty);
+                writer.Write(exclusion.StartsAtUtc.UtcTicks);
+                writer.Write(exclusion.EndsAtUtc.UtcTicks);
+                writer.Write(exclusion.IsBreak);
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(stream.ToArray()));
+    }
 
     private static AssumedBreakReportingPolicy? SelectPolicy(AssumedBreakReportingRequest request)
     {
@@ -198,6 +213,6 @@ public sealed record AssumedBreakReportingAssessment(
     public DateOnly FactoryDate { get; init; }
     public DateTimeOffset ShiftStartsAtUtc { get; init; }
     public DateTimeOffset ShiftEndsAtUtc { get; init; }
-    public IReadOnlyList<AssumedBreakReportingExclusion> ExclusionEvidence { get; init; } = [];
+    public string ExclusionEvidenceFingerprint { get; init; } = string.Empty;
     public string? RunningEvidenceReference { get; init; }
 }
