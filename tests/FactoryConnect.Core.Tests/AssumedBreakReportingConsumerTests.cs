@@ -81,6 +81,88 @@ public sealed class AssumedBreakReportingConsumerTests
             AssumedBreakReportingConsumer.Evaluate(request));
     }
 
+
+    [Fact]
+    public void TrulyAbsentPolicyReturnsUnavailable()
+    {
+        var request = Request() with
+        {
+            Policy = null!,
+            CandidatePolicies = [],
+        };
+        var result = AssumedBreakReportingConsumer.Evaluate(request);
+        Assert.Equal("PolicyNotEstablished", result.AvailabilityReason);
+        Assert.Null(result.PlannedTime);
+        Assert.Equal(Machine, result.MachineId);
+    }
+
+    [Fact]
+    public void CompetingEffectivePoliciesAreRejectedRegardlessOfOrder()
+    {
+        var request = Request() with
+        {
+            CandidatePolicies = [Policy(), Policy() with { Id = "COMPETITOR" }],
+        };
+        Assert.Equal("PolicyNotEstablished",
+            AssumedBreakReportingConsumer.Evaluate(request).AvailabilityReason);
+    }
+
+    [Fact]
+    public void WrongScopePolicyIsNotSelected()
+    {
+        var request = Request() with
+        {
+            CandidatePolicies = [Policy() with { SiteId = new SiteId("WRONG-SITE") }],
+        };
+        Assert.Equal("PolicyNotEstablished",
+            AssumedBreakReportingConsumer.Evaluate(request).AvailabilityReason);
+    }
+
+    [Fact]
+    public void EffectiveEndIsExclusive()
+    {
+        var request = Request() with
+        {
+            CandidatePolicies = [Policy() with { EffectiveTo = Day }],
+        };
+        Assert.Equal("PolicyNotEstablished",
+            AssumedBreakReportingConsumer.Evaluate(request).AvailabilityReason);
+    }
+
+    [Fact]
+    public void EqualTotalsWithDifferentEvidenceHaveDifferentBindings()
+    {
+        var first = Request(exclusions:
+            [new AssumedBreakReportingExclusion("E1", Start.AddHours(1), Start.AddMinutes(90), false)]);
+        var second = Request(exclusions:
+            [new AssumedBreakReportingExclusion("E2", Start.AddHours(1), Start.AddMinutes(90), false)]);
+        var a = AssumedBreakReportingConsumer.Evaluate(first);
+        var b = AssumedBreakReportingConsumer.Evaluate(second);
+        Assert.Equal(a.PlannedTime!.PlannedProductionDuration, b.PlannedTime!.PlannedProductionDuration);
+        Assert.NotEqual(a.ExclusionEvidenceFingerprint, b.ExclusionEvidenceFingerprint);
+        Assert.NotEqual(a, b);
+    }
+
+    [Fact]
+    public void RunningEvidenceReferencesDistinguishEqualDurations()
+    {
+        var a = AssumedBreakReportingConsumer.Evaluate(Request() with { RunningEvidenceReference = "RUN-1" });
+        var b = AssumedBreakReportingConsumer.Evaluate(Request() with { RunningEvidenceReference = "RUN-2" });
+        Assert.NotEqual(a, b);
+    }
+
+    [Fact]
+    public void ScopeBoundariesDistinguishDifferentShifts()
+    {
+        var a = AssumedBreakReportingConsumer.Evaluate(Request());
+        var b = AssumedBreakReportingConsumer.Evaluate(Request() with
+        {
+            ShiftStartsAtUtc = Start.AddHours(8),
+            ShiftEndsAtUtc = Start.AddHours(16),
+        });
+        Assert.NotEqual(a, b);
+    }
+
     private static AssumedBreakReportingPolicy Policy() =>
         new("GG003-DEFAULT-BREAK", "demo-v1", Site, Machine,
             Day, null, TimeSpan.FromMinutes(30),
