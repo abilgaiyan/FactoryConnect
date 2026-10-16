@@ -95,6 +95,41 @@ public sealed class SqlServerRunningProvenanceIntegrationTests
         Assert.Equal(RunningEvidenceState.Corrupt, (await f.Reader.ReadExactAsync(f.Request(revision), CancellationToken.None)).State);
     }
 
+    [Fact]
+    public async Task MultiOutputPublicationResolvesEachDistinctPositionAndOutputIdentity()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.AddMultiOutputPublicationAsync(); var revision = await f.AggregateAsync();
+        var result = await f.Reader.ReadExactAsync(f.Request(revision), CancellationToken.None);
+        Assert.Equal(RunningEvidenceState.Partial, result.State);
+        Assert.Equal(TimeSpan.FromHours(2), result.ObservedRunningDuration);
+        Assert.Equal(2, result.Slices.Length);
+        Assert.Equal(1UL, result.Slices[0].ObservationPosition);
+        Assert.Equal(2UL, result.Slices[1].ObservationPosition);
+        Assert.NotEqual(result.Slices[0].ActivityHistoryFingerprint, result.Slices[1].ActivityHistoryFingerprint);
+        Assert.Equal(result.EvidenceFingerprint,
+            (await new SqlServerRunningProvenanceReader(f.Database.ConnectionString).ReadExactAsync(f.Request(revision), CancellationToken.None)).EvidenceFingerprint);
+    }
+
+    [Fact]
+    public async Task DuplicateHistoryPositionFromSqlTamperingRemainsCorruptRatherThanChoosingAnOrdinal()
+    {
+        await using var f = await Fixture.CreateAsync();
+        await f.AddAsync(0, 2, MachineState.Running); var revision = await f.AggregateAsync();
+        await using var connection = new SqlConnection(f.Database.ConnectionString); await connection.OpenAsync();
+        await using var command = new SqlCommand("""
+            INSERT dbo.MachineActivityPeriodHistory
+                (MachineId, StreamKeyBinary, StateProcessorIdOrderKey, ProjectionRevision, OutputOrdinal,
+                 Position, MachineState, StartedAt, EndedAt, InstanceId, Sequence)
+            SELECT MachineId, StreamKeyBinary, StateProcessorIdOrderKey, ProjectionRevision, OutputOrdinal + 1,
+                   Position, MachineState, StartedAt, EndedAt, InstanceId, Sequence
+            FROM dbo.MachineActivityPeriodHistory;
+            """, connection);
+        await command.ExecuteNonQueryAsync();
+        var result = await f.Reader.ReadExactAsync(f.Request(revision), CancellationToken.None);
+        Assert.Equal(RunningEvidenceState.Corrupt, result.State); Assert.Null(result.ObservedRunningDuration);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private static readonly DateTimeOffset Start = new(2026, 10, 16, 6, 0, 0, TimeSpan.Zero);
@@ -147,9 +182,37 @@ public sealed class SqlServerRunningProvenanceIntegrationTests
                 SourceInstanceId = instance, SourceSequence = _position, CompanyId = new("company"), SiteId = Day.SiteId,
                 MachineId = _machine, State = state, StartsAtUtc = start, EndsAtUtc = end, ShiftId = Shift.ShiftId, ShiftScheduleAssignmentId = Shift.ShiftScheduleAssignmentId,
             };
+            await WriteContextAsync(activity);
+        }
+        public async Task AddMultiOutputPublicationAsync()
+        {
+            var first = new DurableMachineActivityPeriod(_state, new(1), ObservationStream, 1, 1,
+                new(_machine, MachineState.Running, Start, Start.AddHours(2)));
+            var second = new DurableMachineActivityPeriod(_state, new(2), ObservationStream, 1, 2,
+                new(_machine, MachineState.Stopped, Start.AddHours(2), Start.AddHours(4)));
+            var publication = new MachineStateActivityAuthorityPublication(null, null,
+                new(_state, ObservationStream, new(2), [], MachineState.Stopped, MachineState.Stopped, Start.AddHours(4)), [], [first, second],
+                new(_state, ObservationStream, new(2), MachineState.Stopped, 1, new CurrentStatePolicyReference("continuity/default", "1.0")));
+            Assert.IsType<MachineStateActivityAuthorityPublicationAccepted>(
+                await new SqlServerMachineStateActivityAuthorityStore(Database.ConnectionString).PublishAsync(publication));
+            _position = 2;
+            foreach (var source in publication.ActivityPeriods)
+            {
+                await WriteContextAsync(new()
+                {
+                    Id = new("activity-" + source.Position.Value), SourceProcessorId = source.ProcessorId, SourcePosition = source.Position,
+                    SourceStreamId = source.StreamId, SourceInstanceId = source.InstanceId, SourceSequence = source.Sequence,
+                    CompanyId = new("company"), SiteId = Day.SiteId, MachineId = _machine, State = source.Period.State,
+                    StartsAtUtc = source.Period.StartedAt, EndsAtUtc = source.Period.EndedAt,
+                    ShiftId = Shift.ShiftId, ShiftScheduleAssignmentId = Shift.ShiftScheduleAssignmentId,
+                });
+            }
+        }
+        private async Task WriteContextAsync(ContextualizedActivityInterval activity)
+        {
             var eligibility = ProductionTimeEligibilityAllocator.Allocate(activity, []);
             var facts = DurableMetricInputFactDeriver.Derive(eligibility, []).OrderBy(x => x.Key == MetricInputFactKeys.ScheduledDuration ? 0 : 1).ToArray();
-            var next = new ObservationProcessingCheckpoint(_context, ObservationStream, position);
+            var next = new ObservationProcessingCheckpoint(_context, ObservationStream, activity.SourcePosition);
             await new SqlServerProductionContextProcessingStore(Database.ConnectionString).CommitAsync(new()
             {
                 ExpectedCheckpoint = _contextCheckpoint, NextCheckpoint = next, ContextualizedActivity = [activity], EligibilityIntervals = eligibility,

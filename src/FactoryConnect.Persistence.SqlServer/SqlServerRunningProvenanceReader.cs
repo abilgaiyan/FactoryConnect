@@ -109,6 +109,9 @@ internal sealed partial class SqlServerMetricAggregationStore
         var revision = SqlServerUInt64.Materialize(reader.GetDecimal(0)); var ordinal = reader.GetInt32(1);
         var state = reader.GetByte(2); var start = reader.GetDateTimeOffset(3); var end = reader.GetDateTimeOffset(4);
         var instance = SqlServerUInt64.Materialize(reader.GetDecimal(5)); var sequence = SqlServerUInt64.Materialize(reader.GetDecimal(6));
+        // Canonical publication requires strictly increasing activity positions, including across
+        // publications. Revision/ordinal identify the retained row and enter its fingerprint;
+        // a second row at one position violates that publication contract, rather than choosing one.
         if (ordinal < 0 || state != (byte)source.State || start > source.StartsAtUtc || end < source.EndsAtUtc ||
             instance != source.SourceInstanceId || sequence != source.SourceSequence || await reader.ReadAsync(token))
             throw new InvalidDataException("Source activity history is ambiguous or inconsistent.");

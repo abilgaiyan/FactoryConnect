@@ -78,6 +78,21 @@ public sealed class RunningProvenanceTests
         Assert.Equal(RunningEvidenceState.Incomparable, result.State); Assert.Null(result.ObservedRunningDuration);
     }
     [Fact]
+    public void ActivityPublicationRejectsMultipleOutputsAtOneObservationPosition()
+    {
+        var processor = new ObservationProcessorId("state"); var stream = new ObservationStreamId(Machine, "mtconnect");
+        var position = new ObservationPosition(1);
+        var projection = new MachineStateActivityProjection(processor, stream, position, [], MachineState.Stopped, MachineState.Stopped, Start.AddHours(8));
+        var first = new DurableMachineActivityPeriod(processor, position, stream, 1, 1,
+            new(Machine, MachineState.Running, Start, Start.AddHours(4)));
+        var second = new DurableMachineActivityPeriod(processor, position, stream, 1, 1,
+            new(Machine, MachineState.Stopped, Start.AddHours(4), Start.AddHours(8)));
+        var identity = new EvaluationAuthorityReplayIdentity(processor, stream, position, MachineState.Stopped, 1,
+            new CurrentStatePolicyReference("continuity/default", "1.0"));
+        var error = Assert.Throws<ArgumentException>(() => new MachineStateActivityAuthorityPublication(null, null, projection, [], [first, second], identity));
+        Assert.Contains("strictly increasing", error.Message, StringComparison.Ordinal);
+    }
+    [Fact]
     public void OrderingReplayAndChangedRevisionHaveDeterministicBindings()
     {
         var q = Request(); var a = Slice("first", 0, 4, MachineState.Running); var b = Slice("second", 4, 8, MachineState.Stopped);
