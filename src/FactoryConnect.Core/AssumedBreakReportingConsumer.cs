@@ -42,6 +42,12 @@ public static class AssumedBreakReportingConsumer
             return Unavailable("ExclusionAuthorityAmbiguous", request, policy);
         }
 
+        // A duration without an exact Running evidence reference is not measured evidence.
+        if (string.IsNullOrWhiteSpace(request.RunningEvidenceReference))
+        {
+            return Unavailable("RunningEvidenceNotEstablished", request, policy);
+        }
+
         var planned = AssumedShiftBreakPolicy.Evaluate(
             request.ShiftEndsAtUtc - request.ShiftStartsAtUtc,
             excludedDuration,
@@ -65,7 +71,8 @@ public static class AssumedBreakReportingConsumer
 
     private static AssumedBreakReportingAssessment Unavailable(
         string reason, AssumedBreakReportingRequest request, AssumedBreakReportingPolicy? policy) =>
-        new(policy?.Id ?? string.Empty, policy?.Version ?? string.Empty, null, reason, null, request.ObservedRunningDuration)
+        new(policy?.Id ?? string.Empty, policy?.Version ?? string.Empty, null, reason, null,
+            string.IsNullOrWhiteSpace(request.RunningEvidenceReference) ? TimeSpan.Zero : request.ObservedRunningDuration)
         {
             SiteId = request.SiteId,
             MachineId = request.MachineId,
@@ -82,7 +89,8 @@ public static class AssumedBreakReportingConsumer
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
         {
             foreach (var exclusion in exclusions.OrderBy(static x => x.EvidenceId, StringComparer.Ordinal)
-                .ThenBy(static x => x.StartsAtUtc).ThenBy(static x => x.EndsAtUtc))
+                .ThenBy(static x => x.StartsAtUtc).ThenBy(static x => x.EndsAtUtc)
+                .ThenBy(static x => x.IsBreak))
             {
                 writer.Write(exclusion.EvidenceId ?? string.Empty);
                 writer.Write(exclusion.StartsAtUtc.UtcTicks);
@@ -121,7 +129,21 @@ public static class AssumedBreakReportingConsumer
             return false;
         }
 
-        var intervals = request.Exclusions
+        // The same durable evidence ID must never describe conflicting intervals or classifications.
+        var evidenceDefinitions = new Dictionary<string, AssumedBreakReportingExclusion>(StringComparer.Ordinal);
+        foreach (var exclusion in request.Exclusions)
+        {
+            if (string.IsNullOrWhiteSpace(exclusion.EvidenceId) ||
+                (evidenceDefinitions.TryGetValue(exclusion.EvidenceId, out var previous) &&
+                 previous != exclusion))
+            {
+                return false;
+            }
+
+            evidenceDefinitions[exclusion.EvidenceId] = exclusion;
+        }
+
+        var intervals = evidenceDefinitions.Values
             .OrderBy(static x => x.StartsAtUtc)
             .ThenBy(static x => x.EndsAtUtc)
             .ToArray();
