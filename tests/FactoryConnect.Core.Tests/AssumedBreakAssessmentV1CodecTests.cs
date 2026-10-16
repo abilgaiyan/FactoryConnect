@@ -65,4 +65,26 @@ public sealed class AssumedBreakAssessmentV1CodecTests
         Assert.Equal(TimeSpan.Zero, zero.ObservedRunningDuration);
         Assert.NotEqual(missing.Identity, zero.Identity);
     }
+
+    [Fact]
+    public void ForecastAndUnsupportedVersion()
+    {
+        var forecast = AssumedBreakAssessmentV1Codec.Decode(
+            AssumedBreakAssessmentV1Codec.Encode(Assessment(forecast: true)));
+        Assert.True(forecast.PlannedTime!.IsForecast);
+        var bytes = AssumedBreakAssessmentV1Codec.Encode(Assessment());
+        bytes[0] = 2;
+        Assert.Throws<NotSupportedException>(() => AssumedBreakAssessmentV1Codec.Decode(bytes));
+    }
+
+    [Fact]
+    public void InvalidPayloadAndMismatchedIdentity()
+    {
+        var value = Assessment();
+        var bytes = AssumedBreakAssessmentV1Codec.Encode(value);
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Decode(bytes[..^1]));
+        Assert.Throws<InvalidDataException>(() => AssumedBreakAssessmentV1Codec.Decode(bytes,
+            AssumedBreakAssessmentV1Codec.Identity(Target() with { CalendarVersion = "v2" })));
+    }
+
 }
