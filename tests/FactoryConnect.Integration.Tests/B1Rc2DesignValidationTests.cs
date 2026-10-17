@@ -1,3 +1,4 @@
+using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
 
@@ -99,6 +100,70 @@ public sealed class B1Rc2DesignValidationTests
         Assert.Equal(1, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive;"))!);
         Assert.Equal(1, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive;"))!);
         Assert.Equal(1, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference;"))!);
+    }
+
+    [Fact]
+    public async Task PopulatedLegacyV1PublicationSurvivesSchemaUpgradeAndReplays()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var connection = new SqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+        var machine = new MachineId(Guid.NewGuid());
+        var site = new SiteId("B1-SITE");
+        var shift = new ShiftId("B1-SHIFT");
+        var schedule = new ShiftScheduleAssignmentId("B1-SCHEDULE");
+        var start = new DateTimeOffset(2026, 10, 16, 6, 0, 0, TimeSpan.Zero);
+        var occurrence = new ShiftOccurrenceId(site, schedule, shift, start, start.AddHours(8));
+        var day = new ProductionDayId(site, new DateOnly(2026, 10, 16));
+        var fact = await new SqlServerMetricInputStore(database.ConnectionString).AppendAsync(
+            new DurableMetricInputAppend(MetricInputStreamId.ForMachine(machine), new DurableMetricInputFact
+            {
+                Id = new MetricInputFactId("b1-legacy-fact"), Key = "duration.running", Value = 1m, Unit = "seconds",
+                StartsAtUtc = start, EndsAtUtc = start.AddSeconds(1), CompanyId = new CompanyId("B1-COMPANY"),
+                SiteId = site, MachineId = machine, ShiftId = shift, ShiftScheduleAssignmentId = schedule,
+            }, occurrence, day), CancellationToken.None);
+        var aggregation = new MetricAggregationProcessorId("b1-legacy-aggregation");
+        var revision = new MetricAggregationCheckpoint(aggregation, fact.StreamId, fact.Position);
+        await new SqlServerMetricAggregationStore(database.ConnectionString).CommitAsync(
+            new MetricAggregationCommit(aggregation, null, revision, []), CancellationToken.None);
+        var processor = new OperationalMetricProjectionProcessorId("b1-legacy-projection");
+        var period = new OperationalMetricPeriodId.Shift(occurrence);
+        var definition = new OperationalMetricDefinitionId("availability", "1");
+        var key = new OperationalMetricEvaluationKey(machine, period, definition, OperationalMetricEvaluationContextKey.Unpartitioned);
+        var component = new OperationalMetricComponentProjectionEvidence("runtime",
+            new OperationalMetricAggregateSourceIdentity(aggregation, machine, period, "duration.running"),
+            revision, MetricDimension.Duration, 1m, "seconds", 1, start, start.AddSeconds(1));
+        var availability = new OperationalMetricProjection(processor, key, OperationalMetricEvaluationStatus.Calculated,
+            0.75m, "ratio", null, null, revision, [component]);
+        var parentKey = new OperationalMetricEvaluationKey(machine, period,
+            new OperationalMetricDefinitionId("oee", "1"), OperationalMetricEvaluationContextKey.Unpartitioned);
+        var parent = new OperationalMetricProjection(processor, parentKey, OperationalMetricEvaluationStatus.Calculated,
+            0.75m, "ratio", null, null, revision,
+            dependencyEvidence: [new OperationalMetricDependencyProjectionEvidence("Availability", definition, availability)]);
+        var checkpoint = new OperationalMetricProjectionCheckpoint(processor, revision,
+            new OperationalMetricProjectionBatchManifest([key, parentKey]));
+        var commit = new OperationalMetricProjectionCommit(processor, null, checkpoint, [availability, parent]);
+        async Task Publish()
+        {
+            var transaction = new SqlServerOperationalMetricProjectionCommitTransaction(database.ConnectionString);
+            await transaction.ExecuteAsync(commit,
+                async (context, token) => await SqlServerOperationalMetricProjectionPublication.ExecuteAsync(context, commit, token),
+                CancellationToken.None);
+        }
+        await Publish();
+        var before = OperationalMetricDependencySnapshotV1Codec.Encode(parent);
+        await using (var transaction = connection.BeginTransaction())
+        {
+            await ApplyProposal(connection, transaction);
+            await transaction.CommitAsync();
+        }
+        var actual = await new SqlServerOperationalMetricProjectionQueryReader(database.ConnectionString)
+            .ReadDetailAsync(processor, parentKey, CancellationToken.None);
+        Assert.Equal(before, OperationalMetricDependencySnapshotV1Codec.Encode(Assert.IsType<OperationalMetricProjection>(actual)));
+        await Publish(); // Identical legacy replay through the unchanged publisher after the schema upgrade.
+        Assert.Equal(2, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricProjection WHERE PublicationFormatVersion=1 AND EvaluationPolicyId IS NULL AND ContainmentResultId IS NULL AND ConflictWitnessId IS NULL;"))!);
+        Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive;"))!);
     }
 
     private static async Task Prepare(SqlConnection connection)
