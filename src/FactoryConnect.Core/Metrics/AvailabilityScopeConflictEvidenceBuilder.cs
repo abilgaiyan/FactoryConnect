@@ -55,6 +55,7 @@ public static class AvailabilityScopeConflictEvidenceBuilder
                 fact.SourceEligibilityIntervalId is null or { IsEmpty: true } || fact.SourceContextualizedActivityIntervalId is null or { IsEmpty: true } ||
                 fact.IsPlannedProductionTime is null ||
                 (fact.IsPlannedProductionTime == true) != (fact.PlannedProductionScheduleAssignmentId is not null) ||
+                fact.PlannedProductionScheduleAssignmentId is { IsEmpty: true } ||
                 (fact.Key == MetricInputFactKeys.PlannedProductionDuration && fact.IsPlannedProductionTime != true))
             {
                 throw new InvalidDataException("Invalid duration or eligibility evidence in the operand contribution set.");

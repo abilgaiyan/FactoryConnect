@@ -206,7 +206,7 @@ public sealed record OperationalMetricProjection
                 nameof(status));
         }
 
-        if (evaluationPolicyId is not null &&
+        if ((evaluationPolicyId is not null || processorId == AvailabilityContainmentV1.ProjectionProcessorId(key.MachineId)) &&
             (evaluationPolicyId != AvailabilityContainmentV1.PolicyId || processorId != AvailabilityContainmentV1.ProjectionProcessorId(key.MachineId)))
         {
             throw new ArgumentException("Containment evaluations require their distinct versioned projection processor.", nameof(processorId));

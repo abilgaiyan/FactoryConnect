@@ -84,6 +84,18 @@ public sealed partial class Gg003AvailabilityContainmentContractTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task StageA75PercentWithoutWitnessStillCalculatesForIdenticalOperandFacts(bool shift)
+    {
+        var store = await HistoricalStore(Synthetic75(plannedRunning: false));
+        var result = await StageAEvaluator(new PinnedReader(store, omitWitness: true))
+            .EvaluateAsync(AvailabilityKey(shift), CancellationToken.None);
+        Assert.Equal(0.75m, result.Value);
+        Assert.Null(result.AvailabilityScopeConflictEvidence);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task StageAMissingAndZeroDenominatorRetainPrecedence(bool shift)
     {
         // Explicit aggregate-only probes, separate from historical factory evidence.
@@ -201,6 +213,8 @@ public sealed partial class Gg003AvailabilityContainmentContractTests
         var oldFactory = new OperationalMetricProjectionFactory(Catalog(), oldId);
         Assert.Equal(0.75m, oldFactory.Create(legacy).Value);
         Assert.Throws<ArgumentException>(() => oldFactory.Create(contained));
+        Assert.Throws<ArgumentException>(() => new OperationalMetricProjectionFactory(Catalog(),
+            AvailabilityContainmentV1.ProjectionProcessorId(Machine)).Create(legacy));
         var processor = AvailabilityContainmentV1.ProjectionProcessorId(Machine);
         Assert.NotEqual(oldId, processor);
         var projection = new OperationalMetricProjectionFactory(Catalog(), processor).Create(contained);

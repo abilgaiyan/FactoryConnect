@@ -53,6 +53,18 @@ public sealed class Gg003AvailabilityPersistenceContractTests
         Assert.Contains("Unsupported operational metric reason code", error.Message);
     }
 
+    [Fact]
+    public void FrozenV1RejectsPolicyEvenWhenReasonIsLegacyAndWitnessIsAbsent()
+    {
+        var legacy = CreateUnavailable(false, OperationalMetricEvaluationReasonCode.ZeroDenominator);
+        var candidate = new OperationalMetricProjection(AvailabilityContainmentV1.ProjectionProcessorId(legacy.Key.MachineId),
+            legacy.Key, legacy.Status, legacy.Value, legacy.Unit, legacy.ReasonCode, legacy.ReasonOperandName,
+            legacy.SourceRevision, legacy.OperandEvidence, evaluationPolicyId: AvailabilityContainmentV1.PolicyId);
+        Assert.Throws<NotSupportedException>(() => OperationalMetricDependencySnapshotV1Codec.Encode(candidate));
+        Assert.True(OperationalMetricProjectionEquivalence.AreEquivalent(legacy,
+            OperationalMetricDependencySnapshotV1Decoder.Decode(OperationalMetricDependencySnapshotV1Codec.Encode(legacy))));
+    }
+
     private static OperationalMetricProjection CreateUnavailable(bool shift, OperationalMetricEvaluationReasonCode reason)
     {
         var machine = new MachineId(Guid.Parse("11111111-1111-1111-1111-111111111111"));

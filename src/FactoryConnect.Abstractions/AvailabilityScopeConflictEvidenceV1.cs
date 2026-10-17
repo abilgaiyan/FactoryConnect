@@ -31,8 +31,8 @@ public sealed record AvailabilityScopeConflictEvidenceV1
         Contribution = contribution;
     }
 
-    public string RuleId => AvailabilityContainmentV1.PolicyId;
-    public string PlannedProductionOperandContractId => AvailabilityContainmentV1.PlannedProductionOperandContractId;
+    public string RuleId { get; } = AvailabilityContainmentV1.PolicyId;
+    public string PlannedProductionOperandContractId { get; } = AvailabilityContainmentV1.PlannedProductionOperandContractId;
     public MetricAggregationCheckpoint SourceRevision { get; }
     public OperationalMetricComponent Numerator { get; }
     public OperationalMetricComponent Denominator { get; }
