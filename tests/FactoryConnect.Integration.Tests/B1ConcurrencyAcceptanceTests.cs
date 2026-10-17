@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
@@ -218,6 +219,14 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         await two.CommitAsync();
         await using var check = await f.Open();
         Assert.Equal(2, await B1ConcurrencyPrototype.Scalar(check, null, "SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive;"));
+        var recorded = f.Events.Select(item => JsonSerializer.SerializeToElement(item))
+            .Where(item => item.TryGetProperty("Stage", out var stage) && stage.GetString()!.StartsWith("archive-key:", StringComparison.Ordinal)).ToArray();
+        var firstKeys = recorded.Where(item => item.GetProperty("Spid").GetInt32() == first.ServerProcessId).Select(item => item.GetProperty("Stage").GetString()!).ToArray();
+        var secondKeys = recorded.Where(item => item.GetProperty("Spid").GetInt32() == second.ServerProcessId).Select(item => item.GetProperty("Stage").GetString()!).ToArray();
+        Assert.Equal(2, firstKeys.Length);
+        Assert.Equal(firstKeys.Order(StringComparer.Ordinal), firstKeys);
+        Assert.Equal(firstKeys, secondKeys);
+
         // This ancillary archive-layer stress fixture intentionally has no result
         // publication. C6's separate full publisher tests establish result closure.
     }

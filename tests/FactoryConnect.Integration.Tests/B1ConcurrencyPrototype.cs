@@ -115,7 +115,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         foreach (var table in new[] { "OperationalMetricConflictWitnessArchive", "OperationalMetricPublicationResultArchive", "OperationalMetricResultWitnessReference", "OperationalMetricProjection", "OperationalMetricProjectionEvidence", "OperationalMetricProjectionManifest", "OperationalMetricProjectionCheckpoint" })
             await Exec(c, null, $"CREATE TRIGGER dbo.B1Audit_{table} ON dbo.{table} AFTER INSERT,UPDATE,DELETE AS BEGIN SET NOCOUNT ON; INSERT dbo.B1MutationAudit(TableName) VALUES (N'{table}'); END;");
         await Exec(c, null, "CREATE TRIGGER dbo.B1CheckpointFault ON dbo.OperationalMetricProjectionCheckpoint AFTER UPDATE AS BEGIN SET NOCOUNT ON; IF CONVERT(nvarchar(64),SESSION_CONTEXT(N'b1-fault'))=N'checkpoint' THROW 51088,'B1 checkpoint fault',1; END;");
-        var dbid = (int)(await Scalar(c, null, "SELECT DB_ID();"))!;
+        var dbid = (int)(await Scalar(c, null, "SELECT CONVERT(int,DB_ID());"))!;
         await Exec(c, null, $"CREATE EVENT SESSION [{eventSession}] ON SERVER ADD EVENT sqlserver.xml_deadlock_report, ADD EVENT sqlserver.sql_statement_completed(ACTION(sqlserver.session_id,sqlserver.transaction_id) WHERE ([sqlserver].[database_id]=({dbid}))), ADD EVENT sqlserver.sp_statement_completed(ACTION(sqlserver.session_id,sqlserver.transaction_id) WHERE ([sqlserver].[database_id]=({dbid}))) ADD TARGET package0.ring_buffer WITH(MAX_DISPATCH_LATENCY=1 SECONDS); ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=START;");
         eventsStarted = true;
     }
@@ -187,12 +187,15 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         {
             Assert.Equal(Bound, entry.Witness.SourceRevision);
             var position = (decimal)entry.Witness.Contribution.Position.Value;
-            var fact = await Scalar(c, t, "SELECT MetricInputFactRowId FROM dbo.MetricInputFact WITH(HOLDLOCK) WHERE MetricInputStreamRowId=@S AND Position=@Position;", ("@S", StreamRow), ("@Position", position));
             var existing = await Scalar(c, t, "SELECT WitnessPayload FROM dbo.OperationalMetricConflictWitnessArchive WITH(UPDLOCK,HOLDLOCK) WHERE WitnessId=@W;", ("@W", entry.Id));
             if (existing is byte[] bytes)
             { if (!bytes.SequenceEqual(entry.Payload)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: witness identity collision"); }
-            else await Exec(c, t, "INSERT dbo.OperationalMetricConflictWitnessArchive VALUES(@W,1,@Payload,@A,@S,@Cut,@Fact,@Position);",
-                ("@W", entry.Id), ("@Payload", entry.Payload), ("@A", AggregationRow), ("@S", StreamRow), ("@Cut", (decimal)Bound.Position.Value), ("@Fact", fact!), ("@Position", position));
+            else
+            {
+                var fact = await Scalar(c, t, "SELECT MetricInputFactRowId FROM dbo.MetricInputFact WITH(HOLDLOCK) WHERE MetricInputStreamRowId=@S AND Position=@Position;", ("@S", StreamRow), ("@Position", position));
+                await Exec(c, t, "INSERT dbo.OperationalMetricConflictWitnessArchive VALUES(@W,1,@Payload,@A,@S,@Cut,@Fact,@Position);",
+                    ("@W", entry.Id), ("@Payload", entry.Payload), ("@A", AggregationRow), ("@S", StreamRow), ("@Cut", (decimal)Bound.Position.Value), ("@Fact", fact!), ("@Position", position));
+            }
             await Trace("archive-key:" + Convert.ToHexString(entry.Id), c, t);
             if (first && afterFirst is not null) await afterFirst();
             first = false;
@@ -267,6 +270,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             new TransactionSnapshot(snapshot), Aggregation, useAvailabilityContainmentV1: true).EvaluateAsync(Key, token);
         Assert.Equal(OperationalMetricEvaluationStatus.Unavailable, evaluation.Status);
         Assert.Equal(OperationalMetricEvaluationReasonCode.RunningOutsidePlannedProduction, evaluation.ReasonCode);
+        Assert.Equal(Policy, evaluation.EvaluationPolicyId);
         Assert.Equal(snapshot.AvailabilityScopeConflictEvidence, evaluation.AvailabilityScopeConflictEvidence);
         var outcomes = new List<ProductionReferenceTimeResolution>();
         if (publisher.Reference)
@@ -275,7 +279,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             var transition = (ProductionReferenceTimePublicationTransition?)await (Task<ProductionReferenceTimePublicationTransition?>)Invoke(typeof(SqlServerProductionReferenceTimePublicationTransitionStore), "ReadAsync",
                 c, t, Aggregation, AggregationRow, Bound.Position, false, token)!;
             if (transition is not { IsCompleted: true, CompletedReferenceTimeRevision: not null }) throw new InvalidDataException("HistoricalEvidenceUnavailable");
-            if (transition.CompletedReferenceTimeRevision.Value.Value != ReferenceRevision) throw new InvalidDataException("StoredEvidenceIntegrityFailure");
+            if (transition.CompletedReferenceTimeRevision.Value.Value != ReferenceRevision || transition.ProductionStandardAuthorityRevision != 1 || transition.ExpectedPreviousAggregationPosition != Initial.Position || transition.StartingReferenceTimeRevision.Value != 0) throw new InvalidDataException("StoredEvidenceIntegrityFailure");
             await Scalar(c, t, "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimeRevision WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND ProductionReferenceTimeRevision=@R;", ("@A", AggregationRow), ("@R", ReferenceRevision));
             Assert.Equal(1, (int)(await Scalar(c, t, "SELECT COUNT(*) FROM dbo.ProductionReferenceTimePublicationCut WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND MetricAggregationPosition=@Cut AND ProductionReferenceTimeRevision=@R;", ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value), ("@R", ReferenceRevision)))!);
             var select = (string)typeof(SqlServerProductionReferenceTimeOutcomeStore).GetField("OutcomeSelect", BindingFlags.NonPublic | BindingFlags.Static)!.GetRawConstantValue()!;
@@ -520,7 +524,21 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
     internal async Task<SqlConnection> Open()
     { var c = new SqlConnection(ConnectionString); await c.OpenAsync(); return c; }
     internal static SqlCommand Command(SqlConnection c, SqlTransaction? t, string sql, params (string, object)[] parameters)
-    { var cmd = c.CreateCommand(); cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 20; foreach (var (key, value) in parameters) cmd.Parameters.AddWithValue(key, value); return cmd; }
+    {
+        var cmd = c.CreateCommand(); cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 20;
+        foreach (var (key, value) in parameters)
+        {
+            if (value is decimal || key is "@Cut" or "@R" or "@Position" or "@WitnessPosition" or "@Count")
+                cmd.Parameters.Add(new SqlParameter(key, SqlDbType.Decimal) { Precision = 20, Scale = 0, Value = Convert.ToDecimal(value, System.Globalization.CultureInfo.InvariantCulture) });
+            else if (value is byte[] bytes)
+                cmd.Parameters.Add(new SqlParameter(key, bytes.Length == 32 && (key is "@W" or "@Result" or "@Key") ? SqlDbType.Binary : SqlDbType.VarBinary,
+                    bytes.Length == 32 && (key is "@W" or "@Result" or "@Key") ? 32 : -1) { Value = bytes });
+            else if (value is DateTimeOffset timestamp)
+                cmd.Parameters.Add(new SqlParameter(key, SqlDbType.DateTimeOffset) { Scale = 7, Value = timestamp });
+            else cmd.Parameters.AddWithValue(key, value);
+        }
+        return cmd;
+    }
     internal static async Task<object?> Scalar(SqlConnection c, SqlTransaction? t, string sql, params (string, object)[] parameters)
     { await using var cmd = Command(c, t, sql, parameters); return await cmd.ExecuteScalarAsync(); }
     internal static async Task Exec(SqlConnection c, SqlTransaction? t, string sql, params (string, object)[] parameters)
@@ -553,7 +571,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                     var graphs = document.Descendants("deadlock").Where(graph => graph.Descendants().Attributes("dbid").Any(attribute => attribute.Value == dbid)).Select(graph => graph.ToString()).ToArray();
                     var statements = document.Descendants("event").Where(e => (string?)e.Attribute("name") is "sql_statement_completed" or "sp_statement_completed")
                         .Select(e => new { Timestamp = (string?)e.Attribute("timestamp"), Spid = EventField(e, "action", "session_id"), Transaction = EventField(e, "action", "transaction_id"), Statement = EventField(e, "data", "statement") })
-                        .Where(e => e.Statement is not null && (e.Statement.Contains("MetricAggregation", StringComparison.Ordinal) || e.Statement.Contains("ProductionReferenceTime", StringComparison.Ordinal) || e.Statement.Contains("ProductionStandard", StringComparison.Ordinal) || e.Statement.Contains("OperationalMetric", StringComparison.Ordinal)))
+                        .Where(e => e.Statement is not null && (e.Statement.Contains("MetricAggregation", StringComparison.Ordinal) || e.Statement.Contains("ProductionReferenceTime", StringComparison.Ordinal) || e.Statement.Contains("ProductionStandard", StringComparison.Ordinal) || e.Statement.Contains("OperationalMetric", StringComparison.Ordinal) || e.Statement.Contains("B1TRACE_END", StringComparison.Ordinal)))
                         .ToArray();
                     var dropped = Convert.ToInt64(await Scalar(c, null, "SELECT dropped_event_count FROM sys.dm_xe_sessions WHERE name=@Name;", ("@Name", eventSession)), System.Globalization.CultureInfo.InvariantCulture);
                     var truncated = (string?)document.Root?.Attribute("truncated");
