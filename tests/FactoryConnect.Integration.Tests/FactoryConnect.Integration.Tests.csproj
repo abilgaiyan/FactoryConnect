@@ -5,6 +5,10 @@
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.OpenApi.Generated</InterceptorsNamespaces>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../FactoryConnect.Core.Tests/TestData/gg003-revision-534-components.json"
+                      LogicalName="FactoryConnect.Integration.Tests.TestData.gg003-revision-534-components.json" />
+    <EmbeddedResource Include="../FactoryConnect.Core.Tests/TestData/gg003-revision-534-source-cut.json"
+                      LogicalName="FactoryConnect.Integration.Tests.TestData.gg003-revision-534-source-cut.json" />
     <Compile Include="../FactoryConnect.Reporting.Tests.Shared/**/*.cs"
              Link="ReportingConformance/%(RecursiveDir)%(Filename)%(Extension)" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
