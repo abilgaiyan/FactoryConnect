@@ -13,7 +13,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     private static async Task Reached(TaskCompletionSource signal) => await signal.Task.WaitAsync(TimeSpan.FromSeconds(20));
 
     [Fact]
-    public async Task C1_AdvancementAfterPublicationPrefixCannotLeakIntoBoundCut()
+    public async Task C1AdvancementAfterPublicationPrefixCannotLeakIntoBoundCut()
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var p = await f.NewPublisher("C1", true);
@@ -38,7 +38,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task C2_ActualBeginOrCompleteNeverExposesPartialAuthority(bool complete)
+    public async Task C2ActualBeginOrCompleteNeverExposesPartialAuthority(bool complete)
     {
         await using var f = await B1ConcurrencyPrototype.Create(output, false);
         if (complete) { await f.Begin(); await f.Admissions.AdmitAsync(f.Aggregation, f.Bound.Position, f.Outcome); }
@@ -69,7 +69,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task C3_ActualAdmissionCannotConvertPendingAuthorityIntoMissingMetric()
+    public async Task C3ActualAdmissionCannotConvertPendingAuthorityIntoMissingMetric()
     {
         await using var f = await B1ConcurrencyPrototype.Create(output, false);
         await f.Begin();
@@ -101,7 +101,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task C4_ConcurrentReplayIsZeroWriteOrContentConflict(bool conflict)
+    public async Task C4ConcurrentReplayIsZeroWriteOrContentConflict(bool conflict)
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var first = await f.NewPublisher("C4", true);
@@ -131,7 +131,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task C5_ExistingReportingGatePreventsPartialPublication(bool readerFirst)
+    public async Task C5ExistingReportingGatePreventsPartialPublication(bool readerFirst)
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var p = await f.NewPublisher("C5", true);
@@ -161,21 +161,21 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task C6_IndependentPublishersShareOneImmutableWitness()
+    public async Task C6IndependentPublishersShareOneImmutableWitness()
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var first = await f.NewPublisher("C6-first", true); var second = await f.NewPublisher("C6-second", true);
         var reached = Signal(); var release = Signal(); var holder = 0;
         first.AtStage = async (stage, c, _) => { if (stage == "witness") { holder = c.ServerProcessId; reached.TrySetResult(); await Reached(release); } };
         var one = first.Publish(); await Reached(reached); var two = second.Publish();
-        try { await f.WaitFor(holder, two); await f.Capture("C6: independent processor gates; shared witness key serializes insertion"); }
+        try { await f.WaitFor(holder, two); await f.Capture("C6: independent processor gates; actual observed resource determines serialization"); }
         finally { release.TrySetResult(); }
         await Task.WhenAll(one, two).WaitAsync(TimeSpan.FromSeconds(30));
         AssertPublished(await f.State(first)); AssertPublished(await f.State(second));
     }
 
     [Fact]
-    public async Task C7_ValidatorHoldsBoundCutWhileActualNeighborSourceWritersRun()
+    public async Task C7ValidatorHoldsBoundCutWhileActualNeighborSourceWritersRun()
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var p = await f.NewPublisher("C7", true);
@@ -195,7 +195,17 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         await Task.WhenAll(replay, begin).WaitAsync(TimeSpan.FromSeconds(30));
         var source = Assert.Single(await f.AggregationStore.ReadProductionQuantityTransitionSourcesAsync(next, f.Machine, f.Bound.Position));
         var resolution = FactoryConnect.Core.ProductionStandardResolver.Resolve(source.Evidence, source.ShiftOccurrenceId, source.ProductionDayId, f.Standards);
-        await f.Admissions.AdmitAsync(f.Aggregation, next.Position, new(new(2), resolution));
+        await using (var barrier = await f.Barrier("ProductionReferenceTimeOutcome", "INSERT"))
+        {
+            var admission = f.Admissions.AdmitAsync(f.Aggregation, next.Position, new(new(2), resolution));
+            await f.WaitFor(barrier.Spid, admission);
+            p.AtStage = null;
+            var historical = p.Read();
+            try { await f.WaitFor((await f.WaitFor(barrier.Spid, admission))!.Value, historical, true); await f.Capture("C7: actual neighboring R2 admission competes with old A4/R1 reconstruction"); }
+            finally { await barrier.Release(); }
+            await admission.WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Equal(f.Receipt(p.Id.Value, true), await historical.WaitAsync(TimeSpan.FromSeconds(30)));
+        }
         Assert.True((await f.Transitions.CompleteAsync(f.Aggregation, next.Position)).IsCompleted);
         p.AtStage = null;
         Assert.Equal(f.Receipt(p.Id.Value, true), await p.Read());
@@ -214,7 +224,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     [InlineData("before-checkpoint")]
     [InlineData("checkpoint")]
     [InlineData("cancellation")]
-    public async Task C8_EveryPrototypeStageRollsBackAndRestartsCoherently(string stage)
+    public async Task C8EveryPrototypeStageRollsBackAndRestartsCoherently(string stage)
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var p = await f.NewPublisher("C8", true);

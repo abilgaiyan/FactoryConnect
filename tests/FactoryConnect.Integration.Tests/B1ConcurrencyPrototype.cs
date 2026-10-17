@@ -19,6 +19,7 @@ namespace FactoryConnect.Integration.Tests;
 internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
 {
     internal const string Policy = AvailabilityContainmentV1.PolicyId;
+    private static readonly string[] PublicationPrefixTables = ["OperationalMetricProjection", "OperationalMetricProjectionManifest", "OperationalMetricProjectionEvidence"];
     private readonly SqlStartupIsolatedDatabase database;
     private readonly ITestOutputHelper output;
     private readonly string eventSession = "B1_" + Guid.NewGuid().ToString("N");
@@ -175,7 +176,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             var transition = (ProductionReferenceTimePublicationTransition?)await (Task<ProductionReferenceTimePublicationTransition?>)Invoke(typeof(SqlServerProductionReferenceTimePublicationTransitionStore), "ReadAsync",
                 c, t, Aggregation, AggregationRow, Bound.Position, false, token)!;
             if (transition is not { IsCompleted: true, CompletedReferenceTimeRevision: not null }) throw new InvalidDataException("HistoricalEvidenceUnavailable");
-            if (transition.CompletedReferenceTimeRevision.Value != 1) throw new InvalidDataException("StoredEvidenceIntegrityFailure");
+            if (transition.CompletedReferenceTimeRevision.Value.Value != 1) throw new InvalidDataException("StoredEvidenceIntegrityFailure");
             await Scalar(c, t, "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimeRevision WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND ProductionReferenceTimeRevision=1;", ("@A", AggregationRow));
             Assert.Equal(1, (int)(await Scalar(c, t, "SELECT COUNT(*) FROM dbo.ProductionReferenceTimePublicationCut WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND MetricAggregationPosition=@Cut AND ProductionReferenceTimeRevision=1;", ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value)))!);
             var select = (string)typeof(SqlServerProductionReferenceTimeOutcomeStore).GetField("OutcomeSelect", BindingFlags.NonPublic | BindingFlags.Static)!.GetRawConstantValue()!;
@@ -225,7 +226,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 var c = context.Connection; var t = context.Transaction;
                 await Exec(c, t, "EXEC sys.sp_set_session_context @key=N'b1-fault',@value=NULL;");
                 // Retain frozen prefix after the real gate/processor/checkpoint path.
-                foreach (var table in new[] { "OperationalMetricProjection", "OperationalMetricProjectionManifest", "OperationalMetricProjectionEvidence" })
+                foreach (var table in PublicationPrefixTables)
                 {
                     var predicate = table == "OperationalMetricProjectionEvidence"
                         ? "OperationalMetricProjectionRowId IN (SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P)"
@@ -313,7 +314,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
     internal async Task Trace(string stage, SqlConnection c, SqlTransaction t)
     {
         var tx = await Scalar(c, t, "SELECT transaction_id FROM sys.dm_tran_current_transaction;");
-        Events.Enqueue(new { Stage = stage, Spid = c.ServerProcessId, Transaction = tx });
+        Events.Enqueue(new { Stage = stage, Spid = c.ServerProcessId, Transaction = tx, ReviewedHead = Environment.GetEnvironmentVariable("B1_VALIDATION_HEAD"), BuildSha = Environment.GetEnvironmentVariable("GITHUB_SHA") });
     }
     internal async Task Capture(string schedule)
     {
@@ -404,7 +405,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 await using var c = await Open();
                 var dbid = Convert.ToString(await Scalar(c, null, "SELECT DB_ID();"), System.Globalization.CultureInfo.InvariantCulture);
                 var xml = (string?)await Scalar(c, null, "SELECT CONVERT(nvarchar(max),t.target_data) FROM sys.dm_xe_sessions s JOIN sys.dm_xe_session_targets t ON t.event_session_address=s.address WHERE s.name=@Name;", ("@Name", eventSession));
-                var graphs = xml is null ? [] : XDocument.Parse(xml).Descendants("deadlock")
+                string[] graphs = xml is null ? [] : XDocument.Parse(xml).Descendants("deadlock")
                     .Where(graph => graph.Descendants().Attributes("dbid").Any(attribute => attribute.Value == dbid)).Select(graph => graph.ToString()).ToArray();
                 Events.Enqueue(new { DeadlockGraphs = graphs, MatchingGraphCount = graphs.Length, Meaning = "Graphs observed by fixture session; zero is not a proof of deadlock freedom and does not override any SQL 1205 failure." });
                 await Exec(c, null, $"ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=STOP; DROP EVENT SESSION [{eventSession}] ON SERVER;");

@@ -91,6 +91,8 @@ jobs:
           --no-restore
 
       - name: Validate B1 C1-C8 transaction prototype
+        env:
+          B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}
         run: >-
           dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
           --configuration Release
