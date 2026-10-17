@@ -47,7 +47,7 @@ Request credentials, authorization headers and URI userinfo must not be persiste
 
 Source identity is a domain-separated SHA-256 over the declared entity representation and exact bytes. Definition/admission identities hash their full canonical immutable content. Receipt target identity binds publication identity, source identity, selection definition/admission and verifier version. Receipt result/accounting are payload content: same target with different content is a conflict, not a replacement identity.
 
-Before implementation approval, review complete receipt/source/definition/admission field order, string/URI rules, enum codes, size limits, domain tags and golden vectors. Use explicit versioned canonical encodings with decoded-identity/content verification, bounded parsing and unsupported-version outcomes; do not reuse assessment V1 bytes for a different record. This scope does not modify the frozen assessment codec or PR 113 publication V1.
+Before implementation approval, review complete receipt/source/definition/admission field order, string/URI rules, enum codes, size limits, domain tags and golden vectors. Use explicit versioned canonical encodings with decoded-identity/content verification, bounded parsing and unsupported-version outcomes; do not reuse assessment V1 bytes for a different record. This scope does not modify the frozen assessment codec or PR 113 publication V1. The R1 clarification proposes a distinct future V2 envelope with mandatory receipt commitments, subject to review.
 
 The existing acquisition publication is the exact external anchor. A separately stored immutable sidecar can bind its identity and hashes without editing historical publication payloads. Raw position bindings are computed/verified by the ingestion transaction, not trusted from a caller. Receipt-only mutable or independently committed writers are excluded.
 
@@ -129,6 +129,12 @@ All entries below are future test requirements; none is claimed executed by this
 | R20 | Valid receipt but missing historical state/mapping/boundary authority | Continuity remains non-Established; no full-period zero or producer activation |
 | R21 | Invalid/missing selection admission and valid content hash | Hash alone cannot admit authority; deterministic missing/incompatible outcome |
 | R22 | Original receipt prepared, SQL commit fails, Edge retries | Same original UUID/contact/body/configuration/receipt retained across retries |
+
+## R1 clarification proposal
+
+The four scope decisions now have an explicit proposal in [the R1 contract](RR03-DP3B2B3-R1-receipt-authority-contract.md): strict ReceiptRequired retention/verification failure behavior, an exhaustive replay table, a pinned parser/selection profile, and separate immutable configuration/admission ownership. R23–R36 extend the existing acceptance matrix.
+
+A new V2 acquisition envelope commitment is proposed for future receipt-required publications so a deleted promised sidecar cannot masquerade as legitimate legacy absence. Existing V1 records and hashes are unchanged; compatibility, canonical vectors and SQL FK/publication order still require review before implementation authorization. This is a contract proposal, not a design freeze or implementation instruction.
 
 ## Approval and restrictions
 
