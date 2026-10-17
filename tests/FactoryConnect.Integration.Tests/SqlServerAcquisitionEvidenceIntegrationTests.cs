@@ -92,6 +92,76 @@ public sealed class SqlServerAcquisitionEvidenceIntegrationTests
         await using var f=await Fixture.CreateAsync(); var batch=AcquisitionEvidenceCodecTests.Batch(); await f.Store.CommitAsync(batch);
         await f.Execute(sql); Assert.Equal(expected,(await f.Read(batch)).Status);
     }
+    [Theory]
+    [InlineData("DELETE dbo.MachineObservation WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET ObservationValue=N'READY' WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET Source=N'other' WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET Address=N'other' WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET Quality=2 WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET ObservedAt=DATEADD(second,1,ObservedAt) WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET Sequence=2 WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET InstanceId=2 WHERE Position=1;")]
+    [InlineData("UPDATE dbo.MachineObservation SET Position=100 WHERE Position=1; UPDATE dbo.MachineObservation SET Position=1 WHERE Position=2; UPDATE dbo.MachineObservation SET Position=2 WHERE Position=100;")]
+    public async Task DeletedOrAlteredPredecessorObservationsInvalidateHistoricalPublicationAndReplay(string sql)
+    {
+        await using var f=await Fixture.CreateAsync(); var first=AcquisitionEvidenceCodecTests.Batch(); await f.Store.CommitAsync(first);
+        var later=AcquisitionEvidenceCodecTests.Batch(first.Checkpoint.StreamId,expected:first.Checkpoint,requested:10,next:20);
+        await f.Store.CommitAsync(later);
+        await f.Execute(sql);
+        Assert.Equal(AcquisitionEvidenceReadStatus.Corrupt,(await f.Read(first)).Status);
+        Assert.Equal(AcquisitionEvidenceReadStatus.Corrupt,(await f.Read(later)).Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>f.Store.CommitAsync(first).AsTask());
+        Assert.Equal(later.Checkpoint,await f.Store.ReadCheckpointAsync(first.Checkpoint.StreamId));
+    }
+
+    [Fact]
+    public async Task ContactOnlyUpgradeRetainsExplicitUnverifiedLegacyOpeningAfterRestartAndLaterPublication()
+    {
+        await using var database=await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var connection=new SqlConnection(database.ConnectionString); await connection.OpenAsync();
+        var catalog=SqlMigrationCatalog.Load();
+        await new SqlServerMigrationEngine(SqlMigrationCatalog.Create(catalog.Migrations.Take(19)),new Fixture.Clock())
+            .ApplyAsync(connection,TimeSpan.FromMinutes(2),CancellationToken.None);
+        var stream=new ObservationStreamId(MachineId.New(),"legacy-stream"); var checkpoint=new ObservationCheckpoint(stream,1,10);
+        await using (var seed=connection.CreateCommand())
+        {
+            seed.CommandText="""
+                INSERT dbo.ObservationStreamCheckpoint (MachineId,StreamKeyBinary,StreamKey,InstanceId,NextSequence)
+                VALUES (@Machine,@Key,N'legacy-stream',1,10);
+                INSERT dbo.MachineObservation (MachineId,StreamKeyBinary,InstanceId,Sequence,Position,Source,Address,SignalType,ObservationValue,Quality,ObservedAt)
+                VALUES (@Machine,@Key,1,1,1,N'mtconnect',N'execution',@Type,N'ACTIVE',@Quality,@Time);
+                """;
+            seed.Parameters.Add("@Machine",System.Data.SqlDbType.UniqueIdentifier).Value=stream.MachineId.Value;
+            seed.Parameters.Add("@Key",System.Data.SqlDbType.VarBinary,512).Value=OrdinalStringKeyCodec.Encode(stream.StreamKey);
+            seed.Parameters.Add("@Type",System.Data.SqlDbType.TinyInt).Value=(byte)SignalType.Enumeration;
+            seed.Parameters.Add("@Quality",System.Data.SqlDbType.TinyInt).Value=(byte)ObservationQuality.Good;
+            seed.Parameters.Add("@Time",System.Data.SqlDbType.DateTimeOffset).Value=DateTimeOffset.UnixEpoch;
+            await seed.ExecuteNonQueryAsync();
+        }
+        await new SqlServerMigrationEngine(catalog,new Fixture.Clock()).ApplyAsync(connection,TimeSpan.FromMinutes(2),CancellationToken.None);
+        var contact=new ObservationIngestionBatch(checkpoint,checkpoint,[],DateTimeOffset.UnixEpoch.AddSeconds(1),new(Guid.NewGuid(),10,1,10,[]));
+        var store=new SqlServerObservationIngestionStore(database.ConnectionString); await store.CommitAsync(contact);
+        var identity=AcquisitionPublicationIdentity.Create(stream,contact.AcquisitionEvidence!.PublicationId);
+        var reader=new SqlServerAcquisitionEvidenceReader(database.ConnectionString);
+        var opening=(await reader.ReadExactAsync(stream,identity)).Record!.OpeningBoundary;
+        Assert.Equal(AcquisitionOpeningBoundaryKind.UnverifiedLegacyPrefix,opening.Kind);
+        Assert.Equal(new ObservationPosition(1),opening.LegacyAcceptedThrough); Assert.Equal(checkpoint,opening.LegacyCheckpoint);
+        var later=AcquisitionEvidenceCodecTests.Batch(stream,expected:checkpoint,requested:10,next:20); await store.CommitAsync(later);
+        var restarted=new SqlServerAcquisitionEvidenceReader(database.ConnectionString);
+        Assert.Equal(opening,(await restarted.ReadExactAsync(stream,identity)).Record!.OpeningBoundary);
+        var laterId=AcquisitionPublicationIdentity.Create(stream,later.AcquisitionEvidence!.PublicationId);
+        Assert.Equal(opening,(await restarted.ReadExactAsync(stream,laterId)).Record!.OpeningBoundary);
+    }
+
+    [Fact]
+    public async Task FreshStreamOpeningDescribesDurableHistoryWithoutClaimingAcquisitionCompleteness()
+    {
+        await using var f=await Fixture.CreateAsync(); var first=AcquisitionEvidenceCodecTests.Batch(); await f.Store.CommitAsync(first);
+        var opening=(await f.Read(first)).Record!.OpeningBoundary;
+        Assert.Equal(AcquisitionOpeningBoundaryKind.NoPriorDurablePrefix,opening.Kind);
+        Assert.Null(opening.LegacyAcceptedThrough); Assert.Null(opening.LegacyCheckpoint);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public SqlStartupIsolatedDatabase Database { get; }
@@ -109,6 +179,6 @@ public sealed class SqlServerAcquisitionEvidenceIntegrationTests
         public async Task Execute(string sql) { await using var c=new SqlConnection(Database.ConnectionString); await c.OpenAsync(); await using var cmd=new SqlCommand(sql,c); await cmd.ExecuteNonQueryAsync(); }
         public async Task<long> Count() { await using var c=new SqlConnection(Database.ConnectionString); await c.OpenAsync(); await using var cmd=new SqlCommand("SELECT COUNT_BIG(*) FROM dbo.AcquisitionEvidencePublication;",c); return (long)(await cmd.ExecuteScalarAsync())!; }
         public ValueTask DisposeAsync()=>Database.DisposeAsync();
-        private sealed class Clock : ISqlMigrationUtcClock { public DateTimeOffset UtcNow=>DateTimeOffset.UnixEpoch; }
+        public sealed class Clock : ISqlMigrationUtcClock { public DateTimeOffset UtcNow=>DateTimeOffset.UnixEpoch; }
     }
 }

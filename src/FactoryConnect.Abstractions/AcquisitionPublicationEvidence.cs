@@ -15,10 +15,16 @@ public sealed record AcquisitionResponseEvidence(
     Guid PublicationId, ulong RequestedSequence, ulong FirstSequence, ulong LastSequence,
     ImmutableArray<AcquisitionRecoveryEvidence> Recoveries);
 
+public enum AcquisitionOpeningBoundaryKind { NoPriorDurablePrefix, UnverifiedLegacyPrefix }
+
+// NoPriorDurablePrefix describes SQL history only; it is not proof of complete acquisition.
+public sealed record AcquisitionOpeningBoundary(AcquisitionOpeningBoundaryKind Kind,
+    ObservationPosition? LegacyAcceptedThrough, ObservationCheckpoint? LegacyCheckpoint);
+
 public sealed record AcquisitionEvidenceRecord(
     string Identity, long PublicationOrdinal, string? PreviousIdentity,
     ObservationIngestionBatch Batch, ObservationPosition? AcceptedBefore,
-    ObservationPosition? AcceptedThrough, ImmutableArray<string> RecoveryIdentities);
+    ObservationPosition? AcceptedThrough, ImmutableArray<string> RecoveryIdentities, AcquisitionOpeningBoundary OpeningBoundary);
 
 public enum AcquisitionEvidenceReadStatus { Absent, Found, Corrupt, UnsupportedEncoding }
 public sealed record AcquisitionEvidenceReadResult(AcquisitionEvidenceReadStatus Status, AcquisitionEvidenceRecord? Record = null);

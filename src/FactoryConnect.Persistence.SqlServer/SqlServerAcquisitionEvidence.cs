@@ -67,6 +67,8 @@ internal sealed partial class SqlServerObservationIngestionStore
             """;
         AddStreamIdentityParameters(command, stream, OrdinalStringKeyCodec.Encode(stream.StreamKey)); command.Parameters.Add("@Identity", SqlDbType.Binary, 32).Value = identity;
         await using var reader = await command.ExecuteReaderAsync(token);
+        List<AcquisitionEvidenceRecord> prefix = [];
+        AcquisitionOpeningBoundary? opening = null;
         AcquisitionEvidenceRecord? found = null; byte[]? previous = null; long ordinal = 0; ObservationPosition? lastThrough = null; ObservationCheckpoint? lastCheckpoint = null;
         while (await reader.ReadAsync(token))
         {
@@ -80,12 +82,74 @@ internal sealed partial class SqlServerObservationIngestionStore
                 !((byte[])reader[6]).AsSpan().SequenceEqual(EvidenceHash(payload, n, prior, before, through)) ||
                 (n > 1 && (before != lastThrough || batch.ExpectedCheckpoint != lastCheckpoint)) || (before?.Value ?? 0) > (through?.Value ?? 0))
                 return new(AcquisitionEvidenceReadStatus.Corrupt);
+            opening ??= new(before is not null || batch.ExpectedCheckpoint is not null
+                ? AcquisitionOpeningBoundaryKind.UnverifiedLegacyPrefix : AcquisitionOpeningBoundaryKind.NoPriorDurablePrefix,
+                before, batch.ExpectedCheckpoint);
             found = new(Convert.ToHexString(id), n, prior is null ? null : Convert.ToHexString(prior), batch, before, through,
-                AcquisitionEvidenceCodec.RecoveryIdentities(id, batch));
+                AcquisitionEvidenceCodec.RecoveryIdentities(id, batch), opening);
+            prefix.Add(found);
             previous = id; lastThrough = through; lastCheckpoint = batch.Checkpoint;
         }
+        // Close the publication reader before reconciling sources on this same serializable transaction (no MARS required).
+        await reader.DisposeAsync();
+        foreach (var record in prefix)
+            if (!await VerifyObservationSourcesAsync(c, t, stream, record, token))
+                return new(AcquisitionEvidenceReadStatus.Corrupt);
         return found is null ? new(AcquisitionEvidenceReadStatus.Absent) : new(AcquisitionEvidenceReadStatus.Found, found);
     }
+    private static async Task<bool> VerifyObservationSourcesAsync(SqlConnection c, SqlTransaction t,
+        ObservationStreamId stream, AcquisitionEvidenceRecord record, CancellationToken token)
+    {
+        var streamKey = OrdinalStringKeyCodec.Encode(stream.StreamKey);
+        var before = record.AcceptedBefore?.Value ?? 0;
+        var through = record.AcceptedThrough?.Value ?? 0;
+        if (record.AcceptedThrough is not null && !await EvidenceBoundaryExistsAsync(
+                c, t, stream, streamKey, record.AcceptedThrough, token)) return false;
+        if (record.AcceptedBefore is not null && !await EvidenceBoundaryExistsAsync(
+                c, t, stream, streamKey, record.AcceptedBefore, token)) return false;
+        var newPositions = new HashSet<ulong>();
+        var seenSequences = new HashSet<ulong>();
+        var nextPosition = before;
+        foreach (var item in record.Batch.Observations)
+        {
+            var persisted = await ReadObservationAsync(c, t, record.Batch.Checkpoint, streamKey, item.Sequence, token);
+            if (persisted is null || !SqlServerObservationEquivalence.AreEquivalent(persisted, item.Observation)) return false;
+            await using var position = c.CreateCommand(); position.Transaction = t;
+            position.CommandText = """
+                SELECT Position FROM dbo.MachineObservation
+                WHERE MachineId=@MachineId AND StreamKeyBinary=@StreamKeyBinary AND InstanceId=@Instance AND Sequence=@Sequence;
+                """;
+            AddStreamIdentityParameters(position, stream, streamKey);
+            position.Parameters.Add(SqlServerUInt64.CreateParameter("@Instance", record.Batch.Checkpoint.InstanceId));
+            position.Parameters.Add(SqlServerUInt64.CreateParameter("@Sequence", item.Sequence));
+            var value = await position.ExecuteScalarAsync(token);
+            if (value is not decimal raw) return false;
+            var actual = SqlServerUInt64.Materialize(raw);
+            if (actual == 0 || actual > through) return false;
+            if (!seenSequences.Add(item.Sequence)) continue;
+            if (actual > before)
+            {
+                if (!newPositions.Add(actual)) return false;
+                if (record.Batch.AcquisitionEvidence is not null && actual != checked(++nextPosition)) return false;
+            }
+        }
+        // Every newly accepted position must be bound by this publication; prior/replayed rows do not count as new.
+        return (ulong)newPositions.Count == through - before;
+    }
+
+    private static async Task<bool> EvidenceBoundaryExistsAsync(SqlConnection c, SqlTransaction t,
+        ObservationStreamId stream, byte[] streamKey, ObservationPosition boundary, CancellationToken token)
+    {
+        await using var command = c.CreateCommand(); command.Transaction = t;
+        command.CommandText = """
+            SELECT 1 FROM dbo.MachineObservation
+            WHERE MachineId=@MachineId AND StreamKeyBinary=@StreamKeyBinary AND Position=@Position;
+            """;
+        AddStreamIdentityParameters(command, stream, streamKey);
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", boundary.Value));
+        return await command.ExecuteScalarAsync(token) is not null;
+    }
+
     private static bool SameBytes(byte[]? a, byte[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
     private static byte[] EvidenceHash(byte[] payload, long ordinal, byte[]? previous, ObservationPosition? before, ObservationPosition? through)
     {
