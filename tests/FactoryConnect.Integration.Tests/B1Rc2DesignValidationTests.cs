@@ -179,7 +179,7 @@ public sealed class B1Rc2DesignValidationTests
         using var reader = new StreamReader(resource);
         var text = await reader.ReadToEndAsync();
         // Every command uses this same connection and transaction; no batch commits.
-        foreach (var batch in text.Split("\n-- B1 VALIDATION BATCH --\n", StringSplitOptions.None))
+        foreach (var batch in B1ProposalBatchReader.Split(text))
         {
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -256,4 +256,18 @@ public sealed class B1Rc2DesignValidationTests
           (WitnessId,WitnessCodecVersion,WitnessPayload,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,ContributionFactRowId,ContributionPosition)
         VALUES (0x01,1,0x01,@A,@S,2,@F,1);
         """;
+}
+
+// This is an execution delimiter, not a SQL grammar parser. Fail before SQL if
+// a checkout or edit loses the reviewed twelve-batch contract.
+internal static class B1ProposalBatchReader
+{
+    internal static string[] Split(string text)
+    {
+        var batches = text.ReplaceLineEndings("\n")
+            .Split("\n-- B1 VALIDATION BATCH --\n", StringSplitOptions.None);
+        if (batches.Length != 12 || batches.Any(string.IsNullOrWhiteSpace))
+            throw new InvalidDataException("B1 proposal must contain exactly twelve nonempty execution batches.");
+        return batches;
+    }
 }
