@@ -26,6 +26,16 @@ public sealed class MtConnectDurableObservationSink :
         DateTimeOffset successfulContactTime,
         CancellationToken cancellationToken = default)
     {
+        return WriteCoreAsync(result, expectedCheckpoint, successfulContactTime, null, cancellationToken);
+    }
+
+    public ValueTask WriteWithEvidenceAsync(MtConnectSampleResult result, ObservationCheckpoint? expectedCheckpoint,
+        DateTimeOffset successfulContactTime, AcquisitionResponseEvidence evidence, CancellationToken cancellationToken = default) =>
+        WriteCoreAsync(result, expectedCheckpoint, successfulContactTime, evidence, cancellationToken);
+
+    private ValueTask WriteCoreAsync(MtConnectSampleResult result, ObservationCheckpoint? expectedCheckpoint,
+        DateTimeOffset successfulContactTime, AcquisitionResponseEvidence? evidence, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(result);
 
         var checkpoint = new ObservationCheckpoint(
@@ -44,7 +54,8 @@ public sealed class MtConnectDurableObservationSink :
                 expectedCheckpoint,
                 checkpoint,
                 observations,
-                successfulContactTime),
+                successfulContactTime,
+                evidence),
             cancellationToken);
     }
 }

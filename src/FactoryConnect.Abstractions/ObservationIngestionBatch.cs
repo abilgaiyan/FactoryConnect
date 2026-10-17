@@ -6,7 +6,8 @@ public sealed record ObservationIngestionBatch
         ObservationCheckpoint? expectedCheckpoint,
         ObservationCheckpoint checkpoint,
         IReadOnlyList<SequencedMachineObservation> observations,
-        DateTimeOffset successfulContactTime)
+        DateTimeOffset successfulContactTime,
+        AcquisitionResponseEvidence? acquisitionEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
         ArgumentNullException.ThrowIfNull(observations);
@@ -23,6 +24,7 @@ public sealed record ObservationIngestionBatch
         Checkpoint = checkpoint;
         Observations = observations.ToArray();
         SuccessfulContactTime = successfulContactTime;
+        AcquisitionEvidence = acquisitionEvidence;
     }
 
     public ObservationCheckpoint? ExpectedCheckpoint { get; }
@@ -32,4 +34,6 @@ public sealed record ObservationIngestionBatch
     public IReadOnlyList<SequencedMachineObservation> Observations { get; }
 
     public DateTimeOffset SuccessfulContactTime { get; }
+
+    public AcquisitionResponseEvidence? AcquisitionEvidence { get; }
 }

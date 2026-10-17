@@ -95,6 +95,8 @@ public sealed class MtConnectAcquisitionRuntimeTests
         Assert.Equal(2, sink.WriteCount);
         Assert.Equal(2, sink.Results.Count);
         Assert.Same(sink.Results[0], sink.Results[1]);
+        Assert.Same(sink.Evidence[0], sink.Evidence[1]);
+        Assert.NotEqual(Guid.Empty,sink.Evidence[0].PublicationId);
         Assert.Equal(2, sink.ExpectedCheckpoints.Count);
         Assert.Null(sink.ExpectedCheckpoints[0]);
         Assert.Null(sink.ExpectedCheckpoints[1]);
@@ -211,6 +213,8 @@ public sealed class MtConnectAcquisitionRuntimeTests
             handler.RequestUris[0].AbsoluteUri);
         Assert.Equal(2, sink.WriteCount);
         Assert.Same(sink.Results[0], sink.Results[1]);
+        Assert.Same(sink.Evidence[0], sink.Evidence[1]);
+        Assert.NotEqual(Guid.Empty,sink.Evidence[0].PublicationId);
         Assert.Equal(sink.ExpectedCheckpoints[0], sink.ExpectedCheckpoints[1]);
         Assert.Equal(
             sink.SuccessfulContactTimes[0],
@@ -436,6 +440,12 @@ public sealed class MtConnectAcquisitionRuntimeTests
     private sealed class FailOnceSink(
         Action? onSuccessfulRetry = null) : IMtConnectObservationSink
     {
+        public List<AcquisitionResponseEvidence> Evidence { get; } = [];
+        public ValueTask WriteWithEvidenceAsync(MtConnectSampleResult result, ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime, AcquisitionResponseEvidence evidence, CancellationToken cancellationToken=default)
+        {
+            Evidence.Add(evidence); return WriteAsync(result,expectedCheckpoint,successfulContactTime,cancellationToken);
+        }
         public int WriteCount { get; private set; }
 
         public List<MtConnectSampleResult> Results { get; } = [];

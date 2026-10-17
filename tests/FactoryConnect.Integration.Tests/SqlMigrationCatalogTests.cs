@@ -34,7 +34,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 16, "ImmutableQualityAssessment", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 17, "ImmutableDerivedOeeAssessment", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 18, "ImmutableAssumedBreakAssessment", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 19, "ImmutableAssumedBreakAuthority", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 19, "ImmutableAssumedBreakAuthority", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 20, "DurableAcquisitionEvidence", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]

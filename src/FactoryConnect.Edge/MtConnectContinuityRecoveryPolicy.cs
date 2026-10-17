@@ -39,6 +39,15 @@ public sealed class MtConnectContinuityRecoveryPolicy
                 StringComparison.OrdinalIgnoreCase));
     }
 
+    public Task<MtConnectAcquisitionSession> RecoverOutOfRangeAsync(MtConnectProtocolException exception,
+        MtConnectAcquisitionSession previousSession, MtConnectEndpoint endpoint, MachineId machineId, string deviceKey,
+        CancellationToken cancellationToken = default) =>
+        RecoverOutOfRangeAsync(exception, previousSession, endpoint, machineId, deviceKey, null, cancellationToken);
+
+    public Task<MtConnectAcquisitionSession> RecoverInstanceChangeAsync(MtConnectInstanceChangedException exception,
+        MtConnectAcquisitionSession previousSession, MachineId machineId, CancellationToken cancellationToken = default) =>
+        RecoverInstanceChangeAsync(exception, previousSession, machineId, null, cancellationToken);
+
     public async Task<MtConnectAcquisitionSession>
         RecoverOutOfRangeAsync(
             MtConnectProtocolException exception,
@@ -46,6 +55,7 @@ public sealed class MtConnectContinuityRecoveryPolicy
             MtConnectEndpoint endpoint,
             MachineId machineId,
             string deviceKey,
+            Action<MtConnectContinuityLoss>? retainEvidence,
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -80,6 +90,8 @@ public sealed class MtConnectContinuityRecoveryPolicy
             RecoverySequence = current.FirstSequence,
         };
 
+        retainEvidence?.Invoke(continuityLoss);
+
         await _reporter.ReportAsync(
             continuityLoss,
             cancellationToken);
@@ -93,6 +105,7 @@ public sealed class MtConnectContinuityRecoveryPolicy
             MtConnectInstanceChangedException exception,
             MtConnectAcquisitionSession previousSession,
             MachineId machineId,
+            Action<MtConnectContinuityLoss>? retainEvidence,
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -107,6 +120,8 @@ public sealed class MtConnectContinuityRecoveryPolicy
             PreviousSequence = previousSession.NextSequence,
             RecoverySequence = exception.FirstSequence,
         };
+
+        retainEvidence?.Invoke(continuityLoss);
 
         await _reporter.ReportAsync(
             continuityLoss,

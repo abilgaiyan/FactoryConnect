@@ -4,8 +4,9 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-internal sealed class SqlServerObservationIngestionStore :
+internal sealed partial class SqlServerObservationIngestionStore :
     IObservationIngestionStore,
+    IAcquisitionEvidenceReader,
     IDurableObservationReader,
     IObservationProcessingCheckpointStore
 {
@@ -276,6 +277,8 @@ internal sealed class SqlServerObservationIngestionStore :
         cancellationToken.ThrowIfCancellationRequested();
 
         var staged = StageObservations(batch);
+        var payload = AcquisitionEvidenceCodec.Encode(batch);
+        var evidenceIdentity = AcquisitionEvidenceCodec.Identity(batch, payload);
         var streamId = batch.Checkpoint.StreamId;
         var streamKeyBinary = OrdinalStringKeyCodec.Encode(streamId.StreamKey);
 
@@ -301,6 +304,15 @@ internal sealed class SqlServerObservationIngestionStore :
                 streamKeyBinary,
                 cancellationToken);
 
+            // Historical replay belongs to the explicit evidence contract. Legacy calls retain current-state replay semantics.
+            if ((batch.AcquisitionEvidence is not null || (current == batch.Checkpoint && currentAuthority is not null &&
+                    SameInstant(currentAuthority.SuccessfulContactTime, batch.SuccessfulContactTime))) &&
+                await ValidateEvidenceReplayAsync(connection, transaction, streamId, evidenceIdentity, payload, cancellationToken))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return;
+            }
+
             var currentRawAcceptedThrough = await ReadRawAcceptedThroughAsync(
                 connection,
                 transaction,
@@ -308,9 +320,15 @@ internal sealed class SqlServerObservationIngestionStore :
                 streamKeyBinary,
                 cancellationToken);
 
+            if (batch.AcquisitionEvidence is not null && current == batch.Checkpoint && currentAuthority is not null &&
+                SameInstant(currentAuthority.SuccessfulContactTime, batch.SuccessfulContactTime))
+                throw new InvalidOperationException("An unchanged acquisition must replay its original publication identity.");
+
             var casAuthorized = current == batch.ExpectedCheckpoint;
             if (!casAuthorized)
             {
+                if (batch.AcquisitionEvidence is not null)
+                    throw new InvalidOperationException("Unknown acquisition publication cannot replay a changed checkpoint.");
                 await ValidateExactCurrentStateReplayAsync(
                     connection,
                     transaction,
@@ -389,6 +407,9 @@ internal sealed class SqlServerObservationIngestionStore :
                     cancellationToken);
             }
 
+            await AppendEvidenceAsync(connection, transaction, batch, evidenceIdentity, payload,
+                currentRawAcceptedThrough, resultingRawAcceptedThrough, cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -456,7 +477,7 @@ internal sealed class SqlServerObservationIngestionStore :
             staged.Add(item.Sequence, candidate);
         }
 
-        return [.. staged.Values];
+        return batch.AcquisitionEvidence is null ? [.. staged.Values] : [.. staged.Values.OrderBy(x => x.Sequence)];
     }
 
     private static void ValidateCheckpointTransition(

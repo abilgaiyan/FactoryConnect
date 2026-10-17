@@ -73,6 +73,8 @@ internal static class SqlServerSchema
     public static string ReadDurableProductionReferenceTimePublicationTransitionSchema() =>
         ReadSchema(DurableProductionReferenceTimePublicationTransitionSchemaResourceName);
 
+    public static string ReadDurableAcquisitionEvidenceSchema() => ReadSchema("FactoryConnect.Persistence.SqlServer.Sql.020_DurableAcquisitionEvidence.sql");
+
     private static string ReadSchema(string resourceName)
     {
         var assembly = typeof(SqlServerSchema).Assembly;
