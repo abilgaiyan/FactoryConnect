@@ -228,3 +228,5 @@ BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB0100000000000361676700000000
 | A.result with AuthoritativeRunningTicks changed to present zero while overall stays Missing | Corrupt/ResultInconsistent, even though zero lies within interval duration |
 
 Whitespace/newlines in the displayed hex are presentation only and are not payload bytes. Canonical published hashes use uppercase hex only as a display convention; stored hashes are raw bytes. Golden vectors must be checked independently against the table, not accepted merely because an implementation regenerates its own expected values.
+
+Second-encoder reproduction is recorded in [the vector verification report](RR03-DP3B2B2-vector-verification.md). Design freeze still requires explicit sign-off.
