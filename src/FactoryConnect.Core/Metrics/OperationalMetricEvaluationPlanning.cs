@@ -208,7 +208,8 @@ internal sealed class OperationalMetricEvaluationSession
 
     public OperationalMetricEvaluationSession(
         OperationalMetricEvaluationPlan plan,
-        OperationalMetricComponentSnapshot snapshot)
+        OperationalMetricComponentSnapshot snapshot,
+        bool useAvailabilityContainmentV1 = false)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -220,12 +221,19 @@ internal sealed class OperationalMetricEvaluationSession
 
         Plan = plan;
         Snapshot = snapshot;
+        UseAvailabilityContainmentV1 = useAvailabilityContainmentV1;
+        if (!useAvailabilityContainmentV1 && snapshot.AvailabilityScopeConflictEvidence is not null)
+        {
+            throw new InvalidDataException("Legacy evaluation cannot consume containment evidence.");
+        }
         _plannedDefinitionIds = plan.DependencyOrder.Select(definition => definition.Id).ToHashSet();
     }
 
     public OperationalMetricEvaluationPlan Plan { get; }
 
     public OperationalMetricComponentSnapshot Snapshot { get; }
+
+    public bool UseAvailabilityContainmentV1 { get; }
 
     public bool TryGetEvaluation(
         OperationalMetricDefinitionId definitionId,
@@ -309,15 +317,18 @@ internal sealed class OperationalMetricEvaluationSessionFactory
 {
     private readonly IOperationalMetricComponentSnapshotReader _snapshotReader;
     private readonly MetricAggregationProcessorId _aggregationProcessorId;
+    private readonly bool _useAvailabilityContainmentV1;
 
     public OperationalMetricEvaluationSessionFactory(
         IOperationalMetricComponentSnapshotReader snapshotReader,
-        MetricAggregationProcessorId aggregationProcessorId)
+        MetricAggregationProcessorId aggregationProcessorId,
+        bool useAvailabilityContainmentV1 = false)
     {
         ArgumentNullException.ThrowIfNull(snapshotReader);
         ArgumentNullException.ThrowIfNull(aggregationProcessorId);
         _snapshotReader = snapshotReader;
         _aggregationProcessorId = aggregationProcessorId;
+        _useAvailabilityContainmentV1 = useAvailabilityContainmentV1;
     }
 
     public async ValueTask<OperationalMetricEvaluationSession> CreateAsync(
@@ -337,7 +348,7 @@ internal sealed class OperationalMetricEvaluationSessionFactory
             .ToArray();
 
         var snapshot = await _snapshotReader.ReadAsync(
-            new OperationalMetricComponentSnapshotRequest(plan.RootKey, _aggregationProcessorId, operands),
+            new OperationalMetricComponentSnapshotRequest(plan.RootKey, _aggregationProcessorId, operands, _useAvailabilityContainmentV1),
             cancellationToken).ConfigureAwait(false);
 
         if (snapshot.EvaluationKey != plan.RootKey ||
@@ -347,6 +358,6 @@ internal sealed class OperationalMetricEvaluationSessionFactory
                 "Operational metric evaluation session snapshot does not match the requested root identity and aggregation processor.");
         }
 
-        return new OperationalMetricEvaluationSession(plan, snapshot);
+        return new OperationalMetricEvaluationSession(plan, snapshot, _useAvailabilityContainmentV1);
     }
 }

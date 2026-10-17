@@ -119,7 +119,9 @@ public sealed record OperationalMetricProjection
         string? reasonOperandName,
         MetricAggregationCheckpoint sourceRevision,
         IEnumerable<OperationalMetricComponentProjectionEvidence>? operandEvidence = null,
-        IEnumerable<OperationalMetricDependencyProjectionEvidence>? dependencyEvidence = null)
+        IEnumerable<OperationalMetricDependencyProjectionEvidence>? dependencyEvidence = null,
+        AvailabilityScopeConflictEvidenceV1? availabilityScopeConflictEvidence = null,
+        string? evaluationPolicyId = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(key);
@@ -204,6 +206,31 @@ public sealed record OperationalMetricProjection
                 nameof(status));
         }
 
+        if ((evaluationPolicyId is not null || processorId == AvailabilityContainmentV1.ProjectionProcessorId(key.MachineId)) &&
+            (evaluationPolicyId != AvailabilityContainmentV1.PolicyId || processorId != AvailabilityContainmentV1.ProjectionProcessorId(key.MachineId)))
+        {
+            throw new ArgumentException("Containment evaluations require their distinct versioned projection processor.", nameof(processorId));
+        }
+        if ((reasonCode == OperationalMetricEvaluationReasonCode.RunningOutsidePlannedProduction) != (availabilityScopeConflictEvidence is not null) ||
+            (availabilityScopeConflictEvidence is not null && (status != OperationalMetricEvaluationStatus.Unavailable || evaluationPolicyId != AvailabilityContainmentV1.PolicyId)))
+        {
+            throw new ArgumentException("Conflict projections require their witness and versioned policy.", nameof(availabilityScopeConflictEvidence));
+        }
+        if (availabilityScopeConflictEvidence is not null &&
+            (key.DefinitionId != new OperationalMetricDefinitionId(CanonicalMetricKeys.Availability, "1.0") ||
+             reasonOperandName != "ActualProductionTime" || unit != OperationalMetricUnits.Ratio))
+        {
+            throw new ArgumentException("Conflict witness applies only to built-in Availability 1.0 and its numerator.", nameof(key));
+        }
+        availabilityScopeConflictEvidence?.ValidateBinding(key, sourceRevision, operandSnapshot.Select(evidence =>
+            new OperationalMetricComponent(evidence.OperandName, evidence.SourceIdentity, evidence.Dimension,
+                new MetricAggregateValue(evidence.Value, evidence.Unit, evidence.InputCount, evidence.FirstInputTimestamp, evidence.LastInputTimestamp))));
+        if (dependencySnapshot.Any(evidence => evidence.Projection.EvaluationPolicyId != evaluationPolicyId))
+        {
+            throw new ArgumentException("Dependency projection policy must match the parent policy.", nameof(dependencyEvidence));
+        }
+        AvailabilityScopeConflictEvidence = availabilityScopeConflictEvidence;
+        EvaluationPolicyId = evaluationPolicyId;
         ProcessorId = processorId;
         Key = key;
         Status = status;
@@ -239,6 +266,10 @@ public sealed record OperationalMetricProjection
     public IReadOnlyList<OperationalMetricDependencyProjectionEvidence> DependencyEvidence { get; }
 
     public IReadOnlyList<OperationalMetricProjectionEvidence> Evidence { get; }
+
+    public AvailabilityScopeConflictEvidenceV1? AvailabilityScopeConflictEvidence { get; }
+
+    public string? EvaluationPolicyId { get; }
 }
 
 /// <summary>Exact latest committed batch membership, not the retained reporting universe.</summary>
@@ -378,6 +409,11 @@ public sealed record OperationalMetricProjectionCommit
             throw new ArgumentException(
                 "Every committed projection must belong to the committing processor, proposed FC-026 source revision, and source machine.",
                 nameof(projections));
+        }
+
+        if (snapshot.Any(projection => projection.EvaluationPolicyId is not null))
+        {
+            throw new NotSupportedException("Stage A containment projections cannot be published before Stage B durable compatibility is implemented.");
         }
 
         var duplicateKey = snapshot

@@ -19,6 +19,8 @@ public static class OperationalMetricProjectionEquivalence
                left.ReasonCode == right.ReasonCode &&
                string.Equals(left.ReasonOperandName, right.ReasonOperandName, StringComparison.Ordinal) &&
                left.SourceRevision == right.SourceRevision &&
+               left.EvaluationPolicyId == right.EvaluationPolicyId &&
+               left.AvailabilityScopeConflictEvidence == right.AvailabilityScopeConflictEvidence &&
                ComponentEvidenceEquivalent(left.OperandEvidence, right.OperandEvidence) &&
                DependencyEvidenceEquivalent(left.DependencyEvidence, right.DependencyEvidence);
     }
