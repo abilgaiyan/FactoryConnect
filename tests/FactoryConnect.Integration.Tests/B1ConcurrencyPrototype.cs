@@ -316,7 +316,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 var component = snapshot.Components.Single(x => x.SourceIdentity.ComponentKey == key);
                 return new OperationalMetricComponent(operand.OperandName, component.SourceIdentity, component.Dimension, component.Aggregate);
             });
-            return ValueTask.FromResult(new OperationalMetricComponentSnapshot(request.EvaluationKey, snapshot.SourceRevision, components, snapshot.AvailabilityScopeConflictEvidence));
+            return ValueTask.FromResult(new OperationalMetricComponentSnapshot(request.EvaluationKey, snapshot.Revision, components, snapshot.AvailabilityScopeConflictEvidence));
         }
     }
 
