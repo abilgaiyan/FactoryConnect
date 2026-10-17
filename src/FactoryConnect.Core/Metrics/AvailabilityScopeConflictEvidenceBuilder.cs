@@ -64,7 +64,10 @@ public static class AvailabilityScopeConflictEvidenceBuilder
 
         var offending = running.Where(input => input.Fact.IsPlannedProductionTime == false)
             .OrderBy(input => input.Position.Value).FirstOrDefault();
-        return offending is null ? null : new AvailabilityScopeConflictEvidenceV1(revision, numerator, denominator, offending);
+        return offending is null ? null : new AvailabilityScopeConflictEvidenceV1(revision,
+            new OperationalMetricComponent("ActualProductionTime", numerator.SourceIdentity, numerator.Dimension, numerator.Aggregate),
+            new OperationalMetricComponent("PlannedOperatingTime", denominator.SourceIdentity, denominator.Dimension, denominator.Aggregate),
+            offending);
 
         void ValidateAggregate(OperationalMetricComponent component, string key)
         {

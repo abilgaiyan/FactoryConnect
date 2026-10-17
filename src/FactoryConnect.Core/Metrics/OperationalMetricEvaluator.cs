@@ -183,7 +183,8 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
             definition.Id == BuiltInOperationalMetricDefinitions.AvailabilityId)
         {
             if (ratio.NumeratorOperand != "ActualProductionTime" || ratio.DenominatorOperand != "PlannedOperatingTime" ||
-                definition.Operands.Count != 2 || numeratorKey != MetricInputKeys.ActualProductionTime ||
+                definition.ResultUnit != OperationalMetricUnits.Ratio || definition.DomainConstraints.MinimumInclusive != 0m ||
+                definition.DomainConstraints.MaximumInclusive != 1m || definition.Operands.Count != 2 || numeratorKey != MetricInputKeys.ActualProductionTime ||
                 denominatorKey != MetricInputKeys.PlannedOperatingTime || denominator.Aggregate.Value < 0 ||
                 numerator.SourceIdentity != conflict.Numerator.SourceIdentity || numerator.Aggregate != conflict.Numerator.Aggregate ||
                 denominator.SourceIdentity != conflict.Denominator.SourceIdentity || denominator.Aggregate != conflict.Denominator.Aggregate)
