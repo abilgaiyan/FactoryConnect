@@ -112,6 +112,7 @@ public sealed class B1SourceWriterLockCharacterizationTests(ITestOutputHelper ou
             }
         }
         var writer = Write();
+        Exception? writerFailure = null;
         try
         {
             var wait = await ObserveWait(observer, blockerSpid, writer, timeout.Token);
@@ -137,9 +138,10 @@ public sealed class B1SourceWriterLockCharacterizationTests(ITestOutputHelper ou
             catch (Exception error)
             {
                 output.WriteLine("B1_SOURCE_WRITER_ERROR " + error);
-                throw;
+                writerFailure = error;
             }
         }
+        if (writerFailure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(writerFailure).Throw();
         var checkpoint = await aggregation.ReadCheckpointAsync(processor, first.StreamId, CancellationToken.None);
         Assert.Equal(next ?? revision, checkpoint);
         if (path is "outcome-admission" or "legacy-outcome" or "transition-complete")
