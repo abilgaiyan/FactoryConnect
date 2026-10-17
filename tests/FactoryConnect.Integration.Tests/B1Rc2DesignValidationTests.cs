@@ -53,6 +53,22 @@ public sealed class B1Rc2DesignValidationTests
         await Check(connection, "CK_OMP_FormatPolicy", "PublicationFormatVersion smallint, EvaluationPolicyId nvarchar(64), ContainmentResultId binary(32), ConflictWitnessId binary(32), ReasonCode tinyint",
             ["1,NULL,NULL,NULL,NULL", "1,NULL,NULL,NULL,2", "2,N'availability-scope-containment/1',0x01,NULL,NULL"],
             ["1,NULL,NULL,NULL,6", "2,NULL,0x01,NULL,NULL", "2,N'availability-scope-containment/1',NULL,NULL,NULL", "1,N'availability-scope-containment/1',NULL,NULL,NULL"]);
+        const string component = "1,N'duration.running',0,N'1',N's',1,'2026-10-16T00:00:00+00:00','2026-10-16T00:00:01+00:00',NULL,NULL,NULL,NULL,NULL";
+        const string dependency = "2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,N'availability',N'1.0',1,0x01,0x01";
+        await Check(connection, "CK_OperationalMetricProjectionEvidence_SubtypeShape",
+            "EvidenceKind tinyint, ComponentKey nvarchar(256), MetricDimension tinyint, ComponentValue nvarchar(64), ComponentUnit nvarchar(128), InputCount decimal(20,0), FirstInputTimestamp datetimeoffset(7), LastInputTimestamp datetimeoffset(7), DependencyMetricKey nvarchar(256), DependencyDefinitionVersion nvarchar(256), DependencySnapshotCodecVersion smallint, DependencySnapshotHash binary(32), DependencySnapshotBinary varbinary(max)",
+            [component, dependency, dependency.Replace(",1,0x01,0x01", ",2,0x01,0x01", StringComparison.Ordinal)],
+            [component.Replace("N'duration.running'", "NULL", StringComparison.Ordinal),
+             component.Replace("N'1'", "N''", StringComparison.Ordinal),
+             component.Replace("N's',1,", "N's',0,", StringComparison.Ordinal),
+             component.Replace("00:00:01+00:00", "00:00:01+01:00", StringComparison.Ordinal),
+             component.Replace("00:00:01+00:00", "00:00:00+00:01", StringComparison.Ordinal),
+             dependency.Replace(",1,0x01,0x01", ",3,0x01,0x01", StringComparison.Ordinal),
+             dependency.Replace(",1,0x01,0x01", ",NULL,0x01,0x01", StringComparison.Ordinal),
+             dependency.Replace(",1,0x01,0x01", ",1,NULL,0x01", StringComparison.Ordinal),
+             dependency.Replace(",1,0x01,0x01", ",1,0x01,0x", StringComparison.Ordinal),
+             dependency.Replace("N'availability'", "NULL", StringComparison.Ordinal),
+             dependency.Replace("2,NULL,NULL,", "2,N'foreign',NULL,", StringComparison.Ordinal)]);
         var definition = (string)(await Scalar(connection, "SELECT definition FROM sys.check_constraints WHERE name='CK_OperationalMetricProjectionEvidence_SubtypeShape';"))!;
         Assert.Contains("(2)", definition);
         Assert.Contains("DependencySnapshotHash", definition);
@@ -97,6 +113,7 @@ public sealed class B1Rc2DesignValidationTests
         using var resource = typeof(B1Rc2DesignValidationTests).Assembly.GetManifestResourceStream("B1RC2.ProposedDdl")!;
         using var reader = new StreamReader(resource);
         var text = await reader.ReadToEndAsync();
+        // Every command uses this same connection and transaction; no batch commits.
         foreach (var batch in text.Split("\n-- B1 VALIDATION BATCH --\n", StringSplitOptions.None))
         {
             await using var command = connection.CreateCommand();
