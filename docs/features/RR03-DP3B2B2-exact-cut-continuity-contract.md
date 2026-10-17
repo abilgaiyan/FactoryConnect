@@ -1,6 +1,11 @@
 # DP.3B.2B.2 — Exact-cut continuity assessment contract
 
-Status: PROPOSED — DESIGN FREEZE PENDING. Documentation only. No implementation, Established promotion, producer wiring or factory activation is authorized by this document or its merge.
+## Formal project sign-off — 17 October 2026
+
+Ajay Bilgaiyan explicitly approved DP.3B.2B.2 as DESIGN FROZEN in the project conversation at 10:49 IST, on reviewed baseline a783ade3b81e6e5df9ef6c223f02d225b535ff70. This records design approval only. PR #115 must remain draft and unmerged; implementation requires a separately reviewed scope and authorization. No Established promotion, DP.3C wiring, Availability activation or deployment is authorized. The 40 scenarios remain specifications, not passed tests. The next permitted work is preparing the response-completeness receipt implementation scope.
+
+
+Status: DESIGN FROZEN — approved baseline a783ade3, 17 October 2026. Documentation only. No implementation, Established promotion, producer wiring or factory activation is authorized by this document or its merge.
 
 Baseline inspected: main 5ae797f (PR 113). Review this contract and its conformance matrix before implementation authorization.
 
@@ -141,7 +146,7 @@ Choose the primary diagnostic only among diagnostics responsible for the selecte
 
 Proposed identity: SHA-256 of the complete canonical target in section 2, including exact source/admission/manifest hashes and rule versions. Result classifications and durations are content, not replacement identity inputs. Same target with different result content is a publication conflict. Corrected evidence, changed cuts or changed policy produces a distinct target, never an overwrite.
 
-The complete proposed V1 field order, primitive encodings, authority-reference union, result payload, validation rules and generated golden vectors are specified in [the V1 encoding appendix](RR03-DP3B2B2-v1-encoding.md). This replaces the earlier deferred field specification. Both documents remain proposals until design freeze; publishing this appendix is not implementation authorization.
+The complete proposed V1 field order, primitive encodings, authority-reference union, result payload, validation rules and generated golden vectors are specified in [the V1 encoding appendix](RR03-DP3B2B2-v1-encoding.md). This replaces the earlier deferred field specification. Both documents are frozen by the project sign-off recorded below; this appendix is not implementation authorization.
 
 Persist assessments separately from canonical projections. Publication is insert-only and atomic; identical target and canonical payload replay succeeds without a new identity; differing content fails without mutation. Verify target hash, payload hash, versions, decoded target equality and result consistency. Concurrency permits only one canonical content per target.
 

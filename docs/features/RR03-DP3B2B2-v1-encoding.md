@@ -1,6 +1,11 @@
-# DP.3B.2B.2 — Proposed assessment V1 encoding appendix
+# DP.3B.2B.2 — Assessment V1 encoding appendix
 
-Status: DESIGN FREEZE PENDING. Normative companion proposal to [the continuity contract](RR03-DP3B2B2-exact-cut-continuity-contract.md). These specifications and vectors authorize no implementation or Established promotion. They define the assessment's reference encoding; the separately reviewed authority producers must define and verify the referenced manifest/definition content.
+## Formal project sign-off — 17 October 2026
+
+Ajay Bilgaiyan explicitly approved DP.3B.2B.2 as DESIGN FROZEN in the project conversation at 10:49 IST, on reviewed baseline a783ade3b81e6e5df9ef6c223f02d225b535ff70. This records design approval only. PR #115 must remain draft and unmerged; implementation requires a separately reviewed scope and authorization. No Established promotion, DP.3C wiring, Availability activation or deployment is authorized. The 40 scenarios remain specifications, not passed tests. The next permitted work is preparing the response-completeness receipt implementation scope.
+
+
+Status: DESIGN FROZEN — project sign-off on 17 October 2026. Normative companion contract to [the continuity contract](RR03-DP3B2B2-exact-cut-continuity-contract.md). These specifications and vectors authorize no implementation or Established promotion. They define the assessment's reference encoding; the separately reviewed authority producers must define and verify the referenced manifest/definition content.
 
 ## Primitive grammar
 

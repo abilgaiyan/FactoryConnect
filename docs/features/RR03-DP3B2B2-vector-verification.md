@@ -1,6 +1,11 @@
 # DP.3B.2B.2 — Second-encoder vector verification
 
-Status: vector reproduction completed; DESIGN FREEZE PENDING explicit sign-off.
+## Formal project sign-off — 17 October 2026
+
+Ajay Bilgaiyan explicitly approved DP.3B.2B.2 as DESIGN FROZEN in the project conversation at 10:49 IST, on reviewed baseline a783ade3b81e6e5df9ef6c223f02d225b535ff70. This records design approval only. PR #115 must remain draft and unmerged; implementation requires a separately reviewed scope and authorization. No Established promotion, DP.3C wiring, Availability activation or deployment is authorized. The 40 scenarios remain specifications, not passed tests. The next permitted work is preparing the response-completeness receipt implementation scope.
+
+
+Status: vector reproduction completed; DESIGN FROZEN by explicit project sign-off on 17 October 2026.
 
 Verified specification: PR 115 at 284fbe2aee19218c7c9e2d7427f4e7a33bdb3533, [V1 encoding appendix](RR03-DP3B2B2-v1-encoding.md).
 
