@@ -194,6 +194,35 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task C6ArchiveKeyOrderIsIdenticalForOppositeValidWitnessEnumerations()
+    {
+        await using var f = await B1ConcurrencyPrototype.Create(output);
+        var shiftWitness = f.Snapshot(f.Inputs).AvailabilityScopeConflictEvidence!;
+        var dayKey = new OperationalMetricEvaluationKey(f.Machine,
+            new OperationalMetricPeriodId.ProductionDay(new(f.Site, new(2026, 10, 16))),
+            FactoryConnect.Core.Metrics.BuiltInOperationalMetricDefinitions.AvailabilityId, OperationalMetricEvaluationContextKey.Unpartitioned);
+        var dayWitness = f.Snapshot(f.Inputs, dayKey).AvailabilityScopeConflictEvidence!;
+        Assert.NotEqual(B1ConcurrencyPrototype.WitnessBytes(shiftWitness), B1ConcurrencyPrototype.WitnessBytes(dayWitness));
+        await using var first = await f.Open(); await using var second = await f.Open();
+        await using var one = first.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        await using var two = second.BeginTransaction(System.Data.IsolationLevel.Serializable);
+        var reached = Signal(); var release = Signal();
+        var left = f.WriteWitnessSet(first, one, [shiftWitness, dayWitness], async () => { reached.TrySetResult(); await Reached(release); });
+        await Reached(reached);
+        var right = f.WriteWitnessSet(second, two, [dayWitness, shiftWitness]);
+        try { await f.WaitFor(first.ServerProcessId, right); await f.Capture("C6: archive-layer opposite valid shift/day witness enumeration; canonical byte-key order"); }
+        finally { release.TrySetResult(); }
+        await left.WaitAsync(TimeSpan.FromSeconds(30));
+        await one.CommitAsync();
+        await right.WaitAsync(TimeSpan.FromSeconds(30));
+        await two.CommitAsync();
+        await using var check = await f.Open();
+        Assert.Equal(2, await B1ConcurrencyPrototype.Scalar(check, null, "SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive;"));
+        // This ancillary archive-layer stress fixture intentionally has no result
+        // publication. C6's separate full publisher tests establish result closure.
+    }
+
+    [Fact]
     public async Task C7ValidatorHoldsBoundCutWhileActualNeighborSourceWritersRun()
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);

@@ -90,6 +90,18 @@ jobs:
           --configuration Release
           --no-restore
 
+      - name: Check B1 prototype fixture and exact-cut path first
+        env:
+          B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1ConcurrencyAcceptanceTests.C1AdvancementAfterPublicationPrefixCannotLeakIntoBoundCut"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=b1-concurrency-smoke.trx"
+          --results-directory TestResults/B1Concurrency
+
       - name: Validate B1 C1-C8 transaction prototype
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

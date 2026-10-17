@@ -4,6 +4,8 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Xml.Linq;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
@@ -20,6 +22,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
 {
     internal const string Policy = AvailabilityContainmentV1.PolicyId;
     private static readonly string[] PublicationPrefixTables = ["OperationalMetricProjection", "OperationalMetricProjectionManifest", "OperationalMetricProjectionEvidence"];
+    private static readonly JsonSerializerOptions ReceiptOptions = CreateReceiptOptions();
     private readonly SqlStartupIsolatedDatabase database;
     private readonly ITestOutputHelper output;
     private readonly string eventSession = "B1_" + Guid.NewGuid().ToString("N");
@@ -121,7 +124,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         var n = Inputs.Count + 1;
         var fact = new DurableMetricInputFact
         {
-            Id = new($"b1-fact-{n}"), Key = key, Value = value, Unit = key == MetricInputFactKeys.PartCountIncrement ? "count" : "seconds",
+            Id = new($"b1-fact-{n}"), Key = key, Value = value, Unit = key == MetricInputFactKeys.PartCountIncrement ? MetricInputFactUnits.Count : MetricInputFactUnits.Seconds,
             StartsAtUtc = Start.AddMinutes(n), EndsAtUtc = Start.AddMinutes(n).AddSeconds((double)value),
             CompanyId = new("B1-COMPANY"), SiteId = Site, MachineId = Machine, ShiftId = Shift.ShiftId, ShiftScheduleAssignmentId = Shift.ShiftScheduleAssignmentId,
             PartId = new("B1-PART"), OperationId = new("B1-OP"), IsPlannedProductionTime = planned,
@@ -133,25 +136,107 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         var input = await new SqlServerMetricInputStore(ConnectionString).AppendAsync(new(MetricInputStreamId.ForMachine(Machine), fact, Shift, new(Site, new(2026, 10, 16))), CancellationToken.None);
         Inputs.Add(input); return input;
     }
-    internal OperationalMetricComponentSnapshot Snapshot(IReadOnlyList<PositionedMetricInputFact> inputs)
+    internal OperationalMetricComponentSnapshot Snapshot(IReadOnlyList<PositionedMetricInputFact> inputs, OperationalMetricEvaluationKey? key = null)
     {
-        var request = new OperationalMetricComponentSnapshotRequest(Key, Aggregation,
+        key ??= Key;
+        var request = new OperationalMetricComponentSnapshotRequest(key, Aggregation,
             BuiltInOperationalMetricDefinitions.All.Single(d => d.Id == BuiltInOperationalMetricDefinitions.AvailabilityId).Operands, true);
         var set = MetricInputContributionAggregator.Aggregate(Bound.StreamId, inputs);
         var components = request.Operands.Select(operand =>
         {
             var componentKey = OperationalMetricComponentKeyMapping.AggregateKey(((OperationalMetricOperandSource.Component)operand.Source).ComponentKey);
-            var aggregate = set.ShiftContributions.Single(x => x.Key == new ShiftMetricAggregateKey(Machine, Shift, componentKey)).Value;
-            return new OperationalMetricComponent(operand.OperandName, new(Aggregation, Machine, Key.PeriodId, componentKey), operand.RequiredDimension, aggregate);
+            var aggregate = (MetricAggregateValue)Invoke(typeof(SqlServerMetricAggregationStore), "ReadHistoricalAggregate", set, key, componentKey)!;
+            return new OperationalMetricComponent(operand.OperandName, new(Aggregation, Machine, key.PeriodId, componentKey), operand.RequiredDimension, aggregate);
         }).ToArray();
-        return new(Key, Bound, components, AvailabilityScopeConflictEvidenceBuilder.Build(request, Bound, inputs, components));
+        return new(key, Bound, components, AvailabilityScopeConflictEvidenceBuilder.Build(request, Bound, inputs, components));
     }
     internal byte[] Receipt(string processor, bool reference, OperationalMetricComponentSnapshot? snapshot = null, IReadOnlyList<ProductionReferenceTimeResolution>? outcomes = null) => JsonSerializer.SerializeToUtf8Bytes(new
     {
         ValidationOnly = true, Policy, Processor = processor, Source = Bound, Key, Status = "Unavailable", Reason = "RunningOutsidePlannedProduction",
         Snapshot = snapshot ?? Snapshot(Inputs.Where(x => x.Position <= Bound.Position).ToArray()),
         R = reference ? (long?)ReferenceRevision : null, Outcomes = reference ? outcomes ?? AllOutcomes.Select(x => x.Resolution).ToArray() : [],
-    });
+    }, ReceiptOptions);
+
+    internal static byte[] WitnessBytes(AvailabilityScopeConflictEvidenceV1 witness) => JsonSerializer.SerializeToUtf8Bytes(witness, ReceiptOptions);
+    private static JsonSerializerOptions CreateReceiptOptions()
+    {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(info =>
+        {
+            if (info.Type != typeof(OperationalMetricPeriodId)) return;
+            info.PolymorphismOptions = new JsonPolymorphismOptions
+            {
+                TypeDiscriminatorPropertyName = "$period",
+                DerivedTypes =
+                {
+                    new JsonDerivedType(typeof(OperationalMetricPeriodId.Shift), "shift"),
+                    new JsonDerivedType(typeof(OperationalMetricPeriodId.ProductionDay), "production-day"),
+                },
+            };
+        });
+        return new JsonSerializerOptions { TypeInfoResolver = resolver };
+    }
+    internal async Task WriteWitnessSet(SqlConnection c, SqlTransaction t, IEnumerable<AvailabilityScopeConflictEvidenceV1> incoming, Func<Task>? afterFirst = null)
+    {
+        var entries = incoming.Select(witness => new { Witness = witness, Payload = WitnessBytes(witness) })
+            .Select(x => new { x.Witness, x.Payload, Id = Digest("B1ValidationOnly/Witness/", x.Payload) })
+            .OrderBy(x => Convert.ToHexString(x.Id), StringComparer.Ordinal).ToArray();
+        var first = true;
+        foreach (var entry in entries)
+        {
+            Assert.Equal(Bound, entry.Witness.SourceRevision);
+            var position = (decimal)entry.Witness.Contribution.Position.Value;
+            var fact = await Scalar(c, t, "SELECT MetricInputFactRowId FROM dbo.MetricInputFact WITH(HOLDLOCK) WHERE MetricInputStreamRowId=@S AND Position=@Position;", ("@S", StreamRow), ("@Position", position));
+            var existing = await Scalar(c, t, "SELECT WitnessPayload FROM dbo.OperationalMetricConflictWitnessArchive WITH(UPDLOCK,HOLDLOCK) WHERE WitnessId=@W;", ("@W", entry.Id));
+            if (existing is byte[] bytes)
+            { if (!bytes.SequenceEqual(entry.Payload)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: witness identity collision"); }
+            else await Exec(c, t, "INSERT dbo.OperationalMetricConflictWitnessArchive VALUES(@W,1,@Payload,@A,@S,@Cut,@Fact,@Position);",
+                ("@W", entry.Id), ("@Payload", entry.Payload), ("@A", AggregationRow), ("@S", StreamRow), ("@Cut", (decimal)Bound.Position.Value), ("@Fact", fact!), ("@Position", position));
+            await Trace("archive-key:" + Convert.ToHexString(entry.Id), c, t);
+            if (first && afterFirst is not null) await afterFirst();
+            first = false;
+        }
+    }
+
+    private async Task VerifyStored(SqlConnection c, SqlTransaction t, Publisher publisher, byte[] payload)
+    {
+        var witnessObject = Snapshot(Inputs.Where(x => x.Position <= Bound.Position).ToArray()).AvailabilityScopeConflictEvidence!;
+        var witnessPayload = WitnessBytes(witnessObject);
+        var witness = Digest("B1ValidationOnly/Witness/", witnessPayload);
+        var result = Digest("B1ValidationOnly/Result/", payload);
+        var count = await Scalar(c, t, """
+            SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive WITH(HOLDLOCK)
+            WHERE OperationalMetricProjectionProcessorRowId=@P AND EvaluationKeyHash=@Key AND SourceRevisionPosition=@Cut
+            AND ResultId=@Result AND EvaluationKeyBinary=@KeyBytes AND EvaluationPolicyId=@Policy
+            AND MetricAggregationProcessorRowId=@A AND MetricInputStreamRowId=@S
+            AND PublicationFormatVersion=2 AND ResultCodecVersion=2 AND Status=1 AND ReasonCode=6 AND ConflictWitnessId=@W;
+            """, ("@P", publisher.Row), ("@Key", KeyHash), ("@Cut", (decimal)Bound.Position.Value), ("@Result", result), ("@KeyBytes", KeyBytes), ("@Policy", Policy), ("@A", AggregationRow), ("@S", StreamRow), ("@W", witness));
+        if (!Equals(count, 1)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: result metadata");
+        var archivedWitness = await Scalar(c, t, "SELECT WitnessPayload FROM dbo.OperationalMetricConflictWitnessArchive WITH(HOLDLOCK) WHERE WitnessId=@W AND WitnessCodecVersion=1 AND MetricAggregationProcessorRowId=@A AND MetricInputStreamRowId=@S AND SourceRevisionPosition=@Cut AND ContributionPosition=@Position;",
+            ("@W", witness), ("@A", AggregationRow), ("@S", StreamRow), ("@Cut", (decimal)Bound.Position.Value), ("@Position", (decimal)WitnessPosition));
+        if (archivedWitness is not byte[] bytes || !bytes.SequenceEqual(witnessPayload)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: witness payload");
+        var references = await Scalar(c, t, "SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference WITH(HOLDLOCK) WHERE ResultId=@Result;", ("@Result", result));
+        var root = await Scalar(c, t, "SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference WITH(HOLDLOCK) WHERE ResultId=@Result AND NodePath=0x00000000 AND WitnessId=@W;", ("@Result", result), ("@W", witness));
+        if (!Equals(references, 1) || !Equals(root, 1)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: reference closure");
+        var retained = await Scalar(c, t, """
+            SELECT COUNT(*) FROM dbo.OperationalMetricProjection p JOIN dbo.OperationalMetricProjectionManifest m ON m.OperationalMetricProjectionRowId=p.OperationalMetricProjectionRowId
+            JOIN dbo.OperationalMetricProjectionCheckpoint cp ON cp.OperationalMetricProjectionProcessorRowId=m.OperationalMetricProjectionProcessorRowId
+            WHERE p.OperationalMetricProjectionProcessorRowId=@P AND p.PublicationFormatVersion=2 AND p.EvaluationPolicyId=@Policy
+            AND p.ContainmentResultId=@Result AND p.ConflictWitnessId=@W AND p.Status=1 AND p.ReasonCode=6 AND p.MetricValue IS NULL
+            AND p.EvaluationKeyBinary=@KeyBytes AND p.SourceRevisionPosition=@Cut AND cp.Position=@Cut;
+            """, ("@P", publisher.Row), ("@Policy", Policy), ("@Result", result), ("@W", witness), ("@KeyBytes", KeyBytes), ("@Cut", (decimal)Bound.Position.Value));
+        if (!Equals(retained, 1)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: retained binding");
+        foreach (var component in Snapshot(Inputs.Where(x => x.Position <= Bound.Position).ToArray()).Components)
+        {
+            var evidence = await Scalar(c, t, """
+                SELECT COUNT(*) FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId
+                WHERE p.OperationalMetricProjectionProcessorRowId=@P AND e.EvidenceKind=1 AND e.OperandName=@Operand AND e.ComponentKey=@Component
+                AND e.MetricDimension=@Dimension AND e.ComponentValue=@Value AND e.ComponentUnit=@Unit AND e.InputCount=@Count AND e.FirstInputTimestamp=@First AND e.LastInputTimestamp=@Last;
+                """, ("@P", publisher.Row), ("@Operand", component.OperandName), ("@Component", component.SourceIdentity.ComponentKey), ("@Dimension", (byte)component.Dimension),
+                ("@Value", SqlServerCanonicalDecimalCodec.Serialize(component.Aggregate.Value)), ("@Unit", component.Aggregate.Unit), ("@Count", component.Aggregate.InputCount), ("@First", component.Aggregate.FirstInputTimestamp), ("@Last", component.Aggregate.LastInputTimestamp));
+            if (!Equals(evidence, 1)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: component evidence");
+        }
+    }
     internal async Task<Publisher> NewPublisher(string name, bool reference = false)
     {
         var id = new OperationalMetricProjectionProcessorId("b1-validation-only:" + name);
@@ -240,7 +325,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             var payload = replacementPayload ?? f.Receipt(id.Value, reference);
             var result = Digest("B1ValidationOnly/Result/", payload);
             var witnessObject = f.Snapshot(f.Inputs.Where(x => x.Position <= f.Bound.Position).ToArray()).AvailabilityScopeConflictEvidence!;
-            var witnessPayload = JsonSerializer.SerializeToUtf8Bytes(witnessObject);
+            var witnessPayload = WitnessBytes(witnessObject);
             var witness = Digest("B1ValidationOnly/Witness/", witnessPayload);
             var intent = new OperationalMetricProjection(id, f.Key, f.Template.Status, f.Template.Value, f.Template.Unit,
                 f.Template.ReasonCode, f.Template.ReasonOperandName, f.Bound, f.Template.OperandEvidence);
@@ -272,13 +357,11 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 await Stage("slot", c, t);
                 if (outcome == "Replayed")
                 {
+                    await f.VerifyStored(c, t, this, payload);
                     Assert.Equal(payload, await f.Validate(c, t, this, ct));
                     await Stage("replay", c, t); return;
                 }
-                var factRow = await Scalar(c, t, "SELECT MetricInputFactRowId FROM dbo.MetricInputFact WHERE MetricInputStreamRowId=@S AND Position=@WitnessPosition;", ("@S", f.StreamRow), ("@WitnessPosition", (decimal)f.WitnessPosition));
-                var existing = await Scalar(c, t, "SELECT WitnessPayload FROM dbo.OperationalMetricConflictWitnessArchive WITH(UPDLOCK,HOLDLOCK) WHERE WitnessId=@W;", ("@W", witness));
-                if (existing is byte[] bytes) Assert.Equal(witnessPayload, bytes);
-                else await Exec(c, t, "INSERT dbo.OperationalMetricConflictWitnessArchive VALUES(@W,1,@Payload,@A,@S,@Cut,@Fact,@WitnessPosition);", ("@W", witness), ("@Payload", witnessPayload), ("@A", f.AggregationRow), ("@S", f.StreamRow), ("@Cut", (decimal)f.Bound.Position.Value), ("@Fact", factRow!), ("@WitnessPosition", (decimal)f.WitnessPosition));
+                await f.WriteWitnessSet(c, t, [witnessObject]);
                 await Stage("witness", c, t);
                 await Exec(c, t, """
                     INSERT dbo.OperationalMetricPublicationResultArchive(ResultId,OperationalMetricProjectionProcessorRowId,PublicationFormatVersion,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,EvaluationKeyHash,EvaluationKeyBinary,EvaluationPolicyId,ResultCodecVersion,ResultPayload,Status,ReasonCode,ConflictWitnessId)
@@ -331,7 +414,13 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 await f.Trace("read-gate", connection, t);
                 if (AtStage is not null) await AtStage("read-gate", connection, t);
                 var stored = await Scalar(connection, t, "SELECT a.ResultPayload FROM dbo.OperationalMetricPublicationResultArchive a JOIN dbo.OperationalMetricProjection p ON p.ContainmentResultId=a.ResultId JOIN dbo.OperationalMetricProjectionManifest m ON m.OperationalMetricProjectionRowId=p.OperationalMetricProjectionRowId JOIN dbo.OperationalMetricProjectionCheckpoint cp ON cp.OperationalMetricProjectionProcessorRowId=m.OperationalMetricProjectionProcessorRowId WHERE p.OperationalMetricProjectionProcessorRowId=@P AND cp.Position=p.SourceRevisionPosition;", ("@P", row));
-                if (stored is not byte[] payload) return [];
+                if (stored is not byte[] payload)
+                {
+                    var position = await Scalar(connection, t, "SELECT Position FROM dbo.OperationalMetricProjectionCheckpoint WHERE OperationalMetricProjectionProcessorRowId=@P;", ("@P", row));
+                    if (Equals(position, (decimal)f.Initial.Position.Value)) return [];
+                    throw new InvalidDataException("StoredEvidenceIntegrityFailure: missing manifested result");
+                }
+                await f.VerifyStored(connection, t, this, payload);
                 Assert.Equal(payload, await f.Validate(connection, t, this, token)); return payload;
             }, CancellationToken.None);
         }
@@ -379,8 +468,11 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P) Manifest,
             (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId=@P) Evidence,
             (SELECT Position FROM dbo.OperationalMetricProjectionCheckpoint WHERE OperationalMetricProjectionProcessorRowId=@P) Checkpoint,
-            (SELECT COUNT(*) FROM dbo.B1MutationAudit) AuditWrites;
-            """, ("@P", publisher.Row));
+            (SELECT COUNT(*) FROM dbo.B1MutationAudit) AuditWrites,
+            (SELECT Position FROM dbo.MetricAggregationCheckpoint WHERE MetricAggregationProcessorRowId=@A) SourceCheckpoint,
+            (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position<=@Cut) BoundMembership,
+            (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position>@Cut) LaterMembership;
+            """, ("@P", publisher.Row), ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value));
         Events.Enqueue(new { Stage = "archive-checkpoint-state", Publisher = publisher.Id.Value, State = rows });
         return Assert.Single(rows).Values.Select(x => x!).ToArray();
     }
