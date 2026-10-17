@@ -264,8 +264,9 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         await using (var r = await cmd.ExecuteReaderAsync(token))
             while (await r.ReadAsync(token)) inputs.Add((PositionedMetricInputFact)Invoke(typeof(SqlServerMetricAggregationStore), "MaterializeHistoricalInput", r)!);
         var snapshot = Snapshot(inputs);
+        var verifiedWitness = Assert.IsType<AvailabilityScopeConflictEvidenceV1>(snapshot.AvailabilityScopeConflictEvidence);
         Assert.Equal(3m, snapshot.Components.Single(x => x.OperandName == "ActualProductionTime").Aggregate.Value);
-        Assert.Equal(WitnessPosition, snapshot.AvailabilityScopeConflictEvidence!.Contribution.Position.Value);
+        Assert.Equal(WitnessPosition, verifiedWitness.Contribution.Position.Value);
         var evaluation = await new OperationalMetricEvaluator(new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All),
             new TransactionSnapshot(snapshot), Aggregation, useAvailabilityContainmentV1: true).EvaluateAsync(Key, token);
         Assert.Equal(OperationalMetricEvaluationStatus.Unavailable, evaluation.Status);
@@ -273,11 +274,13 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         Assert.Equal(Policy, evaluation.EvaluationPolicyId);
         Assert.Equal(snapshot.AvailabilityScopeConflictEvidence, evaluation.AvailabilityScopeConflictEvidence);
         var outcomes = new List<ProductionReferenceTimeResolution>();
+        var publishedOutcomes = new List<PublishedProductionReferenceTimeOutcome>();
         if (publisher.Reference)
         {
             await Scalar(c, t, "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimePublicationTransition WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND TargetMetricAggregationPosition=@Cut;", ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value));
             var transition = (ProductionReferenceTimePublicationTransition?)await (Task<ProductionReferenceTimePublicationTransition?>)Invoke(typeof(SqlServerProductionReferenceTimePublicationTransitionStore), "ReadAsync",
                 c, t, Aggregation, AggregationRow, Bound.Position, false, token)!;
+            Events.Enqueue(new { Stage = "authority-observed", Spid = c.ServerProcessId, Transaction = await Scalar(c, t, "SELECT transaction_id FROM sys.dm_tran_current_transaction;"), BoundA = Bound.Position.Value, RequiredR = ReferenceRevision, Transition = transition });
             if (transition is not { IsCompleted: true, CompletedReferenceTimeRevision: not null }) throw new InvalidDataException("HistoricalEvidenceUnavailable");
             if (transition.CompletedReferenceTimeRevision.Value.Value != ReferenceRevision || transition.ProductionStandardAuthorityRevision != 1 || transition.ExpectedPreviousAggregationPosition != Initial.Position || transition.StartingReferenceTimeRevision.Value != 0) throw new InvalidDataException("StoredEvidenceIntegrityFailure");
             await Scalar(c, t, "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimeRevision WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND ProductionReferenceTimeRevision=@R;", ("@A", AggregationRow), ("@R", ReferenceRevision));
@@ -287,7 +290,11 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 .Replace("ProductionReferenceTimeOutcomeConflict c", "ProductionReferenceTimeOutcomeConflict c WITH(HOLDLOCK)", StringComparison.Ordinal);
             await using (var cmd = Command(c, t, select + " WHERE o.MetricAggregationProcessorRowId=@A AND o.ProductionReferenceTimeRevision<=@R ORDER BY o.ProductionReferenceTimeRevision,o.SourceQuantityEvidenceId;", ("@A", AggregationRow), ("@R", ReferenceRevision)))
             await using (var r = await cmd.ExecuteReaderAsync(token))
-                while (await r.ReadAsync(token)) outcomes.Add(((PublishedProductionReferenceTimeOutcome)Invoke(typeof(SqlServerProductionReferenceTimeOutcomeStore), "Materialize", r)!).Resolution);
+                while (await r.ReadAsync(token))
+                {
+                    var published = (PublishedProductionReferenceTimeOutcome)Invoke(typeof(SqlServerProductionReferenceTimeOutcomeStore), "Materialize", r)!;
+                    publishedOutcomes.Add(published); outcomes.Add(published.Resolution);
+                }
             Assert.Equal(1, (int)(await Scalar(c, t, "SELECT COUNT(*) FROM dbo.ProductionStandardAuthorityRevision WITH(HOLDLOCK) WHERE ProductionStandardAuthorityRevision=1;"))!);
             var versions = new List<ProductionStandardVersion>();
             await using (var cmd = Command(c, t, "SELECT VersionId,ProductionStandardAuthorityRevision,CompanyId,SiteId,PartId,OperationId,MachineId,SecondsPerUnit,EffectiveFromUtc,EffectiveToUtc,SourceReference FROM dbo.ProductionStandardVersion WITH(HOLDLOCK) WHERE ProductionStandardAuthorityRevision<=1 ORDER BY ProductionStandardAuthorityRevision;"))
@@ -303,6 +310,17 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                 Assert.Equal(JsonSerializer.Serialize(expected), JsonSerializer.Serialize(actual));
             }
         }
+        Events.Enqueue(new
+        {
+            Stage = "historical-binding-verified", Spid = c.ServerProcessId, Transaction = await Scalar(c, t, "SELECT transaction_id FROM sys.dm_tran_current_transaction;"),
+            Source = Bound, Period = (object)Key.PeriodId,
+            Members = inputs.Select(x => new { Position = x.Position.Value, Fact = x.Fact.Id.Value, x.Fact.Key, x.Fact.Value, x.Fact.Unit }).ToArray(),
+            Components = snapshot.Components.Select(x => new { x.OperandName, x.SourceIdentity.ComponentKey, x.Aggregate }).ToArray(),
+            Witness = new { Position = verifiedWitness.Contribution.Position.Value, Fact = verifiedWitness.Contribution.Fact,
+                verifiedWitness.RuleId, verifiedWitness.PlannedProductionOperandContractId },
+            Evaluation = new { evaluation.Status, evaluation.ReasonCode, evaluation.EvaluationPolicyId },
+            BoundR = publisher.Reference ? (long?)ReferenceRevision : null, PublishedOutcomes = publishedOutcomes,
+        });
         return Receipt(publisher.Id.Value, publisher.Reference, snapshot, outcomes);
     }
 
@@ -475,17 +493,17 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
     {
         await using var c = await Open();
         var rows = await Rows(c, """
-            SELECT (SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive) Witnesses,
-            (SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P) Results,
-            (SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference r JOIN dbo.OperationalMetricPublicationResultArchive a ON a.ResultId=r.ResultId WHERE a.OperationalMetricProjectionProcessorRowId=@P) Refs,
-            (SELECT COUNT(*) FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P) Projections,
-            (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P) Manifest,
-            (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId=@P) Evidence,
-            (SELECT Position FROM dbo.OperationalMetricProjectionCheckpoint WHERE OperationalMetricProjectionProcessorRowId=@P) Checkpoint,
-            (SELECT COUNT(*) FROM dbo.B1MutationAudit) AuditWrites,
-            (SELECT Position FROM dbo.MetricAggregationCheckpoint WHERE MetricAggregationProcessorRowId=@A) SourceCheckpoint,
-            (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position<=@Cut) BoundMembership,
-            (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position>@Cut) LaterMembership;
+            SELECT (SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive) AS [Witnesses],
+            (SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P) AS [Results],
+            (SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference r JOIN dbo.OperationalMetricPublicationResultArchive a ON a.ResultId=r.ResultId WHERE a.OperationalMetricProjectionProcessorRowId=@P) AS [Refs],
+            (SELECT COUNT(*) FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P) AS [Projections],
+            (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P) AS [Manifest],
+            (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId=@P) AS [Evidence],
+            (SELECT Position FROM dbo.OperationalMetricProjectionCheckpoint WHERE OperationalMetricProjectionProcessorRowId=@P) AS [Checkpoint],
+            (SELECT COUNT(*) FROM dbo.B1MutationAudit) AS [AuditWrites],
+            (SELECT Position FROM dbo.MetricAggregationCheckpoint WHERE MetricAggregationProcessorRowId=@A) AS [SourceCheckpoint],
+            (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position<=@Cut) AS [BoundMembership],
+            (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position>@Cut) AS [LaterMembership];
             """, ("@P", publisher.Row), ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value));
         var witnesses = await Rows(c, "SELECT CONVERT(varchar(64),WitnessId,2) WitnessId,WitnessCodecVersion,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,ContributionFactRowId,ContributionPosition,DATALENGTH(WitnessPayload) PayloadLength,CONVERT(varchar(64),HASHBYTES('SHA2_256',WitnessPayload),2) PayloadDigest FROM dbo.OperationalMetricConflictWitnessArchive;");
         var results = await Rows(c, "SELECT CONVERT(varchar(64),ResultId,2) ResultId,OperationalMetricProjectionProcessorRowId,PublicationFormatVersion,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,CONVERT(varchar(64),EvaluationKeyHash,2) KeyHash,EvaluationPolicyId,ResultCodecVersion,Status,ReasonCode,CONVERT(varchar(64),ConflictWitnessId,2) WitnessId,DATALENGTH(ResultPayload) PayloadLength,CONVERT(varchar(64),HASHBYTES('SHA2_256',ResultPayload),2) PayloadDigest FROM dbo.OperationalMetricPublicationResultArchive;");
