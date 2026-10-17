@@ -116,13 +116,32 @@ Return independent AcquisitionCoverage and StateCoverage axes (Complete, Partial
 
 Established additionally requires a nonoverlapping complete partition of [start,end) with each state independently justified. Full-period zero requires every partition member to be a valid known non-Running state. Acquisition Complete alone cannot supply zero. Observed and authoritative durations are separate nullable fields; never coalesce either absence to zero.
 
-Validation order is deterministic: validate target syntax and supported envelope versions; validate all readable hashes and declared membership; validate scope/cut compatibility and admissions; validate temporal/response/state proofs; classify coverage; calculate justified durations. Collect diagnostics in that stage order, then canonical authority kind/identity/interval/reason order. Readable corruption has precedence over coverage decisions; unreadable versions remain unsupported and never guessed. Persist all validated diagnostics and the primary reason selected by this order.
+Validation proceeds from supported envelope decoding and readable integrity checks through exact binding/admission verification to independent temporal and state proofs. The missing-prerequisite algorithm below and encoding appendix fix outcome precedence, reason codes and diagnostic ordering; evaluation order must not change the selected result.
+
+### Deterministic missing-prerequisite decisions
+
+An explicit AbsentAtPinnedCut binding is a missing prerequisite. A Present binding that cannot resolve, fails its hash, or omits a declared member is Corrupt; it must not be relabeled as ordinary absence. An admission that resolves but names a different scope, effective period, definition or evidence cut is Incomparable. Unknown admitted rule versions are unsupported, not missing.
+
+Let U mean at least one independently verified known-state slice with valid historical mapping and quality. U permits a source-time observed duration, not full-period UTC authority. A raw observation or DP.3B.1 fingerprint without historical mapping verification does not establish U.
+
+| Explicit missing/incompatible prerequisite | Axis restriction | Overall result and primary reason when this is the sole defect |
+| --- | --- | --- |
+| Temporal policy definition or its admission absent | Both axes NotEvaluated; no timing defaults, no assessment durations | Missing / PolicyNotEstablished |
+| Response-completeness receipt/admission absent | Acquisition Missing if no verified window, otherwise Partial; state evaluated independently | Partial if U, otherwise Missing / ResponseCompletenessNotEstablished |
+| Historical mapping definition/admission absent | State Missing; acquisition evaluated independently; raw status is not a verified known-state slice | Missing / HistoricalMappingAuthorityNotEstablished; observed and authoritative Running null |
+| Clock calibration or clock admission absent | Acquisition and State cannot be Complete for UTC scope; each is Partial if it has otherwise verified supporting evidence, otherwise Missing | Partial if U, otherwise Missing / ClockAuthorityNotEstablished |
+| Opening/reopening or closing certificate absent | Its affected axis cannot be Complete | Partial if U, otherwise Missing / BoundaryAuthorityNotEstablished |
+| Policy admission present but wrong machine/stream/effective date/definition/cut | Neither axis may authorize the target | Incomparable / AdmissionScopeMismatch; both durations null |
+
+For multiple defects, collect all inspectable diagnostics without inventing results for unreadable dependencies. Overall invalid-status precedence is Corrupt, UnsupportedEncoding, UnsupportedVerifier, UnsupportedPolicy, Incomparable. If no invalid status applies but the temporal policy/admission is absent, return Missing/PolicyNotEstablished with both axes NotEvaluated. Otherwise use U to select Partial or Missing when any prerequisite/coverage gap remains; select Established only when both axes are Complete. This is a fixed algorithm, not evaluator discretion.
+
+Choose the primary diagnostic only among diagnostics responsible for the selected overall status. Their priority is ascending reason-code number in the encoding appendix, then authority kind, reference identity bytes and interval start/end. All other diagnostics remain retained in that same canonical order. For ordinary Partial/Missing, missing mapping outranks missing response, which outranks missing clock, then missing boundary, then temporal gaps and unavailable state. Thus two evaluators cannot select different primary reasons from the same set of missing inputs. The appendix is normative for codes and precedence.
 
 ## 8. Identity, encoding and immutable persistence
 
 Proposed identity: SHA-256 of the complete canonical target in section 2, including exact source/admission/manifest hashes and rule versions. Result classifications and durations are content, not replacement identity inputs. Same target with different result content is a publication conflict. Corrected evidence, changed cuts or changed policy produces a distinct target, never an overwrite.
 
-Proposed target codec V1 field order follows section 2 row order. Use explicit type tags, strict UTF-8 ordinal strings without Unicode normalization, length-prefixed fields, RFC 4122 network-order GUID bytes, 32 raw bytes for hashes, signed 64-bit UTC/duration ticks, signed 32-bit production day numbers, unsigned 64-bit stream positions/Agent sequences, signed 64-bit publication ordinals, and explicit nullable/present/absent-at-cut tags. Counts are bounded and encoded before members. Canonical lists sort by their declared stream/order keys; recovery events preserve publication/event order and observations preserve authoritative position order. Reject duplicate/conflicting identities, invalid ranges, unsupported tags, trailing bytes and noncanonical re-encoding. The implementation must publish a complete field-by-field codec specification and golden vectors before V1 is frozen; this document does not freeze an executable wire format.
+The complete proposed V1 field order, primitive encodings, authority-reference union, result payload, validation rules and generated golden vectors are specified in [the V1 encoding appendix](RR03-DP3B2B2-v1-encoding.md). This replaces the earlier deferred field specification. Both documents remain proposals until design freeze; publishing this appendix is not implementation authorization.
 
 Persist assessments separately from canonical projections. Publication is insert-only and atomic; identical target and canonical payload replay succeeds without a new identity; differing content fails without mutation. Verify target hash, payload hash, versions, decoded target equality and result consistency. Concurrency permits only one canonical content per target.
 
@@ -130,7 +149,7 @@ Exact-target storage retrieval returns Absent, Found, Corrupt or UnsupportedEnco
 
 ## 9. Conformance matrix — required before implementation acceptance
 
-These are specifications for future tests, not executed tests. Fixture times/tolerances below are synthetic test inputs, not approved Gajra values. A test policy may use MaxContactGap=10 s, MaxStateAge=30 s and clock error=0, with explicit synthetic admission. Every Complete fixture must include independently verified response receipts, historical mapping/state authority, lineage and opening/closing certificates.
+These 40 scenarios are specifications for future tests, not executed tests. Fixture times/tolerances below are synthetic test inputs, not approved Gajra values. A test policy may use MaxContactGap=10 s, MaxStateAge=30 s and clock error=0, with explicit synthetic admission. Every Complete fixture must include independently verified response receipts, historical mapping/state authority, lineage and opening/closing certificates.
 
 | ID | Scenario | Required outcome/assertion |
 | --- | --- | --- |
@@ -168,6 +187,12 @@ These are specifications for future tests, not executed tests. Fixture times/tol
 | C32 | Unknown codec/policy/verifier version; malformed/trailing encoding | Explicit unsupported or Corrupt; no fallback |
 | C33 | Historical stored assessment's source later deleted | Stored result not rewritten; source revalidation fails and cannot claim current authoritative verification |
 | C34 | Arithmetic overlap, negative duration or Running > proven extent | Corrupt/inconsistent result rejected before publication; no clamping |
+| C35 | Explicit response receipt absent, valid mapped known-state slices present | Partial / ResponseCompletenessNotEstablished; acquisition not Complete, authoritative Running null |
+| C36 | Historical mapping authority absent, raw slices look known | Missing / HistoricalMappingAuthorityNotEstablished; no verified observed or authoritative Running |
+| C37 | Clock admission absent, independently mapped observed slices present | Partial / ClockAuthorityNotEstablished; neither UTC axis Complete |
+| C38 | Policy admission present but for wrong scope/date/definition | Incomparable / AdmissionScopeMismatch; no fallback to another admission |
+| C39 | Response, mapping and clock authorities all explicitly absent | Missing; primary HistoricalMappingAuthorityNotEstablished, all three reasons retained in canonical code order |
+| C40 | e=1 s, Running [0,10), Stopped [10,20) adjacent in source time; request [2,18) | Proven supports [1,9) and [11,19); unresolved [9,11), overall Partial, authoritative Running null. Never bridge uncertainty via tolerance or adjacency |
 
 ## 10. Review and implementation gate
 
