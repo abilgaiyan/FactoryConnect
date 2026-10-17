@@ -120,8 +120,18 @@ public sealed class SqlServerAcquisitionEvidenceIntegrationTests
         await using var database=await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection=new SqlConnection(database.ConnectionString); await connection.OpenAsync();
         var catalog=SqlMigrationCatalog.Load();
-        await new SqlServerMigrationEngine(SqlMigrationCatalog.Create(catalog.Migrations.Take(19)),new Fixture.Clock())
-            .ApplyAsync(connection,TimeSpan.FromMinutes(2),CancellationToken.None);
+        // Construct the historical schema with the migration executor. The runtime engine always validates Current.
+        await using (var transaction=connection.BeginTransaction())
+        {
+            await SqlServerMigrationLedgerCreator.CreateAsync(connection,transaction,CancellationToken.None);
+            var history=new SqlServerMigrationHistoryStore(new Fixture.Clock());
+            foreach (var migration in catalog.Migrations.Take(19))
+            {
+                await SqlServerMigrationExecutor.ExecuteAsync(connection,transaction,migration,CancellationToken.None);
+                await history.InsertAsync(connection,transaction,migration,CancellationToken.None);
+            }
+            await transaction.CommitAsync();
+        }
         var stream=new ObservationStreamId(MachineId.New(),"legacy-stream"); var checkpoint=new ObservationCheckpoint(stream,1,10);
         await using (var seed=connection.CreateCommand())
         {

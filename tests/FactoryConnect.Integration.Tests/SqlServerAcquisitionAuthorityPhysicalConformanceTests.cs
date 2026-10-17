@@ -141,7 +141,8 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
         var streamId = StreamId();
         var store = CreateStore();
         var initial = InitialBatch(streamId, Instant(10));
-        await store.CommitAsync(initial);
+        // Seed a legacy boundary before evidence publication; moving already-published positions is corruption.
+        await SeedLegacyInitialBatchAsync(initial);
 
         var initialAuthority = await store.ReadAcquisitionContactAuthorityAsync(streamId);
         Assert.NotNull(initialAuthority);
@@ -153,12 +154,13 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
         Assert.Equal(ulong.MaxValue, beforeDuplicateOnly.RawAcceptedThrough?.Value);
         Assert.NotEqual(initialAuthority.AcquisitionRevision, beforeDuplicateOnly.AcquisitionRevision);
 
-        await store.CommitAsync(
-            new ObservationIngestionBatch(
-                initial.Checkpoint,
-                initial.Checkpoint,
-                initial.Observations,
-                Instant(20)));
+        var duplicateOnly = new ObservationIngestionBatch(initial.Checkpoint, initial.Checkpoint, initial.Observations, Instant(20));
+        await store.CommitAsync(duplicateOnly);
+        var evidence = await store.ReadExactAsync(streamId, Convert.ToHexString(
+            AcquisitionEvidenceCodec.Identity(duplicateOnly, AcquisitionEvidenceCodec.Encode(duplicateOnly))));
+        Assert.Equal(AcquisitionEvidenceReadStatus.Found, evidence.Status);
+        Assert.Equal(AcquisitionOpeningBoundaryKind.UnverifiedLegacyPrefix, evidence.Record!.OpeningBoundary.Kind);
+        Assert.Equal(ulong.MaxValue, evidence.Record.OpeningBoundary.LegacyAcceptedThrough?.Value);
 
         var afterDuplicateOnly = await store.ReadAcquisitionContactAuthorityAsync(streamId);
         Assert.NotNull(afterDuplicateOnly);
@@ -194,6 +196,57 @@ public sealed class SqlServerAcquisitionAuthorityPhysicalConformanceTests :
 
     private SqlServerObservationIngestionStore CreateStore() =>
         new(_fixture.ConnectionString);
+
+    private async Task SeedLegacyInitialBatchAsync(ObservationIngestionBatch batch)
+    {
+        await using var connection=_fixture.CreateConnection(); await connection.OpenAsync();
+        await using var transaction=connection.BeginTransaction();
+        await using (var checkpoint=connection.CreateCommand())
+        {
+            checkpoint.Transaction=transaction;
+            checkpoint.CommandText="""
+                INSERT dbo.ObservationStreamCheckpoint (MachineId,StreamKeyBinary,StreamKey,InstanceId,NextSequence)
+                VALUES (@MachineId,@StreamKeyBinary,@Stream,@Instance,@Next);
+                """;
+            AddStreamParameters(checkpoint,batch.Checkpoint.StreamId);
+            checkpoint.Parameters.AddWithValue("@Stream",batch.Checkpoint.StreamId.StreamKey);
+            checkpoint.Parameters.Add(SqlServerUInt64.CreateParameter("@Instance",batch.Checkpoint.InstanceId));
+            checkpoint.Parameters.Add(SqlServerUInt64.CreateParameter("@Next",batch.Checkpoint.NextSequence));
+            await checkpoint.ExecuteNonQueryAsync();
+        }
+        ulong position=0;
+        foreach (var item in batch.Observations)
+        {
+            await using var insert=connection.CreateCommand(); insert.Transaction=transaction;
+            insert.CommandText="""
+                INSERT dbo.MachineObservation
+                    (MachineId,StreamKeyBinary,InstanceId,Sequence,Position,Source,Address,SignalType,ObservationValue,Quality,ObservedAt)
+                VALUES (@MachineId,@StreamKeyBinary,@Instance,@Sequence,@Position,@Source,@Address,@Type,@Value,@Quality,@Time);
+                """;
+            AddStreamParameters(insert,batch.Checkpoint.StreamId);
+            insert.Parameters.Add(SqlServerUInt64.CreateParameter("@Instance",batch.Checkpoint.InstanceId));
+            insert.Parameters.Add(SqlServerUInt64.CreateParameter("@Sequence",item.Sequence));
+            insert.Parameters.Add(SqlServerUInt64.CreateParameter("@Position",++position));
+            insert.Parameters.AddWithValue("@Source",item.Observation.Source); insert.Parameters.AddWithValue("@Address",item.Observation.Address);
+            insert.Parameters.AddWithValue("@Type",(byte)item.Observation.Type);
+            insert.Parameters.AddWithValue("@Value",(object?)SqlServerObservationValueCodec.Serialize(item.Observation.Type,item.Observation.Value) ?? DBNull.Value);
+            insert.Parameters.AddWithValue("@Quality",(byte)item.Observation.Quality); insert.Parameters.AddWithValue("@Time",item.Observation.Timestamp);
+            await insert.ExecuteNonQueryAsync();
+        }
+        await using (var contact=connection.CreateCommand())
+        {
+            contact.Transaction=transaction;
+            contact.CommandText="""
+                INSERT dbo.AcquisitionContactAuthority (MachineId,StreamKeyBinary,SuccessfulContactTime,RawAcceptedThrough,AcquisitionRevision)
+                VALUES (@MachineId,@StreamKeyBinary,@Time,@Through,1);
+                """;
+            AddStreamParameters(contact,batch.Checkpoint.StreamId);
+            contact.Parameters.AddWithValue("@Time",batch.SuccessfulContactTime);
+            contact.Parameters.Add(SqlServerUInt64.CreateParameter("@Through",position));
+            await contact.ExecuteNonQueryAsync();
+        }
+        await transaction.CommitAsync();
+    }
 
     private async Task SeedNearExhaustionStateAsync(ObservationStreamId streamId)
     {
