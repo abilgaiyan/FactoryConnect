@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "sourceCut": {
+    "processorId": "metric-aggregation:11111111-1111-1111-1111-111111111111",
+    "machineId": "11111111-1111-1111-1111-111111111111",
+    "streamKey": "metric-inputs",
+    "position": 534
+  },
+  "period": {
+    "siteId": "rca-site",
+    "businessDate": "2026-10-16",
+    "shiftId": "SHIFT-1",
+    "shiftScheduleAssignmentId": "rca-shift-1-schedule",
+    "startsAtUtc": "2026-10-16T00:30:00Z",
+    "endsAtUtc": "2026-10-16T08:30:00Z"
+  },
+  "contributionCount": 34,
+  "runningCount": 31,
+  "plannedCount": 3,
+  "sourceArtifactSha256": "a4d8dda21b81c4f66b1e4664e65dd2c8bca8be21e6d0e58113efcf84b60502f9",
+  "fixtureSha256": "d86b0d6a2991b3e49f3a7e58cfc61fbfe78a15bff4db273e40bb4244c8615653",
+  "sanitization": "Deterministic identity aliases only; exact positions, timestamps, decimal strings, units and eligibility retained; SQL row IDs and binary identity encoding omitted."
+}
