@@ -44,9 +44,11 @@ public sealed class Gg003AvailabilityPersistenceContractTests
     [Fact]
     public void NewReasonCannotBeIntroducedByEnumOnlyChangeInFrozenV1Codec()
     {
-        // Proposed reason slot 6 is not introduced by this change. This probe
-        // documents why extending the enum alone cannot safely publish OEE.
-        var candidate = CreateUnavailable(false, (OperationalMetricEvaluationReasonCode)6);
+        // A reason without its witness/policy is rejected before serialization.
+        Assert.Throws<ArgumentException>(() => CreateUnavailable(false,
+            OperationalMetricEvaluationReasonCode.RunningOutsidePlannedProduction));
+        // V1 continues to reject unsupported future enum slots.
+        var candidate = CreateUnavailable(false, (OperationalMetricEvaluationReasonCode)7);
         var error = Assert.Throws<InvalidOperationException>(() => OperationalMetricDependencySnapshotV1Codec.Encode(candidate));
         Assert.Contains("Unsupported operational metric reason code", error.Message);
     }

@@ -1,3 +1,4 @@
+using FactoryConnect.Core.Metrics;
 using System.Data;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
@@ -110,7 +111,8 @@ internal sealed partial class SqlServerMetricAggregationStore
         return new OperationalMetricComponentSnapshot(
             request.EvaluationKey,
             requiredRevision,
-            components);
+            components,
+            AvailabilityScopeConflictEvidenceBuilder.Build(request, requiredRevision, inputs, components));
     }
 
     private async Task<MetricAggregateValue?> ReadCompletedReferenceTimeAggregateAsync(

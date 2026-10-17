@@ -11,14 +11,15 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
     public OperationalMetricEvaluator(
         IOperationalMetricDefinitionCatalog catalog,
         IOperationalMetricComponentSnapshotReader snapshotReader,
-        MetricAggregationProcessorId aggregationProcessorId)
+        MetricAggregationProcessorId aggregationProcessorId,
+        bool useAvailabilityContainmentV1 = false)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(snapshotReader);
         ArgumentNullException.ThrowIfNull(aggregationProcessorId);
 
         _planner = new OperationalMetricEvaluationPlanner(catalog);
-        _sessionFactory = new OperationalMetricEvaluationSessionFactory(snapshotReader, aggregationProcessorId);
+        _sessionFactory = new OperationalMetricEvaluationSessionFactory(snapshotReader, aggregationProcessorId, useAvailabilityContainmentV1);
     }
 
     public async ValueTask<OperationalMetricEvaluation> EvaluateAsync(
@@ -66,6 +67,13 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                     $"Metric '{definition.Id}' has an unsupported formula contract."),
             };
 
+            if (session.UseAvailabilityContainmentV1 && evaluation.EvaluationPolicyId is null)
+            {
+                evaluation = new OperationalMetricEvaluation(evaluation.Key, evaluation.Status, evaluation.Value,
+                    evaluation.Unit, evaluation.ReasonCode, evaluation.ReasonOperandName, evaluation.SourceRevision,
+                    evaluation.OperandEvidence, evaluation.DependencyEvidence, evaluation.AvailabilityScopeConflictEvidence,
+                    AvailabilityContainmentV1.PolicyId);
+            }
             session.CompleteEvaluation(definitionId, evaluation);
             return evaluation;
         }
@@ -169,6 +177,23 @@ public sealed class OperationalMetricEvaluator : IOperationalMetricEvaluator
                 denominatorOperand.OperandName,
                 session.Snapshot.Revision,
                 evidence);
+        }
+
+        if (session.UseAvailabilityContainmentV1 && session.Snapshot.AvailabilityScopeConflictEvidence is { } conflict &&
+            definition.Id == BuiltInOperationalMetricDefinitions.AvailabilityId)
+        {
+            if (ratio.NumeratorOperand != "ActualProductionTime" || ratio.DenominatorOperand != "PlannedOperatingTime" ||
+                definition.Operands.Count != 2 || numeratorKey != MetricInputKeys.ActualProductionTime ||
+                denominatorKey != MetricInputKeys.PlannedOperatingTime || denominator.Aggregate.Value < 0 ||
+                numerator.SourceIdentity != conflict.Numerator.SourceIdentity || numerator.Aggregate != conflict.Numerator.Aggregate ||
+                denominator.SourceIdentity != conflict.Denominator.SourceIdentity || denominator.Aggregate != conflict.Denominator.Aggregate)
+            {
+                throw new InvalidDataException("Availability definition does not match the witnessed operand contract.");
+            }
+            return new OperationalMetricEvaluation(evaluationKey, OperationalMetricEvaluationStatus.Unavailable,
+                null, definition.ResultUnit, OperationalMetricEvaluationReasonCode.RunningOutsidePlannedProduction,
+                numeratorOperand.OperandName, session.Snapshot.Revision, evidence,
+                availabilityScopeConflictEvidence: conflict, evaluationPolicyId: AvailabilityContainmentV1.PolicyId);
         }
 
         var logicalValue = numerator.Aggregate.Value / denominator.Aggregate.Value;

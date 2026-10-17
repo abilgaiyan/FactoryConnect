@@ -17,6 +17,7 @@ public enum OperationalMetricEvaluationReasonCode
     UnsupportedScope,
     DependencyUnavailable,
     DependencyInsufficientEvidence,
+    RunningOutsidePlannedProduction = 6,
 }
 
 public sealed record OperationalMetricAggregateSourceIdentity
@@ -188,7 +189,8 @@ public sealed record OperationalMetricComponentSnapshot
     public OperationalMetricComponentSnapshot(
         OperationalMetricEvaluationKey evaluationKey,
         MetricAggregationCheckpoint revision,
-        IEnumerable<OperationalMetricComponent> components)
+        IEnumerable<OperationalMetricComponent> components,
+        AvailabilityScopeConflictEvidenceV1? availabilityScopeConflictEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(evaluationKey);
         ArgumentNullException.ThrowIfNull(revision);
@@ -229,6 +231,8 @@ public sealed record OperationalMetricComponentSnapshot
             }
         }
 
+        availabilityScopeConflictEvidence?.ValidateBinding(evaluationKey, revision, snapshot);
+        AvailabilityScopeConflictEvidence = availabilityScopeConflictEvidence;
         EvaluationKey = evaluationKey;
         Revision = revision;
         Components = new ReadOnlyCollection<OperationalMetricComponent>(snapshot);
@@ -239,6 +243,8 @@ public sealed record OperationalMetricComponentSnapshot
     public MetricAggregationCheckpoint Revision { get; }
 
     public IReadOnlyList<OperationalMetricComponent> Components { get; }
+
+    public AvailabilityScopeConflictEvidenceV1? AvailabilityScopeConflictEvidence { get; }
 }
 
 public sealed record OperationalMetricComponentSnapshotRequest
@@ -246,7 +252,8 @@ public sealed record OperationalMetricComponentSnapshotRequest
     public OperationalMetricComponentSnapshotRequest(
         OperationalMetricEvaluationKey evaluationKey,
         MetricAggregationProcessorId processorId,
-        IEnumerable<OperationalMetricOperandDefinition> operands)
+        IEnumerable<OperationalMetricOperandDefinition> operands,
+        bool includeAvailabilityScopeConflictEvidence = false)
     {
         ArgumentNullException.ThrowIfNull(evaluationKey);
         ArgumentNullException.ThrowIfNull(processorId);
@@ -268,6 +275,7 @@ public sealed record OperationalMetricComponentSnapshotRequest
         EvaluationKey = evaluationKey;
         ProcessorId = processorId;
         Operands = new ReadOnlyCollection<OperationalMetricOperandDefinition>(operandSnapshot);
+        IncludeAvailabilityScopeConflictEvidence = includeAvailabilityScopeConflictEvidence;
     }
 
     public OperationalMetricEvaluationKey EvaluationKey { get; }
@@ -275,6 +283,8 @@ public sealed record OperationalMetricComponentSnapshotRequest
     public MetricAggregationProcessorId ProcessorId { get; }
 
     public IReadOnlyList<OperationalMetricOperandDefinition> Operands { get; }
+
+    public bool IncludeAvailabilityScopeConflictEvidence { get; }
 }
 
 public interface IOperationalMetricComponentSnapshotReader
@@ -295,7 +305,9 @@ public sealed record OperationalMetricEvaluation
         string? reasonOperandName,
         MetricAggregationCheckpoint sourceRevision,
         IEnumerable<MetricOperandEvidence> operandEvidence,
-        IEnumerable<OperationalMetricDependencyEvidence>? dependencyEvidence = null)
+        IEnumerable<OperationalMetricDependencyEvidence>? dependencyEvidence = null,
+        AvailabilityScopeConflictEvidenceV1? availabilityScopeConflictEvidence = null,
+        string? evaluationPolicyId = null)
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(unit);
@@ -353,6 +365,25 @@ public sealed record OperationalMetricEvaluation
             throw new ArgumentException("Non-calculated evaluations require a reason and no value.", nameof(status));
         }
 
+        if (evaluationPolicyId is not null && evaluationPolicyId != AvailabilityContainmentV1.PolicyId)
+        {
+            throw new ArgumentException("Unsupported evaluation policy.", nameof(evaluationPolicyId));
+        }
+        if ((reasonCode == OperationalMetricEvaluationReasonCode.RunningOutsidePlannedProduction) != (availabilityScopeConflictEvidence is not null) ||
+            (availabilityScopeConflictEvidence is not null && (status != OperationalMetricEvaluationStatus.Unavailable || evaluationPolicyId != AvailabilityContainmentV1.PolicyId)))
+        {
+            throw new ArgumentException("Conflict classification requires its witness and versioned policy.", nameof(availabilityScopeConflictEvidence));
+        }
+        if (availabilityScopeConflictEvidence is not null &&
+            key.DefinitionId != new OperationalMetricDefinitionId(CanonicalMetricKeys.Availability, "1.0"))
+        {
+            throw new ArgumentException("Conflict witness applies only to built-in Availability 1.0.", nameof(key));
+        }
+        availabilityScopeConflictEvidence?.ValidateBinding(key, sourceRevision, evidenceSnapshot.Select(evidence =>
+            new OperationalMetricComponent(evidence.OperandName, evidence.SourceIdentity, evidence.Dimension,
+                new MetricAggregateValue(evidence.Value, evidence.Unit, evidence.InputCount, evidence.FirstInputTimestamp, evidence.LastInputTimestamp))));
+        AvailabilityScopeConflictEvidence = availabilityScopeConflictEvidence;
+        EvaluationPolicyId = evaluationPolicyId;
         Key = key;
         Status = status;
         Value = value;
@@ -385,6 +416,10 @@ public sealed record OperationalMetricEvaluation
     public IReadOnlyList<OperationalMetricDependencyEvidence> DependencyEvidence { get; }
 
     public IReadOnlyList<OperationalMetricOperandEvidence> Evidence { get; }
+
+    public AvailabilityScopeConflictEvidenceV1? AvailabilityScopeConflictEvidence { get; }
+
+    public string? EvaluationPolicyId { get; }
 }
 
 public interface IOperationalMetricEvaluator

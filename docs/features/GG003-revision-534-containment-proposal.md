@@ -1,6 +1,6 @@
 # GG-003 revision 534 — containment contract proposal
 
-Status: evidence-gap branch selected under requirement 4. **No runtime containment, new reason, schema migration, database replay or recovery is implemented by this change.** Domain validation remains intact. This proposal and offline characterization tests are the review artifact; they do not unblock revision 534.
+Status: **Stage A evidence/evaluation implementation, opt-in only; pending CI and contract review.** Stage B is held. No production composition, schema migration, database replay, recovery or deployment is enabled. Domain validation remains intact. This change does not unblock production revision 534.
 
 ## Decision
 
@@ -52,7 +52,7 @@ Append a reason with an explicit numeric value (proposed slot 6, RunningOutsideP
 4. A versioned processor/policy selection must make new failure classification auditable. Do not replay incompatible new semantics into an already-published legacy logical slot or imply all retained historical assessments were reclassified. Verify exact-version report selection and deployment compatibility before enabling a new processor.
 5. Add real-SQL round-trip, idempotent publication, evidence-tamper rejection, migration-upgrade, legacy V1 golden-byte, new codec canonicality and HTTP null-value/reason tests. Use a newly created isolated fixture database. Do not use either RCA database as a mutable SQL fixture.
 
-## Tests in this change
+## Original characterization baseline
 
 Gg003AvailabilityContainmentContractTests uses a sanitized offline fixture of the 34 operand contributions (31 running, 3 planned), retaining fact/source identities and boundaries. It reconstructs sums with the real contribution aggregator and uses a snapshot-reader test adapter; it does not exercise live SQL or invoke a projection runtime. Tests cover both exact period identities, exact ratio/domain rejection, loss of eligibility information, valid zero/fraction/one, zero denominator with OEE unavailability and aggregate provenance, missing operands, and unrelated Quality domain failure.
 
@@ -89,3 +89,59 @@ Deployment IDs in this review artifact are deterministic aliases, not production
 The sanitized Stage A fixture was checked against all 34 selected original contributions, the 167-fact normalized source, raw SQL JSON output, and the operand CSV. Source values, ordering and provenance relationships match; original identifiers and SQL export metadata are excluded. An additional offline integrity test checks the fixture digest, revision, identities, duration conservation, ordering and ownership.
 
 After sanitization: 40 core characterization/evaluator/product/evidence tests and 10 database-free persistence/HTTP tests passed (50 total). No SQL diagnostic category or database fixture ran. The original artifacts and identity map remain local; Stage B, recovery and deployment have not begun.
+
+
+## Stage A implementation and review map
+
+`AvailabilityScopeConflictEvidenceBuilder.Build` consumes the same loaded committed
+contributions as each `ReadAtRevisionAsync` reader. It validates the cut, rejects
+late/foreign inputs, reaggregates the exact period operand sets and compares full
+aggregate metadata before selecting the lowest positive out-of-plan running
+position. A running fact elsewhere in the ledger cannot serve as a witness.
+The immutable witness constructor is internal to Abstractions/Core; callers cannot
+manufacture or mutate a proof from just flags and a numeric ratio.
+
+The denominator contract is explicitly `duration.planned-production/eligibility-v1`:
+only seconds-valued duration facts derived from eligibility=true and a nonempty
+planned assignment belong to that operand. Both source IDs and exact duration
+conservation are required. The builder rejects missing/inconsistent eligibility;
+it does not certify the schedule, the effective POT configuration or approval.
+The witness is bound to both complete aggregate identities/values/counts/bounds,
+period, stream and revision. Snapshot/evaluation/projection construction rejects
+rebinding to a foreign cut or a changed aggregate.
+
+`OperationalMetricEvaluator(..., useAvailabilityContainmentV1: true)` explicitly
+opts into policy `availability-scope-containment/1`. Existing constructors and
+production composition use the default legacy behavior. The coherent production
+batch source is unchanged and never requests witnesses. The opt-in evaluator
+uses the new reason only for Availability 1.0 with the declared operand mapping,
+a positive denominator and a valid witness. Missing/zero retain their existing
+precedence; unwitnessed out-of-domain values still throw. OEE retains the nested
+Availability witness and both original aggregate operands.
+
+Every opt-in evaluation, including calculated and missing/zero outcomes, carries
+the versioned policy. Projection creation requires the exact processor identity
+`operational-metrics:<machine>:builtins-v1-availability-containment-v1`; it rejects
+reuse of `builtins-v1`. Recursive projection construction preserves policy and
+witness. Legacy evaluation/projection remains separate and unchanged.
+
+Stage A deliberately cannot publish: `OperationalMetricProjectionCommit` rejects
+policy-tagged projections, and frozen FCDS V1 rejects the new evidence/policy
+rather than silently losing it. Existing V1 bytes are unchanged. These guards
+must remain until Stage B supplies reviewed SQL/codec/replay/query compatibility.
+There is no API version-selection activation in Stage A. Stage B must prove old
+and new durable processors coexist and that HTTP queries select the exact
+intended processor before recovery is authorized.
+
+`Gg003AvailabilityStageATests` exercises the real in-memory historical reader,
+including later-cut exclusion, deterministic selection, exact 534 outcomes in
+both scopes, 75% witnessed versus unwitnessed behavior, invalid evidence,
+foreign binding, unrelated-period running, OEE/projection retention and processor
+publication guards. Aggregate-only missing/zero probes remain explicitly separate.
+The SQL reader uses the same builder, but no real-SQL containment compatibility
+claim is made at this stage. The original 167-fact export and identity-map
+comparison remain a local provenance attestation, not independent remote proof.
+
+Validation: no local .NET SDK is available in the review environment. GitHub CI
+is the build/test authority for this implementation; results must be recorded
+for the final reviewed commit. No new pass count is asserted before CI completes.

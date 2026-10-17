@@ -11,7 +11,7 @@ namespace FactoryConnect.Core.Tests;
 // Characterization tests for the evidence-gap branch, not an implemented containment.
 // Uses sanitized exact offline evidence; identity aliases are not deployment IDs.
 // Never opens or replays the RCA database.
-public sealed class Gg003AvailabilityContainmentContractTests
+public sealed partial class Gg003AvailabilityContainmentContractTests
 {
     private static readonly MachineId Machine = new(Guid.Parse("11111111-1111-1111-1111-111111111111"));
     private static readonly SiteId Site = new("rca-site");

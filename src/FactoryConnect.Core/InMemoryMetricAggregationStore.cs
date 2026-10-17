@@ -1,3 +1,4 @@
+using FactoryConnect.Core.Metrics;
 using FactoryConnect.Abstractions;
 
 namespace FactoryConnect.Core;
@@ -337,7 +338,8 @@ public sealed class InMemoryMetricAggregationStore :
             return ValueTask.FromResult(new OperationalMetricComponentSnapshot(
                 request.EvaluationKey,
                 requiredRevision,
-                components));
+                components,
+                AvailabilityScopeConflictEvidenceBuilder.Build(request, requiredRevision, historicalInputs, components)));
         }
     }
 

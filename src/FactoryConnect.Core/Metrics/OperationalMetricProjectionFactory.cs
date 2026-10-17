@@ -64,7 +64,9 @@ public sealed class OperationalMetricProjectionFactory
             evaluation.ReasonOperandName,
             evaluation.SourceRevision,
             operandEvidence,
-            dependencyEvidence);
+            dependencyEvidence,
+            evaluation.AvailabilityScopeConflictEvidence,
+            evaluation.EvaluationPolicyId);
     }
 
     private static OperationalMetricComponentProjectionEvidence ToDurableComponentEvidence(

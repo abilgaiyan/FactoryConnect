@@ -21,6 +21,11 @@ internal static class OperationalMetricDependencySnapshotV1Codec
     public static byte[] Encode(OperationalMetricProjection projection)
     {
         ArgumentNullException.ThrowIfNull(projection);
+        if (projection.EvaluationPolicyId is not null || projection.AvailabilityScopeConflictEvidence is not null)
+        {
+            throw new NotSupportedException("Frozen V1 cannot encode containment policy or witness evidence.");
+        }
+
 
         var state = new EncodingState();
         var encoded = EncodeProjection(projection, depth: 1, state);
@@ -67,6 +72,10 @@ internal static class OperationalMetricDependencySnapshotV1Codec
         WriteStatus(stream, projection.Status);
         WriteOptionalDecimal(stream, projection.Value);
         WriteRequiredString(stream, projection.Unit);
+        if (projection.EvaluationPolicyId is not null || projection.AvailabilityScopeConflictEvidence is not null)
+        {
+            throw new NotSupportedException("Frozen V1 cannot encode containment policy or witness evidence.");
+        }
         WriteOptionalReason(stream, projection.ReasonCode);
         WriteOptionalString(stream, projection.ReasonOperandName);
         WriteSourceRevision(stream, projection.SourceRevision);
