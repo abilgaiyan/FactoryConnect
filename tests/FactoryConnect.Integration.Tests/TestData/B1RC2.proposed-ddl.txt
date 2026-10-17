@@ -1,0 +1,274 @@
+-- No CASCADE relationship is introduced anywhere in this migration.
+-- Existing unique keys used below already exist in migrations 002/005/011.
+
+ALTER TABLE dbo.OperationalMetricProjectionProcessor ADD
+    PublicationFormatVersion smallint NOT NULL
+        CONSTRAINT DF_OMPP_PublicationFormat DEFAULT (1),
+    EvaluationPolicyId nvarchar(64) COLLATE Latin1_General_100_BIN2 NULL;
+
+-- B1 VALIDATION BATCH --
+ALTER TABLE dbo.OperationalMetricProjectionProcessor ADD
+    CONSTRAINT CK_OMPP_FormatPolicy CHECK
+    (
+        (PublicationFormatVersion = 1 AND EvaluationPolicyId IS NULL)
+        OR
+        (PublicationFormatVersion = 2
+         AND EvaluationPolicyId IS NOT NULL
+         AND EvaluationPolicyId = N'availability-scope-containment/1')
+    ),
+    CONSTRAINT UQ_OMPP_Format UNIQUE
+        (OperationalMetricProjectionProcessorRowId, PublicationFormatVersion),
+    CONSTRAINT UQ_OMPP_Source UNIQUE
+        (OperationalMetricProjectionProcessorRowId,
+         MetricAggregationProcessorRowId, MetricInputStreamRowId);
+
+-- B1 VALIDATION BATCH --
+CREATE TABLE dbo.OperationalMetricConflictWitnessArchive
+(
+    WitnessId binary(32) NOT NULL,
+    WitnessCodecVersion smallint NOT NULL,
+    WitnessPayload varbinary(max) NOT NULL,
+    MetricAggregationProcessorRowId bigint NOT NULL,
+    MetricInputStreamRowId bigint NOT NULL,
+    SourceRevisionPosition decimal(20,0) NOT NULL,
+    ContributionFactRowId bigint NOT NULL,
+    ContributionPosition decimal(20,0) NOT NULL,
+
+    CONSTRAINT PK_OMCWA PRIMARY KEY (WitnessId),
+    CONSTRAINT CK_OMCWA_Codec CHECK (WitnessCodecVersion = 1),
+    CONSTRAINT CK_OMCWA_Length CHECK
+        (DATALENGTH(WitnessPayload) BETWEEN 1 AND 65536),
+    CONSTRAINT CK_OMCWA_Positions CHECK
+        (SourceRevisionPosition BETWEEN 1 AND 18446744073709551615
+         AND ContributionPosition BETWEEN 1 AND SourceRevisionPosition),
+    CONSTRAINT FK_OMCWA_Source FOREIGN KEY
+        (MetricAggregationProcessorRowId, MetricInputStreamRowId)
+        REFERENCES dbo.MetricAggregationProcessor
+        (MetricAggregationProcessorRowId, MetricInputStreamRowId),
+    CONSTRAINT FK_OMCWA_Revision FOREIGN KEY
+        (MetricAggregationProcessorRowId, SourceRevisionPosition)
+        REFERENCES dbo.MetricAggregationRevision
+        (MetricAggregationProcessorRowId, Position),
+    CONSTRAINT FK_OMCWA_Contribution FOREIGN KEY
+        (MetricAggregationProcessorRowId, ContributionFactRowId)
+        REFERENCES dbo.MetricAggregationContribution
+        (MetricAggregationProcessorRowId, MetricInputFactRowId),
+    CONSTRAINT FK_OMCWA_FactPosition FOREIGN KEY
+        (ContributionFactRowId, MetricInputStreamRowId, ContributionPosition)
+        REFERENCES dbo.MetricInputFact
+        (MetricInputFactRowId, MetricInputStreamRowId, Position)
+);
+
+-- B1 VALIDATION BATCH --
+CREATE TABLE dbo.OperationalMetricPublicationResultArchive
+(
+    ResultId binary(32) NOT NULL,
+    OperationalMetricProjectionProcessorRowId bigint NOT NULL,
+    PublicationFormatVersion smallint NOT NULL,
+    MetricAggregationProcessorRowId bigint NOT NULL,
+    MetricInputStreamRowId bigint NOT NULL,
+    SourceRevisionPosition decimal(20,0) NOT NULL,
+    EvaluationKeyHash binary(32) NOT NULL,
+    EvaluationKeyBinary varbinary(max) NOT NULL,
+    EvaluationPolicyId nvarchar(64) COLLATE Latin1_General_100_BIN2 NOT NULL,
+    ResultCodecVersion smallint NOT NULL,
+    ResultPayload varbinary(max) NOT NULL,
+    Status tinyint NOT NULL,
+    ReasonCode tinyint NULL,
+    ConflictWitnessId binary(32) NULL,
+
+    CONSTRAINT PK_OMPRA PRIMARY KEY (ResultId),
+    CONSTRAINT UQ_OMPRA_Slot UNIQUE
+        (OperationalMetricProjectionProcessorRowId,
+         EvaluationKeyHash, SourceRevisionPosition),
+    CONSTRAINT UQ_OMPRA_RetainedBinding UNIQUE
+        (ResultId, OperationalMetricProjectionProcessorRowId,
+         EvaluationKeyHash, SourceRevisionPosition),
+    CONSTRAINT CK_OMPRA_Format CHECK
+        (PublicationFormatVersion = 2 AND ResultCodecVersion = 2),
+    CONSTRAINT CK_OMPRA_Policy CHECK
+        (EvaluationPolicyId = N'availability-scope-containment/1'),
+    CONSTRAINT CK_OMPRA_KeyLength CHECK
+        (DATALENGTH(EvaluationKeyBinary) BETWEEN 1 AND 6992),
+    CONSTRAINT CK_OMPRA_PayloadLength CHECK
+        (DATALENGTH(ResultPayload) BETWEEN 1 AND 16777216),
+    CONSTRAINT CK_OMPRA_Position CHECK
+        (SourceRevisionPosition BETWEEN 1 AND 18446744073709551615),
+    CONSTRAINT CK_OMPRA_StatusReason CHECK
+        ((Status = 0 AND ReasonCode IS NULL)
+         OR (Status = 1 AND ReasonCode IS NOT NULL
+             AND ReasonCode IN (2,3,4,6))
+         OR (Status = 2 AND ReasonCode IS NOT NULL
+             AND ReasonCode IN (0,1,5))),
+    CONSTRAINT CK_OMPRA_WitnessShape CHECK
+        ((ReasonCode IS NOT NULL AND ReasonCode = 6 AND ConflictWitnessId IS NOT NULL)
+         OR ((ReasonCode IS NULL OR ReasonCode <> 6)
+             AND ConflictWitnessId IS NULL)),
+    CONSTRAINT FK_OMPRA_ProcessorFormat FOREIGN KEY
+        (OperationalMetricProjectionProcessorRowId, PublicationFormatVersion)
+        REFERENCES dbo.OperationalMetricProjectionProcessor
+        (OperationalMetricProjectionProcessorRowId, PublicationFormatVersion),
+    CONSTRAINT FK_OMPRA_ProcessorSource FOREIGN KEY
+        (OperationalMetricProjectionProcessorRowId,
+         MetricAggregationProcessorRowId, MetricInputStreamRowId)
+        REFERENCES dbo.OperationalMetricProjectionProcessor
+        (OperationalMetricProjectionProcessorRowId,
+         MetricAggregationProcessorRowId, MetricInputStreamRowId),
+    CONSTRAINT FK_OMPRA_Revision FOREIGN KEY
+        (MetricAggregationProcessorRowId, SourceRevisionPosition)
+        REFERENCES dbo.MetricAggregationRevision
+        (MetricAggregationProcessorRowId, Position),
+    CONSTRAINT FK_OMPRA_RootWitness FOREIGN KEY (ConflictWitnessId)
+        REFERENCES dbo.OperationalMetricConflictWitnessArchive (WitnessId)
+);
+
+-- B1 VALIDATION BATCH --
+CREATE TABLE dbo.OperationalMetricResultWitnessReference
+(
+    ResultId binary(32) NOT NULL,
+    NodePath varbinary(256) NOT NULL,
+    WitnessId binary(32) NOT NULL,
+    CONSTRAINT PK_OMRWR PRIMARY KEY (ResultId, NodePath),
+    CONSTRAINT CK_OMRWR_PathLength CHECK
+        (DATALENGTH(NodePath) BETWEEN 4 AND 256
+         AND DATALENGTH(NodePath) % 4 = 0),
+    CONSTRAINT FK_OMRWR_Result FOREIGN KEY (ResultId)
+        REFERENCES dbo.OperationalMetricPublicationResultArchive (ResultId),
+    CONSTRAINT FK_OMRWR_Witness FOREIGN KEY (WitnessId)
+        REFERENCES dbo.OperationalMetricConflictWitnessArchive (WitnessId)
+);
+
+-- B1 VALIDATION BATCH --
+ALTER TABLE dbo.OperationalMetricProjection ADD
+    PublicationFormatVersion smallint NOT NULL
+        CONSTRAINT DF_OMP_PublicationFormat DEFAULT (1),
+    EvaluationPolicyId nvarchar(64) COLLATE Latin1_General_100_BIN2 NULL,
+    ContainmentResultId binary(32) NULL,
+    ConflictWitnessId binary(32) NULL;
+
+-- B1 VALIDATION BATCH --
+ALTER TABLE dbo.OperationalMetricProjection DROP CONSTRAINT
+    CK_OperationalMetricProjection_ReasonCode,
+    CK_OperationalMetricProjection_StatusShape;
+
+-- B1 VALIDATION BATCH --
+ALTER TABLE dbo.OperationalMetricProjection ADD
+    CONSTRAINT CK_OperationalMetricProjection_ReasonCode CHECK
+        (ReasonCode IS NULL OR ReasonCode IN (0,1,2,3,4,5,6)),
+    CONSTRAINT CK_OperationalMetricProjection_StatusShape CHECK
+        ((Status = 0 AND MetricValue IS NOT NULL
+          AND DATALENGTH(MetricValue) > 0
+          AND ReasonCode IS NULL AND ReasonOperandName IS NULL)
+         OR (Status IN (1,2) AND MetricValue IS NULL
+             AND ReasonCode IS NOT NULL
+             AND ReasonCode IN (0,1,2,3,4,5,6)
+             AND (ReasonOperandName IS NULL OR DATALENGTH(ReasonOperandName) > 0))),
+    CONSTRAINT CK_OMP_FormatPolicy CHECK
+        ((PublicationFormatVersion = 1
+          AND EvaluationPolicyId IS NULL AND ContainmentResultId IS NULL
+          AND ConflictWitnessId IS NULL
+          AND (ReasonCode IS NULL OR ReasonCode IN (0,1,2,3,4,5)))
+         OR (PublicationFormatVersion = 2
+             AND EvaluationPolicyId IS NOT NULL
+             AND EvaluationPolicyId = N'availability-scope-containment/1'
+             AND ContainmentResultId IS NOT NULL)),
+    CONSTRAINT CK_OMP_WitnessShape CHECK
+        ((ReasonCode IS NOT NULL AND ReasonCode = 6 AND ConflictWitnessId IS NOT NULL)
+         OR ((ReasonCode IS NULL OR ReasonCode <> 6)
+             AND ConflictWitnessId IS NULL)),
+    CONSTRAINT FK_OMP_ProcessorFormat FOREIGN KEY
+        (OperationalMetricProjectionProcessorRowId, PublicationFormatVersion)
+        REFERENCES dbo.OperationalMetricProjectionProcessor
+        (OperationalMetricProjectionProcessorRowId, PublicationFormatVersion),
+    CONSTRAINT FK_OMP_ContainmentResult FOREIGN KEY
+        (ContainmentResultId, OperationalMetricProjectionProcessorRowId,
+         EvaluationKeyHash, SourceRevisionPosition)
+        REFERENCES dbo.OperationalMetricPublicationResultArchive
+        (ResultId, OperationalMetricProjectionProcessorRowId,
+         EvaluationKeyHash, SourceRevisionPosition),
+    CONSTRAINT FK_OMP_ConflictWitness FOREIGN KEY (ConflictWitnessId)
+        REFERENCES dbo.OperationalMetricConflictWitnessArchive (WitnessId);
+
+-- B1 VALIDATION BATCH --
+ALTER TABLE dbo.OperationalMetricProjectionEvidence
+    DROP CONSTRAINT CK_OperationalMetricProjectionEvidence_SubtypeShape;
+ALTER TABLE dbo.OperationalMetricProjectionEvidence ADD
+CONSTRAINT CK_OperationalMetricProjectionEvidence_SubtypeShape CHECK
+    (
+        (
+            EvidenceKind = 1
+            AND ComponentKey IS NOT NULL
+            AND DATALENGTH(ComponentKey) > 0
+            AND MetricDimension IS NOT NULL
+            AND MetricDimension IN (0,1,2)
+            AND ComponentValue IS NOT NULL
+            AND DATALENGTH(ComponentValue) > 0
+            AND ComponentUnit IS NOT NULL
+            AND DATALENGTH(ComponentUnit) > 0
+            AND InputCount IS NOT NULL
+            AND InputCount BETWEEN 1 AND 9223372036854775807
+            AND FirstInputTimestamp IS NOT NULL
+            AND LastInputTimestamp IS NOT NULL
+            AND DATEPART(TZOFFSET, FirstInputTimestamp) = 0
+            AND DATEPART(TZOFFSET, LastInputTimestamp) = 0
+            AND LastInputTimestamp >= FirstInputTimestamp
+            AND DependencyMetricKey IS NULL
+            AND DependencyDefinitionVersion IS NULL
+            AND DependencySnapshotCodecVersion IS NULL
+            AND DependencySnapshotHash IS NULL
+            AND DependencySnapshotBinary IS NULL
+        )
+        OR
+        (
+            EvidenceKind = 2
+            AND ComponentKey IS NULL
+            AND MetricDimension IS NULL
+            AND ComponentValue IS NULL
+            AND ComponentUnit IS NULL
+            AND InputCount IS NULL
+            AND FirstInputTimestamp IS NULL
+            AND LastInputTimestamp IS NULL
+            AND DependencyMetricKey IS NOT NULL
+            AND DATALENGTH(DependencyMetricKey) > 0
+            AND DependencyDefinitionVersion IS NOT NULL
+            AND DATALENGTH(DependencyDefinitionVersion) > 0
+            AND DependencySnapshotCodecVersion IS NOT NULL
+            AND DependencySnapshotCodecVersion IN (1,2)
+            AND DependencySnapshotHash IS NOT NULL
+            AND DependencySnapshotBinary IS NOT NULL
+            AND DATALENGTH(DependencySnapshotBinary) BETWEEN 1 AND 16777216
+        )
+    );
+
+-- B1 VALIDATION BATCH --
+CREATE TRIGGER dbo.TR_OMCWA_Immutable
+ON dbo.OperationalMetricConflictWitnessArchive
+AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM deleted)
+        THROW 51021, 'Immutable operational metric archive cannot be updated or deleted.', 1;
+END;
+
+-- B1 VALIDATION BATCH --
+CREATE TRIGGER dbo.TR_OMPRA_Immutable
+ON dbo.OperationalMetricPublicationResultArchive
+AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM deleted)
+        THROW 51021, 'Immutable operational metric archive cannot be updated or deleted.', 1;
+END;
+
+-- B1 VALIDATION BATCH --
+CREATE TRIGGER dbo.TR_OMRWR_Immutable
+ON dbo.OperationalMetricResultWitnessReference
+AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM deleted)
+        THROW 51021, 'Immutable operational metric archive cannot be updated or deleted.', 1;
+END;

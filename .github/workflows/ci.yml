@@ -90,6 +90,64 @@ jobs:
           --configuration Release
           --no-restore
 
+      - name: Check B1 prototype fixture and exact-cut path first
+        env:
+          B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1ConcurrencyAcceptanceTests.C1AdvancementAfterPublicationPrefixCannotLeakIntoBoundCut"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=b1-concurrency-smoke.trx"
+          --results-directory TestResults/B1Concurrency
+
+      - name: Validate B1 C1-C8 transaction prototype
+        env:
+          B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1ConcurrencyAcceptanceTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=b1-concurrency.trx"
+          --results-directory TestResults/B1Concurrency
+
+      - name: Retain B1 concurrency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b1-concurrency-evidence
+          path: TestResults/B1Concurrency
+          if-no-files-found: warn
+
+      - name: Validate isolated B1 RC2 proposed schema
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1Rc2DesignValidationTests"
+          --logger "console;verbosity=normal"
+
+      - name: Characterize B1 source writer locks (not C1-C8 acceptance)
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1SourceWriterLockCharacterizationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=b1-source-locks.trx"
+          --results-directory TestResults/B1SourceLocks
+
+      - name: Retain B1 source lock evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b1-source-lock-evidence
+          path: TestResults/B1SourceLocks
+          if-no-files-found: warn
+
       - name: Accept GG-003 revision-534 SQL historical reader
         run: >-
           dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
