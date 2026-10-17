@@ -1,0 +1,430 @@
+using System.Collections.Concurrent;
+using System.Data;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
+using FactoryConnect.Abstractions;
+using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
+using FactoryConnect.Persistence.SqlServer;
+using Microsoft.Data.SqlClient;
+using Xunit.Abstractions;
+
+namespace FactoryConnect.Integration.Tests;
+
+// Validation executable only. JSON receipts and B1-only digest domains intentionally
+// cannot be mistaken for FCWE/FCDS production codecs or publication identities.
+internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
+{
+    internal const string Policy = AvailabilityContainmentV1.PolicyId;
+    private readonly SqlStartupIsolatedDatabase database;
+    private readonly ITestOutputHelper output;
+    private readonly string eventSession = "B1_" + Guid.NewGuid().ToString("N");
+    private bool eventsStarted;
+    internal readonly ConcurrentQueue<object> Events = new();
+    internal string ConnectionString => database.ConnectionString;
+    internal readonly MachineId Machine = new(Guid.NewGuid());
+    internal readonly MetricAggregationProcessorId Aggregation = new("b1-concurrency-source");
+    internal MetricAggregationCheckpoint Initial = null!, Bound = null!;
+    internal readonly List<PositionedMetricInputFact> Inputs = [];
+    internal ProductionStandardAuthorityCut Standards = null!;
+    internal PublishedProductionReferenceTimeOutcome Outcome = null!;
+    internal long AggregationRow, StreamRow, TemplateRow;
+    internal byte[] KeyHash = [], KeyBytes = [];
+    internal OperationalMetricEvaluationKey Key = null!;
+    internal OperationalMetricProjection Template = null!;
+    internal SqlServerMetricAggregationStore AggregationStore => new(ConnectionString);
+    internal SqlServerProductionReferenceTimePublicationTransitionStore Transitions => new(ConnectionString);
+    internal SqlServerProductionReferenceTimeTransitionOutcomeStore Admissions => new(ConnectionString);
+    internal SqlServerProductionReferenceTimeOutcomeStore Legacy => new(ConnectionString);
+    internal readonly SiteId Site = new("B1-SITE");
+    internal readonly DateTimeOffset Start = new(2026, 10, 16, 6, 0, 0, TimeSpan.Zero);
+    internal ShiftOccurrenceId Shift => new(Site, new("B1-SCHEDULE"), new("B1-SHIFT"), Start, Start.AddHours(8));
+    private B1ConcurrencyPrototype(SqlStartupIsolatedDatabase database, ITestOutputHelper output)
+    { this.database = database; this.output = output; }
+
+    internal static async Task<B1ConcurrencyPrototype> Create(ITestOutputHelper output, bool complete = true)
+    {
+        var f = new B1ConcurrencyPrototype(await SqlStartupIsolatedDatabase.CreateAsync(), output);
+        try { await f.Initialize(complete); return f; }
+        catch { await f.DisposeAsync(); throw; }
+    }
+    private async Task Initialize(bool complete)
+    {
+        await using var c = await Open();
+        await Exec(c, null, $"CREATE EVENT SESSION [{eventSession}] ON SERVER ADD EVENT sqlserver.xml_deadlock_report ADD TARGET package0.ring_buffer WITH(MAX_DISPATCH_LATENCY=1 SECONDS); ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=START;");
+        eventsStarted = true;
+        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(c, TimeSpan.FromMinutes(2), CancellationToken.None);
+        var authority = new SqlServerProductionStandardAuthority(ConnectionString);
+        await authority.PublishAsync(new ProductionStandardVersion
+        {
+            VersionId = "b1-approved-standard", CompanyId = new("B1-COMPANY"), SiteId = Site,
+            PartId = new("B1-PART"), OperationId = new("B1-OP"), MachineId = Machine,
+            SecondsPerUnit = 5m, EffectiveFromUtc = Start.AddDays(-1), SourceReference = "synthetic-approved-fixture", PublishedRevision = 1,
+        });
+        Standards = await authority.ReadCutAsync(1);
+        var padding = await Append("b1.padding", 1, null);
+        Initial = new(Aggregation, padding.StreamId, padding.Position);
+        await AggregationStore.CommitAsync(new(Aggregation, null, Initial, [padding]), CancellationToken.None);
+        Assert.True((await new SqlServerProductionReferenceTimeConvergenceCoordinator(ConnectionString)
+            .ConvergeAsync(Initial, Machine, null)).IsCompleted);
+        var quantity = await Append(MetricInputFactKeys.PartCountIncrement, 2, null);
+        var running = await Append(MetricInputFactKeys.RunningDuration, 3, false);
+        var planned = await Append(MetricInputFactKeys.PlannedProductionDuration, 4, true);
+        Bound = new(Aggregation, planned.StreamId, planned.Position);
+        await AggregationStore.CommitAsync(new(Aggregation, Initial, Bound, [quantity, running, planned]), CancellationToken.None);
+        var source = Assert.Single(await AggregationStore.ReadProductionQuantityTransitionSourcesAsync(Bound, Machine, Initial.Position));
+        Outcome = new(new(1), ProductionStandardResolver.Resolve(source.Evidence, source.ShiftOccurrenceId, source.ProductionDayId, Standards));
+        if (complete) { await Begin(); await Admissions.AdmitAsync(Aggregation, Bound.Position, Outcome); await Transitions.CompleteAsync(Aggregation, Bound.Position); }
+        Key = new(Machine, new OperationalMetricPeriodId.Shift(Shift), BuiltInOperationalMetricDefinitions.AvailabilityId, OperationalMetricEvaluationContextKey.Unpartitioned);
+        var templateProcessor = new OperationalMetricProjectionProcessorId("b1-legacy-template");
+        Template = new(templateProcessor, Key, OperationalMetricEvaluationStatus.Calculated, 0.75m, "ratio", null, null, Bound,
+            Snapshot(Inputs).Components.Select(component => new OperationalMetricComponentProjectionEvidence(component.OperandName,
+                component.SourceIdentity, Bound, component.Dimension, component.Aggregate.Value, component.Aggregate.Unit,
+                component.Aggregate.InputCount, component.Aggregate.FirstInputTimestamp, component.Aggregate.LastInputTimestamp)));
+        var commit = new OperationalMetricProjectionCommit(templateProcessor, null,
+            new(templateProcessor, Bound, new([Key])), [Template]);
+        await new SqlServerOperationalMetricProjectionCommitTransaction(ConnectionString).ExecuteAsync(commit,
+            async (context, token) => await SqlServerOperationalMetricProjectionPublication.ExecuteAsync(context, commit, token), CancellationToken.None);
+        AggregationRow = (long)(await Scalar(c, null, "SELECT MetricAggregationProcessorRowId FROM dbo.MetricAggregationProcessor;"))!;
+        StreamRow = (long)(await Scalar(c, null, "SELECT MetricInputStreamRowId FROM dbo.MetricInputStream;"))!;
+        TemplateRow = (long)(await Scalar(c, null, "SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjection;"))!;
+        await using (var cmd = c.CreateCommand())
+        {
+            cmd.CommandText = "SELECT EvaluationKeyHash,EvaluationKeyBinary FROM dbo.OperationalMetricProjection;";
+            await using var r = await cmd.ExecuteReaderAsync(); await r.ReadAsync(); KeyHash = (byte[])r[0]; KeyBytes = (byte[])r[1];
+        }
+        using var resource = typeof(B1ConcurrencyPrototype).Assembly.GetManifestResourceStream("B1RC2.ProposedDdl")!;
+        using var reader = new StreamReader(resource);
+        await using var t = c.BeginTransaction();
+        foreach (var batch in B1ProposalBatchReader.Split(await reader.ReadToEndAsync())) await Exec(c, t, batch);
+        await t.CommitAsync();
+        await Exec(c, null, "CREATE TABLE dbo.B1MutationAudit (Id bigint IDENTITY, TableName nvarchar(128));");
+        foreach (var table in new[] { "OperationalMetricConflictWitnessArchive", "OperationalMetricPublicationResultArchive", "OperationalMetricResultWitnessReference", "OperationalMetricProjection", "OperationalMetricProjectionEvidence", "OperationalMetricProjectionManifest", "OperationalMetricProjectionCheckpoint" })
+            await Exec(c, null, $"CREATE TRIGGER dbo.B1Audit_{table} ON dbo.{table} AFTER INSERT,UPDATE,DELETE AS INSERT dbo.B1MutationAudit(TableName) VALUES (N'{table}');");
+        await Exec(c, null, "CREATE TRIGGER dbo.B1CheckpointFault ON dbo.OperationalMetricProjectionCheckpoint AFTER UPDATE AS IF CONVERT(nvarchar(64),SESSION_CONTEXT(N'b1-fault'))=N'checkpoint' THROW 51088,'B1 checkpoint fault',1;");
+    }
+    internal Task<ProductionReferenceTimePublicationTransition> Begin() => Transitions.BeginAsync(Aggregation, Bound.Position, Initial.Position, new(0), 1);
+    internal async Task<PositionedMetricInputFact> Append(string key, decimal value, bool? planned)
+    {
+        var n = Inputs.Count + 1;
+        var fact = new DurableMetricInputFact
+        {
+            Id = new($"b1-fact-{n}"), Key = key, Value = value, Unit = key == MetricInputFactKeys.PartCountIncrement ? "count" : "seconds",
+            StartsAtUtc = Start.AddMinutes(n), EndsAtUtc = Start.AddMinutes(n).AddSeconds((double)value),
+            CompanyId = new("B1-COMPANY"), SiteId = Site, MachineId = Machine, ShiftId = Shift.ShiftId, ShiftScheduleAssignmentId = Shift.ShiftScheduleAssignmentId,
+            PartId = new("B1-PART"), OperationId = new("B1-OP"), IsPlannedProductionTime = planned,
+            PlannedProductionScheduleAssignmentId = planned == true ? new("B1-PLAN") : null,
+            SourceEligibilityIntervalId = planned is not null ? new($"b1-eligibility-{n}") : null,
+            SourceContextualizedActivityIntervalId = planned is not null ? new($"b1-activity-{n}") : null,
+            SourceQuantityEvidenceId = key == MetricInputFactKeys.PartCountIncrement ? new($"b1-quantity-{n}") : null,
+        };
+        var input = await new SqlServerMetricInputStore(ConnectionString).AppendAsync(new(MetricInputStreamId.ForMachine(Machine), fact, Shift, new(Site, new(2026, 10, 16))), CancellationToken.None);
+        Inputs.Add(input); return input;
+    }
+    internal OperationalMetricComponentSnapshot Snapshot(IReadOnlyList<PositionedMetricInputFact> inputs)
+    {
+        var request = new OperationalMetricComponentSnapshotRequest(Key, Aggregation,
+            BuiltInOperationalMetricDefinitions.All.Single(d => d.Id == BuiltInOperationalMetricDefinitions.AvailabilityId).Operands, true);
+        var set = MetricInputContributionAggregator.Aggregate(Bound.StreamId, inputs);
+        var components = request.Operands.Select(operand =>
+        {
+            var componentKey = ((OperationalMetricOperandSource.Component)operand.Source).ComponentKey;
+            var aggregate = set.ShiftContributions.Single(x => x.Key == new ShiftMetricAggregateKey(Machine, Shift, componentKey)).Value;
+            return new OperationalMetricComponent(operand.OperandName, new(Aggregation, Machine, Key.PeriodId, componentKey), operand.RequiredDimension, aggregate);
+        }).ToArray();
+        return new(Key, Bound, components, AvailabilityScopeConflictEvidenceBuilder.Build(request, Bound, inputs, components));
+    }
+    internal byte[] Receipt(string processor, bool reference, OperationalMetricComponentSnapshot? snapshot = null, IReadOnlyList<ProductionReferenceTimeResolution>? outcomes = null) => JsonSerializer.SerializeToUtf8Bytes(new
+    {
+        ValidationOnly = true, Policy, Processor = processor, Source = Bound, Key, Status = "Unavailable", Reason = "RunningOutsidePlannedProduction",
+        Snapshot = snapshot ?? Snapshot(Inputs.Where(x => x.Position <= Bound.Position).ToArray()),
+        R = reference ? (long?)1 : null, Outcomes = reference ? outcomes ?? [Outcome.Resolution] : [],
+    });
+    internal async Task<Publisher> NewPublisher(string name, bool reference = false)
+    {
+        var id = new OperationalMetricProjectionProcessorId("b1-validation-only:" + name);
+        await using var c = await Open();
+        var row = (long)(await Scalar(c, null, """
+            INSERT dbo.OperationalMetricProjectionProcessor(ProcessorKeyBinary,ProcessorKey,MetricAggregationProcessorRowId,MetricInputStreamRowId,PublicationFormatVersion,EvaluationPolicyId)
+            OUTPUT INSERTED.OperationalMetricProjectionProcessorRowId VALUES(@Key,@Name,@A,@S,2,@Policy);
+            """, ("@Key", StringOrderKeyV2Codec.Encode(id.Value)), ("@Name", id.Value), ("@A", AggregationRow), ("@S", StreamRow), ("@Policy", Policy)))!;
+        await Exec(c, null, "INSERT dbo.OperationalMetricProjectionCheckpoint VALUES(@P,@A);", ("@P", row), ("@A", (decimal)Initial.Position.Value));
+        return new Publisher(this, id, row, reference);
+    }
+
+    // Bounded source order under caller locks: exact revision -> exact ledger ->
+    // target terminal transition -> exact (A,R) pair -> bound R/outcomes -> standards.
+    internal async Task<byte[]> Validate(SqlConnection c, SqlTransaction t, Publisher publisher, CancellationToken token)
+    {
+        if ((int)(await Scalar(c, t, "SELECT COUNT(*) FROM dbo.MetricAggregationRevision WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND Position=@Cut;", ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value)))! != 1) throw new InvalidDataException("HistoricalEvidenceUnavailable");
+        var sql = LedgerSelect;
+        var inputs = new List<PositionedMetricInputFact>();
+        await using (var cmd = Command(c, t, sql, ("@A", AggregationRow), ("@S", StreamRow), ("@Cut", (decimal)Bound.Position.Value)))
+        await using (var r = await cmd.ExecuteReaderAsync(token))
+            while (await r.ReadAsync(token)) inputs.Add((PositionedMetricInputFact)Invoke(typeof(SqlServerMetricAggregationStore), "MaterializeHistoricalInput", r)!);
+        var snapshot = Snapshot(inputs);
+        Assert.Equal(3m, snapshot.Components.Single(x => x.OperandName == "ActualProductionTime").Aggregate.Value);
+        Assert.Equal(3UL, snapshot.AvailabilityScopeConflictEvidence!.Contribution.Position.Value);
+        var outcomes = new List<ProductionReferenceTimeResolution>();
+        if (publisher.Reference)
+        {
+            await Scalar(c, t, "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimePublicationTransition WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND TargetMetricAggregationPosition=@Cut;", ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value));
+            var transition = (ProductionReferenceTimePublicationTransition?)await (Task<ProductionReferenceTimePublicationTransition?>)Invoke(typeof(SqlServerProductionReferenceTimePublicationTransitionStore), "ReadAsync",
+                c, t, Aggregation, AggregationRow, Bound.Position, false, token)!;
+            if (transition is not { IsCompleted: true, CompletedReferenceTimeRevision: not null }) throw new InvalidDataException("HistoricalEvidenceUnavailable");
+            if (transition.CompletedReferenceTimeRevision.Value != 1) throw new InvalidDataException("StoredEvidenceIntegrityFailure");
+            await Scalar(c, t, "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimeRevision WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND ProductionReferenceTimeRevision=1;", ("@A", AggregationRow));
+            Assert.Equal(1, (int)(await Scalar(c, t, "SELECT COUNT(*) FROM dbo.ProductionReferenceTimePublicationCut WITH(HOLDLOCK) WHERE MetricAggregationProcessorRowId=@A AND MetricAggregationPosition=@Cut AND ProductionReferenceTimeRevision=1;", ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value)))!);
+            var select = (string)typeof(SqlServerProductionReferenceTimeOutcomeStore).GetField("OutcomeSelect", BindingFlags.NonPublic | BindingFlags.Static)!.GetRawConstantValue()!;
+            select = select.Replace("ProductionReferenceTimeOutcome o", "ProductionReferenceTimeOutcome o WITH(HOLDLOCK)", StringComparison.Ordinal)
+                .Replace("ProductionReferenceTimeOutcomeConflict c", "ProductionReferenceTimeOutcomeConflict c WITH(HOLDLOCK)", StringComparison.Ordinal);
+            await using (var cmd = Command(c, t, select + " WHERE o.MetricAggregationProcessorRowId=@A AND o.ProductionReferenceTimeRevision<=1 ORDER BY o.ProductionReferenceTimeRevision,o.SourceQuantityEvidenceId;", ("@A", AggregationRow)))
+            await using (var r = await cmd.ExecuteReaderAsync(token))
+                while (await r.ReadAsync(token)) outcomes.Add(((PublishedProductionReferenceTimeOutcome)Invoke(typeof(SqlServerProductionReferenceTimeOutcomeStore), "Materialize", r)!).Resolution);
+            Assert.Equal(1, (int)(await Scalar(c, t, "SELECT COUNT(*) FROM dbo.ProductionStandardAuthorityRevision WITH(HOLDLOCK) WHERE ProductionStandardAuthorityRevision=1;"))!);
+            var versions = new List<ProductionStandardVersion>();
+            await using (var cmd = Command(c, t, "SELECT VersionId,ProductionStandardAuthorityRevision,CompanyId,SiteId,PartId,OperationId,MachineId,SecondsPerUnit,EffectiveFromUtc,EffectiveToUtc,SourceReference FROM dbo.ProductionStandardVersion WITH(HOLDLOCK) WHERE ProductionStandardAuthorityRevision<=1 ORDER BY ProductionStandardAuthorityRevision;"))
+            await using (var r = await cmd.ExecuteReaderAsync(token)) while (await r.ReadAsync(token)) versions.Add((ProductionStandardVersion)Invoke(typeof(SqlServerProductionStandardAuthority), "Materialize", r)!);
+            var standards = ProductionStandardAuthorityCut.Materialize(1, versions);
+            var sources = inputs.Where(x => x.Fact.SourceQuantityEvidenceId is not null).GroupBy(x => x.Fact.SourceQuantityEvidenceId!.Value)
+                .Select(group => (ProductionQuantitySourceEntry)Invoke(typeof(SqlServerMetricAggregationStore), "ReconstructSource", group.Key, group.OrderBy(x => x.Position).ToArray())!).ToArray();
+            Assert.Equal(sources.Length, outcomes.Count);
+            foreach (var source in sources)
+            {
+                var expected = ProductionStandardResolver.Resolve(source.Evidence, source.ShiftOccurrenceId, source.ProductionDayId, standards);
+                var actual = outcomes.Single(x => x.SourceQuantityEvidenceId == source.Evidence.Id);
+                Assert.Equal(JsonSerializer.Serialize(expected), JsonSerializer.Serialize(actual));
+            }
+        }
+        return Receipt(publisher.Id.Value, publisher.Reference, snapshot, outcomes);
+    }
+
+    internal sealed class Publisher(B1ConcurrencyPrototype f, OperationalMetricProjectionProcessorId id, long row, bool reference)
+    {
+        internal OperationalMetricProjectionProcessorId Id => id;
+        internal long Row => row;
+        internal bool Reference => reference;
+        internal Func<string, SqlConnection, SqlTransaction, Task>? AtStage;
+        internal string? Fault;
+        internal async Task<string> Publish(byte[]? replacementPayload = null, CancellationToken token = default)
+        {
+            var payload = replacementPayload ?? f.Receipt(id.Value, reference);
+            var result = Digest("B1ValidationOnly/Result/", payload);
+            var witnessObject = f.Snapshot(f.Inputs.Where(x => x.Position <= f.Bound.Position).ToArray()).AvailabilityScopeConflictEvidence!;
+            var witnessPayload = JsonSerializer.SerializeToUtf8Bytes(witnessObject);
+            var witness = Digest("B1ValidationOnly/Witness/", witnessPayload);
+            var intent = new OperationalMetricProjection(id, f.Key, f.Template.Status, f.Template.Value, f.Template.Unit,
+                f.Template.ReasonCode, f.Template.ReasonOperandName, f.Bound, f.Template.OperandEvidence);
+            var commit = new OperationalMetricProjectionCommit(id, new(id, f.Initial, new([])), new(id, f.Bound, new([f.Key])), [intent]);
+            var outcome = "Published";
+            await new SqlServerOperationalMetricProjectionCommitTransaction(f.ConnectionString).ExecuteAsync(commit, async (context, ct) =>
+            {
+                var c = context.Connection; var t = context.Transaction;
+                await Exec(c, t, "EXEC sys.sp_set_session_context @key=N'b1-fault',@value=NULL;");
+                // Retain frozen prefix after the real gate/processor/checkpoint path.
+                foreach (var table in new[] { "OperationalMetricProjection", "OperationalMetricProjectionManifest", "OperationalMetricProjectionEvidence" })
+                {
+                    var predicate = table == "OperationalMetricProjectionEvidence"
+                        ? "OperationalMetricProjectionRowId IN (SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P)"
+                        : "OperationalMetricProjectionProcessorRowId=@P";
+                    await Scalar(c, t, $"SELECT COUNT_BIG(*) FROM dbo.{table} WITH(UPDLOCK,HOLDLOCK) WHERE {predicate};", ("@P", row));
+                }
+                await Stage("prefix", c, t);
+                await using (var cmd = Command(c, t, "SELECT EvaluationKeyBinary,ResultPayload FROM dbo.OperationalMetricPublicationResultArchive WITH(UPDLOCK,HOLDLOCK) WHERE OperationalMetricProjectionProcessorRowId=@P AND EvaluationKeyHash=@Key AND SourceRevisionPosition=@Cut;", ("@P", row), ("@Key", f.KeyHash), ("@Cut", (decimal)f.Bound.Position.Value)))
+                await using (var r = await cmd.ExecuteReaderAsync(ct))
+                {
+                    if (await r.ReadAsync(ct))
+                    {
+                        if (!((byte[])r[0]).SequenceEqual(f.KeyBytes)) throw new InvalidDataException("StoredEvidenceIntegrityFailure: key collision");
+                        if (!((byte[])r[1]).SequenceEqual(payload)) throw new InvalidDataException("PublicationConflict");
+                        outcome = "Replayed";
+                    }
+                }
+                if (outcome == "Replayed")
+                {
+                    Assert.Equal(payload, await f.Validate(c, t, this, ct));
+                    await Stage("replay", c, t); return;
+                }
+                var factRow = await Scalar(c, t, "SELECT MetricInputFactRowId FROM dbo.MetricInputFact WHERE MetricInputStreamRowId=@S AND Position=3;", ("@S", f.StreamRow));
+                var existing = await Scalar(c, t, "SELECT WitnessPayload FROM dbo.OperationalMetricConflictWitnessArchive WITH(UPDLOCK,HOLDLOCK) WHERE WitnessId=@W;", ("@W", witness));
+                if (existing is byte[] bytes) Assert.Equal(witnessPayload, bytes);
+                else await Exec(c, t, "INSERT dbo.OperationalMetricConflictWitnessArchive VALUES(@W,1,@Payload,@A,@S,@Cut,@Fact,3);", ("@W", witness), ("@Payload", witnessPayload), ("@A", f.AggregationRow), ("@S", f.StreamRow), ("@Cut", (decimal)f.Bound.Position.Value), ("@Fact", factRow!));
+                await Stage("witness", c, t);
+                await Exec(c, t, """
+                    INSERT dbo.OperationalMetricPublicationResultArchive(ResultId,OperationalMetricProjectionProcessorRowId,PublicationFormatVersion,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,EvaluationKeyHash,EvaluationKeyBinary,EvaluationPolicyId,ResultCodecVersion,ResultPayload,Status,ReasonCode,ConflictWitnessId)
+                    VALUES(@Result,@P,2,@A,@S,@Cut,@Key,@KeyBytes,@Policy,2,@Payload,1,6,@W);
+                    """, ("@Result", result), ("@P", row), ("@A", f.AggregationRow), ("@S", f.StreamRow), ("@Cut", (decimal)f.Bound.Position.Value), ("@Key", f.KeyHash), ("@KeyBytes", f.KeyBytes), ("@Policy", Policy), ("@Payload", payload), ("@W", witness));
+                await Stage("result", c, t);
+                await Exec(c, t, "INSERT dbo.OperationalMetricResultWitnessReference VALUES(@Result,0x00000000,@W);", ("@Result", result), ("@W", witness));
+                await Stage("references", c, t);
+                Assert.Equal(payload, await f.Validate(c, t, this, ct));
+                await Stage("validated", c, t);
+                // Clone the structurally valid legacy key/context columns; the prototype
+                // supplies only the new containment fields, never a production publisher.
+                var columns = new List<string>();
+                await using (var cmd = Command(c, t, "SELECT name FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OperationalMetricProjection') AND is_identity=0 AND is_computed=0 ORDER BY column_id;"))
+                await using (var r = await cmd.ExecuteReaderAsync(ct)) while (await r.ReadAsync(ct)) columns.Add(r.GetString(0));
+                var overrides = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["OperationalMetricProjectionProcessorRowId"]="@P",["PublicationFormatVersion"]="2",["EvaluationPolicyId"]="@Policy",
+                    ["ContainmentResultId"]="@Result",["ConflictWitnessId"]="@W",["Status"]="1",["MetricValue"]="NULL",["ReasonCode"]="6",["ReasonOperandName"]="NULL",
+                };
+                var names = string.Join(',', columns.Select(x => "[" + x + "]"));
+                var values = string.Join(',', columns.Select(x => overrides.GetValueOrDefault(x, "[" + x + "]")));
+                var projection = (long)(await Scalar(c, t, $"DECLARE @Inserted table(Id bigint); INSERT dbo.OperationalMetricProjection({names}) OUTPUT INSERTED.OperationalMetricProjectionRowId INTO @Inserted SELECT {values} FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionRowId=@Template; SELECT Id FROM @Inserted;",
+                    ("@P", row), ("@Policy", Policy), ("@Result", result), ("@W", witness), ("@Template", f.TemplateRow)))!;
+                await Stage("projection", c, t);
+                await Exec(c, t, """
+                    INSERT dbo.OperationalMetricProjectionEvidence(OperationalMetricProjectionRowId,EvidenceKind,EvidenceOrdinal,OperandName,OperandNameOrderKey,ComponentKey,MetricDimension,ComponentValue,ComponentUnit,InputCount,FirstInputTimestamp,LastInputTimestamp)
+                    SELECT @Row,EvidenceKind,EvidenceOrdinal,OperandName,OperandNameOrderKey,ComponentKey,MetricDimension,ComponentValue,ComponentUnit,InputCount,FirstInputTimestamp,LastInputTimestamp
+                    FROM dbo.OperationalMetricProjectionEvidence WHERE OperationalMetricProjectionRowId=@Template;
+                    """, ("@Row", projection), ("@Template", f.TemplateRow));
+                await Stage("evidence", c, t);
+                await Exec(c, t, "INSERT dbo.OperationalMetricProjectionManifest VALUES(@P,@Row);", ("@P", row), ("@Row", projection));
+                await Stage("manifest", c, t);
+                if (Fault == "checkpoint") await Exec(c, t, "EXEC sys.sp_set_session_context @key=N'b1-fault',@value=N'checkpoint';");
+                await Stage("before-checkpoint", c, t);
+            }, token);
+            return outcome;
+        }
+        private async Task Stage(string stage, SqlConnection c, SqlTransaction t)
+        {
+            await f.Trace(stage, c, t);
+            if (AtStage is not null) await AtStage(stage, c, t);
+            if (Fault == stage) throw new IOException("B1 injected failure: " + stage);
+        }
+        internal async Task<byte[]> Read()
+        {
+            await using var c = await f.Open();
+            return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(c, id, async (connection, t, token) =>
+            {
+                await f.Trace("read-gate", connection, t);
+                if (AtStage is not null) await AtStage("read-gate", connection, t);
+                var stored = await Scalar(connection, t, "SELECT a.ResultPayload FROM dbo.OperationalMetricPublicationResultArchive a JOIN dbo.OperationalMetricProjection p ON p.ContainmentResultId=a.ResultId JOIN dbo.OperationalMetricProjectionManifest m ON m.OperationalMetricProjectionRowId=p.OperationalMetricProjectionRowId JOIN dbo.OperationalMetricProjectionCheckpoint cp ON cp.OperationalMetricProjectionProcessorRowId=m.OperationalMetricProjectionProcessorRowId WHERE p.OperationalMetricProjectionProcessorRowId=@P AND cp.Position=p.SourceRevisionPosition;", ("@P", row));
+                if (stored is not byte[] payload) return [];
+                Assert.Equal(payload, await f.Validate(connection, t, this, token)); return payload;
+            }, CancellationToken.None);
+        }
+    }
+
+    internal async Task Trace(string stage, SqlConnection c, SqlTransaction t)
+    {
+        var tx = await Scalar(c, t, "SELECT transaction_id FROM sys.dm_tran_current_transaction;");
+        Events.Enqueue(new { Stage = stage, Spid = c.ServerProcessId, Transaction = tx });
+    }
+    internal async Task Capture(string schedule)
+    {
+        await using var c = await Open();
+        var requests = await Rows(c, "SELECT r.session_id,r.blocking_session_id,r.transaction_id,r.wait_type,r.wait_resource,t.text FROM sys.dm_exec_requests r OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.database_id=DB_ID() AND r.session_id<>@@SPID;");
+        var locks = await Rows(c, "SELECT l.request_session_id,l.request_mode,l.request_status,l.resource_type,l.resource_associated_entity_id,l.resource_description,OBJECT_NAME(CASE WHEN l.resource_type='OBJECT' THEN CONVERT(int,l.resource_associated_entity_id) ELSE p.object_id END) ObjectName FROM sys.dm_tran_locks l LEFT JOIN sys.partitions p ON p.hobt_id=l.resource_associated_entity_id AND l.resource_type IN ('KEY','PAGE','RID','HOBT') WHERE l.resource_database_id=DB_ID() AND l.request_session_id<>@@SPID;");
+        Events.Enqueue(new { Schedule = schedule, Database = c.Database, BoundA = Bound.Position.Value, R = 1, Requests = requests, Locks = locks });
+    }
+    internal async Task<int?> WaitFor(int blocker, Task contender, bool completionAllowed = false)
+    {
+        await using var c = await Open();
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (!bound.IsCancellationRequested)
+        {
+            var session = await Scalar(c, null, "SELECT TOP(1) CONVERT(int,session_id) FROM sys.dm_exec_requests WHERE database_id=DB_ID() AND blocking_session_id=@Blocker;", ("@Blocker", blocker));
+            if (session is int id) { await Capture("observed-wait"); return id; }
+            if (contender.IsCompleted)
+            {
+                await contender;
+                if (completionAllowed) { await Capture("completed-without-observed-wait"); return null; }
+                throw new InvalidOperationException("Required SQL wait was not observed.");
+            }
+            await Task.Delay(50);
+        }
+        throw new TimeoutException("SQL barrier was not observed in 15 seconds.");
+    }
+    internal async Task<object[]> State(Publisher publisher)
+    {
+        await using var c = await Open();
+        var rows = await Rows(c, """
+            SELECT (SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive) Witnesses,
+            (SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P) Results,
+            (SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference r JOIN dbo.OperationalMetricPublicationResultArchive a ON a.ResultId=r.ResultId WHERE a.OperationalMetricProjectionProcessorRowId=@P) Refs,
+            (SELECT COUNT(*) FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P) Projections,
+            (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P) Manifest,
+            (SELECT COUNT(*) FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId WHERE p.OperationalMetricProjectionProcessorRowId=@P) Evidence,
+            (SELECT Position FROM dbo.OperationalMetricProjectionCheckpoint WHERE OperationalMetricProjectionProcessorRowId=@P) Checkpoint,
+            (SELECT COUNT(*) FROM dbo.B1MutationAudit) AuditWrites;
+            """, ("@P", publisher.Row));
+        Events.Enqueue(new { Stage = "archive-checkpoint-state", Publisher = publisher.Id.Value, State = rows });
+        return Assert.Single(rows).Values.Select(x => x!).ToArray();
+    }
+    internal async Task<SqlBarrier> Barrier(string table, string operation)
+    {
+        var c = await Open();
+        await Exec(c, null, "EXEC sys.sp_getapplock @Resource=N'B1-source-barrier',@LockMode='Exclusive',@LockOwner='Session',@LockTimeout=15000;");
+        await Exec(c, null, $"CREATE TRIGGER dbo.B1SourceBarrier ON dbo.{table} AFTER {operation} AS BEGIN DECLARE @Result int; EXEC @Result=sys.sp_getapplock @Resource=N'B1-source-barrier',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=15000; IF @Result<0 THROW 51089,'B1 source barrier timed out',1; END;");
+        return new SqlBarrier(c);
+    }
+    internal sealed class SqlBarrier(SqlConnection connection) : IAsyncDisposable
+    {
+        private bool released;
+        internal int Spid => connection.ServerProcessId;
+        internal async Task Release()
+        { if (!released) { released = true; await Exec(connection, null, "EXEC sys.sp_releaseapplock @Resource=N'B1-source-barrier',@LockOwner='Session';"); } }
+        public async ValueTask DisposeAsync()
+        { await Release(); await Exec(connection, null, "DROP TRIGGER dbo.B1SourceBarrier;"); await connection.DisposeAsync(); }
+    }
+    internal static async Task<List<Dictionary<string, object?>>> Rows(SqlConnection c, string sql, params (string, object)[] parameters)
+    {
+        await using var cmd = Command(c, null, sql, parameters);
+        await using var r = await cmd.ExecuteReaderAsync();
+        var rows = new List<Dictionary<string, object?>>();
+        while (await r.ReadAsync())
+        {
+            var row = new Dictionary<string, object?>(StringComparer.Ordinal);
+            for (var i = 0; i < r.FieldCount; i++) row.Add(r.GetName(i), r.IsDBNull(i) ? null : r.GetValue(i));
+            rows.Add(row);
+        }
+        return rows;
+    }
+    internal async Task<SqlConnection> Open()
+    { var c = new SqlConnection(ConnectionString); await c.OpenAsync(); return c; }
+    internal static SqlCommand Command(SqlConnection c, SqlTransaction? t, string sql, params (string, object)[] parameters)
+    { var cmd = c.CreateCommand(); cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 20; foreach (var (key, value) in parameters) cmd.Parameters.AddWithValue(key, value); return cmd; }
+    internal static async Task<object?> Scalar(SqlConnection c, SqlTransaction? t, string sql, params (string, object)[] parameters)
+    { await using var cmd = Command(c, t, sql, parameters); return await cmd.ExecuteScalarAsync(); }
+    internal static async Task Exec(SqlConnection c, SqlTransaction? t, string sql, params (string, object)[] parameters)
+    { await using var cmd = Command(c, t, sql, parameters); await cmd.ExecuteNonQueryAsync(); }
+    internal static byte[] Digest(string domain, byte[] bytes) => SHA256.HashData(Encoding.UTF8.GetBytes(domain).Concat(bytes).ToArray());
+    private static object? Invoke(Type type, string name, params object?[] args) => type.GetMethods(BindingFlags.NonPublic | BindingFlags.Static).Single(m => m.Name == name && m.GetParameters().Length == args.Length).Invoke(null, args);
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (eventsStarted)
+            {
+                await using var c = await Open();
+                var dbid = Convert.ToString(await Scalar(c, null, "SELECT DB_ID();"), System.Globalization.CultureInfo.InvariantCulture);
+                var xml = (string?)await Scalar(c, null, "SELECT CONVERT(nvarchar(max),t.target_data) FROM sys.dm_xe_sessions s JOIN sys.dm_xe_session_targets t ON t.event_session_address=s.address WHERE s.name=@Name;", ("@Name", eventSession));
+                var graphs = xml is null ? [] : XDocument.Parse(xml).Descendants("deadlock")
+                    .Where(graph => graph.Descendants().Attributes("dbid").Any(attribute => attribute.Value == dbid)).Select(graph => graph.ToString()).ToArray();
+                Events.Enqueue(new { DeadlockGraphs = graphs, MatchingGraphCount = graphs.Length, Meaning = "Graphs observed by fixture session; zero is not a proof of deadlock freedom and does not override any SQL 1205 failure." });
+                await Exec(c, null, $"ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=STOP; DROP EVENT SESSION [{eventSession}] ON SERVER;");
+            }
+        }
+        finally
+        {
+            output.WriteLine("B1_CONCURRENCY_EVENTS " + JsonSerializer.Serialize(Events.ToArray()));
+            await database.DisposeAsync();
+        }
+    }
+
+    private const string LedgerSelect = """
+        SELECT s.MachineId,s.StreamKey,f.Position,f.FactId,f.MetricInputKey,f.MetricValue,f.Unit,f.StartsAtUtc,f.EndsAtUtc,f.CompanyId,f.SiteId,
+        f.ProductionLineId,f.MachineId,f.ShiftId,f.ShiftScheduleAssignmentId,f.ProductionContextAssignmentId,f.ProductionOrderId,f.OperationId,f.PartId,f.OperatorId,
+        f.IsPlannedProductionTime,f.PlannedProductionScheduleAssignmentId,f.SourceContextualizedActivityIntervalId,f.SourceEligibilityIntervalId,f.SourceQuantityEvidenceId,
+        f.OccurrenceSiteId,f.OccurrenceShiftScheduleAssignmentId,f.OccurrenceShiftId,f.OccurrenceStartsAtUtc,f.OccurrenceEndsAtUtc,f.ProductionDaySiteId,f.ProductionBusinessDate
+        FROM dbo.MetricAggregationContribution c WITH(HOLDLOCK)
+        JOIN dbo.MetricInputFact f WITH(HOLDLOCK) ON f.MetricInputFactRowId=c.MetricInputFactRowId AND f.MetricInputStreamRowId=c.MetricInputStreamRowId AND f.Position=c.Position
+        JOIN dbo.MetricInputStream s WITH(HOLDLOCK) ON s.MetricInputStreamRowId=f.MetricInputStreamRowId
+        WHERE c.MetricAggregationProcessorRowId=@A AND c.MetricInputStreamRowId=@S AND c.Position<=@Cut ORDER BY c.Position;
+        """;
+}

@@ -90,6 +90,24 @@ jobs:
           --configuration Release
           --no-restore
 
+      - name: Validate B1 C1-C8 transaction prototype
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1ConcurrencyAcceptanceTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=b1-concurrency.trx"
+          --results-directory TestResults/B1Concurrency
+
+      - name: Retain B1 concurrency evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: b1-concurrency-evidence
+          path: TestResults/B1Concurrency
+          if-no-files-found: warn
+
       - name: Validate isolated B1 RC2 proposed schema
         run: >-
           dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
