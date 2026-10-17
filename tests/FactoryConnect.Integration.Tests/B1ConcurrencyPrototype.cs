@@ -61,9 +61,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
     private async Task Initialize(bool complete, int quantities)
     {
         await using var c = await Open();
-        Events.Enqueue(new { FixtureDatabase = c.Database, SqlVersion = await Scalar(c, null, "SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ProductVersion'));") });
-        await Exec(c, null, $"CREATE EVENT SESSION [{eventSession}] ON SERVER ADD EVENT sqlserver.xml_deadlock_report ADD TARGET package0.ring_buffer WITH(MAX_DISPATCH_LATENCY=1 SECONDS); ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=START;");
-        eventsStarted = true;
+        Events.Enqueue(new { FixtureDatabase = c.Database, Machine = Machine.Value, Runtime = Environment.Version.ToString(), SqlVersion = await Scalar(c, null, "SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ProductVersion'));") });
         await SqlServerMigrationEngine.CreateDefault().ApplyAsync(c, TimeSpan.FromMinutes(2), CancellationToken.None);
         var authority = new SqlServerProductionStandardAuthority(ConnectionString);
         await authority.PublishAsync(new ProductionStandardVersion
@@ -117,6 +115,9 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         foreach (var table in new[] { "OperationalMetricConflictWitnessArchive", "OperationalMetricPublicationResultArchive", "OperationalMetricResultWitnessReference", "OperationalMetricProjection", "OperationalMetricProjectionEvidence", "OperationalMetricProjectionManifest", "OperationalMetricProjectionCheckpoint" })
             await Exec(c, null, $"CREATE TRIGGER dbo.B1Audit_{table} ON dbo.{table} AFTER INSERT,UPDATE,DELETE AS BEGIN SET NOCOUNT ON; INSERT dbo.B1MutationAudit(TableName) VALUES (N'{table}'); END;");
         await Exec(c, null, "CREATE TRIGGER dbo.B1CheckpointFault ON dbo.OperationalMetricProjectionCheckpoint AFTER UPDATE AS BEGIN SET NOCOUNT ON; IF CONVERT(nvarchar(64),SESSION_CONTEXT(N'b1-fault'))=N'checkpoint' THROW 51088,'B1 checkpoint fault',1; END;");
+        var dbid = (int)(await Scalar(c, null, "SELECT DB_ID();"))!;
+        await Exec(c, null, $"CREATE EVENT SESSION [{eventSession}] ON SERVER ADD EVENT sqlserver.xml_deadlock_report, ADD EVENT sqlserver.sql_statement_completed(ACTION(sqlserver.session_id,sqlserver.transaction_id) WHERE ([sqlserver].[database_id]=({dbid}))), ADD EVENT sqlserver.sp_statement_completed(ACTION(sqlserver.session_id,sqlserver.transaction_id) WHERE ([sqlserver].[database_id]=({dbid}))) ADD TARGET package0.ring_buffer WITH(MAX_DISPATCH_LATENCY=1 SECONDS); ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=START;");
+        eventsStarted = true;
     }
     internal Task<ProductionReferenceTimePublicationTransition> Begin() => Transitions.BeginAsync(Aggregation, Bound.Position, Initial.Position, new(0), 1);
     internal async Task<PositionedMetricInputFact> Append(string key, decimal value, bool? planned)
@@ -309,7 +310,13 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
         {
             token.ThrowIfCancellationRequested();
             Assert.Equal(snapshot.EvaluationKey, request.EvaluationKey);
-            return ValueTask.FromResult(snapshot);
+            var components = request.Operands.Select(operand =>
+            {
+                var key = OperationalMetricComponentKeyMapping.AggregateKey(((OperationalMetricOperandSource.Component)operand.Source).ComponentKey);
+                var component = snapshot.Components.Single(x => x.SourceIdentity.ComponentKey == key);
+                return new OperationalMetricComponent(operand.OperandName, component.SourceIdentity, component.Dimension, component.Aggregate);
+            });
+            return ValueTask.FromResult(new OperationalMetricComponentSnapshot(request.EvaluationKey, snapshot.SourceRevision, components, snapshot.AvailabilityScopeConflictEvidence));
         }
     }
 
@@ -421,7 +428,10 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
                     throw new InvalidDataException("StoredEvidenceIntegrityFailure: missing manifested result");
                 }
                 await f.VerifyStored(connection, t, this, payload);
-                Assert.Equal(payload, await f.Validate(connection, t, this, token)); return payload;
+                Assert.Equal(payload, await f.Validate(connection, t, this, token));
+                await f.Trace("read-validated", connection, t);
+                if (AtStage is not null) await AtStage("read-validated", connection, t);
+                return payload;
             }, CancellationToken.None);
         }
     }
@@ -473,7 +483,9 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position<=@Cut) BoundMembership,
             (SELECT COUNT(*) FROM dbo.MetricAggregationContribution WHERE MetricAggregationProcessorRowId=@A AND Position>@Cut) LaterMembership;
             """, ("@P", publisher.Row), ("@A", AggregationRow), ("@Cut", (decimal)Bound.Position.Value));
-        Events.Enqueue(new { Stage = "archive-checkpoint-state", Publisher = publisher.Id.Value, State = rows });
+        var witnesses = await Rows(c, "SELECT CONVERT(varchar(64),WitnessId,2) WitnessId,WitnessCodecVersion,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,ContributionFactRowId,ContributionPosition,DATALENGTH(WitnessPayload) PayloadLength,CONVERT(varchar(64),HASHBYTES('SHA2_256',WitnessPayload),2) PayloadDigest FROM dbo.OperationalMetricConflictWitnessArchive;");
+        var results = await Rows(c, "SELECT CONVERT(varchar(64),ResultId,2) ResultId,OperationalMetricProjectionProcessorRowId,PublicationFormatVersion,MetricAggregationProcessorRowId,MetricInputStreamRowId,SourceRevisionPosition,CONVERT(varchar(64),EvaluationKeyHash,2) KeyHash,EvaluationPolicyId,ResultCodecVersion,Status,ReasonCode,CONVERT(varchar(64),ConflictWitnessId,2) WitnessId,DATALENGTH(ResultPayload) PayloadLength,CONVERT(varchar(64),HASHBYTES('SHA2_256',ResultPayload),2) PayloadDigest FROM dbo.OperationalMetricPublicationResultArchive;");
+        Events.Enqueue(new { Stage = "archive-checkpoint-state", Publisher = publisher.Id.Value, State = rows, WitnessArchive = witnesses, ResultArchive = results });
         return Assert.Single(rows).Values.Select(x => x!).ToArray();
     }
     internal async Task<SqlBarrier> Barrier(string table, string operation)
@@ -523,11 +535,40 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             {
                 await using var c = await Open();
                 var dbid = Convert.ToString(await Scalar(c, null, "SELECT DB_ID();"), System.Globalization.CultureInfo.InvariantCulture);
-                var xml = (string?)await Scalar(c, null, "SELECT CONVERT(nvarchar(max),t.target_data) FROM sys.dm_xe_sessions s JOIN sys.dm_xe_session_targets t ON t.event_session_address=s.address WHERE s.name=@Name;", ("@Name", eventSession));
-                string[] graphs = xml is null ? [] : XDocument.Parse(xml).Descendants("deadlock")
-                    .Where(graph => graph.Descendants().Attributes("dbid").Any(attribute => attribute.Value == dbid)).Select(graph => graph.ToString()).ToArray();
-                Events.Enqueue(new { DeadlockGraphs = graphs, MatchingGraphCount = graphs.Length, Meaning = "Graphs observed by fixture session; zero is not a proof of deadlock freedom and does not override any SQL 1205 failure." });
-                await Exec(c, null, $"ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=STOP; DROP EVENT SESSION [{eventSession}] ON SERVER;");
+                try
+                {
+                    await Exec(c, null, "SELECT N'B1TRACE_END';");
+                    XDocument? document = null;
+                    for (var i = 0; i < 50; i++)
+                    {
+                        var xml = (string?)await Scalar(c, null, "SELECT CONVERT(nvarchar(max),t.target_data) FROM sys.dm_xe_sessions s JOIN sys.dm_xe_session_targets t ON t.event_session_address=s.address WHERE s.name=@Name;", ("@Name", eventSession));
+                        if (xml is not null)
+                        {
+                            document = XDocument.Parse(xml);
+                            if (document.Descendants("event").Any(e => EventField(e, "data", "statement")?.Contains("B1TRACE_END", StringComparison.Ordinal) == true)) break;
+                        }
+                        await Task.Delay(100);
+                    }
+                    Assert.NotNull(document);
+                    var graphs = document.Descendants("deadlock").Where(graph => graph.Descendants().Attributes("dbid").Any(attribute => attribute.Value == dbid)).Select(graph => graph.ToString()).ToArray();
+                    var statements = document.Descendants("event").Where(e => (string?)e.Attribute("name") is "sql_statement_completed" or "sp_statement_completed")
+                        .Select(e => new { Timestamp = (string?)e.Attribute("timestamp"), Spid = EventField(e, "action", "session_id"), Transaction = EventField(e, "action", "transaction_id"), Statement = EventField(e, "data", "statement") })
+                        .Where(e => e.Statement is not null && (e.Statement.Contains("MetricAggregation", StringComparison.Ordinal) || e.Statement.Contains("ProductionReferenceTime", StringComparison.Ordinal) || e.Statement.Contains("ProductionStandard", StringComparison.Ordinal) || e.Statement.Contains("OperationalMetric", StringComparison.Ordinal)))
+                        .ToArray();
+                    var dropped = Convert.ToInt64(await Scalar(c, null, "SELECT dropped_event_count FROM sys.dm_xe_sessions WHERE name=@Name;", ("@Name", eventSession)), System.Globalization.CultureInfo.InvariantCulture);
+                    var truncated = (string?)document.Root?.Attribute("truncated");
+                    var targetDropped = (string?)document.Root?.Attribute("droppedCount");
+                    Events.Enqueue(new { DeadlockGraphs = graphs, MatchingGraphCount = graphs.Length, SqlStatements = statements, SessionDroppedEvents = dropped, TargetTruncated = truncated, TargetDropped = targetDropped,
+                        Meaning = "Zero matching graphs is not a universal deadlock-freedom proof; any SQL 1205 still fails. Statements retain source-writer SPID/transaction IDs even for fast replay." });
+                    Assert.Equal(0L, dropped);
+                    Assert.NotEqual("1", truncated);
+                    Assert.True(targetDropped is null or "0", "XE target dropped events.");
+                    Assert.Contains(document.Descendants("event"), e => EventField(e, "data", "statement")?.Contains("B1TRACE_END", StringComparison.Ordinal) == true);
+                }
+                finally
+                {
+                    await Exec(c, null, $"ALTER EVENT SESSION [{eventSession}] ON SERVER STATE=STOP; DROP EVENT SESSION [{eventSession}] ON SERVER;");
+                }
             }
         }
         finally
@@ -536,6 +577,8 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
             await database.DisposeAsync();
         }
     }
+
+    private static string? EventField(XElement element, string kind, string name) => element.Elements(kind).FirstOrDefault(e => (string?)e.Attribute("name") == name)?.Element("value")?.Value;
 
     private const string LedgerSelect = """
         SELECT s.MachineId,s.StreamKey,f.Position,f.FactId,f.MetricInputKey,f.MetricValue,f.Unit,f.StartsAtUtc,f.EndsAtUtc,f.CompanyId,f.SiteId,

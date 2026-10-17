@@ -202,7 +202,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
             new OperationalMetricPeriodId.ProductionDay(new(f.Site, new(2026, 10, 16))),
             FactoryConnect.Core.Metrics.BuiltInOperationalMetricDefinitions.AvailabilityId, OperationalMetricEvaluationContextKey.Unpartitioned);
         var dayWitness = f.Snapshot(f.Inputs, dayKey).AvailabilityScopeConflictEvidence!;
-        Assert.NotEqual(B1ConcurrencyPrototype.WitnessBytes(shiftWitness), B1ConcurrencyPrototype.WitnessBytes(dayWitness));
+        Assert.NotEqual(Convert.ToHexString(B1ConcurrencyPrototype.WitnessBytes(shiftWitness)), Convert.ToHexString(B1ConcurrencyPrototype.WitnessBytes(dayWitness)));
         await using var first = await f.Open(); await using var second = await f.Open();
         await using var one = first.BeginTransaction(System.Data.IsolationLevel.Serializable);
         await using var two = second.BeginTransaction(System.Data.IsolationLevel.Serializable);
@@ -238,9 +238,18 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         await Task.WhenAll(publish, advancement).WaitAsync(TimeSpan.FromSeconds(30));
         // Replay the legacy exact pair through the actual writer; neighboring target
         // begins/admission/completion use the actual claim-bound paths.
+        var readerReached = Signal(); var readerRelease = Signal(); var readerSpid = 0;
+        p.AtStage = async (stage, c, _) => { if (stage == "read-validated") { readerSpid = c.ServerProcessId; readerReached.TrySetResult(); await Reached(readerRelease); } };
+        var heldRead = p.Read(); await Reached(readerReached);
+        f.Events.Enqueue(new { Schedule = "C7 legacy replay and neighbor Begin start while historical validator holds A4/R1", Utc = DateTimeOffset.UtcNow });
         var replay = f.Legacy.PublishAsync(f.Aggregation, f.Bound.Position, f.Outcome, CancellationToken.None);
         var begin = f.Transitions.BeginAsync(f.Aggregation, next.Position, f.Bound.Position, new(1), 1);
-        await Task.WhenAll(replay, begin).WaitAsync(TimeSpan.FromSeconds(30));
+        var sourceWriters = Task.WhenAll(replay, begin);
+        try { await f.WaitFor(readerSpid, sourceWriters, true); await f.Capture("C7: actual legacy replay/Begin versus held reporting historical cut"); }
+        finally { readerRelease.TrySetResult(); }
+        await sourceWriters.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.Equal(f.Receipt(p.Id.Value, true), await heldRead.WaitAsync(TimeSpan.FromSeconds(30)));
+        p.AtStage = null;
         var source = Assert.Single(await f.AggregationStore.ReadProductionQuantityTransitionSourcesAsync(next, f.Machine, f.Bound.Position));
         var resolution = FactoryConnect.Core.ProductionStandardResolver.Resolve(source.Evidence, source.ShiftOccurrenceId, source.ProductionDayId, f.Standards);
         await using (var barrier = await f.Barrier("ProductionReferenceTimeOutcome", "INSERT"))

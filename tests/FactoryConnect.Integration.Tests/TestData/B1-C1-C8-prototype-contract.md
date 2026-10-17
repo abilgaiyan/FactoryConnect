@@ -33,7 +33,7 @@ After the existing publication prefix, result slot and archive/reference stages,
 
 ## Retained observations and assessment rules
 
-TRX output contains `B1_CONCURRENCY_EVENTS`: reviewed head/build SHA, synthetic database, engine version, transaction/session IDs, stages, SQL requests/waits and held/requested locks with object/resource identifiers. State observations include witness/result/reference/projection/evidence/manifest counts, checkpoint and mutation audit. Each case owns an isolated database and a unique server Extended Events session; matching deadlock XML graphs are retained before session/database cleanup. No retry masks deadlocks. An empty graph list only means no matching graph was observed; a SQL 1205 remains a failure even if event delivery has not produced a graph.
+TRX output contains `B1_CONCURRENCY_EVENTS`: reviewed head/build SHA, synthetic database, engine version, transaction/session IDs, stages, SQL requests/waits and held/requested locks with object/resource identifiers. State observations include witness/result/reference/projection/evidence/manifest counts, checkpoint and mutation audit. Each case owns an isolated database and a unique server Extended Events session. SQL and stored-procedure statement events retain source-writer session/transaction IDs, including fast replay; matching deadlock XML graphs are retained before session/database cleanup. An observed end-marker and zero session drops/target truncation are required. No retry masks deadlocks. An empty graph list only means no matching graph was observed; a SQL 1205 remains a failure even if event delivery has not produced a graph.
 
 SQL app locks in fixture triggers provide deterministic writer barriers. Polling must observe the matching `blocking_session_id` or explicitly record completion where completion is allowed. Elapsed time alone is never success. The observer uses a separate connection only for telemetry; source validation does not.
 
@@ -47,4 +47,6 @@ Use a local development SQL instance or the CI SQL service with permission to cr
 dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj --configuration Release --filter "FullyQualifiedName~B1ConcurrencyAcceptanceTests" --logger "trx;LogFileName=b1-concurrency.trx" --results-directory TestResults/B1Concurrency
 ```
 
-CI uploads `b1-concurrency-evidence`. Test execution PASS is not automatic B1 acceptance: review the traces and the explicit limitations, especially C6 ordering coverage and C7 graph coverage, before any freeze decision.
+CI uploads `b1-concurrency-evidence`. Test execution PASS is not automatic B1 acceptance: review the traces and the explicit limitations, especially the distinction between the C6 archive-layer ordering probe and full publication, and the C7 observed graph, before any freeze decision.
+
+Run `39059934601` at `d4bdf60f` reached the real evaluator but its smoke test rejected the prototype adapter's noncanonical operand aliases. No matrix acceptance is inferred from that attempt; the adapter now maps the canonical request aliases onto the same SQL-derived component values.
