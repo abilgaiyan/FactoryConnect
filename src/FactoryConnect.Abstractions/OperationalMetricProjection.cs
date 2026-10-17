@@ -216,6 +216,12 @@ public sealed record OperationalMetricProjection
         {
             throw new ArgumentException("Conflict projections require their witness and versioned policy.", nameof(availabilityScopeConflictEvidence));
         }
+        if (availabilityScopeConflictEvidence is not null &&
+            (key.DefinitionId != new OperationalMetricDefinitionId(CanonicalMetricKeys.Availability, "1.0") ||
+             reasonOperandName != "ActualProductionTime" || unit != OperationalMetricUnits.Ratio))
+        {
+            throw new ArgumentException("Conflict witness applies only to built-in Availability 1.0 and its numerator.", nameof(key));
+        }
         availabilityScopeConflictEvidence?.ValidateBinding(key, sourceRevision, operandSnapshot.Select(evidence =>
             new OperationalMetricComponent(evidence.OperandName, evidence.SourceIdentity, evidence.Dimension,
                 new MetricAggregateValue(evidence.Value, evidence.Unit, evidence.InputCount, evidence.FirstInputTimestamp, evidence.LastInputTimestamp))));

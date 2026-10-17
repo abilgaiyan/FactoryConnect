@@ -375,7 +375,8 @@ public sealed record OperationalMetricEvaluation
             throw new ArgumentException("Conflict classification requires its witness and versioned policy.", nameof(availabilityScopeConflictEvidence));
         }
         if (availabilityScopeConflictEvidence is not null &&
-            key.DefinitionId != new OperationalMetricDefinitionId(CanonicalMetricKeys.Availability, "1.0"))
+            (key.DefinitionId != new OperationalMetricDefinitionId(CanonicalMetricKeys.Availability, "1.0") ||
+             reasonOperandName != "ActualProductionTime" || unit != OperationalMetricUnits.Ratio))
         {
             throw new ArgumentException("Conflict witness applies only to built-in Availability 1.0.", nameof(key));
         }

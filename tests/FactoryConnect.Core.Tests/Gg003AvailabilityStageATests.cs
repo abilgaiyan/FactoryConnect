@@ -223,6 +223,25 @@ public sealed partial class Gg003AvailabilityContainmentContractTests
         Assert.Throws<NotSupportedException>(() => new OperationalMetricProjectionCommit(processor, null, checkpoint, [projection]));
     }
 
+    [Fact]
+    public async Task StageAWitnessCannotBeRelabeledAsAnotherMetricOrFailureOperand()
+    {
+        var store = await HistoricalStore(LoadInputs());
+        var evaluation = await StageAEvaluator(new PinnedReader(store)).EvaluateAsync(AvailabilityKey(true), CancellationToken.None);
+        var processor = AvailabilityContainmentV1.ProjectionProcessorId(Machine);
+        var otherKey = new OperationalMetricEvaluationKey(Machine, evaluation.Key.PeriodId,
+            BuiltInOperationalMetricDefinitions.OeeId, evaluation.Key.ContextKey);
+        var projection = new OperationalMetricProjectionFactory(Catalog(), processor).Create(evaluation);
+        Assert.Throws<ArgumentException>(() => new OperationalMetricEvaluation(evaluation.Key, evaluation.Status,
+            null, evaluation.Unit, evaluation.ReasonCode, "PlannedOperatingTime", evaluation.SourceRevision,
+            evaluation.OperandEvidence, availabilityScopeConflictEvidence: evaluation.AvailabilityScopeConflictEvidence,
+            evaluationPolicyId: AvailabilityContainmentV1.PolicyId));
+        Assert.Throws<ArgumentException>(() => new OperationalMetricProjection(processor, otherKey, projection.Status,
+            null, projection.Unit, projection.ReasonCode, projection.ReasonOperandName, projection.SourceRevision,
+            projection.OperandEvidence, availabilityScopeConflictEvidence: projection.AvailabilityScopeConflictEvidence,
+            evaluationPolicyId: AvailabilityContainmentV1.PolicyId));
+    }
+
     private static OperationalMetricDefinitionCatalog Catalog() => new(BuiltInOperationalMetricDefinitions.All);
     private static OperationalMetricEvaluator StageAEvaluator(IOperationalMetricComponentSnapshotReader reader) =>
         new(Catalog(), reader, Processor, useAvailabilityContainmentV1: true);
