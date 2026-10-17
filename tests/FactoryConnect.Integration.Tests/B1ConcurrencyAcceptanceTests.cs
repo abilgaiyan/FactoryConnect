@@ -36,24 +36,29 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task C2ActualBeginOrCompleteNeverExposesPartialAuthority(bool complete)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task C2ActualBeginOrCompleteNeverExposesPartialAuthority(bool complete, bool validatorFirst)
     {
         await using var f = await B1ConcurrencyPrototype.Create(output, false);
         if (complete) { await f.Begin(); await f.Admissions.AdmitAsync(f.Aggregation, f.Bound.Position, f.Outcome); }
         await using var barrier = await f.Barrier("ProductionReferenceTimePublicationTransition", complete ? "UPDATE" : "INSERT");
-        var writer = complete ? f.Transitions.CompleteAsync(f.Aggregation, f.Bound.Position) : f.Begin();
         var p = await f.NewPublisher("C2", true);
-        Task<string>? publish = null;
+        var reached = Signal(); var release = Signal();
+        if (validatorFirst) p.AtStage = async (stage, _, _) => { if (stage == "references") { reached.TrySetResult(); await Reached(release); } };
+        Task<string>? publish = validatorFirst ? p.Publish() : null;
+        if (validatorFirst) await Reached(reached);
+        var writer = complete ? f.Transitions.CompleteAsync(f.Aggregation, f.Bound.Position) : f.Begin();
         try
         {
             var writerSpid = await f.WaitFor(barrier.Spid, writer);
-            publish = p.Publish();
-            await f.WaitFor(writerSpid!.Value, publish);
+            if (validatorFirst) release.TrySetResult(); else publish = p.Publish();
+            await f.WaitFor(writerSpid!.Value, publish!);
             await f.Capture(complete ? "C2: terminal update uncommitted; validator waits" : "C2: pending claim insert uncommitted; validator waits");
         }
-        finally { await barrier.Release(); }
+        finally { release.TrySetResult(); await barrier.Release(); }
         await writer.WaitAsync(TimeSpan.FromSeconds(30));
         if (complete)
         {
@@ -68,24 +73,35 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         }
     }
 
-    [Fact]
-    public async Task C3ActualAdmissionCannotConvertPendingAuthorityIntoMissingMetric()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task C3ActualAdmissionCannotConvertPendingAuthorityIntoMissingMetric(bool validatorFirst)
     {
-        await using var f = await B1ConcurrencyPrototype.Create(output, false);
+        await using var f = await B1ConcurrencyPrototype.Create(output, false, quantities: 2);
         await f.Begin();
+        await f.Admissions.AdmitAsync(f.Aggregation, f.Bound.Position, f.AllOutcomes[0]);
+        Assert.Single(await f.Legacy.ReadAtRevisionAsync(f.Aggregation, new(1), CancellationToken.None));
+        await f.Capture("C3: one of two required sources admitted; transition still pending");
         await using (var barrier = await f.Barrier("ProductionReferenceTimeOutcome", "INSERT"))
         {
-            var admission = f.Admissions.AdmitAsync(f.Aggregation, f.Bound.Position, f.Outcome);
             var p = await f.NewPublisher("C3-pending", true);
+            var reached = Signal(); var release = Signal();
+            if (validatorFirst) p.AtStage = async (stage, _, _) => { if (stage == "references") { reached.TrySetResult(); await Reached(release); } };
+            Task<string>? attempt = validatorFirst ? p.Publish() : null;
+            if (validatorFirst) await Reached(reached);
+            var admission = f.Admissions.AdmitAsync(f.Aggregation, f.Bound.Position, f.AllOutcomes[1]);
             try
             {
                 await f.WaitFor(barrier.Spid, admission);
-                var failure = await Assert.ThrowsAsync<InvalidDataException>(() => p.Publish());
+                release.TrySetResult();
+                attempt ??= p.Publish();
+                var failure = await Assert.ThrowsAsync<InvalidDataException>(() => attempt);
                 Assert.Equal("HistoricalEvidenceUnavailable", failure.Message);
                 await f.Capture("C3: outcome inserted but admission uncommitted; pending authority rejected");
                 AssertUnpublished(await f.State(p));
             }
-            finally { await barrier.Release(); }
+            finally { release.TrySetResult(); await barrier.Release(); }
             await admission.WaitAsync(TimeSpan.FromSeconds(30));
             Assert.False((await f.Transitions.ReadAsync(f.Aggregation, f.Bound.Position))!.IsCompleted);
             var stillPending = await Assert.ThrowsAsync<InvalidDataException>(() => p.Publish());
@@ -95,7 +111,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         var completed = await f.NewPublisher("C3-completed", true);
         Assert.Equal("Published", await completed.Publish());
         Assert.Equal(f.Receipt(completed.Id.Value, true), await completed.Read());
-        AssertPublished(await f.State(completed));
+        AssertPublished(await f.State(completed), 5m);
     }
 
     [Theory]
@@ -160,11 +176,14 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         Assert.Equal(f.Receipt(p.Id.Value, true), await p.Read()); AssertPublished(await f.State(p));
     }
 
-    [Fact]
-    public async Task C6IndependentPublishersShareOneImmutableWitness()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task C6IndependentPublishersShareOneImmutableWitness(bool reversePublishers)
     {
         await using var f = await B1ConcurrencyPrototype.Create(output);
         var first = await f.NewPublisher("C6-first", true); var second = await f.NewPublisher("C6-second", true);
+        if (reversePublishers) (first, second) = (second, first);
         var reached = Signal(); var release = Signal(); var holder = 0;
         first.AtStage = async (stage, c, _) => { if (stage == "witness") { holder = c.ServerProcessId; reached.TrySetResult(); await Reached(release); } };
         var one = first.Publish(); await Reached(reached); var two = second.Publish();
@@ -214,6 +233,8 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [InlineData("prefix")]
+    [InlineData("slot")]
     [InlineData("witness")]
     [InlineData("result")]
     [InlineData("references")]
@@ -240,8 +261,8 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
         Assert.Equal(f.Receipt(p.Id.Value, true), await p.Read());
     }
 
-    private static void AssertPublished(object[] state)
-    { Assert.Equal(1, state[0]); Assert.Equal(1, state[1]); Assert.Equal(1, state[2]); Assert.Equal(1, state[3]); Assert.Equal(1, state[4]); Assert.Equal(2, state[5]); Assert.Equal(4m, state[6]); }
+    private static void AssertPublished(object[] state, decimal expectedPosition = 4m)
+    { Assert.Equal(1, state[0]); Assert.Equal(1, state[1]); Assert.Equal(1, state[2]); Assert.Equal(1, state[3]); Assert.Equal(1, state[4]); Assert.Equal(2, state[5]); Assert.Equal(expectedPosition, state[6]); }
     private static void AssertUnpublished(object[] state)
     { Assert.Equal(0, state[0]); Assert.Equal(0, state[1]); Assert.Equal(0, state[2]); Assert.Equal(0, state[3]); Assert.Equal(0, state[4]); Assert.Equal(0, state[5]); Assert.Equal(1m, state[6]); }
 }
