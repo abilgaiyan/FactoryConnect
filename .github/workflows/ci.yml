@@ -90,6 +90,14 @@ jobs:
           --configuration Release
           --no-restore
 
+      - name: Validate isolated B1 RC2 proposed schema
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~B1Rc2DesignValidationTests"
+          --logger "console;verbosity=normal"
+
       - name: Accept GG-003 revision-534 SQL historical reader
         run: >-
           dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
