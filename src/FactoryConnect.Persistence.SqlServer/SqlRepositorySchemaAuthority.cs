@@ -5,6 +5,8 @@ internal static class SqlRepositorySchemaAuthority
     public static SqlOwnedObjectRecognitionSet OwnedObjects { get; } = new(
     [
         Table("AcquisitionContactAuthority"),
+        Table("AcquisitionEvidenceHead"),
+        Table("AcquisitionEvidencePublication"),
         Table("AssumedBreakAssessment"),
         Table("AssumedBreakConfigurationAdmission"),
         Table("AssumedBreakConfigurationSnapshot"),

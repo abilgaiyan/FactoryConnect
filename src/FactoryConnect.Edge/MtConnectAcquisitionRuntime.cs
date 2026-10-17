@@ -19,6 +19,7 @@ public sealed class MtConnectAcquisitionRuntime :
     private readonly TimeSpan _pollingInterval;
     private ObservationCheckpoint? _checkpoint;
     private PendingAcquisition? _pending;
+    private readonly List<AcquisitionRecoveryEvidence> _recoveryEvidence = [];
 
     public MtConnectAcquisitionRuntime(
         MtConnectAcquisitionSession session,
@@ -140,17 +141,20 @@ public sealed class MtConnectAcquisitionRuntime :
                 _pending = new PendingAcquisition(
                     result,
                     successfulContactTime,
-                    _checkpoint);
+                    _checkpoint,
+                    new AcquisitionResponseEvidence(Guid.NewGuid(), _session.NextSequence, result.FirstSequence, result.LastSequence,
+                        [.. _recoveryEvidence]));
             }
 
             var pending = _pending;
 
             try
             {
-                await _sink.WriteAsync(
+                await _sink.WriteWithEvidenceAsync(
                     pending.Result,
                     pending.ExpectedCheckpoint,
                     pending.SuccessfulContactTime,
+                    pending.Evidence,
                     cancellationToken);
             }
             catch (OperationCanceledException)
@@ -171,6 +175,7 @@ public sealed class MtConnectAcquisitionRuntime :
                 pending.Result.InstanceId,
                 pending.Result.NextSequence);
             _pending = null;
+            _recoveryEvidence.Clear();
 
             return CycleOutcome.Succeeded(pending.Result);
         }
@@ -211,6 +216,7 @@ public sealed class MtConnectAcquisitionRuntime :
                         _endpoint,
                         _machineId,
                         _deviceKey,
+                        RetainRecoveryEvidence,
                         cancellationToken);
 
                 recoveryAttempted = true;
@@ -223,12 +229,18 @@ public sealed class MtConnectAcquisitionRuntime :
                         exception,
                         _session,
                         _machineId,
+                        RetainRecoveryEvidence,
                         cancellationToken);
 
                 recoveryAttempted = true;
             }
         }
     }
+
+    private void RetainRecoveryEvidence(MtConnectContinuityLoss loss) => _recoveryEvidence.Add(new(
+        loss.Reason == MtConnectContinuityLossReason.OutOfRange ? AcquisitionRecoveryReason.OutOfRange : AcquisitionRecoveryReason.InstanceChanged,
+        loss.PreviousInstanceId, loss.CurrentInstanceId, loss.PreviousSequence, loss.RecoverySequence,
+        "mtconnect-recovery/" + loss.Reason, "mtconnect-recovery/v1"));
 
     private static Channel<bool> CreateCycleGate()
     {
@@ -252,7 +264,8 @@ public sealed class MtConnectAcquisitionRuntime :
     private sealed record PendingAcquisition(
         MtConnectSampleResult Result,
         DateTimeOffset SuccessfulContactTime,
-        ObservationCheckpoint? ExpectedCheckpoint);
+        ObservationCheckpoint? ExpectedCheckpoint,
+        AcquisitionResponseEvidence Evidence);
 
     private sealed record CycleOutcome(
         MtConnectSampleResult? Result)

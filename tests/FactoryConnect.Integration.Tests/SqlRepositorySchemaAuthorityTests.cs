@@ -9,6 +9,8 @@ public sealed class SqlRepositorySchemaAuthorityTests
     private static readonly string[] ExpectedOwnedTableNames =
     [
         "AcquisitionContactAuthority",
+        "AcquisitionEvidenceHead",
+        "AcquisitionEvidencePublication",
         "AssumedBreakAssessment",
         "AssumedBreakConfigurationAdmission",
         "AssumedBreakConfigurationSnapshot",
@@ -61,7 +63,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(46, ownedTables.Length);
+        Assert.Equal(48, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
