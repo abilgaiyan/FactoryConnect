@@ -162,6 +162,34 @@ public sealed class SqlServerAcquisitionEvidenceIntegrationTests
         Assert.Null(opening.LegacyAcceptedThrough); Assert.Null(opening.LegacyCheckpoint);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MixedReplayedAndNewObservationsKeepOriginalPositionsAndAssignOnlyNewSuffix(bool explicitRecovery)
+    {
+        await using var f=await Fixture.CreateAsync();
+        var first=AcquisitionEvidenceCodecTests.Batch(); await f.Store.CommitAsync(first);
+        var candidate=AcquisitionEvidenceCodecTests.Batch(first.Checkpoint.StreamId,expected:first.Checkpoint,requested:10,next:20);
+        AcquisitionResponseEvidence? evidence=explicitRecovery
+            ? new(Guid.NewGuid(),1,1,20,[new(AcquisitionRecoveryReason.OutOfRange,1,1,10,1,"overlapping-recovery-response","v1")]) : null;
+        var mixed=new ObservationIngestionBatch(first.Checkpoint,candidate.Checkpoint,
+            [..first.Observations,candidate.Observations[1]],DateTimeOffset.UnixEpoch.AddSeconds(1),evidence);
+        await f.Store.CommitAsync(mixed);
+        var read=(await f.Read(mixed)).Record!;
+        Assert.Equal(new ObservationPosition(2),read.AcceptedBefore);
+        Assert.Equal(new ObservationPosition(3),read.AcceptedThrough);
+        var rows=await f.Store.ReadAsync(new(first.Checkpoint.StreamId,null,10));
+        Assert.Equal(new ulong[] {1,9,19},rows.Observations.Select(x=>x.Sequence));
+        Assert.Equal(new ulong[] {1,2,3},rows.Observations.Select(x=>x.Position.Value));
+        await f.Store.CommitAsync(mixed);
+        var replay=await new SqlServerAcquisitionEvidenceReader(f.Database.ConnectionString)
+            .ReadExactAsync(first.Checkpoint.StreamId,read.Identity);
+        Assert.Equal(AcquisitionEvidenceReadStatus.Found,replay.Status);
+        Assert.Equal(read.AcceptedBefore,replay.Record!.AcceptedBefore);
+        Assert.Equal(read.AcceptedThrough,replay.Record.AcceptedThrough);
+        Assert.Equal(2L,await f.Count());
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         public SqlStartupIsolatedDatabase Database { get; }

@@ -33,6 +33,7 @@ Exact publication reads return Absent, Found, Corrupt or UnsupportedEncoding. Ex
 
 - Canonical round-trip and strict-version/malformed-payload tests.
 - Nonconsecutive filtered observations within one cursor window.
+- Mixed replay/new batches retain prior raw positions and assign only the new suffix, for legacy ingestion and an explicitly recorded recovery cursor rewind. Normal explicit responses still reject observations before their requested cursor.
 - Publication identity retained when changed content must conflict.
 - Explicit recovery chain from prior checkpoint through OUT_OF_RANGE and instance transition to accepted response.
 - SQL rollback injected at checkpoint, observation, contact, evidence and head insert stages.
