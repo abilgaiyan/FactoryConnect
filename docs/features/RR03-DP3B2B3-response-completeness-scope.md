@@ -136,6 +136,12 @@ The four scope decisions now have an explicit proposal in [the R1 contract](RR03
 
 A new V2 acquisition envelope commitment is proposed for future receipt-required publications so a deleted promised sidecar cannot masquerade as legitimate legacy absence. Existing V1 records and hashes are unchanged; compatibility, canonical vectors and SQL FK/publication order still require review before implementation authorization. This is a contract proposal, not a design freeze or implementation instruction.
 
+## R1 vectors, SQL closure and activation review
+
+The R1 companion now has [exact golden vectors](RR03-DP3B2B3-R1-golden-vectors.json), [reproducible cross-encoder checks](RR03-DP3B2B3-R1-vector-reproduction.md) and a [concrete SQL publication/compatibility proposal](RR03-DP3B2B3-R1-sql-publication.md). These resolve the next written deliverable for review; they are not implementation or SQL-conformance evidence. The SQL proposal specifies the no-cycle FK design, mandatory closure guard, replay-time intent reconciliation and operational rollback boundaries.
+
+Actual Gajra response namespace/device compatibility has not been established. No ReceiptRequired activation is authorized until actual source captures pass the admitted profile, operational recovery is approved and executable conformance succeeds.
+
 ## Approval and restrictions
 
 Review must approve the record/admission ownership, source representation and retention limits, exact protocol/selection rules, sidecar replay behavior and test matrix. A complete proposed receipt codec and publication contract are required in R1 before implementation approval. This deliberately stops at scope; it is not a receipt design freeze or implementation instruction.
