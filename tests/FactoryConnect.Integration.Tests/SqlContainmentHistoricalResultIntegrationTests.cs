@@ -247,6 +247,16 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlCo
         await Execute(writer, null, seed, sql);
     }
 
+    internal async Task<(ReadOnlyMemory<byte>[] Envelopes, MetricAggregationCheckpoint Cut)> CreateArchiveTestEvidenceAsync()
+    {
+        var seed = await SeedAsync();
+        await using var connection = fixture.CreateConnection(); await connection.OpenAsync();
+        await using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+        var root = await Reconstruct(connection, transaction, seed);
+        return ([OperationalMetricDependencySnapshotV2Codec.Encode(root.Dependencies[0].Result),
+                 OperationalMetricDependencySnapshotV2Codec.Encode(root)], seed.Cut);
+    }
+
     private string TargetConnectionString => fixture.ConnectionString;
     private SqlConnection TargetConnection() => fixture.CreateConnection();
 

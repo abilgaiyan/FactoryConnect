@@ -126,6 +126,24 @@ jobs:
           path: TestResults/P3HistoricalAuthority
           if-no-files-found: warn
 
+      - name: Verify P4 caller-transaction archive foundation
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentArchiveIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p4-archives.trx"
+          --results-directory TestResults/P4Archives
+
+      - name: Retain P4 archive foundation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-archive-foundation-evidence
+          path: TestResults/P4Archives
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

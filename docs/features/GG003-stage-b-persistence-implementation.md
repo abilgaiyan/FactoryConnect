@@ -61,8 +61,9 @@ tests; see [P2 schema implementation](GG003-stage-b-p2-schema.md). P2 SQL accept
 `sql-server-integration` completed successfully after the legacy snapshot
 comparison was updated to account for migration-021 defaulted columns.
 P3 contribution, Availability, Performance R/S and recursive result validators are
-now implemented as described below, pending independent review and SQL CI. P4/P5
-and production-path integration remain pending. The publication guard is intact.
+accepted/frozen at `d5f55651` after 60 focused SQL cases and both CI jobs passed
+(run `39156354487`: 780 SQL passed, one restored test skipped). P4/P5 and
+production-path integration remain pending. The publication guard is intact.
 
 Migration 021 is registered with twelve command boundaries and caller-owned
 transaction semantics. The schema prototype established why one combined DDL
@@ -305,3 +306,47 @@ publication, reporting or factory activation are included. P3 remains OPEN until
 this targeted SQL gate and the full suite pass and receive acceptance review.
 P4 atomic publication follows that gate; restored replay remains after P4/P5.
 CI monitoring remains with the user; no new SQL pass is claimed locally.
+
+### P4 first slice — immutable archive transaction foundation
+
+P4 is OPEN and incomplete. The current legacy commit contract intentionally
+rejects containment projections. That guard remains intact. This slice builds
+the archive substep needed by the future format-aware coordinator; it does not
+provide a standalone production publisher or enable processor composition.
+
+`ContainmentArchiveBatch` freezes incoming buffers, decodes canonical FCDS V2,
+requires one exact processor/A and distinct evaluation keys, and prepares all
+result/key/witness identities plus complete root/nested witness reference paths.
+`SqlContainmentArchiveTransaction.PrepareAsync` requires an existing format-2
+processor with the exact policy and aggregation/stream binding, plus the caller's
+open Serializable connection/transaction. It acquires the processor gate and
+result slots, witness keys, result IDs and reference prefixes in deterministic
+order. The eventual publication coordinator must own the existing retained
+processor/checkpoint/projection/manifest/evidence prefix before this archive
+substep; that integration is not implemented here.
+
+Existing slots are compared using complete canonical bytes and indexed fields,
+never a digest alone. Replay requires complete witness/reference content and
+cannot repair missing rows. Every incoming result passes the P3 SQL validator
+in the same transaction before archive DML. Witness fact row IDs are resolved
+from the exact incorporated source ledger after archive lock acquisition. Shared
+root/nested witnesses are deduplicated. The caller owns rollback and commit;
+returned archive receipts are not durable-publication certificates.
+
+16 SQL cases cover complete root/nested archive content, shared witnesses,
+identical zero-write replay, malformed/duplicate input, a forged result later in
+a batch, changed-slot conflicts, missing/corrupt references and archive indexes,
+format rejection, caller isolation, cancellation, three failure boundaries,
+caller rollback and concurrent identical preparations. The SQL fixture registers
+a format-2 processor explicitly for archive tests; this is not production
+registration or activation. A dedicated retained P4 TRX gate precedes the full
+SQL regression suite. Local SQL execution is unavailable; CI results are pending
+and monitoring is handed back to the user.
+
+Remaining P4 work: production format-aware registration and commit preflight;
+integration with the existing retained-row/evidence/manifest publication
+coordinator; exact checkpoint/manifest replay and older-revision rejection;
+complete archive-plus-retained-plus-checkpoint atomic rollback/replay tests and
+source-writer/read interleavings through that production path. P5 verified API
+reads, composition and disposable GG-003 replay remain later gates. No migration,
+legacy V1 behavior, public commit guard or Gajra configuration is changed here.
