@@ -1,0 +1,40 @@
+# Gajra R1 — Equipment Performance, first presentation slice
+
+Tracks #122. This is a partial implementation, not milestone acceptance.
+
+## Source and mapping
+
+Baseline: Gajra `gajra-reports-phase-1(2).pdf`, page 1, “Report on equipment performance”. The original contains machine, line and group rows, OEE/A/P/Q, APT/POT and a comparison chart. Its printed definitions are A = APT/POT, P = NOT/APT, Q = good/manufactured parts and OEE = A × P × Q. These definitions require semantic mapping, not matching labels alone.
+
+| Original field | Existing source / presentation | Status |
+| --- | --- | --- |
+| Manufacturing unit / machine | Configured group, machine display name, site and production line | Machine rows supported; configured groups are headings, not totals |
+| A | `availability` v1.0, exact shift occurrence | Show existing result and evidence state; above 100% is a visible evidence conflict |
+| P | `performance` v1.0 | Existing result only; no client calculation or reference-time default |
+| Q | `quality` v1.0 | Existing canonical result only; missing/unavailable states retained |
+| OEE | `oee` v1.0 | Existing result only; a calculated result paired with above-100% Availability is marked conflicting |
+| APT | No APT field in this presentation model | Unresolved: confirm authoritative duration definition, units and scope before adding |
+| POT | No POT field in this presentation model | Unresolved: confirm planned-time/break semantics, units and scope before adding |
+| NOT | No reference-time field in this presentation model | Unresolved; do not infer from P or APT |
+| Produced / defect quantities | Not present in shift presentation model | Not implemented in this slice |
+| Line / group totals | No authoritative aggregate contract used here | Not implemented; never average machine percentages |
+| Comparison chart | Original A/P/Q/OEE comparison | Pending; cards and the existing exact-shift table are the first slice |
+| Assumed Quality / provisional OEE | Canonical `PresentedMetric` has no policy-assessment provenance | Pending an explicit existing-assessment API trace/integration; do not label canonical Quality as assumed or measured by inference |
+
+Utilization (`utilization.elr`) is retained as an existing additional metric; it is not substituted for APT/POT.
+
+## Visual baseline
+
+Reuse the existing light dashboard shell: white surfaces, navy text, pale blue controls, blue accents, amber evidence gaps and red conflicts. Machine/shift controls operate on already-loaded authoritative occurrences. Date selection and request lifecycle remain owned by the existing route. KPI cards appear only for one exact occurrence, with machine, shift and interval shown immediately above them. Multiple occurrences remain separate table rows. Native select controls, visible focus, keyboard-scrollable tables and native evidence disclosures support keyboard use. Cards collapse into fewer columns on narrow screens; tables scroll horizontally.
+
+Evidence drill-down preserves machine/processor, site/line, exact UTC interval and the returned source revision. Source revision `position` is not relabeled as an aggregation revision number.
+
+No new API, DTO, calculation engine, SQL migration, historical rewrite or server activation is included.
+
+## Validation and acceptance
+
+- Automated: existing dashboard conformance suite plus mounted machine/shift filtering, reset, empty selection, KPI scope and conflict tests.
+- Conflict fixtures exercise GG-003-shaped data and source position 534, including decimal precision just above one. These are **synthetic UI regression fixtures**, not proof against actual aggregation revision 534.
+- Existing unavailable OEE reasons remain visible even when Availability conflicts. Reported conflicting values remain evidence; they are never clamped or multiplied in the browser.
+- Pending before milestone acceptance: restore real GG-003 history in a nonproduction environment; verify production-day/date and exact revision-534 evidence; validate activity/quantities against persisted evidence; finish APT/POT mapping, policy/provisional integration, activity timeline and comparison chart; review desktop/mobile screenshots and CI.
+- The focused PR must remain unmerged until explicit review. Gajra deployment and migration 021 registration remain outside this work.

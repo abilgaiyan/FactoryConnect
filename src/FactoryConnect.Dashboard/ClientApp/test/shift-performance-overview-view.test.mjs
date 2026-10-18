@@ -163,3 +163,56 @@ test("does not manufacture current machine state vocabulary", () => {
     assert.doesNotMatch(html, new RegExp(`\\b${state}\\b`, "i"));
   }
 });
+
+test("over-100 Availability is a visible conflict and cannot present calculated OEE as valid", () => {
+  for (const value of ["1.01", "1.0000000000000000001", "101e-2", "10e0"]) {
+    const renderedShift = shift({
+      sourceRevision: { machineId: "GG-003", processorId: "metrics", streamKey: "history", position: "534" },
+      availability: metric("availability", "calculated", { value }),
+      oee: metric("oee", "calculated", { value: "0.8" }),
+    });
+    const html = render(overview([{ groupName: "Line A", machines: [machine("GG-003", "GG-003", [renderedShift])] }]));
+    assert.match(html, /Evidence conflict/);
+    assert.match(html, /Availability exceeds 100%/);
+    assert.match(html, /Reported OEE 80%/);
+    assert.match(html, /534/);
+    assert.doesNotMatch(html, /<td data-state="calculated">80%<\/td>/);
+  }
+});
+
+test("valid Availability boundary and zero remain calculated; unavailable OEE reason is preserved", () => {
+  for (const value of ["0", "1", "1.000", "10e-1", "0.9999999999999999999"]) {
+    const html = render(overview([{ groupName: null, machines: [machine("M1", "One", [shift({
+      availability: metric("availability", "calculated", { value }),
+      oee: metric("oee", "unavailable", { reasonCode: "dependency-invalid", reasonOperandName: "Availability" }),
+    })])] }]));
+    assert.doesNotMatch(html, /Evidence conflict/);
+    assert.match(html, /dependency-invalid \/ Availability/);
+  }
+});
+
+test("filters select one exact occurrence, retain state distinctions and reset without requesting new data", async t => {
+  const { act } = await import("react");
+  const { mountInDom } = await import("./dom-test-harness.mjs");
+  const data = overview([{ groupName: "Line A", machines: [
+    machine("M1", "One", [shift({ availability: metric("availability", "calculated", { value: "0.75" }) })]),
+    machine("M2", "Two", [shift({ shift: { ...shift().shift, shiftId: "SHIFT-OTHER" } })]),
+  ] }]);
+  const h = await mountInDom(createElement(ShiftPerformanceOverviewView, { overview: data }));
+  t.after(() => h.dispose());
+  assert.equal(h.document.querySelector(".performance-kpis"), null);
+  const [machineSelect, shiftSelect] = h.document.querySelectorAll("select");
+  async function select(control, value) {
+    await act(async () => { control.value = value; control.dispatchEvent(new h.window.Event("change", { bubbles: true })); });
+  }
+  await select(machineSelect, machineSelect.options[1].value);
+  assert.equal(h.document.querySelectorAll(".performance-kpi").length, 5);
+  assert.match(h.document.querySelector(".performance-kpis").textContent, /75%/);
+  assert.equal(h.document.querySelectorAll("tbody tr").length, 1);
+  await select(shiftSelect, "SHIFT-OTHER");
+  assert.match(h.document.querySelector("[role=status]").textContent, /No shift occurrences match/);
+  assert.equal(h.document.querySelector(".performance-kpis"), null);
+  await h.click(h.document.querySelector("button"));
+  assert.equal(h.document.querySelectorAll("tbody tr").length, 2);
+  assert.equal(h.document.querySelector(".performance-kpis"), null);
+});

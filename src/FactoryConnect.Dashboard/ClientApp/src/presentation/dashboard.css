@@ -59,3 +59,23 @@ body { margin: 0; background: #f4f7fb; color: #172b3a; font: 16px/1.6 system-ui,
 .production-day-overview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1rem; margin-block: 1.25rem; }
 .production-day-overview-controls label { font-weight: 600; }
 @media (max-width: 480px) { .production-day-overview-controls label { flex-basis: 100%; } }
+
+/* Equipment Performance: exact-occurrence cards and responsive evidence table. */
+.report-eyebrow, .report-scope-note { color: #526579; }
+.report-filters { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem; background: #f4f7fb; border-radius: .65rem; }
+.report-filters label { display: grid; gap: .35rem; font-weight: 600; flex: 1 1 14rem; }
+.report-filters select { min-height: 44px; max-width: 100%; border: 1px solid #8c9dad; border-radius: .4rem; background: white; color: inherit; font: inherit; padding: .55rem .75rem; }
+.performance-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .8rem; margin: 1.5rem 0; }
+.performance-kpi { padding: 1rem; border: 1px solid #d9e2ec; border-top: 3px solid #326eab; border-radius: .55rem; background: #fff; overflow-wrap: anywhere; }
+.performance-kpi h3 { margin: 0; font-size: .9rem; color: #526579; }
+.performance-kpi p { font-size: 1.5rem; line-height: 1.3; font-weight: 700; margin: .65rem 0; }
+.performance-kpi small { display: block; }
+.performance-kpi[data-state=missing], .performance-kpi[data-state=unavailable], .performance-kpi[data-state=insufficient-evidence] { border-top-color: #936524; }
+.performance-kpi[data-state=conflict], .equipment-performance td[data-state=conflict] { background: #fff0ef; color: #8b2525; border-color: #bc7973; }
+.performance-table-scroll { overflow-x: auto; margin-block: 1rem; }
+.performance-table-scroll table { min-width: 65rem; }
+.performance-evidence { margin-top: .65rem; font-size: .85rem; }
+.performance-evidence summary { cursor: pointer; color: #075ca8; }
+.performance-evidence dt { font-weight: 650; }
+.performance-evidence dd { margin: 0 0 .5rem; }
+@media print { .report-filters { display: none; } .performance-table-scroll { overflow: visible; } .performance-table-scroll table { min-width: 0; } }
