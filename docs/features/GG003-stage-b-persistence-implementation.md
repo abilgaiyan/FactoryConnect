@@ -162,3 +162,17 @@ Acceptance evidence must exercise the production SQL reader/validator seam with
 real SQL transactions; a mock-only test or the 34-contribution historical fixture
 is insufficient. Keep the Stage-A publication guard and separate processor
 registration unchanged until P4 and composition are explicitly accepted.
+
+## P3 implementation ledger
+
+- `ff9a8f3d`: added `SqlContainmentHistoricalContributionReader`, a production
+  SQL reader taking the caller's `SqlConnection` and `SqlTransaction`.
+  It checks the exact processor/stream/revision binding and enumerates admitted
+  contribution facts at or before that cut in stable position order, retaining
+  original fact and period-ownership fields. No independent connection,
+  transaction or write is opened by this reader.
+- **Not accepted yet:** this is a source-membership primitive, not a complete
+  historical validator. Aggregate recomputation, lowest-position witness
+  selection, completed R transitions, outcomes/standards S, recursive result
+  validation and real SQL conformance tests remain pending. Do not wire it to
+  publication or reporting reads before those gates pass.
