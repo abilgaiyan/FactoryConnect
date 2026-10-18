@@ -7,7 +7,7 @@ using Microsoft.Data.SqlClient;
 namespace FactoryConnect.Integration.Tests;
 
 [Trait("Category", "SqlServerIntegration")]
-public sealed class SqlContainmentHistoricalResultIntegrationTests(SqlContainmentAuthorityDatabaseFixture fixture)
+public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlContainmentAuthorityDatabaseFixture fixture)
     : IClassFixture<SqlContainmentAuthorityDatabaseFixture>
 {
     [Theory]
@@ -247,6 +247,9 @@ public sealed class SqlContainmentHistoricalResultIntegrationTests(SqlContainmen
         await Execute(writer, null, seed, sql);
     }
 
+    private string TargetConnectionString => fixture.ConnectionString;
+    private SqlConnection TargetConnection() => fixture.CreateConnection();
+
     private static ContainmentResultDocument Copy(ContainmentResultDocument d, decimal? value = null,
         ContainmentHistoricalAuthority? authority = null, IEnumerable<OperationalMetricComponentProjectionEvidence>? components = null,
         IEnumerable<ContainmentDependencyDocument>? dependencies = null) => new(d.ProcessorId, d.Key, d.Status, value ?? d.Value,
@@ -259,7 +262,8 @@ public sealed class SqlContainmentHistoricalResultIntegrationTests(SqlContainmen
     private static Task<ContainmentResultDocument> Reconstruct(SqlConnection connection, SqlTransaction transaction, Seed seed, bool day = false) =>
         SqlContainmentHistoricalResultValidator.ReconstructAsync(connection, transaction, Key(seed, day, BuiltInOperationalMetricDefinitions.OeeId), seed.Cut, default);
 
-    private async Task<Seed> SeedAsync(string mode = "resolved", bool unavailable = true)
+    private async Task<Seed> SeedAsync(string mode = "resolved", bool unavailable = true,
+        string quantityShape = "good", bool converge = true, string utilization = "normal")
     {
         var machine = new MachineId(Guid.NewGuid());
         var company = new CompanyId("p3-rs-" + machine.Value);
@@ -297,19 +301,25 @@ public sealed class SqlContainmentHistoricalResultIntegrationTests(SqlContainmen
             var input = await store.AppendAsync(new DurableMetricInputAppend(stream, fact, shift, day), default);
             inputs.Add(input); return input;
         }
-        await Append(MetricInputFactKeys.RunningDuration, 10m, !unavailable, false);
+        if (utilization != "missing-running") await Append(MetricInputFactKeys.RunningDuration, 10m, !unavailable, false);
         await Append(MetricInputFactKeys.PlannedProductionDuration, 20m, true, false);
         PositionedMetricInputFact? quantity = null;
         if (mode != "empty")
         {
-            quantity = await Append(MetricInputFactKeys.PartCountIncrement, 2m, true, true);
-            await Append(MetricInputFactKeys.GoodQuantity, 2m, true, true);
+            if (quantityShape is not ("orphan-good" or "orphan-rejected"))
+                quantity = await Append(MetricInputFactKeys.PartCountIncrement, quantityShape == "zero" ? 0m : 2m, true, true);
+            if (quantityShape is "good" or "all" or "zero" or "orphan-good")
+                await Append(MetricInputFactKeys.GoodQuantity, quantityShape == "zero" ? 0m : quantityShape == "all" ? 1m : 2m, true, true);
+            if (quantityShape is "rejected" or "all" or "orphan-rejected")
+                await Append(MetricInputFactKeys.RejectedQuantity, 1m, true, true);
         }
-        await Append(MetricInputFactKeys.ScheduledDuration, 20m, true, false);
+        if (utilization != "missing-scheduled")
+            await Append(MetricInputFactKeys.ScheduledDuration, utilization == "zero" ? 0m : 20m, true, false);
         var cut = new MetricAggregationCheckpoint(processor, stream, inputs[^1].Position);
         await new SqlServerMetricAggregationStore(fixture.ConnectionString).CommitAsync(new(processor, null, cut, inputs), default);
-        var completed = await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString).ConvergeAsync(cut, machine, null);
-        return new(machine, company, shift, day, cut, sourceId, standardId, completed.ProductionStandardAuthorityRevision ?? 0, quantity);
+        var completed = converge ? await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString).ConvergeAsync(cut, machine, null) : null;
+        return new(machine, company, shift, day, cut, sourceId, standardId,
+            completed?.ProductionStandardAuthorityRevision ?? (await authority.ReadCurrentCutAsync()).Revision, quantity);
     }
 
     private static ProductionStandardVersion Standard(MachineId machine, CompanyId company, SiteId site, long revision, string id) => new()
@@ -319,14 +329,14 @@ public sealed class SqlContainmentHistoricalResultIntegrationTests(SqlContainmen
         PublishedRevision = revision, SourceReference = "approved-p3-rs-standard"
     };
 
-    private static async Task Execute(SqlConnection connection, SqlTransaction? transaction, Seed seed, string sql)
+    private static async Task<int> Execute(SqlConnection connection, SqlTransaction? transaction, Seed seed, string sql)
     {
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = sql.Replace("@P", "(SELECT MetricAggregationProcessorRowId FROM dbo.MetricAggregationProcessor WHERE ProcessorKey=@Processor)", StringComparison.Ordinal);
         command.Parameters.AddWithValue("@Processor", seed.Cut.ProcessorId.Value);
         command.Parameters.AddWithValue("@Standard", seed.StandardId);
         command.Parameters.AddWithValue("@Source", seed.SourceId.Value);
-        await command.ExecuteNonQueryAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<string> Snapshot(SqlConnection connection, SqlTransaction transaction)

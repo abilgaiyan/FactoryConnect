@@ -268,3 +268,40 @@ independent acceptance remain pending on this implementation head. CI monitoring
 is handed back to the user as requested. P4/P5 must exercise these production
 seams inside actual publication/replay and stable read transactions; P3 acceptance
 does not itself complete durable reporting or unblock GG-003 restored replay.
+
+### P3 targeted acceptance validation
+
+The core implementation at `28bf2cf5` passed CI run `39153712128`:
+37/37 focused P3 cases and 757 full SQL cases passed; the restored GG-003 test
+was skipped. Both CI jobs passed on that exact head. This validates the core
+implementation but does not establish restored recovery or P4/P5 integration.
+
+The follow-up adds 23 SQL cases without changing production code:
+
+- Eight direct Utilization shift/day cases cover calculated values, missing
+  numerator/denominator and zero denominator without requiring an R transition.
+- Quantity cases cover produced-only, good/rejected/both siblings, zero quantity,
+  orphan good/rejected facts, duplicated/fractional/unidentified produced sources
+  and inconsistent sibling attribution. Good/rejected evidence alone cannot
+  establish produced-source authority; siblings never multiply produced count.
+- Multi-shift sources across completed revisions verify shift-specific source
+  inventories, a combined day inventory, complete terminal R and exact values.
+- Real claim-bound outcome admission and convergence completion run while a
+  Serializable validator transaction has observed the pending transition.
+  Admission cannot make the result verifiable; completion is observed waiting
+  on the reader's lock and becomes visible only after caller rollback.
+- Real aggregation advancement and standard publication run concurrently with
+  historical verification. Tests observe either a committed writer operation or
+  a SQL DMV lock wait before re-verifying the old canonical envelope. Both valid
+  schedules preserve exact historical A/R/S; no assumption that an out-of-cut
+  writer must block is imposed. The new A remains unverifiable until actual
+  convergence completes. Probe deadlines and writer cancellation are bounded;
+  SQL wait-state observations replace timing-only synchronization.
+
+The retained P3 gate now contains 60 cases. Existing cases keep their original
+seed defaults; fixture options add the targeted shapes and pending-transition
+setup. No additional migrations, public APIs, production hooks, guard changes,
+publication, reporting or factory activation are included. P3 remains OPEN until
+this targeted SQL gate and the full suite pass and receive acceptance review.
+P4 atomic publication follows that gate; restored replay remains after P4/P5.
+CI monitoring remains with the user; no new SQL pass is claimed locally.
