@@ -410,3 +410,71 @@ retained rows favors correctness in this internal slice; its cost is not yet a
 factory-scale performance claim. P5 exact-processor verified reads and API work,
 composition, and restored GG-003 replay remain subsequent gates. The public
 publication guard, draft PR status and Gajra installation remain unchanged.
+
+### P4 acceptance record — internal atomic publisher
+
+The reviewed head `240890615a8bf7cbc5e3995f7e988038a0641cef` completed
+[CI run 39160594558](https://github.com/abilgaiyan/FactoryConnect/actions/runs/39160594558)
+with both jobs successful. The SQL logs confirm 60 focused P3, 16 archive and
+31 atomic publication cases passed. The full SQL suite passed 827 tests, zero
+failed, with one restored-database test skipped. This satisfies the outstanding
+full-workflow gate for the provisionally accepted internal P4 implementation.
+P4 is accepted at that head within its reviewed internal boundary; this does not
+accept factory-scale performance or establish GG-003 recovery/activation.
+
+### P5 implementation — verified exact-processor reporting reads
+
+`SqlContainmentVerifiedRead` dispatches by the exact registered processor's
+format/policy and validates the complete retained publication in the same reader
+transaction. Missing exact processors remain absent; verification failures never
+select a legacy or other machine processor. Existing format-1 materializers and
+FCDS V1 codecs remain unchanged. A schema metadata probe preserves supported
+legacy test/read surfaces that predate migration 021.
+
+The canonical containment identity selects Serializable isolation in the shared
+stable-read wrapper. This is an isolation choice, not proof: the reader still
+checks persisted format, policy, source, canonical identities and historical
+membership. Legacy identities retain the prior ReadCommitted stable-read path.
+Direct transaction-aware containment reads require caller-owned Serializable
+transactions and use shared processor gates. Archive verification gains an
+explicit existing-only, read-only mode: shared gate, shared/range locks, complete
+archive index/content/reference and P3 checks, and an early return before every
+archive insertion path. No archive receipt is treated as publication permission.
+
+Read validation covers checkpoint/manifest membership, latest archive inventory,
+retained structured/scalar/result/witness bindings, all component evidence, FCDS
+V2 dependency bytes/hash/version, immutable witnesses and recursive references.
+P3 independently reconstructs the result at each row's own historical cut. The
+reconstruction seam now also returns the Core-built projection with its original
+verified witness; decoding FCWE never fabricates Core authority. Existing P3
+canonical result reconstruction delegates to that same computation, preserving
+its comparison contract.
+
+Detail, period summaries, checkpoint manifests, report windows and the existing
+shift/production-day HTTP query endpoints share this verified path for format 2.
+No HTTP contract or new route is introduced: unavailable/null values and
+RunningOutsidePlannedProduction remain explicit in the existing response.
+Integrity/authority failures propagate; the API returns failure rather than
+partial/successful metric data. Details retain verified recursive witness proof
+in the existing projection abstraction. Pagination/filtering remains above the
+verified provider; summaries cannot bypass evidence validation.
+
+New SQL cases exercise direct details/summaries/checkpoints, all five built-ins
+for shift/day, legacy coexistence, exact absence, retained old/new cuts, missing
+or incorrect policy, retained/archive/witness/reference corruption, distinct
+missing historical authority, simultaneous readers/no-write behavior, actual
+reader/publication blocking with cancellation, and shift/day HTTP success and
+failure through the real SQL provider. A dedicated p5-verified-read-evidence TRX
+artifact is retained before full regression. SQL execution is unavailable locally;
+these tests await CI and independent review. P5 remains OPEN.
+
+This implementation deliberately revalidates the retained processor snapshot,
+even for a filtered request, and currently repeats reconstruction when producing
+the Core projection after archive validation. This favors correctness and is not
+a performance acceptance claim. Composition, public guard removal, restored
+GG-003 worker replay and deployment are subsequent gates. PR remains draft;
+Gajra and the running factory configuration are unchanged.
+
+Local validation for this P5 tree: Release build and all 759 ordinary Integration
+tests passed; discovery confirms 23 focused P5 SQL cases. No local SQL result is
+claimed. CI monitoring is handed back to the user after pushing this slice.

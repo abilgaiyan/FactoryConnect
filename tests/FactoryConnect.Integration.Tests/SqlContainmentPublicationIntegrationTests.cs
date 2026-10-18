@@ -237,7 +237,7 @@ public sealed class SqlContainmentPublicationIntegrationTests(SqlContainmentAuth
         if (id is not null) command.Parameters.AddWithValue("@Id", id.Value);
         return await ContainmentRetainedState.Read(command, default);
     }
-    private static async Task<string> Snapshot(SqlConnection c, SqlTransaction? tx)
+    internal static async Task<string> Snapshot(SqlConnection c, SqlTransaction? tx)
     {
         await using var command = c.CreateCommand(); command.Transaction = tx;
         command.CommandText = """

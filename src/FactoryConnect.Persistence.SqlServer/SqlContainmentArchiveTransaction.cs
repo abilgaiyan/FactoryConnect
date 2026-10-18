@@ -21,19 +21,20 @@ internal static class SqlContainmentArchiveTransaction
 
     internal static async Task<IReadOnlyList<ContainmentArchiveReceipt>> PrepareAsync(SqlConnection connection,
         SqlTransaction transaction, IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting,
-        CancellationToken cancellationToken, Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection = null)
+        CancellationToken cancellationToken, Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection = null, bool verifyOnly = false)
     {
+        if (verifyOnly && !requireExisting) throw new ArgumentException("Read-only verification requires all archives to exist.", nameof(requireExisting));
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         cancellationToken.ThrowIfCancellationRequested();
         await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction, batch.Processor,
-            OperationalMetricProjectionProcessorGateMode.Exclusive, cancellationToken);
-        var binding = await ReadBinding(connection, transaction, batch, cancellationToken);
+            verifyOnly ? OperationalMetricProjectionProcessorGateMode.Shared : OperationalMetricProjectionProcessorGateMode.Exclusive, cancellationToken);
+        var binding = await ReadBinding(connection, transaction, batch, verifyOnly, cancellationToken);
         // Caller holds the retained prefix first; these archive locks continue in reviewed deterministic order.
         var existing = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var result in batch.Results)
         {
-            await using var command = Create(connection, transaction, ResultSelect +
+            await using var command = CreateForMode(ResultSelect +
                 " WITH (UPDLOCK,HOLDLOCK,INDEX(UQ_OMPRA_Slot)) WHERE OperationalMetricProjectionProcessorRowId=@P AND EvaluationKeyHash=@K AND SourceRevisionPosition=@A;");
             command.Parameters.AddWithValue("@P", binding.Processor);
             Bytes(command, "@K", result.KeyHash, 32);
@@ -46,7 +47,7 @@ internal static class SqlContainmentArchiveTransaction
         var witnessRows = new Dictionary<string, WitnessRow?>(StringComparer.Ordinal);
         foreach (var witness in batch.Witnesses)
         {
-            await using var command = Create(connection, transaction, """
+            await using var command = CreateForMode("""
                 SELECT WitnessCodecVersion,WitnessPayload,MetricAggregationProcessorRowId,MetricInputStreamRowId,
                        SourceRevisionPosition,ContributionFactRowId,ContributionPosition
                 FROM dbo.OperationalMetricConflictWitnessArchive WITH (UPDLOCK,HOLDLOCK)
@@ -60,7 +61,7 @@ internal static class SqlContainmentArchiveTransaction
         }
         foreach (var result in batch.Results.OrderBy(r => Convert.ToHexString(r.Id), StringComparer.Ordinal))
         {
-            await using var command = Create(connection, transaction, ResultSelect + " WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id;");
+            await using var command = CreateForMode(ResultSelect + " WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id;");
             Bytes(command, "@Id", result.Id, 32);
             var row = await ReadResult(command, cancellationToken);
             if (row is not null) MatchResult(row, result, binding, batch);
@@ -68,7 +69,7 @@ internal static class SqlContainmentArchiveTransaction
         }
         foreach (var result in batch.Results.OrderBy(r => Convert.ToHexString(r.Id), StringComparer.Ordinal))
         {
-            await using var command = Create(connection, transaction,
+            await using var command = CreateForMode(
                 "SELECT NodePath,WitnessId FROM dbo.OperationalMetricResultWitnessReference WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id ORDER BY NodePath;");
             Bytes(command, "@Id", result.Id, 32);
             var references = new List<ContainmentArchiveBatch.Reference>();
@@ -91,7 +92,7 @@ internal static class SqlContainmentArchiveTransaction
         foreach (var witness in batch.Witnesses)
         {
             var hex = Convert.ToHexString(witness.Id);
-            await using var fact = Create(connection, transaction, """
+            await using var fact = CreateForMode("""
                 SELECT f.MetricInputFactRowId,f.FactId
                 FROM dbo.MetricAggregationContribution c
                 JOIN dbo.MetricInputFact f ON f.MetricInputFactRowId=c.MetricInputFactRowId
@@ -116,9 +117,11 @@ internal static class SqlContainmentArchiveTransaction
                 throw Integrity("Witness digest or complete archive index conflicts with canonical source evidence.");
             if (requireExisting && witnessRows[hex] is null) throw Integrity("Replay cannot insert a missing witness.");
         }
+        if (verifyOnly)
+            return batch.Results.Select(r => new ContainmentArchiveReceipt(r.Id.ToArray(), r.Document.Key)).ToArray();
         foreach (var witness in batch.Witnesses.Where(w => witnessRows[Convert.ToHexString(w.Id)] is null))
         {
-            await using var command = Create(connection, transaction, """
+            await using var command = CreateForMode("""
                 INSERT dbo.OperationalMetricConflictWitnessArchive
                 (WitnessId,WitnessCodecVersion,WitnessPayload,MetricAggregationProcessorRowId,MetricInputStreamRowId,
                  SourceRevisionPosition,ContributionFactRowId,ContributionPosition)
@@ -134,7 +137,7 @@ internal static class SqlContainmentArchiveTransaction
         await Inject(ContainmentArchiveStage.WitnessesInserted);
         foreach (var result in batch.Results.Where(r => !existing[Convert.ToHexString(r.Id)]))
         {
-            await using var command = Create(connection, transaction, """
+            await using var command = CreateForMode("""
                 INSERT dbo.OperationalMetricPublicationResultArchive
                 (ResultId,OperationalMetricProjectionProcessorRowId,PublicationFormatVersion,MetricAggregationProcessorRowId,
                  MetricInputStreamRowId,SourceRevisionPosition,EvaluationKeyHash,EvaluationKeyBinary,EvaluationPolicyId,
@@ -156,13 +159,15 @@ internal static class SqlContainmentArchiveTransaction
         foreach (var result in batch.Results.Where(r => !existing[Convert.ToHexString(r.Id)]).OrderBy(r => Convert.ToHexString(r.Id), StringComparer.Ordinal))
         foreach (var reference in result.References)
         {
-            await using var command = Create(connection, transaction,
+            await using var command = CreateForMode(
                 "INSERT dbo.OperationalMetricResultWitnessReference (ResultId,NodePath,WitnessId) VALUES (@Result,@Path,@Witness);");
             Bytes(command, "@Result", result.Id, 32); Bytes(command, "@Path", reference.Path, 256); Bytes(command, "@Witness", reference.WitnessId, 32);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
         await Inject(ContainmentArchiveStage.ReferencesInserted);
         return batch.Results.Select(r => new ContainmentArchiveReceipt(r.Id.ToArray(), r.Document.Key)).ToArray();
+
+        SqlCommand CreateForMode(string sql) => Create(connection, transaction, sql, verifyOnly);
 
         async Task Inject(ContainmentArchiveStage stage)
         {
@@ -173,7 +178,7 @@ internal static class SqlContainmentArchiveTransaction
     }
 
     private static async Task<Binding> ReadBinding(SqlConnection connection, SqlTransaction transaction,
-        ContainmentArchiveBatch batch, CancellationToken cancellationToken)
+        ContainmentArchiveBatch batch, bool verifyOnly, CancellationToken cancellationToken)
     {
         await using var command = Create(connection, transaction, """
             SELECT p.OperationalMetricProjectionProcessorRowId,p.MetricAggregationProcessorRowId,p.MetricInputStreamRowId,
@@ -183,7 +188,7 @@ internal static class SqlContainmentArchiveTransaction
             JOIN dbo.MetricAggregationProcessor ap ON ap.MetricAggregationProcessorRowId=p.MetricAggregationProcessorRowId
             JOIN dbo.MetricInputStream s ON s.MetricInputStreamRowId=p.MetricInputStreamRowId
             WHERE p.ProcessorKeyBinary=@Key;
-            """);
+            """, verifyOnly);
         Bytes(command, "@Key", StringOrderKeyV2Codec.Encode(batch.Processor.Value), StringOrderKeyV2Codec.MaximumEncodedLength);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) throw Integrity("Containment archive requires a registered format-2 processor.");
@@ -229,8 +234,8 @@ internal static class SqlContainmentArchiveTransaction
     }
     private static bool Equal(byte[]? a, byte[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
     private static ContainmentHistoricalIntegrityException Integrity(string message) => new(message);
-    private static SqlCommand Create(SqlConnection connection, SqlTransaction transaction, string sql)
-    { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; return command; }
+    private static SqlCommand Create(SqlConnection connection, SqlTransaction transaction, string sql, bool verifyOnly = false)
+    { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = verifyOnly ? sql.Replace("UPDLOCK,HOLDLOCK", "HOLDLOCK", StringComparison.Ordinal) : sql; return command; }
     private static void Bytes(SqlCommand command, string name, byte[] bytes, int size = -1) => command.Parameters.Add(name,
         size == 32 ? SqlDbType.Binary : SqlDbType.VarBinary, size).Value = bytes;
 }

@@ -55,6 +55,9 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
         SqlConnection connection, SqlTransaction transaction, OperationalMetricProjectionProcessorId processorId,
         CancellationToken cancellationToken, OperationalMetricPeriodId? period = null, OperationalMetricEvaluationKey? key = null)
     {
+        var verified = await SqlContainmentVerifiedRead.TryReadAsync(connection, transaction, processorId, cancellationToken);
+        if (verified is not null)
+            return verified.Projections.Where(p => (period is null || p.Key.PeriodId == period) && (key is null || p.Key == key)).ToArray();
         var source = await ResolveProcessorSourceAsync(connection, transaction, processorId, cancellationToken);
         if (source is null) return Array.Empty<OperationalMetricProjection>();
         await SqlServerOperationalMetricProjectionStableRead.ValidateRevisionCoherenceAsync(

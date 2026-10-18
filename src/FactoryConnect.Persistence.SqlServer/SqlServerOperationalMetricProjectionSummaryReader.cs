@@ -78,6 +78,10 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         SqlConnection connection, SqlTransaction transaction, OperationalMetricProjectionProcessorId processorId,
         bool latestBatchOnly, CancellationToken cancellationToken)
     {
+        var verified = await SqlContainmentVerifiedRead.TryReadAsync(connection, transaction, processorId, cancellationToken);
+        if (verified is not null)
+            return verified.Projections.Where(p => !latestBatchOnly || verified.LatestKeys.Contains(p.Key))
+                .Select(p => new OperationalMetricProjectionSummary(p)).ToArray();
         var source = await ResolveProcessorSourceAsync(connection, transaction, processorId, cancellationToken);
         if (source is null) return Array.Empty<OperationalMetricProjectionSummary>();
         await SqlServerOperationalMetricProjectionStableRead.ValidateRevisionCoherenceAsync(

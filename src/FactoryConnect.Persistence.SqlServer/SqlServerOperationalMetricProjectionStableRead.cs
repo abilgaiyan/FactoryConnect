@@ -49,7 +49,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(readPublication);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
-            IsolationLevel.ReadCommitted, cancellationToken);
+            SqlContainmentVerifiedRead.IsContainmentIdentity(processorId) ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
             await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction,

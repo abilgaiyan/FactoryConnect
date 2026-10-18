@@ -162,6 +162,24 @@ jobs:
           path: TestResults/P4Publication
           if-no-files-found: warn
 
+      - name: Verify P5 exact-processor reporting reads
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentVerifiedReadIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p5-verified-reads.trx"
+          --results-directory TestResults/P5VerifiedReads
+
+      - name: Retain P5 verified reporting read evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5-verified-read-evidence
+          path: TestResults/P5VerifiedReads
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

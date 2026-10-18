@@ -24,7 +24,13 @@ internal static class SqlContainmentHistoricalResultValidator
     }
 
     internal static async Task<ContainmentResultDocument> ReconstructAsync(SqlConnection connection, SqlTransaction transaction,
-        OperationalMetricEvaluationKey key, MetricAggregationCheckpoint cut, CancellationToken cancellationToken)
+        OperationalMetricEvaluationKey key, MetricAggregationCheckpoint cut, CancellationToken cancellationToken) =>
+        (await ReconstructVerifiedAsync(connection, transaction, key, cut, cancellationToken)).Document;
+
+    // The projection contains Core-built witness proof, never a decoded wire witness.
+    internal static async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> ReconstructVerifiedAsync(
+        SqlConnection connection, SqlTransaction transaction, OperationalMetricEvaluationKey key,
+        MetricAggregationCheckpoint cut, CancellationToken cancellationToken)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         ArgumentNullException.ThrowIfNull(key);
@@ -44,7 +50,7 @@ internal static class SqlContainmentHistoricalResultValidator
                 node => node.Key.DefinitionId == BuiltInOperationalMetricDefinitions.PerformanceId ? reader.ReferenceBinding : null);
             // Apply the same complete canonical semantic contract to independently reconstructed evidence.
             _ = OperationalMetricDependencySnapshotV2Codec.Encode(document);
-            return document;
+            return (document, projection);
         }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException)
         { throw new ContainmentHistoricalIntegrityException("Historical contributions cannot reproduce the claimed built-in result.", error); }

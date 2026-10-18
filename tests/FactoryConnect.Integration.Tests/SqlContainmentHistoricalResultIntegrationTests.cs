@@ -281,6 +281,20 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlCo
         return (first, [OperationalMetricDependencySnapshotV2Codec.Encode(result)]);
     }
 
+    internal async Task<ReadOnlyMemory<byte>[]> CreateVerifiedReadEvidenceAsync(bool day)
+    {
+        var seed = await SeedAsync();
+        await using var c = fixture.CreateConnection(); await c.OpenAsync();
+        await using var tx = c.BeginTransaction(IsolationLevel.Serializable);
+        var results = new List<ReadOnlyMemory<byte>>();
+        foreach (var definition in BuiltInOperationalMetricDefinitions.All)
+        {
+            var document = await SqlContainmentHistoricalResultValidator.ReconstructAsync(c, tx, Key(seed, day, definition.Id), seed.Cut, default);
+            results.Add(OperationalMetricDependencySnapshotV2Codec.Encode(document));
+        }
+        return results.ToArray();
+    }
+
     private string TargetConnectionString => fixture.ConnectionString;
     private SqlConnection TargetConnection() => fixture.CreateConnection();
 
