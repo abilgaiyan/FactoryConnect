@@ -86,7 +86,11 @@ public sealed record OperationalMetricItemResponse(
     string Unit,
     string? ReasonCode,
     string? ReasonOperandName,
-    MetricSourceRevisionResponse SourceRevision);
+    MetricSourceRevisionResponse SourceRevision,
+    int? PublicationFormatVersion = null,
+    string? EvaluationPolicyId = null,
+    string? ResultId = null,
+    string? ConflictWitnessId = null);
 
 public sealed record OperationalMetricPageResponse(
     IReadOnlyList<OperationalMetricItemResponse> Items,
@@ -99,7 +103,11 @@ public sealed record ProductionDayShiftMetricResponse(
     decimal? Value,
     string Unit,
     string? ReasonCode,
-    string? ReasonOperandName);
+    string? ReasonOperandName,
+    int? PublicationFormatVersion = null,
+    string? EvaluationPolicyId = null,
+    string? ResultId = null,
+    string? ConflictWitnessId = null);
 
 public sealed record ProductionDayShiftOperationalMetricResponse(
     string ProcessorId,
@@ -202,7 +210,11 @@ internal static class OperationalMetricHttpMapper
             item.Unit,
             item.ReasonCode?.ToString(),
             item.ReasonOperandName,
-            ToResponse(revision));
+            ToResponse(revision),
+            item.PublicationMetadata?.PublicationFormatVersion,
+            item.PublicationMetadata?.EvaluationPolicyId,
+            item.PublicationMetadata?.ResultId,
+            item.PublicationMetadata?.ConflictWitnessId);
     }
 
     private static ProductionDayShiftOperationalMetricResponse ToResponse(
@@ -229,7 +241,11 @@ internal static class OperationalMetricHttpMapper
                 metric.Value,
                 metric.Unit,
                 metric.ReasonCode?.ToString(),
-                metric.ReasonOperandName)).ToArray());
+                metric.ReasonOperandName,
+                metric.PublicationMetadata?.PublicationFormatVersion,
+                metric.PublicationMetadata?.EvaluationPolicyId,
+                metric.PublicationMetadata?.ResultId,
+                metric.PublicationMetadata?.ConflictWitnessId)).ToArray());
 
     private static OperationalMetricContextResponse ToResponse(
         OperationalMetricEvaluationContextKey context) =>

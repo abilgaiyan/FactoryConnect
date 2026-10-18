@@ -17,16 +17,25 @@ public static class OperationalMetricReportingEndpoints
         group.MapPost("/shifts/query", QueryShiftsAsync)
             .WithName("QueryShiftOperationalMetrics")
             .Produces<OperationalMetricPageResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status501NotImplemented)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/production-days/query", QueryProductionDaysAsync)
             .WithName("QueryProductionDayOperationalMetrics")
             .Produces<OperationalMetricPageResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status501NotImplemented)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/production-day-shifts/query", QueryProductionDayShiftsAsync)
             .WithName("QueryProductionDayShiftOperationalMetrics")
             .Produces<ProductionDayShiftOperationalMetricPageResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status500InternalServerError)
+            .ProducesProblem(StatusCodes.Status501NotImplemented)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status409Conflict);
 

@@ -478,3 +478,53 @@ Gajra and the running factory configuration are unchanged.
 Local validation for this P5 tree: Release build and all 759 ordinary Integration
 tests passed; discovery confirms 23 focused P5 SQL cases. No local SQL result is
 claimed. CI monitoring is handed back to the user after pushing this slice.
+
+### P5 HTTP follow-up — status taxonomy and publication provenance
+
+The user-supplied focused log for `5792e021` establishes 21/23 SQL passes and two
+HTTP success assertion failures. Both requests returned 200 with five metrics;
+the tests searched for the display label `Availability` instead of the canonical
+key `availability`. The assertions now use `CanonicalMetricKeys.Availability`.
+This is not recorded as a green P5 gate or as successful full SQL regression.
+
+The follow-up completes the reviewed HTTP implementation boundary:
+
+- Provider-neutral `IOperationalMetricReportingReadFailure` classifies only
+  explicit evidence exceptions. SQL's existing exception types retain their
+  inheritance/identity and implement that interface. The API maps unsupported
+  codec to 501 (`unsupported-reporting-codec`), absent historical authority to
+  503 (`reporting-authority-unavailable`), and integrity failure to 500
+  (`reporting-evidence-integrity`). Problem bodies contain stable codes/types
+  without internal SQL/evidence details. Arbitrary SQL/runtime exceptions and
+  cancellation are not reclassified. Existing 400/409 handling remains intact.
+- Verified retained reads attach immutable publication provenance after their
+  complete canonical/authority checks. It flows through projection, summary,
+  query item and grouped report item into all three HTTP query responses.
+  `publicationFormatVersion`, `evaluationPolicyId`, `resultId` and
+  `conflictWitnessId` are explicit per-metric fields. Format-1 SQL rows report
+  version 1 and null containment fields; synthesized summaries have null
+  provenance. Core containment evaluation without durable publication has no
+  publication receipt. Provenance alone never grants historical authority.
+- Format-2 IDs are canonical uppercase 64-character hexadecimal SHA-256 values.
+  `conflictWitnessId` describes only the result root. An OEE root retains null
+  even when its Availability dependency has a conflict witness. Canonical codecs,
+  identity algorithms, SQL migration/checksums and the public guard are unchanged.
+- All three routes advertise 500/501/503 in OpenAPI. The Dashboard TypeScript
+  contract is regenerated from that schema; no new route or factory UI activation
+  is introduced.
+
+21 new ordinary HTTP cases verify classified failures, unclassified runtime
+failure, sanitized whole-response errors, and legacy/containment/synthesized
+metadata across all three routes. The focused SQL suite expands from 23 to 31
+cases: its HTTP matrix now exercises success and 500/501/503 for shift,
+production-day and roster-backed production-day-shift queries through the real
+SQL provider. Success checks every metric's exact result and root-witness IDs,
+including OEE's null root witness. Existing direct-read checks cover legacy
+publication metadata alongside exact processor isolation.
+
+Local Release build and 780 ordinary Integration tests passed. Dashboard type
+checking, 415 tests and production build passed; OpenAPI/client regeneration
+succeeded. SQL results for this new tree remain pending CI; monitoring stays with
+the user. P5 remains OPEN. No restored replay, composition activation, merge,
+publication guard removal, factory checkpoint correction or Gajra action is
+included or authorized by this follow-up.

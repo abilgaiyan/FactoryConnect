@@ -95,7 +95,12 @@ internal static class SqlContainmentVerifiedRead
             if (!OperationalMetricDependencySnapshotV2Codec.Encode(verified.Document).AsSpan().SequenceEqual(bytes))
                 throw Integrity("Historical reconstruction differs from retained canonical result.");
             if (projections.Any(p => p.Key == verified.Projection.Key)) throw Integrity("Duplicate retained evaluation identity.");
-            projections.Add(verified.Projection);
+            var core = verified.Projection;
+            var metadata = new OperationalMetricPublicationMetadata(2, AvailabilityContainmentV1.PolicyId,
+                Convert.ToHexString(result.Id), row["ConflictWitnessId"] is byte[] witnessId ? Convert.ToHexString(witnessId) : null);
+            projections.Add(new OperationalMetricProjection(core.ProcessorId, core.Key, core.Status, core.Value, core.Unit,
+                core.ReasonCode, core.ReasonOperandName, core.SourceRevision, core.OperandEvidence, core.DependencyEvidence,
+                core.AvailabilityScopeConflictEvidence, core.EvaluationPolicyId, metadata));
             if (manifest.Contains(rowId)) latestKeys.Add(verified.Projection.Key);
         }
         return new Publication(projections.AsReadOnly(), latestKeys);

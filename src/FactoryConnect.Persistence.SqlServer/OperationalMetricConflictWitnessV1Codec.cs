@@ -91,7 +91,8 @@ internal static class OperationalMetricConflictWitnessV1Codec
 }
 
 internal sealed class UnsupportedContainmentCodecException(string envelope, ushort version)
-    : NotSupportedException($"Unsupported {envelope} codec version {version}.")
+    : NotSupportedException($"Unsupported {envelope} codec version {version}."), IOperationalMetricReportingReadFailure
 {
     public ushort CodecVersion { get; } = version;
+    public OperationalMetricReportingReadFailure ReportingFailure => OperationalMetricReportingReadFailure.UnsupportedCodec;
 }

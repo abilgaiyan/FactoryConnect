@@ -233,7 +233,8 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
                 row.Unit,
                 reasonCode,
                 row.ReasonOperandName,
-                sourceRevision);
+                sourceRevision,
+                OperationalMetricPublicationMetadata.Legacy);
         }
         catch (InvalidOperationException)
         {

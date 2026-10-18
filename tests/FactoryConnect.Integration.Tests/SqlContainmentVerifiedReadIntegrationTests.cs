@@ -126,8 +126,11 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
         await store.CommitAsync(new(legacyId, null, checkpoint, [legacy]), default);
         var original = await Reader.ReadDetailAsync(legacyId, first.Key, default);
         Assert.NotNull(original); Assert.Equal(0.5m, original.Value); Assert.Null(original.EvaluationPolicyId);
+        Assert.Equal(OperationalMetricPublicationMetadata.Legacy, original.PublicationMetadata);
         var contained = await Reader.ReadDetailAsync(batch.Processor, first.Key, default);
         Assert.NotNull(contained); Assert.Null(contained.Value); Assert.Equal(AvailabilityContainmentV1.PolicyId, contained.EvaluationPolicyId);
+        Assert.Equal(2, contained.PublicationMetadata!.PublicationFormatVersion);
+        Assert.Equal(Convert.ToHexString(batch.Results[0].Id), contained.PublicationMetadata.ResultId);
         Assert.Null(await Reader.ReadDetailAsync(new OperationalMetricProjectionProcessorId("unregistered-exact-processor"), first.Key, default));
         Assert.Null(await Reader.ReadDetailAsync(AvailabilityContainmentV1.ProjectionProcessorId(new MachineId(Guid.NewGuid())), first.Key, default));
         var missingKey = new OperationalMetricEvaluationKey(first.Key.MachineId, first.Key.PeriodId, BuiltInOperationalMetricDefinitions.UtilizationId, first.Key.ContextKey);
@@ -267,17 +270,43 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
     }
 
     [Theory]
-    [InlineData(false, false)] [InlineData(false, true)] [InlineData(true, false)] [InlineData(true, true)]
-    public async Task ReportingHttpQueryReturnsContainmentAndFailsClosedOnDamagedEvidence(bool corrupt, bool day)
+    [InlineData(-1, 0)] [InlineData(-1, 1)] [InlineData(-1, 2)]
+    [InlineData(0, 0)] [InlineData(0, 1)] [InlineData(0, 2)]
+    [InlineData(1, 0)] [InlineData(1, 1)] [InlineData(1, 2)]
+    [InlineData(2, 0)] [InlineData(2, 1)] [InlineData(2, 2)]
+    public async Task ReportingHttpQueryReturnsContainmentAndFailsClosedOnDamagedEvidence(int failure, int scope)
     {
+        var day = scope == 1;
         var envelopes = await new SqlContainmentHistoricalResultIntegrationTests(fixture).CreateVerifiedReadEvidenceAsync(day);
         await new SqlContainmentPublicationTransaction(fixture.ConnectionString).PublishAsync(envelopes, null, default);
         var batch = ContainmentArchiveBatch.Preflight(envelopes); var first = batch.Results[0].Document;
-        if (corrupt)
+        if (scope == 2)
+        {
+            var shift = Assert.IsType<OperationalMetricPeriodId.Shift>(first.Key.PeriodId).ShiftOccurrenceId;
+            var productionDay = new ProductionDayId(shift.SiteId, DateOnly.FromDateTime(shift.StartsAtUtc.UtcDateTime));
+            var line = new ProductionLineId("p5-http-line");
+            var roster = new MachineShiftOccurrenceRoster(first.Key.MachineId, line, productionDay,
+                new MachineShiftOccurrenceRosterRevision(1), [new(first.Key.MachineId, line, shift, productionDay)]);
+            await new SqlServerMachineShiftOccurrenceRosterStore(fixture.ConnectionString).CommitAsync(new(null, roster), default);
+        }
+        if (failure >= 0)
         {
             await using var c = fixture.CreateConnection(); await c.OpenAsync();
             await using var command = c.CreateCommand(); command.Parameters.AddWithValue("@Name", batch.Processor.Value);
-            command.CommandText = "DELETE e FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId JOIN dbo.OperationalMetricProjectionProcessor pp ON pp.OperationalMetricProjectionProcessorRowId=p.OperationalMetricProjectionProcessorRowId WHERE pp.ProcessorKey=@Name;";
+            if (failure == 0)
+                command.CommandText = "DELETE e FROM dbo.OperationalMetricProjectionEvidence e JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId JOIN dbo.OperationalMetricProjectionProcessor pp ON pp.OperationalMetricProjectionProcessorRowId=p.OperationalMetricProjectionProcessorRowId WHERE pp.ProcessorKey=@Name;";
+            else if (failure == 1)
+            {
+                var unsupported = batch.Results[0].Payload.ToArray(); unsupported[6] = 99;
+                command.Parameters.Add("@Payload", SqlDbType.VarBinary, -1).Value = unsupported;
+                command.Parameters.Add("@Result", SqlDbType.Binary, 32).Value = batch.Results[0].Id;
+                command.CommandText = "DISABLE TRIGGER dbo.TR_OMPRA_Immutable ON dbo.OperationalMetricPublicationResultArchive; UPDATE dbo.OperationalMetricPublicationResultArchive SET ResultPayload=@Payload WHERE ResultId=@Result; ENABLE TRIGGER dbo.TR_OMPRA_Immutable ON dbo.OperationalMetricPublicationResultArchive;";
+            }
+            else
+            {
+                command.Parameters.AddWithValue("@AP", batch.Cut.ProcessorId.Value);
+                command.CommandText = "DELETE dbo.ProductionReferenceTimePublicationCut WHERE MetricAggregationProcessorRowId=(SELECT MetricAggregationProcessorRowId FROM dbo.MetricAggregationProcessor WHERE ProcessorKey=@AP);";
+            }
             await command.ExecuteNonQueryAsync();
         }
         var builder = WebApplication.CreateBuilder(); builder.WebHost.UseTestServer();
@@ -287,7 +316,15 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
         builder.Services.AddFactoryConnectOperationalMetricReporting();
         await using var app = builder.Build(); app.UseExceptionHandler(); app.MapOperationalMetricReportingEndpoints(); await app.StartAsync();
         HttpResponseMessage response;
-        if (day)
+        if (scope == 2)
+        {
+            var shift = Assert.IsType<OperationalMetricPeriodId.Shift>(first.Key.PeriodId).ShiftOccurrenceId;
+            var request = new ProductionDayShiftOperationalMetricQueryRequest(
+                [new(first.Key.MachineId.Value, batch.Processor.Value, shift.SiteId.Value, DateOnly.FromDateTime(shift.StartsAtUtc.UtcDateTime))],
+                null, null, null, 100, null);
+            response = await app.GetTestClient().PostAsJsonAsync("/api/reporting/v1/operational-metrics/production-day-shifts/query", request);
+        }
+        else if (day)
         {
             var period = Assert.IsType<OperationalMetricPeriodId.ProductionDay>(first.Key.PeriodId);
             var request = new ProductionDayOperationalMetricQueryRequest([new(first.Key.MachineId.Value, batch.Processor.Value)],
@@ -301,13 +338,33 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
                 shift.ShiftOccurrenceId.StartsAtUtc, shift.ShiftOccurrenceId.EndsAtUtc, null, null, null, "period-ascending", 100, null);
             response = await app.GetTestClient().PostAsJsonAsync("/api/reporting/v1/operational-metrics/shifts/query", request);
         }
-        if (corrupt) { Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode); return; }
+        if (failure >= 0)
+        {
+            Assert.Equal(failure switch { 1 => HttpStatusCode.NotImplemented, 2 => HttpStatusCode.ServiceUnavailable, _ => HttpStatusCode.InternalServerError }, response.StatusCode);
+            using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(failure switch { 1 => "unsupported-reporting-codec", 2 => "reporting-authority-unavailable", _ => "reporting-evidence-integrity" }, problem.RootElement.GetProperty("code").GetString());
+            Assert.False(problem.RootElement.TryGetProperty("items", out _));
+            return;
+        }
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var items = json.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        if (scope == 2)
+        {
+            Assert.Single(items); Assert.Equal(batch.Processor.Value, items[0].GetProperty("processorId").GetString());
+            items = items[0].GetProperty("metrics").EnumerateArray().ToArray();
+        }
         Assert.Equal(5, items.Length);
-        var availability = items.Single(i => i.GetProperty("metricKey").GetString() == "Availability");
-        Assert.Equal(batch.Processor.Value, availability.GetProperty("processorId").GetString());
+        foreach (var item in items)
+        {
+            var expected = batch.Results.Single(r => r.Document.Key.DefinitionId.MetricKey == item.GetProperty("metricKey").GetString());
+            Assert.Equal(2, item.GetProperty("publicationFormatVersion").GetInt32());
+            Assert.Equal(AvailabilityContainmentV1.PolicyId, item.GetProperty("evaluationPolicyId").GetString());
+            Assert.Equal(Convert.ToHexString(expected.Id), item.GetProperty("resultId").GetString());
+            Assert.Equal(expected.Document.Witness is null ? null : Convert.ToHexString(OperationalMetricContainmentIdentity.ComputeWitnessId(OperationalMetricConflictWitnessV1Codec.Encode(expected.Document.Witness))), item.GetProperty("conflictWitnessId").GetString());
+        }
+        var availability = items.Single(i => i.GetProperty("metricKey").GetString() == CanonicalMetricKeys.Availability);
+        if (scope != 2) Assert.Equal(batch.Processor.Value, availability.GetProperty("processorId").GetString());
         Assert.Equal("unavailable", availability.GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, availability.GetProperty("value").ValueKind);
         Assert.Equal("RunningOutsidePlannedProduction", availability.GetProperty("reasonCode").GetString());
