@@ -100,6 +100,14 @@ jobs:
           --logger "trx;LogFileName=p2-migration-021.trx"
           --results-directory TestResults/P2Migration021
 
+      - name: Retain registered migration 021 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-migration-021-evidence
+          path: TestResults/P2Migration021
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

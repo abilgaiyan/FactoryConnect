@@ -43,7 +43,9 @@ public sealed class SqlServerMigration021IntegrationTests
         {
             var error = await Assert.ThrowsAsync<MigrationExecutionException>(() => SqlServerMigrationExecutor.ExecuteAsync(connection, transaction, faulty, CancellationToken.None));
             Assert.Equal(21, error.MigrationId);
-            await transaction.RollbackAsync();
+            // THROW honors the inherited XACT_ABORT setting. SQL Server may
+            // already have aborted the transaction; neither case is a commit.
+            if (transaction.Connection is not null) await transaction.RollbackAsync();
         }
         Assert.Equal(previous, await Prefix(connection));
         await AssertSchema(connection, SqlRepositorySchemaDescriptors.Post020);
@@ -72,6 +74,26 @@ public sealed class SqlServerMigration021IntegrationTests
             await transaction.RollbackAsync();
         }
         await AssertSchema(connection, SqlRepositorySchemaDescriptors.Post020);
+    }
+
+    [Fact]
+    public async Task FinalValidationFailureRollsBackDdlAndTheNewLedgerEntry()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var connection = new SqlConnection(database.ConnectionString); await connection.OpenAsync();
+        await SqlMigration020TestBaseline.ApplyAsync(connection); var previous = await Prefix(connection);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "ALTER TABLE dbo.MetricInputFact ADD P2Unexpected int NULL;"; await command.ExecuteNonQueryAsync();
+        }
+        await Assert.ThrowsAsync<FinalSchemaValidationException>(() => SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None));
+        Assert.Equal(previous, await Prefix(connection));
+        Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId=21;"))!);
+        Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM sys.tables WHERE name IN ('OperationalMetricConflictWitnessArchive','OperationalMetricPublicationResultArchive','OperationalMetricResultWitnessReference');"))!);
+        await using (var command = connection.CreateCommand()) { command.CommandText = "ALTER TABLE dbo.MetricInputFact DROP COLUMN P2Unexpected;"; await command.ExecuteNonQueryAsync(); }
+        await AssertSchema(connection, SqlRepositorySchemaDescriptors.Post020);
+        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+        await AssertCurrent(connection);
     }
 
     [Theory]

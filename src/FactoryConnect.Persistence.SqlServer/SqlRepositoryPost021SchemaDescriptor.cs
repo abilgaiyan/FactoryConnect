@@ -22,22 +22,22 @@ internal static class SqlRepositoryPost021SchemaDescriptor
                 Unique("UQ_OMPP_Source", "OperationalMetricProjectionProcessorRowId", "MetricAggregationProcessorRowId", "MetricInputStreamRowId")],
             CheckConstraints = [.. table.CheckConstraints, Check("CK_OMPP_FormatPolicy",
                 $"([PublicationFormatVersion]=(1) AND [EvaluationPolicyId] IS NULL OR [PublicationFormatVersion]=(2) AND [EvaluationPolicyId] IS NOT NULL AND [EvaluationPolicyId]={Policy})")],
-            DefaultConstraints = [new("DF_OMPP_PublicationFormat", "PublicationFormatVersion", "(1)")]
+            DefaultConstraints = [new("DF_OMPP_PublicationFormat", "PublicationFormatVersion", "((1))")]
         },
         "OperationalMetricProjection" => table with
         {
             Columns = [.. table.Columns, C("PublicationFormatVersion", "smallint"), C("EvaluationPolicyId", "nvarchar", 64, true),
                 C("ContainmentResultId", "binary", 32, true), C("ConflictWitnessId", "binary", 32, true)],
             CheckConstraints = [.. table.CheckConstraints.Where(c => c.Name is not ("CK_OperationalMetricProjection_ReasonCode" or "CK_OperationalMetricProjection_StatusShape")),
-                Check("CK_OperationalMetricProjection_ReasonCode", "([ReasonCode] IS NULL OR [ReasonCode]=(6) OR [ReasonCode]=(5) OR [ReasonCode]=(4) OR [ReasonCode]=(3) OR [ReasonCode]=(2) OR [ReasonCode]=(1) OR [ReasonCode]=(0))"),
+                Check("CK_OperationalMetricProjection_ReasonCode", "([ReasonCode] IS NULL OR ([ReasonCode]=(6) OR [ReasonCode]=(5) OR [ReasonCode]=(4) OR [ReasonCode]=(3) OR [ReasonCode]=(2) OR [ReasonCode]=(1) OR [ReasonCode]=(0)))"),
                 Check("CK_OperationalMetricProjection_StatusShape", "([Status]=(0) AND [MetricValue] IS NOT NULL AND datalength([MetricValue])>(0) AND [ReasonCode] IS NULL AND [ReasonOperandName] IS NULL OR ([Status]=(2) OR [Status]=(1)) AND [MetricValue] IS NULL AND [ReasonCode] IS NOT NULL AND ([ReasonCode]=(6) OR [ReasonCode]=(5) OR [ReasonCode]=(4) OR [ReasonCode]=(3) OR [ReasonCode]=(2) OR [ReasonCode]=(1) OR [ReasonCode]=(0)) AND ([ReasonOperandName] IS NULL OR datalength([ReasonOperandName])>(0)))"),
-                Check("CK_OMP_FormatPolicy", $"([PublicationFormatVersion]=(1) AND [EvaluationPolicyId] IS NULL AND [ContainmentResultId] IS NULL AND [ConflictWitnessId] IS NULL AND ([ReasonCode] IS NULL OR [ReasonCode]=(5) OR [ReasonCode]=(4) OR [ReasonCode]=(3) OR [ReasonCode]=(2) OR [ReasonCode]=(1) OR [ReasonCode]=(0)) OR [PublicationFormatVersion]=(2) AND [EvaluationPolicyId] IS NOT NULL AND [EvaluationPolicyId]={Policy} AND [ContainmentResultId] IS NOT NULL)"),
+                Check("CK_OMP_FormatPolicy", $"([PublicationFormatVersion]=(1) AND [EvaluationPolicyId] IS NULL AND [ContainmentResultId] IS NULL AND [ConflictWitnessId] IS NULL AND ([ReasonCode] IS NULL OR ([ReasonCode]=(5) OR [ReasonCode]=(4) OR [ReasonCode]=(3) OR [ReasonCode]=(2) OR [ReasonCode]=(1) OR [ReasonCode]=(0))) OR [PublicationFormatVersion]=(2) AND [EvaluationPolicyId] IS NOT NULL AND [EvaluationPolicyId]={Policy} AND [ContainmentResultId] IS NOT NULL)"),
                 Check("CK_OMP_WitnessShape", WitnessShape)],
             ForeignKeys = [.. table.ForeignKeys,
                 Fk("FK_OMP_ProcessorFormat", ["OperationalMetricProjectionProcessorRowId", "PublicationFormatVersion"], "OperationalMetricProjectionProcessor", ["OperationalMetricProjectionProcessorRowId", "PublicationFormatVersion"]),
                 Fk("FK_OMP_ContainmentResult", ["ContainmentResultId", "OperationalMetricProjectionProcessorRowId", "EvaluationKeyHash", "SourceRevisionPosition"], "OperationalMetricPublicationResultArchive", ["ResultId", "OperationalMetricProjectionProcessorRowId", "EvaluationKeyHash", "SourceRevisionPosition"]),
                 Fk("FK_OMP_ConflictWitness", ["ConflictWitnessId"], "OperationalMetricConflictWitnessArchive", ["WitnessId"])],
-            DefaultConstraints = [new("DF_OMP_PublicationFormat", "PublicationFormatVersion", "(1)")]
+            DefaultConstraints = [new("DF_OMP_PublicationFormat", "PublicationFormatVersion", "((1))")]
         },
         "OperationalMetricProjectionEvidence" => table with
         {
@@ -57,7 +57,7 @@ internal static class SqlRepositoryPost021SchemaDescriptor
             Fk("FK_OMCWA_Contribution", ["MetricAggregationProcessorRowId", "ContributionFactRowId"], "MetricAggregationContribution", ["MetricAggregationProcessorRowId", "MetricInputFactRowId"]),
             Fk("FK_OMCWA_FactPosition", ["ContributionFactRowId", "MetricInputStreamRowId", "ContributionPosition"], "MetricInputFact", ["MetricInputFactRowId", "MetricInputStreamRowId", "Position"])],
         [Check("CK_OMCWA_Codec", "([WitnessCodecVersion]=(1))"), Size("CK_OMCWA_Length", "WitnessPayload", 1, 65536),
-            Check("CK_OMCWA_Positions", $"(([SourceRevisionPosition]>=(1) AND [SourceRevisionPosition]<=({UInt64Maximum})) AND ([ContributionPosition]>=(1) AND [ContributionPosition]<=[SourceRevisionPosition]))")], [],
+            Check("CK_OMCWA_Positions", $"([SourceRevisionPosition]>=(1) AND [SourceRevisionPosition]<=({UInt64Maximum}) AND ([ContributionPosition]>=(1) AND [ContributionPosition]<=[SourceRevisionPosition]))")], [],
         [ImmutableTrigger("TR_OMCWA_Immutable", "OperationalMetricConflictWitnessArchive")]);
 
     private static SqlTableDescriptor ResultArchive() => new(new("dbo", "OperationalMetricPublicationResultArchive"),
@@ -82,7 +82,7 @@ internal static class SqlRepositoryPost021SchemaDescriptor
         [C("ResultId", "binary", 32), C("NodePath", "varbinary", 256), C("WitnessId", "binary", 32)], Primary("PK_OMRWR", "ResultId", "NodePath"), [],
         [Fk("FK_OMRWR_Result", ["ResultId"], "OperationalMetricPublicationResultArchive", ["ResultId"]),
             Fk("FK_OMRWR_Witness", ["WitnessId"], "OperationalMetricConflictWitnessArchive", ["WitnessId"])],
-        [Check("CK_OMRWR_PathLength", "((datalength([NodePath])>=(4) AND datalength([NodePath])<=(256)) AND datalength([NodePath])%(4)=(0))")], [],
+        [Check("CK_OMRWR_PathLength", "(datalength([NodePath])>=(4) AND datalength([NodePath])<=(256) AND datalength([NodePath])%(4)=(0))")], [],
         [ImmutableTrigger("TR_OMRWR_Immutable", "OperationalMetricResultWitnessReference")]);
 
     private static SqlColumnDescriptor C(string name, string type, int? length = null, bool nullable = false) =>

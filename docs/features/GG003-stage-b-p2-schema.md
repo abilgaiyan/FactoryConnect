@@ -58,5 +58,12 @@ Local SDK 10.0.402 ordinary Integration run: **759 passed, zero failed/skipped**
 The local SQL engine could not start in this environment; no local SQL pass is
 claimed. SQL CI results must be recorded on the reviewed head before P2 acceptance.
 
+The first registered-schema CI run at `2699ce71` (`39143400544`) failed final
+schema comparison: four CHECK descriptors used different parentheses from SQL
+Server's stored expressions, and the two default descriptors differed. The
+reviewed DDL executed; the schema authority correctly prevented commit. The
+descriptor was corrected to SQL Server's stored representation without changing
+the DDL or weakening comparison. This failed attempt remains in history.
+
 Publication guards, V1 codecs, projection stores, processor composition, API and
 factory configuration remain unchanged. The schema does not unblock revision 534.

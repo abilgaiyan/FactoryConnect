@@ -230,7 +230,9 @@ internal static class SqlSchemaComparator
                              expectedItem is SqlCheckConstraintDescriptor expectedCheck &&
                              actualItem is SqlCheckConstraintDescriptor actualCheck
                     ? $"Expected '{expectedCheck.CanonicalDefinition}'; actual '{actualCheck.CanonicalDefinition}'."
-                    : "Structural or operational semantics differ.";
+                    : expectedItem is SqlDefaultConstraintDescriptor expectedDefault && actualItem is SqlDefaultConstraintDescriptor actualDefault
+                        ? $"Expected '{expectedDefault.ColumnName}:{expectedDefault.Definition}'; actual '{actualDefault.ColumnName}:{actualDefault.Definition}'."
+                        : "Structural or operational semantics differ.";
                 differences.Add(Difference(mismatchKind, table, name, detail));
             }
         }
