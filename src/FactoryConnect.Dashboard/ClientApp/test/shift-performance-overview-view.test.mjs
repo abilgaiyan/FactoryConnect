@@ -216,3 +216,24 @@ test("filters select one exact occurrence, retain state distinctions and reset w
   assert.equal(h.document.querySelectorAll("tbody tr").length, 2);
   assert.equal(h.document.querySelector(".performance-kpis"), null);
 });
+
+test("a recurring shift identifier retains every exact occurrence and suppresses ambiguous KPI cards", async t => {
+  const { act } = await import("react");
+  const { mountInDom } = await import("./dom-test-harness.mjs");
+  const first = shift();
+  const second = shift({ shift: { ...first.shift, shiftScheduleAssignmentId: "assignment-b", startsAtUtc: "2026-09-02T16:00:00Z", endsAtUtc: "2026-09-02T20:00:00Z" } });
+  const data = overview([{ groupName: null, machines: [machine("M1", "One", [first, second])] }]);
+  const h = await mountInDom(createElement(ShiftPerformanceOverviewView, { overview: data }));
+  t.after(() => h.dispose());
+  const control = h.document.querySelector('select[aria-describedby="shift-filter-scope"]');
+  assert.match(control.closest("label").textContent, /Shift identifier/);
+  assert.match(h.document.getElementById("shift-filter-scope").textContent, /every occurrence/);
+  await act(async () => {
+    control.value = "SHIFT-BETA";
+    control.dispatchEvent(new h.window.Event("change", { bubbles: true }));
+  });
+  assert.equal(h.document.querySelectorAll("tbody tr").length, 2);
+  assert.equal(h.document.querySelector(".performance-kpis"), null);
+  assert.match(h.document.querySelector("details").textContent, /assignment-a/);
+  assert.match(h.document.querySelector("details").textContent, /assignment-b/);
+});

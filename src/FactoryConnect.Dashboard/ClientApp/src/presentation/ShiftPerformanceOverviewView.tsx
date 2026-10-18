@@ -33,12 +33,13 @@ export function ShiftPerformanceOverviewView({ overview }: ShiftPerformanceOverv
           <option value="">All machines</option>
           {machines.map(machine => <option key={machineKey(machine)} value={machineKey(machine)}>{machine.displayName} · {machine.productionLineId}</option>)}
         </select></label>
-        <label>Shift <select value={shiftFilter} onChange={event => setShiftFilter(event.target.value)}>
+        <label>Shift identifier <select aria-describedby="shift-filter-scope" value={shiftFilter} onChange={event => setShiftFilter(event.target.value)}>
           <option value="">All shifts</option>
           {shifts.map(shift => <option key={shift} value={shift}>{shift}</option>)}
         </select></label>
         <button type="button" onClick={() => { setMachineFilter(""); setShiftFilter(""); }}>Reset filters</button>
       </div>
+      <p id="shift-filter-scope" className="report-scope-note">The shift filter includes every occurrence with that identifier. KPI cards appear only when exactly one machine and shift occurrence remains.</p>
       <p className="report-scope-note">Each result belongs to one machine and exact shift interval. Group totals are not calculated.</p>
       {selected.length === 1 && <p className="report-scope-note">Selected: {selected[0]!.machine.displayName} · {selected[0]!.shift.shift.shiftId} · {formatReportTimestamp(selected[0]!.shift.shift.startsAtUtc)} – {formatReportTimestamp(selected[0]!.shift.shift.endsAtUtc)}</p>}
       {selected.length === 1 && <section className="performance-kpis" aria-label="Selected shift metrics">

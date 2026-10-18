@@ -38,3 +38,9 @@ No new API, DTO, calculation engine, SQL migration, historical rewrite or server
 - Existing unavailable OEE reasons remain visible even when Availability conflicts. Reported conflicting values remain evidence; they are never clamped or multiplied in the browser.
 - Pending before milestone acceptance: restore real GG-003 history in a nonproduction environment; verify production-day/date and exact revision-534 evidence; validate activity/quantities against persisted evidence; finish APT/POT mapping, policy/provisional integration, activity timeline and comparison chart; review desktop/mobile screenshots and CI.
 - The focused PR must remain unmerged until explicit review. Gajra deployment and migration 021 registration remain outside this work.
+
+## Review follow-up — shift filter scope
+
+The control is labeled **Shift identifier** with an accessible description stating that it selects all occurrences sharing that identifier. A mounted regression test uses two different assignments/intervals with the same ID on one machine: both rows and evidence records remain, and KPI cards stay hidden. This is explicitly an identifier filter, not an exact-occurrence selector.
+
+Restored-database validation remains outstanding. The existing `Gg003SqlHistoricalReaderAcceptanceTests` uses a sanitized operand fixture in a newly created SQL database; even a CI pass must not be described as testing the restored GG-003 reporting screen.
