@@ -60,9 +60,9 @@ twelve-command execution plan with physical schema authority and upgrade/rollbac
 tests; see [P2 schema implementation](GG003-stage-b-p2-schema.md). P2 SQL acceptance passed at `5f830ed7`: both `build-and-test` and
 `sql-server-integration` completed successfully after the legacy snapshot
 comparison was updated to account for migration-021 defaulted columns.
-P3 contribution and Availability authority are now implemented as described below;
-Performance R/S and recursive validation, P4 and P5 remain pending. The publication
-guard remains intact.
+P3 contribution, Availability, Performance R/S and recursive result validators are
+now implemented as described below, pending independent review and SQL CI. P4/P5
+and production-path integration remain pending. The publication guard is intact.
 
 Migration 021 is registered with twelve command boundaries and caller-owned
 transaction semantics. The schema prototype established why one combined DDL
@@ -174,10 +174,9 @@ registration unchanged until P4 and composition are explicitly accepted.
   original fact and period-ownership fields. No independent connection,
   transaction or write is opened by this reader.
 - At `ff9a8f3d`, this was only a source-membership primitive. The following
-  Availability slice adds aggregate/witness reconstruction and SQL tests. Completed
-  R transitions, outcomes/standards S and recursive result verification remain
-  pending. Do not wire this seam to publication or reporting reads before P3–P5
-  acceptance.
+  Availability slice adds aggregate/witness reconstruction and SQL tests. R/S and
+  recursive result verification are added in the follow-up below. Do not wire
+  this seam to publication or reporting reads before P3–P5 acceptance.
 
 ### P3 contribution and Availability implementation
 
@@ -208,8 +207,9 @@ missing/corrupt authority, malformed values, cancellation, isolation/transaction
 ownership, caller-visible updates and rollback, source-writer lock contention,
 and zero mutations across source/projection/archive snapshots. The named CI
 step retains a TRX artifact before the full SQL suite. SQL results remain pending
-on the implementation head. Performance completed R/S reconstruction and recursive
-FCDS V2 verification remain required for P3 acceptance. No publication/read wiring,
+on the implementation head. At this initial slice, Performance R/S and recursive
+verification were still pending; the follow-up below implements those seams.
+No publication/read wiring,
 guard change, migration change or factory activation is included.
 
 Local validation for this Availability slice: all 759 ordinary Release Integration
@@ -222,3 +222,49 @@ the shared legacy fixture did not create the migration-021 archive tables needed
 for mutation snapshots. The P3 fixture now creates a disposable current-schema
 database through the actual migration engine; the snapshot assertions remain
 intact. This correction does not change the production reader or validator.
+
+### P3 Performance R/S and recursive result implementation
+
+`SqlContainmentReferenceTimeAuthorityValidator` obtains incorporated sources from
+SQL itself. It verifies every completed transition through exact A, its immediate
+aggregation predecessor and starting/terminal R chain, each exact `(A,R)` cut,
+and the complete produced-source outcome inventory for each delta. Pending or
+absent transitions, missing cuts/outcomes and incomplete standard inventories
+are missing-authority failures, never verified `MissingReferenceTime` outcomes.
+Extraneous sources, mixed S, malformed or contradictory canonical outcomes are
+integrity failures. Every selected outcome is independently resolved using the
+complete historical production-standard cut S, including machine precedence,
+effective intervals, unresolved statuses and ambiguity sets. Later A/R/S evidence
+is excluded. The Performance binding records terminal R and the exact period's
+sorted source IDs and distinct standard revisions. Empty or unresolved but fully
+verified source sets yield the ordinary missing reference-time operand.
+
+`SqlContainmentHistoricalResultValidator` re-evaluates the fixed built-in
+unpartitioned definitions with a caller-transaction snapshot reader. It supplies
+independently reconstructed direct operands, Availability witnesses and verified
+reference time to the existing Core evaluator, which evaluates every OEE child.
+It then compares the complete canonical FCDS V2 bytes, including recursive child
+results and every historical binding. An unavailable Availability factor cannot
+hide a forged Quality child or missing Performance authority. Unknown codec
+versions, recognized integrity failures, missing authority, SQL failures and
+cancellation remain distinct. No claim can supply its own source-fact inventory.
+
+Existing source/materializer helpers have internal visibility for reuse; their
+legacy query behavior is unchanged. No migration, publication guard, processor
+registration, coordinator, composition, API or factory configuration is changed.
+The new validators do not open connections or own/commit/roll back transactions.
+
+26 additional SQL cases exercise resolved shift/day results, unavailable OEE with
+all dependencies retained, canonical unresolved/empty authority, later A/R/S
+advancement, missing and pending transitions, missing outcomes/cuts/selected and
+unselected standards, contradictory sources/outcomes/S, forged canonical result
+bindings and later dependencies, codec errors, source-writer locking, and zero
+mutations. The dedicated retained P3 TRX gate now includes these and the earlier
+11 Availability cases (37 total), followed by the full SQL suite.
+
+Local SDK 10.0.402: all 759 ordinary Release Integration tests pass. The new SQL
+cases have not run locally because the local engine is unavailable. SQL CI and
+independent acceptance remain pending on this implementation head. CI monitoring
+is handed back to the user as requested. P4/P5 must exercise these production
+seams inside actual publication/replay and stable read transactions; P3 acceptance
+does not itself complete durable reporting or unblock GG-003 restored replay.

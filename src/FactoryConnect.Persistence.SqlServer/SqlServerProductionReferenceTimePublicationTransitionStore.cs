@@ -596,7 +596,7 @@ public sealed class SqlServerProductionReferenceTimePublicationTransitionStore
         await ReadAsync(connection, transaction, processorId, processorRowId, target, forUpdate, cancellationToken)
         ?? throw new InvalidOperationException("Reference-time publication transition is not available.");
 
-    private static async Task<ProductionReferenceTimePublicationTransition?> ReadAsync(
+    internal static async Task<ProductionReferenceTimePublicationTransition?> ReadAsync(
         SqlConnection connection,
         SqlTransaction? transaction,
         MetricAggregationProcessorId processorId,

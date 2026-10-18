@@ -200,7 +200,7 @@ public sealed class SqlServerProductionStandardAuthority
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static ProductionStandardVersion Materialize(SqlDataReader reader) => new()
+    internal static ProductionStandardVersion Materialize(SqlDataReader reader) => new()
     {
         VersionId = reader.GetString(0),
         PublishedRevision = checked((long)reader.GetDecimal(1)),

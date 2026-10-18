@@ -108,12 +108,12 @@ jobs:
           path: TestResults/P2Migration021
           if-no-files-found: warn
 
-      - name: Verify P3 historical contribution and Availability authority
+      - name: Verify P3 historical contribution, R/S and recursive result authority
         run: >-
           dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
           --configuration Release
           --no-build
-          --filter "FullyQualifiedName~SqlContainmentHistoricalAuthorityIntegrationTests"
+          --filter "FullyQualifiedName~SqlContainmentHistoricalAuthorityIntegrationTests|FullyQualifiedName~SqlContainmentHistoricalResultIntegrationTests"
           --logger "console;verbosity=normal"
           --logger "trx;LogFileName=p3-historical-authority.trx"
           --results-directory TestResults/P3HistoricalAuthority

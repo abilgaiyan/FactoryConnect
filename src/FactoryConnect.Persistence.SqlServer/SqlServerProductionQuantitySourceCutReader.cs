@@ -92,7 +92,7 @@ internal sealed partial class SqlServerMetricAggregationStore : IProductionQuant
             _ => throw new InvalidOperationException("Unsupported operational metric period type."),
         };
 
-    private static ProductionQuantitySourceEntry? ReconstructSource(
+    internal static ProductionQuantitySourceEntry? ReconstructSource(
         ProductionQuantityEvidenceId sourceId,
         IReadOnlyList<PositionedMetricInputFact> items)
     {

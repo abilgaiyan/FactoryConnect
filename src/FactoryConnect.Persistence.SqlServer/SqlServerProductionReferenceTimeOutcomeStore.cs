@@ -217,7 +217,7 @@ internal sealed class SqlServerProductionReferenceTimeOutcomeStore
         }
     }
 
-    private const string OutcomeSelect = """
+    internal const string OutcomeSelect = """
         SELECT o.ProductionReferenceTimeRevision, o.SourceQuantityEvidenceId,
                o.CompanyId, o.SiteId, o.MachineId, o.ShiftScheduleAssignmentId,
                o.ShiftId, o.ShiftStartsAtUtc, o.ShiftEndsAtUtc,
@@ -235,7 +235,7 @@ internal sealed class SqlServerProductionReferenceTimeOutcomeStore
         FROM dbo.ProductionReferenceTimeOutcome o
         """;
 
-    private static PublishedProductionReferenceTimeOutcome Materialize(SqlDataReader reader)
+    internal static PublishedProductionReferenceTimeOutcome Materialize(SqlDataReader reader)
     {
         var conflicts = reader.IsDBNull(19)
             ? []
