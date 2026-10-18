@@ -44,3 +44,20 @@ No new API, DTO, calculation engine, SQL migration, historical rewrite or server
 The control is labeled **Shift identifier** with an accessible description stating that it selects all occurrences sharing that identifier. A mounted regression test uses two different assignments/intervals with the same ID on one machine: both rows and evidence records remain, and KPI cards stay hidden. This is explicitly an identifier filter, not an exact-occurrence selector.
 
 Restored-database validation remains outstanding. The existing `Gg003SqlHistoricalReaderAcceptanceTests` uses a sanitized operand fixture in a newly created SQL database; even a CI pass must not be described as testing the restored GG-003 reporting screen.
+
+## Restored LocalDB evaluator probe
+
+`Gg003RestoredHistoricalAcceptanceTests.RestoredShift534ReturnsUnavailableWithOriginalWitness` is opt-in using `FACTORYCONNECT_GG003_RESTORED_CONNECTION_STRING`; absent configuration is a skip, never a pass against real history. It accepts only `(localdb)` and database `FactoryConnect_GG003_RCA_20261016`. It constructs the real GG-003 machine/site/schedule SHIFT-1 request and pins both component and evaluator reads to revision 534. It checks the 31/3 contribution counts, exact duration operands and original position-380 fact identity, then requires null/unavailable Availability with `RunningOutsidePlannedProduction` and the same witness. The checkpoint is compared before and after.
+
+The probe invokes read methods only: no fixture creation, input seeding, migrations, recovery or projection publication. `ApplicationIntent=ReadOnly` is a connection hint, not a SQL permissions boundary. It is not an end-to-end API/UI acceptance test. Run against the isolated restored database with no ingestion process writing to it.
+
+```powershell
+$env:FACTORYCONNECT_GG003_RESTORED_CONNECTION_STRING = 'Server=(localdb)\MSSQLLocalDB;Database=FactoryConnect_GG003_RCA_20261016;Integrated Security=True;TrustServerCertificate=True'
+try {
+    dotnet test tests\FactoryConnect.Integration.Tests\FactoryConnect.Integration.Tests.csproj --filter 'FullyQualifiedName~Gg003RestoredHistoricalAcceptanceTests.RestoredShift534ReturnsUnavailableWithOriginalWitness' --logger 'console;verbosity=normal'
+} finally {
+    Remove-Item Env:\FACTORYCONNECT_GG003_RESTORED_CONNECTION_STRING
+}
+```
+
+No restored acceptance pass is claimed until this named test executes successfully with the actual restored database. A skipped run does not close this gate.
