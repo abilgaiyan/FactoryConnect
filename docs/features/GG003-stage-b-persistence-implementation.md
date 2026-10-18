@@ -47,12 +47,13 @@ and claim it proves those implementations.
 | P4 — publication | Format-aware processor registration and commit validation, preflight, archive slots/identities/references and retained publisher; complete replay comparison | Actual production paths satisfy atomic rollback, identical replay, changed-slot rejection, shared witnesses and source-writer/read interleavings |
 | P5 — reads and API | V1/V2 dispatch, verified query/detail/summary materialization, per-metric metadata and controlled evidence errors; regenerate OpenAPI/client contract | Exact-processor isolation; whole-page failure; null metadata for synthesized missing cells; all three routes and Daily/Range failure composition |
 
-The first code in this branch implements only the bounded digest and NodePath
-primitives in P1. Hash probes use independent Python hashlib constants and are
-explicitly not complete envelope vectors. The accepted seven-envelope package
-must be compared before claiming full codec conformance; a digest table alone
-is not a substitute for those bytes. Any redistribution of the retained review
-package is separate from this foundation slice.
+P1 now includes FCWE V1 and FCDS V2 encoders/decoders, historical-binding claims,
+bounded digest and NodePath primitives, and executable comparisons with all seven
+accepted envelope vectors. The private review document, reference calculators
+and complete package are not redistributed. The test resource contains the
+required sanitized vector inputs/bytes/digests and negatives only, plus a V1
+regression specimen. See [P1 implementation and validation](GG003-stage-b-p1-codecs.md).
+P1 review/CI acceptance does not complete persistence or enable publication.
 
 P2's migration ID must be checked again when registering it. The schema prototype
 demonstrated that sending all DDL as one command fails during compilation;
@@ -124,3 +125,6 @@ persistence work.
   exact NodePath bytes, malformed lengths/counts and maximum depth.
 - No local .NET SDK is installed; no local .NET/SQL pass is claimed.
 - CI results must be recorded against the actual PR head before merge.
+
+These original foundation results are historical. Subsequent P1 implementation
+and local SDK/test evidence are recorded in the linked P1 document.
