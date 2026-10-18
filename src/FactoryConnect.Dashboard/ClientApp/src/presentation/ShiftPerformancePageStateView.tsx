@@ -12,7 +12,7 @@ export function ShiftPerformancePageStateView({ state }: ShiftPerformancePageSta
     case "success":
       return (
         <>
-          <ShiftPerformanceOverviewView overview={state.overview} />
+          <ShiftPerformanceOverviewView key={state.overview.productionDay} overview={state.overview} />
           {state.isRefreshing
             ? <p role="status" aria-live="polite">Refreshing shift performance…</p>
             : null}
