@@ -57,15 +57,15 @@ P1 review/CI acceptance does not complete persistence or enable publication.
 
 P1 at `8208ad6b` passed both CI jobs. P2 now registers migration 021 and its
 twelve-command execution plan with physical schema authority and upgrade/rollback
-tests; see [P2 schema implementation](GG003-stage-b-p2-schema.md). P2 SQL acceptance
-is pending. P3–P5 remain unimplemented; the publication guard remains intact.
+tests; see [P2 schema implementation](GG003-stage-b-p2-schema.md). P2 SQL acceptance passed at `5f830ed7`: both `build-and-test` and
+`sql-server-integration` completed successfully after the legacy snapshot
+comparison was updated to account for migration-021 defaulted columns.
+P3–P5 remain unimplemented; the publication guard remains intact.
 
-P2's migration ID must be checked again when registering it. The schema prototype
-demonstrated that sending all DDL as one command fails during compilation;
-production execution must preserve the twelve batch boundaries without GO,
-connection changes, independent commits or weakened constraints. Existing
-`SqlServerMigrationExecutor` currently submits a single command, so registration
-requires an explicit reviewed execution extension and its transaction tests.
+Migration 021 is registered with twelve command boundaries and caller-owned
+transaction semantics. The schema prototype established why one combined DDL
+command is not sufficient. Preserve the registered migration's checked-in
+checksum, execution boundaries and physical-schema validation during P3–P5.
 
 ## Publication and historical validation
 
@@ -133,3 +133,32 @@ persistence work.
 
 These original foundation results are historical. Subsequent P1 implementation
 and local SDK/test evidence are recorded in the linked P1 document.
+
+## P3 start gate — 18 October 2026
+
+P2 acceptance permits implementation of the historical authority validator,
+**not** activation of containment publication. P3 must:
+
+1. Accept the caller's open SQL connection and active transaction. Never open a
+   second connection or start/commit an independent transaction for authority reads.
+2. Bind the exact aggregation processor, input stream and revision A; reconstruct
+   only incorporated contributions at or before A. Reject absent, duplicate,
+   conflicting and out-of-cut membership rather than relying on an envelope hash.
+3. Recompute both complete Availability aggregates and the deterministic first
+   offending RunningDuration contribution; verify its complete fact, scope and
+   original position, not just its witness ID.
+4. For Performance, require the completed transition and exact terminal R,
+   complete `(A,R)` source cut, produced-source set and selected outcome/standard
+   revisions S. Pending reference-time transitions are not verified missing data.
+5. Validate every FCDS V2 dependency recursively, including OEE children whose
+   Availability result is Unavailable. Distinguish missing authority from
+   contradictory/corrupt authority and unsupported codec versions.
+6. Cover stable historical cuts, later-source exclusions, changed contributions,
+   incomplete transitions, missing outcomes/standards, forged but canonical
+   witness/result envelopes and concurrency with source writers. Verify zero
+   writes by P3 itself.
+
+Acceptance evidence must exercise the production SQL reader/validator seam with
+real SQL transactions; a mock-only test or the 34-contribution historical fixture
+is insufficient. Keep the Stage-A publication guard and separate processor
+registration unchanged until P4 and composition are explicitly accepted.
