@@ -65,5 +65,16 @@ reviewed DDL executed; the schema authority correctly prevented commit. The
 descriptor was corrected to SQL Server's stored representation without changing
 the DDL or weakening comparison. This failed attempt remains in history.
 
+The subsequent run at `517681e` (`39143785782`) passed all 21 registered
+migration tests and the ordinary CI job, but the full SQL suite failed two
+migration-006 preservation assertions (718 passed, one restored-database test
+skipped). Those assertions used `SELECT *`, so the expected new format/policy
+and archive-binding columns changed the JSON shape. Preservation snapshots now
+select every column from the frozen Post005 descriptor. Separate assertions
+require exactly one legacy processor/projection with format 1 and null policy
+and archive bindings, plus empty archives. The injected migration-006 failure
+also verifies migration-021 columns and archive tables are absent. Migration SQL
+and historical checksums are unchanged. A new full SQL CI pass is required.
+
 Publication guards, V1 codecs, projection stores, processor composition, API and
 factory configuration remain unchanged. The schema does not unblock revision 534.

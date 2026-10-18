@@ -33,6 +33,7 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
 
         Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.Equal(before, await ReadPublicationSnapshotAsync(connection));
+        await AssertLegacyPublicationDefaultsAsync(connection);
         await AssertPost006ForeignKeyStateAsync(connection);
         await AssertCurrentStateAsync(connection, catalog);
     }
@@ -62,6 +63,12 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         var exception = await Assert.ThrowsAsync<MigrationExecutionException>(() =>
             engine.ApplyAsync(connection, TimeSpan.FromSeconds(10), CancellationToken.None));
 
+        Assert.Null(await ReadNullableScalarAsync(connection, "SELECT COL_LENGTH('dbo.OperationalMetricProjectionProcessor', 'PublicationFormatVersion');"));
+        Assert.Null(await ReadNullableScalarAsync(connection, "SELECT COL_LENGTH('dbo.OperationalMetricProjection', 'PublicationFormatVersion');"));
+        Assert.Null(await ReadNullableScalarAsync(connection, "SELECT OBJECT_ID('dbo.OperationalMetricConflictWitnessArchive');"));
+        Assert.Null(await ReadNullableScalarAsync(connection, "SELECT OBJECT_ID('dbo.OperationalMetricPublicationResultArchive');"));
+        Assert.Null(await ReadNullableScalarAsync(connection, "SELECT OBJECT_ID('dbo.OperationalMetricResultWitnessReference');"));
+
         Assert.Equal(6, exception.MigrationId);
         Assert.Equal("CorrectOperationalMetricProjectionManifestParent", exception.MigrationName);
         Assert.IsType<SqlException>(exception.InnerException);
@@ -75,6 +82,7 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         Assert.Equal(MigrationIdsThroughCurrent, await ReadMigrationIdsAsync(connection));
         Assert.Equal(1, await CountMigration006RowsAsync(connection));
         Assert.Equal(before, await ReadPublicationSnapshotAsync(connection));
+        await AssertLegacyPublicationDefaultsAsync(connection);
         await AssertPost006ForeignKeyStateAsync(connection);
         await AssertCurrentStateAsync(connection, catalog);
     }
@@ -266,19 +274,48 @@ public sealed class SqlServerMigration006ConformanceIntegrationTests
         return new PublicationSnapshot(
             await ReadJsonAsync(
                 connection,
-                "SELECT * FROM dbo.OperationalMetricProjectionProcessor ORDER BY OperationalMetricProjectionProcessorRowId FOR JSON PATH, INCLUDE_NULL_VALUES;"),
+                LegacySnapshotSql("OperationalMetricProjectionProcessor", "OperationalMetricProjectionProcessorRowId")),
             await ReadJsonAsync(
                 connection,
-                "SELECT * FROM dbo.OperationalMetricProjectionCheckpoint ORDER BY OperationalMetricProjectionProcessorRowId FOR JSON PATH, INCLUDE_NULL_VALUES;"),
+                LegacySnapshotSql("OperationalMetricProjectionCheckpoint", "OperationalMetricProjectionProcessorRowId")),
             await ReadJsonAsync(
                 connection,
-                "SELECT * FROM dbo.OperationalMetricProjection ORDER BY OperationalMetricProjectionRowId FOR JSON PATH, INCLUDE_NULL_VALUES;"),
+                LegacySnapshotSql("OperationalMetricProjection", "OperationalMetricProjectionRowId")),
             await ReadJsonAsync(
                 connection,
-                "SELECT * FROM dbo.OperationalMetricProjectionManifest ORDER BY OperationalMetricProjectionProcessorRowId, OperationalMetricProjectionRowId FOR JSON PATH, INCLUDE_NULL_VALUES;"),
+                LegacySnapshotSql("OperationalMetricProjectionManifest", "OperationalMetricProjectionProcessorRowId, OperationalMetricProjectionRowId")),
             await ReadJsonAsync(
                 connection,
-                "SELECT * FROM dbo.OperationalMetricProjectionEvidence ORDER BY OperationalMetricProjectionEvidenceRowId FOR JSON PATH, INCLUDE_NULL_VALUES;"));
+                LegacySnapshotSql("OperationalMetricProjectionEvidence", "OperationalMetricProjectionEvidenceRowId")));
+    }
+
+    // Compare every historical column while allowing later migrations to add columns.
+    private static string LegacySnapshotSql(string tableName, string orderBy)
+    {
+        var table = SqlRepositorySchemaDescriptors.Post005.Tables.Single(
+            table => table.Name.ObjectName == tableName);
+        var columns = string.Join(", ", table.Columns.Select(column => $"[{column.Name}]"));
+        return $"SELECT {columns} FROM dbo.[{tableName}] ORDER BY {orderBy} FOR JSON PATH, INCLUDE_NULL_VALUES;";
+    }
+
+    private static async Task<object?> ReadNullableScalarAsync(SqlConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var value = await command.ExecuteScalarAsync();
+        return value is DBNull ? null : value;
+    }
+
+    private static async Task AssertLegacyPublicationDefaultsAsync(SqlConnection connection)
+    {
+        Assert.Equal("[{\"PublicationFormatVersion\":1,\"EvaluationPolicyId\":null}]",
+            await ReadJsonAsync(connection,
+                "SELECT PublicationFormatVersion, EvaluationPolicyId FROM dbo.OperationalMetricProjectionProcessor FOR JSON PATH, INCLUDE_NULL_VALUES;"));
+        Assert.Equal("[{\"PublicationFormatVersion\":1,\"EvaluationPolicyId\":null,\"ContainmentResultId\":null,\"ConflictWitnessId\":null}]",
+            await ReadJsonAsync(connection,
+                "SELECT PublicationFormatVersion, EvaluationPolicyId, ContainmentResultId, ConflictWitnessId FROM dbo.OperationalMetricProjection FOR JSON PATH, INCLUDE_NULL_VALUES;"));
+        Assert.Equal(0, await ReadNullableScalarAsync(connection,
+            "SELECT (SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive) + (SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive) + (SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference);"));
     }
 
     private static async Task<string> ReadJsonAsync(SqlConnection connection, string sql)
