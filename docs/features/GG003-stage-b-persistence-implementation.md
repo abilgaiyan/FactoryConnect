@@ -176,3 +176,40 @@ registration unchanged until P4 and composition are explicitly accepted.
   selection, completed R transitions, outcomes/standards S, recursive result
   validation and real SQL conformance tests remain pending. Do not wire it to
   publication or reporting reads before those gates pass.
+
+### P3 contribution and Availability implementation
+
+The reader now returns complete `PositionedMetricInputFact` instances using the
+existing historical fact materializer, including every domain fact field and
+both period identities. It resolves the logical processor and stream from the
+claimed cut, requires its exact revision, and reads only incorporated membership
+through A with the composite fact/stream/position join. Broken joins and duplicate
+membership are rejected. It requires the caller's open Serializable transaction;
+no equivalent isolation modes are currently admitted.
+
+`MissingContainmentHistoricalAuthorityException` distinguishes absent processor
+or revision authority from `ContainmentHistoricalIntegrityException` for binding,
+materialization, membership, aggregate or witness contradictions. SQL errors and
+cancellation are not translated into authority errors.
+
+`SqlContainmentAvailabilityAuthorityValidator` independently rebuilds both fixed
+Availability operands from these SQL contributions. The existing deterministic
+Core builder validates duration/eligibility semantics and selects the lowest
+position. Verification compares complete canonical FCWE bytes against the
+reconstructed witness, including all fact fields, period, cut, aggregate counts
+and timestamp bounds. This seam verifies Availability witnesses only; it does
+not validate an FCDS result or certify a missing Performance operand.
+
+Eleven new real SQL cases cover full fact equality, raw unincorporated facts
+inside A, later incorporated facts, shift/day aggregates, canonical forgeries,
+missing/corrupt authority, malformed values, cancellation, isolation/transaction
+ownership, caller-visible updates and rollback, source-writer lock contention,
+and zero mutations across source/projection/archive snapshots. The named CI
+step retains a TRX artifact before the full SQL suite. SQL results remain pending
+on the implementation head. Performance completed R/S reconstruction and recursive
+FCDS V2 verification remain required for P3 acceptance. No publication/read wiring,
+guard change, migration change or factory activation is included.
+
+Local validation for this Availability slice: all 759 ordinary Release Integration
+tests passed; the integration project compiled successfully. No local SQL pass
+is claimed; the new SQL cases require the dedicated CI gate.

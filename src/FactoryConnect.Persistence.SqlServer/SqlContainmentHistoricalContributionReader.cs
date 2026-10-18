@@ -1,131 +1,108 @@
 using System.Data;
-using System.Globalization;
+using FactoryConnect.Abstractions;
+using FactoryConnect.Core;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
-/// <summary>
-/// P3 source-membership reader. This is a historical input, not a completed
-/// authority validator: aggregation arithmetic and R/S bindings are separate.
-/// The caller owns the open connection and active transaction.
-/// </summary>
+/// <summary>Reads complete incorporated facts from the caller's stable historical transaction.</summary>
 internal static class SqlContainmentHistoricalContributionReader
 {
-    internal sealed record Row(
-        long FactRowId,
-        decimal Position,
-        string FactId,
-        string Key,
-        string Value,
-        string Unit,
-        DateTimeOffset StartsAtUtc,
-        DateTimeOffset EndsAtUtc,
-        string OccurrenceSiteId,
-        string OccurrenceShiftId,
-        string OccurrenceAssignmentId,
-        DateTimeOffset OccurrenceStartsAtUtc,
-        DateTimeOffset OccurrenceEndsAtUtc,
-        string ProductionDaySiteId,
-        DateTime ProductionBusinessDate,
-        bool? IsPlannedProductionTime,
-        string? EligibilityIntervalId,
-        string? ContextualizedActivityIntervalId);
-
-    /// <summary>
-    /// Reads only contributions incorporated by the selected aggregation
-    /// processor at the exact cut. Does not substitute the raw fact stream,
-    /// which may contain facts never admitted to this processor.
-    /// </summary>
-    internal static async Task<IReadOnlyList<Row>> ReadAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        long aggregationProcessorRowId,
-        long inputStreamRowId,
-        decimal revisionPosition,
-        CancellationToken cancellationToken)
+    internal static void RequireStableTransaction(SqlConnection connection, SqlTransaction transaction)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
-        if (connection.State != ConnectionState.Open ||
-            !ReferenceEquals(transaction.Connection, connection))
-            throw new InvalidOperationException("Historical authority requires the caller's open transaction.");
-        if (aggregationProcessorRowId <= 0 || inputStreamRowId <= 0 ||
-            revisionPosition < 1 || revisionPosition > 18446744073709551615m ||
-            decimal.Truncate(revisionPosition) != revisionPosition)
-            throw new ArgumentOutOfRangeException(nameof(revisionPosition), "Invalid historical source cut.");
+        if (connection.State != ConnectionState.Open || !ReferenceEquals(transaction.Connection, connection) ||
+            transaction.IsolationLevel != IsolationLevel.Serializable)
+            throw new InvalidOperationException("Historical authority requires the caller's open Serializable transaction.");
+    }
 
-        // Verify the exact processor/stream/revision before reading its members.
+    internal static async Task<IReadOnlyList<PositionedMetricInputFact>> ReadAsync(
+        SqlConnection connection, SqlTransaction transaction, MetricAggregationCheckpoint cut,
+        CancellationToken cancellationToken)
+    {
+        RequireStableTransaction(connection, transaction);
+        ArgumentNullException.ThrowIfNull(cut);
+        cancellationToken.ThrowIfCancellationRequested();
+        long processorRowId;
+        long streamRowId;
         await using (var exact = connection.CreateCommand())
         {
             exact.Transaction = transaction;
             exact.CommandText = """
-                SELECT COUNT_BIG(*)
-                FROM dbo.MetricAggregationRevision AS r
-                INNER JOIN dbo.MetricAggregationProcessor AS p
-                  ON p.MetricAggregationProcessorRowId = r.MetricAggregationProcessorRowId
-                WHERE r.MetricAggregationProcessorRowId = @processor
-                  AND p.MetricInputStreamRowId = @stream
-                  AND r.Position = @cut;
+                SELECT p.MetricAggregationProcessorRowId, p.MetricInputStreamRowId,
+                       p.ProcessorKey, s.MachineId, s.StreamKey
+                FROM dbo.MetricAggregationProcessor p
+                JOIN dbo.MetricInputStream s ON s.MetricInputStreamRowId = p.MetricInputStreamRowId
+                WHERE p.ProcessorKeyBinary = @Key;
                 """;
-            Bind(exact, aggregationProcessorRowId, inputStreamRowId, revisionPosition);
-            if (Convert.ToInt64(await exact.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture) != 1)
-                throw new InvalidDataException("The exact aggregation source cut is absent or has a different stream.");
+            exact.Parameters.Add("@Key", SqlDbType.VarBinary, 512).Value = OrdinalStringKeyCodec.Encode(cut.ProcessorId.Value);
+            await using var reader = await exact.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                throw new MissingContainmentHistoricalAuthorityException("The aggregation processor is absent.");
+            processorRowId = reader.GetInt64(0);
+            streamRowId = reader.GetInt64(1);
+            if (reader.GetString(2) != cut.ProcessorId.Value || reader.GetGuid(3) != cut.StreamId.MachineId.Value ||
+                reader.GetString(4) != cut.StreamId.StreamKey)
+                throw new ContainmentHistoricalIntegrityException("The historical processor/stream binding contradicts the requested cut.");
         }
-
+        await using (var exact = connection.CreateCommand())
+        {
+            exact.Transaction = transaction;
+            exact.CommandText = "SELECT COUNT_BIG(*) FROM dbo.MetricAggregationRevision WHERE MetricAggregationProcessorRowId = @ProcessorRowId AND Position = @ThroughPosition;";
+            Bind(exact, processorRowId, streamRowId, cut);
+            if ((long)(await exact.ExecuteScalarAsync(cancellationToken))! != 1L)
+                throw new MissingContainmentHistoricalAuthorityException("The exact aggregation revision is absent.");
+        }
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            SELECT f.MetricInputFactRowId, f.Position, f.FactId,
-                   f.MetricInputKey, f.MetricValue, f.Unit,
-                   f.StartsAtUtc, f.EndsAtUtc,
-                   f.OccurrenceSiteId, f.OccurrenceShiftId,
-                   f.OccurrenceShiftScheduleAssignmentId,
-                   f.OccurrenceStartsAtUtc, f.OccurrenceEndsAtUtc,
-                   f.ProductionDaySiteId, f.ProductionBusinessDate,
-                   f.IsPlannedProductionTime,
-                   f.SourceEligibilityIntervalId,
-                   f.SourceContextualizedActivityIntervalId
-            FROM dbo.MetricAggregationContribution AS c
-            INNER JOIN dbo.MetricInputFact AS f
-              ON f.MetricInputFactRowId = c.MetricInputFactRowId
-             AND f.MetricInputStreamRowId = c.MetricInputStreamRowId
-             AND f.Position = c.Position
-            WHERE c.MetricAggregationProcessorRowId = @processor
-              AND c.MetricInputStreamRowId = @stream
-              AND c.Position <= @cut
-            ORDER BY c.Position, c.MetricInputFactRowId;
-            """;
-        Bind(command, aggregationProcessorRowId, inputStreamRowId, revisionPosition);
-        var rows = new List<Row>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        decimal previous = 0;
-        while (await reader.ReadAsync(cancellationToken))
+        command.CommandText =
+            "SELECT s.MachineId, s.StreamKey, f.Position, f.FactId, f.MetricInputKey, " +
+            "f.MetricValue, f.Unit, f.StartsAtUtc, f.EndsAtUtc, f.CompanyId, f.SiteId, " +
+            "f.ProductionLineId, f.MachineId, f.ShiftId, f.ShiftScheduleAssignmentId, " +
+            "f.ProductionContextAssignmentId, f.ProductionOrderId, f.OperationId, f.PartId, " +
+            "f.OperatorId, f.IsPlannedProductionTime, f.PlannedProductionScheduleAssignmentId, " +
+            "f.SourceContextualizedActivityIntervalId, f.SourceEligibilityIntervalId, " +
+            "f.SourceQuantityEvidenceId, f.OccurrenceSiteId, f.OccurrenceShiftScheduleAssignmentId, " +
+            "f.OccurrenceShiftId, f.OccurrenceStartsAtUtc, f.OccurrenceEndsAtUtc, " +
+            "f.ProductionDaySiteId, f.ProductionBusinessDate, c.Position, c.MetricInputStreamRowId " +
+            "FROM dbo.MetricAggregationContribution c " +
+            "LEFT JOIN dbo.MetricInputFact f ON f.MetricInputFactRowId = c.MetricInputFactRowId AND f.MetricInputStreamRowId = c.MetricInputStreamRowId AND f.Position = c.Position " +
+            "LEFT JOIN dbo.MetricInputStream s ON s.MetricInputStreamRowId = f.MetricInputStreamRowId " +
+            "WHERE c.MetricAggregationProcessorRowId = @ProcessorRowId " +
+            "AND c.Position <= @ThroughPosition " +
+            "ORDER BY c.Position ASC;";
+        Bind(command, processorRowId, streamRowId, cut);
+        var inputs = new List<PositionedMetricInputFact>();
+        await using var rows = await command.ExecuteReaderAsync(cancellationToken);
+        while (await rows.ReadAsync(cancellationToken))
         {
-            var position = reader.GetDecimal(1);
-            if (position <= previous)
-                throw new InvalidDataException("Historical contribution positions are not strictly increasing.");
-            previous = position;
-            rows.Add(new Row(
-                reader.GetInt64(0), position, reader.GetString(2),
-                reader.GetString(3), reader.GetString(4), reader.GetString(5),
-                reader.GetFieldValue<DateTimeOffset>(6), reader.GetFieldValue<DateTimeOffset>(7),
-                reader.GetString(8), reader.GetString(9), reader.GetString(10),
-                reader.GetFieldValue<DateTimeOffset>(11), reader.GetFieldValue<DateTimeOffset>(12),
-                reader.GetString(13), reader.GetDateTime(14),
-                reader.IsDBNull(15) ? null : reader.GetBoolean(15),
-                reader.IsDBNull(16) ? null : reader.GetString(16),
-                reader.IsDBNull(17) ? null : reader.GetString(17)));
+            try
+            {
+                if (rows.IsDBNull(0))
+                    throw new ContainmentHistoricalIntegrityException("An incorporated contribution has no matching fact/stream.");
+                var input = SqlServerMetricAggregationStore.MaterializeHistoricalInput(rows);
+                if (input.Position.Value == 0 || input.Position > cut.Position || input.StreamId != cut.StreamId ||
+                    rows.GetDecimal(rows.FieldCount - 2) != (decimal)input.Position.Value ||
+                    rows.GetInt64(rows.FieldCount - 1) != streamRowId)
+                    throw new ContainmentHistoricalIntegrityException("Contribution contradicts its historical cut.");
+                inputs.Add(input);
+            }
+            catch (Exception error) when (error is ArgumentException or InvalidDataException or FormatException or OverflowException)
+            {
+                throw new ContainmentHistoricalIntegrityException("Malformed historical contribution.", error);
+            }
         }
-        return rows;
+        try { _ = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs); }
+        catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException)
+        { throw new ContainmentHistoricalIntegrityException("Conflicting historical contribution membership.", error); }
+        return inputs.AsReadOnly();
     }
 
-    private static void Bind(SqlCommand command, long processor, long stream, decimal cut)
+    private static void Bind(SqlCommand command, long processor, long stream, MetricAggregationCheckpoint cut)
     {
-        command.Parameters.Add("@processor", SqlDbType.BigInt).Value = processor;
-        command.Parameters.Add("@stream", SqlDbType.BigInt).Value = stream;
-        var parameter = command.Parameters.Add("@cut", SqlDbType.Decimal);
-        parameter.Precision = 20;
-        parameter.Scale = 0;
-        parameter.Value = cut;
+        command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = processor;
+        command.Parameters.Add("@StreamRowId", SqlDbType.BigInt).Value = stream;
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@ThroughPosition", cut.Position.Value));
     }
 }

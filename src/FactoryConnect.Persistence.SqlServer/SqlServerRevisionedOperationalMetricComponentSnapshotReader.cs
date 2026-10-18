@@ -271,7 +271,7 @@ internal sealed partial class SqlServerMetricAggregationStore
         return inputs;
     }
 
-    private static PositionedMetricInputFact MaterializeHistoricalInput(SqlDataReader reader)
+    internal static PositionedMetricInputFact MaterializeHistoricalInput(SqlDataReader reader)
     {
         var ordinal = 0;
         var streamMachineId = new MachineId(reader.GetGuid(ordinal++));

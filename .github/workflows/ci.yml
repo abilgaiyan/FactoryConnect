@@ -108,6 +108,24 @@ jobs:
           path: TestResults/P2Migration021
           if-no-files-found: warn
 
+      - name: Verify P3 historical contribution and Availability authority
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentHistoricalAuthorityIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p3-historical-authority.trx"
+          --results-directory TestResults/P3HistoricalAuthority
+
+      - name: Retain P3 historical authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p3-historical-authority-evidence
+          path: TestResults/P3HistoricalAuthority
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}
