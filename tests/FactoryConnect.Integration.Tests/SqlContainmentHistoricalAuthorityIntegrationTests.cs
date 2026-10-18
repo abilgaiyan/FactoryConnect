@@ -7,8 +7,8 @@ using Microsoft.Data.SqlClient;
 namespace FactoryConnect.Integration.Tests;
 
 [Trait("Category", "SqlServerIntegration")]
-public sealed class SqlContainmentHistoricalAuthorityIntegrationTests(SqlServerTestDatabaseFixture fixture)
-    : IClassFixture<SqlServerTestDatabaseFixture>
+public sealed class SqlContainmentHistoricalAuthorityIntegrationTests(SqlContainmentAuthorityDatabaseFixture fixture)
+    : IClassFixture<SqlContainmentAuthorityDatabaseFixture>
 {
     [Fact]
     public async Task CompleteFactsExcludeUnincorporatedAndLaterSourcesAndVerifyShiftAndDay()
@@ -266,4 +266,33 @@ public sealed class SqlContainmentHistoricalAuthorityIntegrationTests(SqlServerT
 
     private sealed record Seed(MachineId Machine, MetricAggregationCheckpoint Cut, ShiftOccurrenceId Shift,
         ProductionDayId Day, IReadOnlyList<PositionedMetricInputFact> Inputs);
+}
+
+/// <summary>Disposable current-schema database, created through the real migration engine.</summary>
+public sealed class SqlContainmentAuthorityDatabaseFixture : IAsyncLifetime
+{
+    private SqlStartupIsolatedDatabase? _database;
+    public string ConnectionString => _database!.ConnectionString;
+    public SqlConnection CreateConnection() => new(ConnectionString);
+
+    public async Task InitializeAsync()
+    {
+        _database = await SqlStartupIsolatedDatabase.CreateAsync();
+        try
+        {
+            await using var connection = CreateConnection();
+            await connection.OpenAsync();
+            await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), default);
+        }
+        catch
+        {
+            await _database.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_database is not null) await _database.DisposeAsync();
+    }
 }

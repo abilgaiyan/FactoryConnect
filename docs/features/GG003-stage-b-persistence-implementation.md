@@ -60,7 +60,9 @@ twelve-command execution plan with physical schema authority and upgrade/rollbac
 tests; see [P2 schema implementation](GG003-stage-b-p2-schema.md). P2 SQL acceptance passed at `5f830ed7`: both `build-and-test` and
 `sql-server-integration` completed successfully after the legacy snapshot
 comparison was updated to account for migration-021 defaulted columns.
-P3–P5 remain unimplemented; the publication guard remains intact.
+P3 contribution and Availability authority are now implemented as described below;
+Performance R/S and recursive validation, P4 and P5 remain pending. The publication
+guard remains intact.
 
 Migration 021 is registered with twelve command boundaries and caller-owned
 transaction semantics. The schema prototype established why one combined DDL
@@ -171,11 +173,11 @@ registration unchanged until P4 and composition are explicitly accepted.
   contribution facts at or before that cut in stable position order, retaining
   original fact and period-ownership fields. No independent connection,
   transaction or write is opened by this reader.
-- **Not accepted yet:** this is a source-membership primitive, not a complete
-  historical validator. Aggregate recomputation, lowest-position witness
-  selection, completed R transitions, outcomes/standards S, recursive result
-  validation and real SQL conformance tests remain pending. Do not wire it to
-  publication or reporting reads before those gates pass.
+- At `ff9a8f3d`, this was only a source-membership primitive. The following
+  Availability slice adds aggregate/witness reconstruction and SQL tests. Completed
+  R transitions, outcomes/standards S and recursive result verification remain
+  pending. Do not wire this seam to publication or reporting reads before P3–P5
+  acceptance.
 
 ### P3 contribution and Availability implementation
 
@@ -213,3 +215,10 @@ guard change, migration change or factory activation is included.
 Local validation for this Availability slice: all 759 ordinary Release Integration
 tests passed; the integration project compiled successfully. No local SQL pass
 is claimed; the new SQL cases require the dedicated CI gate.
+
+The initial P3 CI attempt at `152730e9` (run `39150990424`) passed ten of
+11 focused SQL cases. The remaining case failed before reconstruction because
+the shared legacy fixture did not create the migration-021 archive tables needed
+for mutation snapshots. The P3 fixture now creates a disposable current-schema
+database through the actual migration engine; the snapshot assertions remain
+intact. This correction does not change the production reader or validator.
