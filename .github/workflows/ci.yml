@@ -144,6 +144,24 @@ jobs:
           path: TestResults/P4Archives
           if-no-files-found: warn
 
+      - name: Verify P4 atomic containment publication
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentPublicationIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p4-publication.trx"
+          --results-directory TestResults/P4Publication
+
+      - name: Retain P4 atomic publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-atomic-publication-evidence
+          path: TestResults/P4Publication
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

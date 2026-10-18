@@ -257,6 +257,30 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlCo
                  OperationalMetricDependencySnapshotV2Codec.Encode(root)], seed.Cut);
     }
 
+    internal async Task<(ReadOnlyMemory<byte>[] First, ReadOnlyMemory<byte>[] Next)> CreatePublicationAdvanceEvidenceAsync()
+    {
+        var seed = await SeedAsync();
+        ReadOnlyMemory<byte>[] first;
+        await using (var c = fixture.CreateConnection())
+        {
+            await c.OpenAsync(); await using var tx = c.BeginTransaction(IsolationLevel.Serializable);
+            var root = await Reconstruct(c, tx, seed);
+            first = [OperationalMetricDependencySnapshotV2Codec.Encode(root.Dependencies[0].Result), OperationalMetricDependencySnapshotV2Codec.Encode(root)];
+        }
+        var source = seed.Quantity!.Fact with { Id = new MetricInputFactId(Guid.NewGuid().ToString()),
+            SourceQuantityEvidenceId = new ProductionQuantityEvidenceId(Guid.NewGuid().ToString()),
+            StartsAtUtc = seed.Shift.StartsAtUtc.AddHours(2), EndsAtUtc = seed.Shift.StartsAtUtc.AddHours(2) };
+        var input = await new SqlServerMetricInputStore(fixture.ConnectionString).AppendAsync(
+            new DurableMetricInputAppend(seed.Cut.StreamId, source, seed.Shift, seed.Day), default);
+        var next = new MetricAggregationCheckpoint(seed.Cut.ProcessorId, seed.Cut.StreamId, input.Position);
+        await new SqlServerMetricAggregationStore(fixture.ConnectionString).CommitAsync(new(seed.Cut.ProcessorId, seed.Cut, next, [input]), default);
+        await new SqlServerProductionReferenceTimeConvergenceCoordinator(fixture.ConnectionString).ConvergeAsync(next, seed.Machine, seed.Cut.Position);
+        await using var read = fixture.CreateConnection(); await read.OpenAsync(); await using var stable = read.BeginTransaction(IsolationLevel.Serializable);
+        var result = await SqlContainmentHistoricalResultValidator.ReconstructAsync(read, stable,
+            Key(seed, false, BuiltInOperationalMetricDefinitions.AvailabilityId), next, default);
+        return (first, [OperationalMetricDependencySnapshotV2Codec.Encode(result)]);
+    }
+
     private string TargetConnectionString => fixture.ConnectionString;
     private SqlConnection TargetConnection() => fixture.CreateConnection();
 

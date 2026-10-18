@@ -350,3 +350,63 @@ complete archive-plus-retained-plus-checkpoint atomic rollback/replay tests and
 source-writer/read interleavings through that production path. P5 verified API
 reads, composition and disposable GG-003 replay remain later gates. No migration,
 legacy V1 behavior, public commit guard or Gajra configuration is changed here.
+
+### P4 continuation — internal atomic format-2 publisher (SQL acceptance pending)
+
+`SqlContainmentPublicationTransaction.PublishAsync` now owns registration,
+Serializable transaction, complete archive/retained publication, checkpoint,
+commit and rollback. This supersedes the remaining integration work listed for
+its archive-only predecessor above. It is an internal, uncomposed seam: neither
+the public guarded commit constructor nor the running projection worker routes
+containment work through it. No factory configuration or migration is changed.
+
+Incoming envelopes are frozen and canonically decoded before SQL work. Every
+incoming result is independently verified by P3 before archive insertion. The
+publisher renders retained identities, values and component/FCDS V2 dependency
+evidence from those claims only within this verified transaction; it does not
+manufacture a verified Core witness from decoded bytes.
+
+The writer order is exclusive processor application gate, registration slot,
+checkpoint slot, complete retained projection hash prefix, manifest, evidence
+in row-id order, existing retained archives, incoming archive slots and their
+witness/result/reference locks, historical authority, then publication DML and
+checkpoint. Existing retained archives are traversed in projection hash order;
+each archive helper retains its deterministic internal order. The gate remains
+held through commit/rollback, including replay. All format-2 publisher and archive
+helper callers acquire that same gate; stable readers use its shared mode.
+No source writer is assumed to participate in that application gate: historical
+source stability is supplied by Serializable P3 reads.
+
+Before archive DML, every existing retained row is compared against its full
+canonical archive, including all structured keys, order keys, scalar values,
+format/policy, result/witness bindings and evidence fields. Existing immutable
+archive content/references and P3 authority are reverified, including unchanged
+older retained rows. The latest manifest must exactly equal rows at the current
+checkpoint, and the latest result-archive inventory must match that manifest.
+Advancement also checks the caller's complete expected manifest. An independently
+committed archive-only revision (including witness-only preparation) is rejected,
+not completed or repaired by the publisher.
+
+Same-revision replay requires exact incoming retained rows, complete evidence and
+manifest membership, and performs no DML. Backward publication and stale expected
+checkpoints are rejected. Advancement preserves unaffected retained rows and old
+immutable archives, replaces affected evidence, writes the exact latest manifest
+and moves the checkpoint in one transaction. Final retained/evidence/manifest/
+checkpoint state is re-read before commit. Cancellation and any injected failure
+roll back registration, archives, retained changes and checkpoint together.
+
+The new SQL suite covers all eleven failure stages for initial publication,
+retained replay corruption, checkpoint cancellation, concurrent identical and
+manifest-conflicting publishers, shared-gate reader blocking, historical source
+writer contention, archive-only/format-1 rejection, and seven advancement failure
+boundaries with unchanged-row retention and backward-replay rejection. A named
+`p4-atomic-publication-evidence` artifact retains its TRX independently of the
+archive foundation artifact. SQL execution is unavailable locally; these are
+implemented tests, not a claim of passing SQL evidence. CI monitoring remains
+with the user.
+
+P4 remains OPEN pending real SQL results and review. Revalidating P3 for all
+retained rows favors correctness in this internal slice; its cost is not yet a
+factory-scale performance claim. P5 exact-processor verified reads and API work,
+composition, and restored GG-003 replay remain subsequent gates. The public
+publication guard, draft PR status and Gajra installation remain unchanged.
