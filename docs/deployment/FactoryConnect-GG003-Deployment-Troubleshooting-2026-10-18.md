@@ -1,6 +1,6 @@
 # GG-003 local reporting deployment and troubleshooting — 18 October 2026
 
-**Scope:** Developer PC smoke test of the restored Gajra GG-003 SQL database and draft PR #123 Shift Performance UI. This is **not** evidence of deployment to the live factory server. Preserve live CNC acquisition; do not apply local settings to production without validating that environment.
+**Scope:** Developer PC smoke test of the restored Gajra GG-003 SQL database and PR #123 Shift Performance UI (draft at the time of the smoke test; subsequently squash-merged into main). This is **not** evidence of deployment to the live factory server. Preserve live CNC acquisition; do not apply local settings to production without validating that environment.
 
 ## Verified environment and identities
 
@@ -110,5 +110,13 @@ ORDER BY o.ShiftStartsAtUtc;
 
 - This validation used a **restored local database**, not the live Gajra server.
 - Do not edit persisted observations, metric projections, shift roster, or migrations to force a UI pass.
-- Keep draft PR #123 unmerged until outstanding acceptance criteria and CI review are complete.
+- PR #123 was subsequently squash-merged into main; its merge does not constitute full R1 milestone acceptance or containment recovery.
 - If troubleshooting new environments, verify SQL instance/database, machine, processor, site and production-line IDs **before** debugging UI logic.
+
+## 18 October 2026 RCA and containment-publication boundary
+
+The Gajra GG-003 operational projection worker repeatedly logged `InvalidDataException` from `OperationalMetricEvaluator.ValidateDomain`: Availability `1.0944533199738628666645251612` (109.4453%) exceeded the validated domain. This matches the reconstructed historical revision-534 operands. The aggregation checkpoint reached position 741 while the legacy operational projection checkpoint remained at position 524. The factory log did not print the attempted revision, so the revision-534 binding comes from separate restored SQL and evaluator evidence.
+
+The read-only restored historical evaluator acceptance test demonstrated Availability **Unavailable / `RunningOutsidePlannedProduction`**, preserving the original position-380 witness. This is not evidence of successful projection commit, checkpoint advancement, API retrieval, or deployment. Production composition still uses the legacy evaluator; the V1 projection commit and dependency codec reject containment policy/witness payloads. Stage-B versioned persistence, atomic publication/replay, distinct containment processor composition, and disposable-restore runtime/API/Dashboard acceptance must precede recovery activation. Do not restart a writer against the original restored evidence or alter the Gajra production server for this local documentation.
+
+The `builtins-v1` processor identity in the commands above identifies the historical legacy reporting path; it must not be reused as the distinct containment processor identity. Historical smoke-test figures above are observations from that test session, not claims of current reporting health.
