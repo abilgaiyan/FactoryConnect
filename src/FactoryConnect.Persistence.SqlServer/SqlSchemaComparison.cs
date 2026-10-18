@@ -22,7 +22,9 @@ internal enum SqlSchemaDifferenceKind
     MissingIndex,
     UnexpectedIndex,
     IndexMismatch,
-    ColumnComputedMismatch
+    ColumnComputedMismatch,
+    TriggerMismatch,
+    DefaultConstraintMismatch
 }
 
 internal sealed record SqlSchemaDifference(
@@ -95,6 +97,19 @@ internal static class SqlSchemaComparator
                 static (left, right) => CheckConstraintEquals(left, right),
                 differences);
             CompareIndexes(expectedTable, actualTable, differences);
+            CompareNamedArtifacts(
+                expectedTable.Triggers.IsDefault ? [] : expectedTable.Triggers,
+                actualTable.Triggers.IsDefault ? [] : actualTable.Triggers,
+                static item => item.Name, SqlSchemaDifferenceKind.TriggerMismatch, expectedTable.Name,
+                static (left, right) => left.Name == right.Name && left.IsEnabled == right.IsEnabled &&
+                    left.IsInsteadOf == right.IsInsteadOf && left.IsNotForReplication == right.IsNotForReplication &&
+                    SqlFragmentCanonicalizer.Canonicalize(left.Definition) == SqlFragmentCanonicalizer.Canonicalize(right.Definition), differences);
+            CompareNamedArtifacts(
+                expectedTable.DefaultConstraints.IsDefault ? [] : expectedTable.DefaultConstraints,
+                actualTable.DefaultConstraints.IsDefault ? [] : actualTable.DefaultConstraints,
+                static item => item.Name, SqlSchemaDifferenceKind.DefaultConstraintMismatch, expectedTable.Name,
+                static (left, right) => left.Name == right.Name && left.ColumnName == right.ColumnName &&
+                    SqlFragmentCanonicalizer.Canonicalize(left.Definition) == SqlFragmentCanonicalizer.Canonicalize(right.Definition), differences);
         }
 
         return new SqlSchemaComparisonResult(differences

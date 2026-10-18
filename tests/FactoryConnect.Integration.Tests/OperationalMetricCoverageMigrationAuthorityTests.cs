@@ -28,6 +28,6 @@ public sealed class OperationalMetricCoverageMigrationAuthorityTests
         Assert.Equal(expected, SqlMigrationCatalog.Load().Migrations.Take(14).Select(static item => item.Sha256Checksum));
         Assert.Equal(37, SqlRepositorySchemaDescriptors.Post014.Tables.Length);
         Assert.Equal(40, SqlRepositorySchemaDescriptors.Post015.Tables.Length);
-        Assert.Same(SqlRepositorySchemaDescriptors.Post020, SqlRepositorySchemaDescriptors.Current);
+        Assert.Same(SqlRepositorySchemaDescriptors.Post021, SqlRepositorySchemaDescriptors.Current);
     }
 }

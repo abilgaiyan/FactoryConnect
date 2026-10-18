@@ -55,6 +55,11 @@ required sanitized vector inputs/bytes/digests and negatives only, plus a V1
 regression specimen. See [P1 implementation and validation](GG003-stage-b-p1-codecs.md).
 P1 review/CI acceptance does not complete persistence or enable publication.
 
+P1 at `8208ad6b` passed both CI jobs. P2 now registers migration 021 and its
+twelve-command execution plan with physical schema authority and upgrade/rollback
+tests; see [P2 schema implementation](GG003-stage-b-p2-schema.md). P2 SQL acceptance
+is pending. P3–P5 remain unimplemented; the publication guard remains intact.
+
 P2's migration ID must be checked again when registering it. The schema prototype
 demonstrated that sending all DDL as one command fails during compilation;
 production execution must preserve the twelve batch boundaries without GO,

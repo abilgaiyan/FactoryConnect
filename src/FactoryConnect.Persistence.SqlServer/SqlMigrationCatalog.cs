@@ -78,7 +78,7 @@ internal sealed class SqlMigrationCatalog
         var transactionPolicy = GetTransactionPolicy(identity.MigrationId, identity.Name);
         SqlMigrationLexicalPolicy.Validate(canonical.Text, transactionPolicy);
 
-        return new SqlMigrationDescriptor(
+        var descriptor = new SqlMigrationDescriptor(
             identity.MigrationId,
             identity.Name,
             resourceName,
@@ -86,6 +86,8 @@ internal sealed class SqlMigrationCatalog
             canonical.Text,
             canonical.Bytes,
             canonical.Sha256Checksum);
+        _ = SqlMigrationExecutionBatches.For(descriptor);
+        return descriptor;
     }
 
     internal static (int MigrationId, string Name) ParseResourceIdentity(string resourceName)

@@ -4,30 +4,32 @@ using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Integration.Tests;
 
-// Isolated design-validation probes only. No production migration/codec/publication
-// feature is registered. SQL sentinel payloads are deliberately not canonical evidence.
+// The false cases preserve the accepted RC2 prototype. True cases exercise the
+// registered production executor. Sentinel payloads establish SQL shape, not authority.
 [Trait("Category", "SqlServerIntegration")]
 public sealed class B1Rc2DesignValidationTests
 {
-    [Fact]
-    public async Task ExactProposedDdlRollsBackAndThenAppliesWithoutChanging020History()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExactProposedDdlRollsBackAndThenAppliesWithoutChanging020History(bool production)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
-        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+        await SqlMigration020TestBaseline.ApplyAsync(connection);
         var before = await Scalar(connection, "SELECT STRING_AGG(CONCAT(MigrationId, ':', CanonicalChecksum), ',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;");
-        Assert.Equal(20, SqlMigrationCatalog.Load().Migrations[^1].MigrationId);
+        Assert.Equal(20, SqlMigrationCatalog.Load().Migrations[19].MigrationId);
         await using (var transaction = connection.BeginTransaction())
         {
-            await ApplyProposal(connection, transaction);
+            await ApplySchema(connection, transaction, production);
             await transaction.RollbackAsync();
         }
         Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM sys.tables WHERE name IN ('OperationalMetricConflictWitnessArchive','OperationalMetricPublicationResultArchive','OperationalMetricResultWitnessReference');"))!);
         Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM sys.columns WHERE object_id=OBJECT_ID('dbo.OperationalMetricProjection') AND name='PublicationFormatVersion';"))!);
         await using (var transaction = connection.BeginTransaction())
         {
-            await ApplyProposal(connection, transaction);
+            await ApplySchema(connection, transaction, production);
             await transaction.CommitAsync();
         }
         Assert.Equal(before, await Scalar(connection, "SELECT STRING_AGG(CONCAT(MigrationId, ':', CanonicalChecksum), ',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;"));
@@ -36,13 +38,15 @@ public sealed class B1Rc2DesignValidationTests
         Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM sys.foreign_keys WHERE name IN ('FK_OMCWA_Source','FK_OMCWA_Revision','FK_OMCWA_Contribution','FK_OMCWA_FactPosition','FK_OMPRA_ProcessorFormat','FK_OMPRA_ProcessorSource','FK_OMPRA_Revision','FK_OMPRA_RootWitness','FK_OMRWR_Result','FK_OMRWR_Witness','FK_OMP_ProcessorFormat','FK_OMP_ContainmentResult','FK_OMP_ConflictWitness') AND (is_disabled=1 OR is_not_trusted=1 OR delete_referential_action<>0);"))!);
     }
 
-    [Fact]
-    public async Task ActualCheckDefinitionsRejectNullableAndVersionShapeSubstitutions()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualCheckDefinitionsRejectNullableAndVersionShapeSubstitutions(bool production)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
-        await Prepare(connection);
+        await Prepare(connection, production);
         await Check(connection, "CK_OMPP_FormatPolicy", "PublicationFormatVersion smallint, EvaluationPolicyId nvarchar(64)",
             ["1,NULL", "2,N'availability-scope-containment/1'"], ["2,NULL", "1,N'availability-scope-containment/1'", "3,NULL"]);
         await Check(connection, "CK_OMPRA_WitnessShape", "ReasonCode tinyint, ConflictWitnessId binary(32)",
@@ -76,13 +80,15 @@ public sealed class B1Rc2DesignValidationTests
         Assert.Contains("LastInputTimestamp", definition);
     }
 
-    [Fact]
-    public async Task ArchiveForeignKeysAndActualImmutableTriggersRejectMutations()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ArchiveForeignKeysAndActualImmutableTriggersRejectMutations(bool production)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
-        await Prepare(connection);
+        await Prepare(connection, production);
         await Execute(connection, Seed);
         await Reject(connection, "UPDATE dbo.OperationalMetricConflictWitnessArchive SET WitnessCodecVersion=1;", 51021);
         await Reject(connection, "DELETE FROM dbo.OperationalMetricConflictWitnessArchive;", 51021);
@@ -102,13 +108,15 @@ public sealed class B1Rc2DesignValidationTests
         Assert.Equal(1, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference;"))!);
     }
 
-    [Fact]
-    public async Task PopulatedLegacyV1PublicationSurvivesSchemaUpgradeAndReplays()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PopulatedLegacyV1PublicationSurvivesSchemaUpgradeAndReplays(bool production)
     {
         await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
-        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+        await SqlMigration020TestBaseline.ApplyAsync(connection);
         var machine = new MachineId(Guid.NewGuid());
         var site = new SiteId("B1-SITE");
         var shift = new ShiftId("B1-SHIFT");
@@ -155,7 +163,7 @@ public sealed class B1Rc2DesignValidationTests
         var before = OperationalMetricDependencySnapshotV1Codec.Encode(parent);
         await using (var transaction = connection.BeginTransaction())
         {
-            await ApplyProposal(connection, transaction);
+            await ApplySchema(connection, transaction, production);
             await transaction.CommitAsync();
         }
         var actual = await new SqlServerOperationalMetricProjectionQueryReader(database.ConnectionString)
@@ -166,13 +174,17 @@ public sealed class B1Rc2DesignValidationTests
         Assert.Equal(0, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive;"))!);
     }
 
-    private static async Task Prepare(SqlConnection connection)
+    private static async Task Prepare(SqlConnection connection, bool production)
     {
-        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+        await SqlMigration020TestBaseline.ApplyAsync(connection);
         await using var transaction = connection.BeginTransaction();
-        await ApplyProposal(connection, transaction);
+        await ApplySchema(connection, transaction, production);
         await transaction.CommitAsync();
     }
+    private static Task ApplySchema(SqlConnection connection, SqlTransaction transaction, bool production) => production
+        ? SqlServerMigrationExecutor.ExecuteAsync(connection, transaction, SqlMigrationCatalog.Load().Migrations[20], CancellationToken.None)
+        : ApplyProposal(connection, transaction);
+
     private static async Task ApplyProposal(SqlConnection connection, SqlTransaction transaction)
     {
         using var resource = typeof(B1Rc2DesignValidationTests).Assembly.GetManifestResourceStream("B1RC2.ProposedDdl")!;

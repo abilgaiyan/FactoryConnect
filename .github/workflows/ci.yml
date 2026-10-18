@@ -90,6 +90,16 @@ jobs:
           --configuration Release
           --no-restore
 
+      - name: Accept registered migration 021 schema and transaction boundaries
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlServerMigration021IntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p2-migration-021.trx"
+          --results-directory TestResults/P2Migration021
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

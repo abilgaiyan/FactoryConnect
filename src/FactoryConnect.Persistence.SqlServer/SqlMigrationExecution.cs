@@ -61,12 +61,19 @@ internal static class SqlServerMigrationExecutor
         ArgumentNullException.ThrowIfNull(transaction);
         ArgumentNullException.ThrowIfNull(migration);
 
+        // Materialize/validate the full plan before executing its first command.
+        var batches = SqlMigrationExecutionBatches.For(migration);
+
         try
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = migration.CanonicalSql;
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            foreach (var batch in batches)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = batch;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
         catch (SqlException exception)
         {

@@ -34,6 +34,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "MetricInputStream",
         "ObservationProcessingCheckpoint",
         "ObservationStreamCheckpoint",
+        "OperationalMetricConflictWitnessArchive",
         "OperationalMetricCoverageHead",
         "OperationalMetricCoverageSubject",
         "OperationalMetricCoverageVersion",
@@ -42,6 +43,8 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "OperationalMetricProjectionEvidence",
         "OperationalMetricProjectionManifest",
         "OperationalMetricProjectionProcessor",
+        "OperationalMetricPublicationResultArchive",
+        "OperationalMetricResultWitnessReference",
         "ProductionContextCheckpoint",
         "ProductionContextProcessor",
         "ProductionDayMetricAggregate",
@@ -63,7 +66,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(48, ownedTables.Length);
+        Assert.Equal(51, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
