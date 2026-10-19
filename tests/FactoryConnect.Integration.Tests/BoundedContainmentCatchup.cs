@@ -6,7 +6,7 @@ internal sealed record ContainmentCatchupLimits
 {
     internal ContainmentCatchupLimits(ulong target, int maximumCycles, TimeSpan timeBudget)
     {
-        if (target < 534) throw new ArgumentOutOfRangeException(nameof(target));
+        ArgumentOutOfRangeException.ThrowIfLessThan(target, 534UL);
         if (maximumCycles is < 1 or > 10_000) throw new ArgumentOutOfRangeException(nameof(maximumCycles));
         if (timeBudget <= TimeSpan.Zero || timeBudget > TimeSpan.FromHours(2)) throw new ArgumentOutOfRangeException(nameof(timeBudget));
         Target = target; MaximumCycles = maximumCycles; TimeBudget = timeBudget;

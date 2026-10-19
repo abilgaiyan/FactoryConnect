@@ -10,6 +10,8 @@ namespace FactoryConnect.Integration.Tests;
 [Trait("Category", "SqlServerIntegration")]
 public sealed class Gg003BoundedContainmentCatchupAcceptanceTests
 {
+    private static readonly JsonSerializerOptions ReportJsonOptions = new() { WriteIndented = true };
+    private static readonly string[] SuccessfulBoundedOutcomes = ["TargetReached", "CycleLimitReached", "TimeBudgetReached"];
     private const string Variable = "FACTORYCONNECT_GG003_CATCHUP_CONNECTION_STRING";
     private static readonly MachineId Machine = new(Guid.Parse("677b030b-1ede-4a67-82ae-6a494791357f"));
 
@@ -74,9 +76,9 @@ public sealed class Gg003BoundedContainmentCatchupAcceptanceTests
         var after = await Fingerprint(connection);
         await File.WriteAllTextAsync(report, JsonSerializer.Serialize(new { Result = result, SourceAndLegacyPreserved = before == after,
             CapturedSourceHead = sourceHead.Position.Value, FullCapturedCatchupComplete = result.TargetReached && target == sourceHead.Position.Value },
-            new JsonSerializerOptions { WriteIndented = true }));
+            ReportJsonOptions));
         Assert.Equal(before, after);
-        Assert.Contains(result.Outcome, new[] { "TargetReached", "CycleLimitReached", "TimeBudgetReached" });
+        Assert.Contains(result.Outcome, SuccessfulBoundedOutcomes);
         Assert.True(result.DurableReadbackSucceeded);
     }
 
