@@ -8,6 +8,9 @@ on:
       - 'tools/FactoryConnect.SqlReadiness/**'
       - 'Directory.Packages.props'
       - 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
+      - 'scripts/deployment/Restart-FactoryConnectDashboard.ps1'
+      - 'scripts/deployment/FactoryConnect.ProcessTermination.ps1'
+      - 'tests/deployment/*DashboardRestart*'
       - 'scripts/deployment/Start-FactoryConnectSystem.ps1'
       - 'scripts/deployment/Start-FactoryConnectRuntime.ps1'
       - 'tests/deployment/*BootSafe*'
@@ -53,6 +56,10 @@ jobs:
           .\tests\deployment\Invoke-RebootStartupExecutableConformance.ps1
           .\tests\deployment\Invoke-RebootStartupDeploymentExclusionConformance.ps1
           .\tests\deployment\Invoke-RebootStartupReleasePackageConformance.ps1
+      - name: Dashboard-only restart lifecycle and real Windows processes
+        shell: powershell
+        run: |
+          .\tests\deployment\Invoke-DashboardRestartConformance.ps1 -Executable
       - name: Authenticated SQL readiness proof
         shell: powershell
         run: |
