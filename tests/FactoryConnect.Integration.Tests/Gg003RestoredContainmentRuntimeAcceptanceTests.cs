@@ -23,7 +23,7 @@ public sealed class Gg003RestoredContainmentRuntimeAcceptanceTests
     {
         var settings = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable(Variable)!);
         Assert.True(OperatingSystem.IsWindows());
-        Assert.True(settings.DataSource.StartsWith("(localdb)\\", StringComparison.OrdinalIgnoreCase));
+        Assert.StartsWith("(localdb)\\", settings.DataSource, StringComparison.OrdinalIgnoreCase);
         Assert.StartsWith("FactoryConnect_GG003_STAGEB_REPLAY_", settings.InitialCatalog, StringComparison.Ordinal);
         await using var connection = new SqlConnection(settings.ConnectionString); await connection.OpenAsync();
         await using (var database = connection.CreateCommand())
