@@ -156,6 +156,7 @@ $sqlReadinessScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect
 $processTerminationScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect.ProcessTermination.ps1'
 $edgeRestartScriptPath = Join-Path $repoRoot 'scripts/deployment/Restart-FactoryConnectEdge.ps1'
 $edgeRestartAssessmentScriptPath = Join-Path $repoRoot 'scripts/deployment/Get-FactoryConnectEdgeRestartAssessment.ps1'
+$dashboardRestartScriptPath = Join-Path $repoRoot 'scripts/deployment/Restart-FactoryConnectDashboard.ps1'
 
 Push-Location $repoRoot
 try {
@@ -213,7 +214,7 @@ try {
         throw "The reboot-safe package contract requires the runtime startup script, but it was not found at '$RuntimeStartupScriptPath'."
     }
 
-    foreach ($requiredPath in @($systemStartupScriptPath, $systemStartupInstallerPath, $processTerminationScriptPath, $sqlReadinessScriptPath, $edgeRestartScriptPath, $edgeRestartAssessmentScriptPath)) {
+    foreach ($requiredPath in @($systemStartupScriptPath, $systemStartupInstallerPath, $processTerminationScriptPath, $sqlReadinessScriptPath, $edgeRestartScriptPath, $edgeRestartAssessmentScriptPath, $dashboardRestartScriptPath)) {
         if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
             throw "Required boot orchestration input missing: '$requiredPath'."
         }
@@ -315,6 +316,8 @@ try {
     [System.IO.File]::Copy($edgeRestartScriptPath, (Join-Path $stagingRoot 'Restart-FactoryConnectEdge.ps1'), $false)
     [System.IO.File]::Copy($edgeRestartAssessmentScriptPath, (Join-Path $stagingRoot 'Get-FactoryConnectEdgeRestartAssessment.ps1'), $false)
 
+    [System.IO.File]::Copy($dashboardRestartScriptPath, (Join-Path $stagingRoot 'Restart-FactoryConnectDashboard.ps1'), $false)
+
     $release = [ordered]@{
         schemaVersion = '1.0'
         sourceCommit = $SourceCommit
@@ -348,6 +351,7 @@ try {
         )
         deploymentScript = 'Deploy-FactoryConnect.ps1'
         runtimeStartupScript = 'Start-FactoryConnectRuntime.ps1'
+        dashboardRestartScript = 'Restart-FactoryConnectDashboard.ps1'
         edgeRestartScript = 'Restart-FactoryConnectEdge.ps1'
         edgeRestartAssessmentScript = 'Get-FactoryConnectEdgeRestartAssessment.ps1'
         systemStartupScript = 'Start-FactoryConnectSystem.ps1'

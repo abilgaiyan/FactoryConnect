@@ -40,6 +40,9 @@ $required = @(
     "sqlReadinessScript = 'FactoryConnect.SqlReadiness.ps1'",
     "Copy(`$sqlReadinessScriptPath, (Join-Path `$stagingRoot 'FactoryConnect.SqlReadiness.ps1'), `$false)",
     "processTerminationScript = 'FactoryConnect.ProcessTermination.ps1'",
+    "scripts/deployment/Restart-FactoryConnectDashboard.ps1",
+    "dashboardRestartScript = 'Restart-FactoryConnectDashboard.ps1'",
+    "Copy(`$dashboardRestartScriptPath, (Join-Path `$stagingRoot 'Restart-FactoryConnectDashboard.ps1'), `$false)",
     "scripts/deployment/Restart-FactoryConnectEdge.ps1",
     "`$runtimeFrameworkVersion = '10.0.13'",
     "[version]'10.0.402'",
@@ -101,6 +104,7 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
     $metadata = Get-Content -Raw (Join-Path $ReleaseDirectory 'release.json') | ConvertFrom-Json
     $deploymentRoot = Join-Path (Split-Path (Split-Path $ReleaseBuilder -Parent) -Parent) 'deployment'
     foreach ($entry in @(
+        @{property='dashboardRestartScript';name='Restart-FactoryConnectDashboard.ps1'},
         @{property='edgeRestartScript';name='Restart-FactoryConnectEdge.ps1'},
         @{property='edgeRestartAssessmentScript';name='Get-FactoryConnectEdgeRestartAssessment.ps1'}
     )) {
@@ -113,7 +117,11 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseDirectory)) {
         $tokens=$null; $errors=$null
         [void][Management.Automation.Language.Parser]::ParseFile($packaged,[ref]$tokens,[ref]$errors)
         if ($errors.Count) { throw "Packaged $name failed parsing." }
-        [pscustomobject]@{EdgeRestartPayload='PASS';Name=$name;Sha256=$hash;SourceCommit=$metadata.sourceCommit}
+        if ($entry.property -eq 'dashboardRestartScript') {
+            [pscustomobject]@{DashboardRestartPayload='PASS';Name=$name;Sha256=$hash;SourceCommit=$metadata.sourceCommit}
+        } else {
+            [pscustomobject]@{EdgeRestartPayload='PASS';Name=$name;Sha256=$hash;SourceCommit=$metadata.sourceCommit}
+        }
     }
 }
 
