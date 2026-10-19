@@ -115,7 +115,7 @@ public sealed class Gg003RestoredContainmentRuntimeAcceptanceTests
         public ValueTask<MetricAggregationRevisionChange?> ReadExactAsync(MetricAggregationCheckpoint revision, CancellationToken cancellationToken) =>
             reader.ReadExactAsync(revision, cancellationToken);
     }
-    private static async Task<string> Fingerprint(SqlConnection connection)
+    internal static async Task<string> Fingerprint(SqlConnection connection)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
