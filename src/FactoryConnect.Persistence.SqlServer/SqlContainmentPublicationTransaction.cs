@@ -12,8 +12,8 @@ internal enum ContainmentPublicationStage
 }
 
 /// <summary>
-/// Internal format-2 publication seam. Owns the complete transaction; not registered in production
-/// composition. The public Stage-A guard remains in force until P4/P5 acceptance.
+/// Internal format-2 transaction, reached through the explicitly selected containment publisher.
+/// Owns the complete transaction; the public V1 commit guard remains in force.
 /// </summary>
 internal sealed class SqlContainmentPublicationTransaction(string connectionString)
 {

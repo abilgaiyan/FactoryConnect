@@ -528,3 +528,25 @@ succeeded. SQL results for this new tree remain pending CI; monitoring stays wit
 the user. P5 remains OPEN. No restored replay, composition activation, merge,
 publication guard removal, factory checkpoint correction or Gajra action is
 included or authorized by this follow-up.
+
+### P5 accepted; containment composition implementation follows
+
+The independent review accepted/froze P5 at
+`695733cf324e7073f671bb4b6e8410d0c55e4082` after
+[CI run 39163708083](https://github.com/abilgaiyan/FactoryConnect/actions/runs/39163708083)
+completed successfully. Earlier P5 pending/failure entries above remain historical
+records; they do not describe the accepted head's final gate.
+
+The next slice adds explicit Edge containment composition using the existing
+worker/runtime under its distinct processor identity. It keeps the V1 public
+commit guard and default configuration unchanged. A new explicit publisher
+compares runtime results with independently reconstructed SQL authority, then
+uses the accepted P4 transaction; restart replay uses that same publisher.
+
+See [runtime and disposable rehearsal](GG003-containment-runtime-rehearsal.md)
+for the complete boundary, new ordinary/SQL gates and Windows-only opt-in replay.
+The refreshed workspace was synchronized to the exact accepted tree before this
+slice. This environment lacks .NET and SQL Server; no local build/test pass is
+claimed. Composition remains unaccepted pending CI/review. The actual GG-003
+clone is unavailable here, so revision-534 recovery remains unexecuted. No merge,
+factory activation, production checkpoint change or Gajra action is included.

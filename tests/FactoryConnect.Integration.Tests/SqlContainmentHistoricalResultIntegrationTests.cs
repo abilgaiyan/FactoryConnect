@@ -247,9 +247,9 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlCo
         await Execute(writer, null, seed, sql);
     }
 
-    internal async Task<(ReadOnlyMemory<byte>[] Envelopes, MetricAggregationCheckpoint Cut)> CreateArchiveTestEvidenceAsync()
+    internal async Task<(ReadOnlyMemory<byte>[] Envelopes, MetricAggregationCheckpoint Cut)> CreateArchiveTestEvidenceAsync(bool canonicalProcessor = false)
     {
-        var seed = await SeedAsync();
+        var seed = await SeedAsync(canonicalProcessor: canonicalProcessor);
         await using var connection = fixture.CreateConnection(); await connection.OpenAsync();
         await using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
         var root = await Reconstruct(connection, transaction, seed);
@@ -311,7 +311,7 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlCo
         SqlContainmentHistoricalResultValidator.ReconstructAsync(connection, transaction, Key(seed, day, BuiltInOperationalMetricDefinitions.OeeId), seed.Cut, default);
 
     private async Task<Seed> SeedAsync(string mode = "resolved", bool unavailable = true,
-        string quantityShape = "good", bool converge = true, string utilization = "normal")
+        string quantityShape = "good", bool converge = true, string utilization = "normal", bool canonicalProcessor = false)
     {
         var machine = new MachineId(Guid.NewGuid());
         var company = new CompanyId("p3-rs-" + machine.Value);
@@ -329,7 +329,7 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests(SqlCo
             if (mode == "ambiguous") await authority.PublishAsync(Standard(machine, company, site, current.Revision + 2, standardId + "-ambiguous"));
         }
         var stream = MetricInputStreamId.ForMachine(machine);
-        var processor = new MetricAggregationProcessorId("p3-rs-" + machine.Value);
+        var processor = new MetricAggregationProcessorId(canonicalProcessor ? "metric-aggregation:" + machine.Value : "p3-rs-" + machine.Value);
         var store = new SqlServerMetricInputStore(fixture.ConnectionString);
         var inputs = new List<PositionedMetricInputFact>();
         async Task<PositionedMetricInputFact> Append(string key, decimal value, bool planned, bool quantity)

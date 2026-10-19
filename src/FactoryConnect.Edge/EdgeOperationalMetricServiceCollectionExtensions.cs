@@ -42,6 +42,11 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
             throw new InvalidOperationException("OperationalMetrics:PollingInterval must be greater than zero.");
         }
 
+        var policy = section["EvaluationPolicyId"];
+        if (policy is not null && policy != AvailabilityContainmentV1.PolicyId)
+            throw new InvalidOperationException("OperationalMetrics:EvaluationPolicyId must be absent for legacy or the supported containment policy.");
+        var containment = policy == AvailabilityContainmentV1.PolicyId;
+
         services.AddSingleton<IOperationalMetricDefinitionCatalog>(
             new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All));
 
@@ -52,8 +57,12 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
                 var revisionReader = provider.GetRequiredService<IMetricAggregationRevisionReader>();
                 var snapshotReader = provider.GetRequiredService<IRevisionedOperationalMetricComponentSnapshotReader>();
                 var projectionStore = provider.GetRequiredService<IOperationalMetricProjectionStore>();
-                var prerequisite = provider.GetService<PersistenceProviderServices>()?
-                    .OperationalMetricProjectionPrerequisite;
+                var persistence = provider.GetService<PersistenceProviderServices>();
+                var prerequisite = persistence?.OperationalMetricProjectionPrerequisite;
+                var publisher = containment ? persistence?.OperationalMetricContainmentPublisher
+                    ?? throw new InvalidOperationException("Selected persistence provider does not support containment publication.") : null;
+                if (containment && prerequisite is null)
+                    throw new InvalidOperationException("Containment composition requires reference-time convergence prerequisites.");
 
                 var runtimes = machines
                     .Select(machineId =>
@@ -61,15 +70,15 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
                         var sourceProcessorId = new MetricAggregationProcessorId(
                             $"metric-aggregation:{machineId.Value:D}");
                         var streamId = MetricInputStreamId.ForMachine(machineId);
-                        var projectionProcessorId = new OperationalMetricProjectionProcessorId(
-                            $"operational-metrics:{machineId.Value:D}:builtins-v1");
+                        var projectionProcessorId = containment ? AvailabilityContainmentV1.ProjectionProcessorId(machineId)
+                            : new OperationalMetricProjectionProcessorId($"operational-metrics:{machineId.Value:D}:builtins-v1");
                         var source = new CoherentOperationalMetricEvaluationBatchSource(
                             catalog,
                             revisionReader,
                             snapshotReader,
                             sourceProcessorId,
                             streamId,
-                            OperationalMetricEvaluationContextKey.Unpartitioned);
+                            OperationalMetricEvaluationContextKey.Unpartitioned, containment);
 
                         return new OperationalMetricProjectionProcessingRuntime(
                             projectionProcessorId,
@@ -78,7 +87,7 @@ public static class EdgeOperationalMetricServiceCollectionExtensions
                             source,
                             new OperationalMetricProjectionFactory(catalog, projectionProcessorId),
                             projectionStore,
-                            prerequisite);
+                            prerequisite, publisher);
                     })
                     .ToArray();
 

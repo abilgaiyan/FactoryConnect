@@ -180,6 +180,24 @@ jobs:
           path: TestResults/P5VerifiedReads
           if-no-files-found: warn
 
+      - name: Verify containment processor composition
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentProcessorCompositionIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=containment-composition.trx"
+          --results-directory TestResults/ContainmentComposition
+
+      - name: Retain containment composition evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: containment-composition-evidence
+          path: TestResults/ContainmentComposition
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}
