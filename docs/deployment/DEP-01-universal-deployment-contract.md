@@ -58,6 +58,7 @@ Each gate is **fail closed**. A healthy HTTP response or a running process alone
 - `scripts/deployment/Start-FactoryConnectSystem.ps1` — acquisition then SQL readiness then BootSafe runtime.
 - `scripts/deployment/Install-FactoryConnectSystemStartup.ps1` — publishes stable system-start entry; **does not register a Windows task**.
 - `scripts/deployment/Restart-FactoryConnectEdge.ps1` and `Get-FactoryConnectEdgeRestartAssessment.ps1` — Edge restart and read-only assessment.
+- **PR #127 (draft, separately reviewed):** `Restart-FactoryConnectDashboard.ps1` adds Dashboard-only restart, process ownership and health validation, shared intent/lock handling, and exact-source packaging. Windows lifecycle/executable CI and release-package checks passed for commit `9b453ac452efbc04659e6f69453a9579cb7dd07d`. This is **not merged or deployed**; final Gajra validation and controlled script installation remain separate.
 - `config/templates/` — production configuration templates.
 - `docs/deployment/factory-site-commissioning-runbook.md` — operator guidance.
 
@@ -70,7 +71,8 @@ These are existing authorities, not a claim that all mixed-controller paths are 
 | DEP-02 | Inventory current MTConnect/Modbus configuration and define factory/machine/adapter capability matrix | Stable machine identity and site-vs-release configuration boundaries verified; no competing schema |
 | DEP-03 | Adapter lifecycle/health/isolation gap closure | Multiple adapters coexist; one failure does not corrupt or block unrelated evidence |
 | DEP-04 | Reusable exact-release install/upgrade/rollback checks | Verified manifest, selected release, SQL readiness and ownership; no unsupported rollback |
-| DEP-05 | Component-specific restart and recovery, including Dashboard/API where absent | Correct PID/path/start-time, locks, intents and no unrelated process termination |
+| DEP-05A | Dashboard-only restart, tracked by [PR #127](https://github.com/abilgaiyan/FactoryConnect/pull/127) | Windows CI/package checks pass; review, merge, controlled site deployment and preservation evidence remain distinct gates |
+| DEP-05B | Remaining component-specific restart and recovery, including API | Correct PID/path/start-time, locks, intents and no unrelated process termination |
 | DEP-06 | Acquisition bootstrap and Windows startup registration | Explicit opt-in registration, BootSafe ordering, no duplicates, approved reboot test |
 | DEP-07 | Automated commissioning evidence | Per-machine end-to-end observations advance; API/Dashboard and report identity verified |
 | DEP-08 | FANUC/MTConnect reference acceptance | Repeatable clean-server and recovery run |
