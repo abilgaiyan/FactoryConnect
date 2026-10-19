@@ -12,7 +12,8 @@ public sealed record OperationalMetricProjectionSummary
         string unit,
         OperationalMetricEvaluationReasonCode? reasonCode,
         string? reasonOperandName,
-        MetricAggregationCheckpoint sourceRevision)
+        MetricAggregationCheckpoint sourceRevision,
+        OperationalMetricPublicationMetadata? publicationMetadata = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(key);
@@ -50,6 +51,7 @@ public sealed record OperationalMetricProjectionSummary
         ReasonCode = reasonCode;
         ReasonOperandName = reasonOperandName;
         SourceRevision = sourceRevision;
+        PublicationMetadata = publicationMetadata;
     }
 
     public OperationalMetricProjectionSummary(OperationalMetricProjection projection)
@@ -61,7 +63,8 @@ public sealed record OperationalMetricProjectionSummary
             projection.Unit,
             projection.ReasonCode,
             projection.ReasonOperandName,
-            projection.SourceRevision)
+            projection.SourceRevision,
+            projection.PublicationMetadata)
     {
     }
 
@@ -79,6 +82,8 @@ public sealed record OperationalMetricProjectionSummary
 
     public string? ReasonOperandName { get; }
 
+    public OperationalMetricPublicationMetadata? PublicationMetadata { get; }
+
     public MetricAggregationCheckpoint SourceRevision { get; }
 }
 
@@ -93,6 +98,7 @@ public sealed record OperationalMetricReportItem
         Unit = summary.Unit;
         ReasonCode = summary.ReasonCode;
         ReasonOperandName = summary.ReasonOperandName;
+        PublicationMetadata = summary.PublicationMetadata;
     }
 
     public OperationalMetricDefinitionId DefinitionId { get; }
@@ -106,6 +112,8 @@ public sealed record OperationalMetricReportItem
     public OperationalMetricEvaluationReasonCode? ReasonCode { get; }
 
     public string? ReasonOperandName { get; }
+
+    public OperationalMetricPublicationMetadata? PublicationMetadata { get; }
 }
 
 public sealed record OperationalMetricReportDetail
@@ -121,6 +129,7 @@ public sealed record OperationalMetricReportDetail
         ReasonCode = projection.ReasonCode;
         ReasonOperandName = projection.ReasonOperandName;
         SourceRevision = projection.SourceRevision;
+        PublicationMetadata = projection.PublicationMetadata;
         OperandEvidence = new ReadOnlyCollection<OperationalMetricComponentProjectionEvidence>(
             projection.OperandEvidence.ToArray());
         DependencyEvidence = new ReadOnlyCollection<OperationalMetricDependencyProjectionEvidence>(
@@ -140,6 +149,8 @@ public sealed record OperationalMetricReportDetail
     public OperationalMetricEvaluationReasonCode? ReasonCode { get; }
 
     public string? ReasonOperandName { get; }
+
+    public OperationalMetricPublicationMetadata? PublicationMetadata { get; }
 
     public MetricAggregationCheckpoint SourceRevision { get; }
 

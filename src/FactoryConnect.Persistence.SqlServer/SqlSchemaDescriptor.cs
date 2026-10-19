@@ -116,6 +116,9 @@ internal sealed record SqlIndexDescriptor(
     bool IsEnabled,
     SqlIndexStructureDescriptor IndexStructure);
 
+internal sealed record SqlTriggerDescriptor(string Name, string Definition, bool IsEnabled, bool IsInsteadOf, bool IsNotForReplication);
+internal sealed record SqlDefaultConstraintDescriptor(string Name, string ColumnName, string Definition);
+
 internal sealed record SqlTableDescriptor(
     SqlObjectName Name,
     ImmutableArray<SqlColumnDescriptor> Columns,
@@ -123,7 +126,9 @@ internal sealed record SqlTableDescriptor(
     ImmutableArray<SqlUniqueConstraintDescriptor> UniqueConstraints,
     ImmutableArray<SqlForeignKeyDescriptor> ForeignKeys,
     ImmutableArray<SqlCheckConstraintDescriptor> CheckConstraints,
-    ImmutableArray<SqlIndexDescriptor> Indexes);
+    ImmutableArray<SqlIndexDescriptor> Indexes,
+    ImmutableArray<SqlTriggerDescriptor> Triggers = default,
+    ImmutableArray<SqlDefaultConstraintDescriptor> DefaultConstraints = default);
 
 internal sealed record SqlSchemaDescriptor(
     ImmutableArray<SqlTableDescriptor> Tables);

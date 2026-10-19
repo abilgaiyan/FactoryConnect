@@ -167,6 +167,11 @@ export interface components {
             reasonCode: null | string;
             reasonOperandName: null | string;
             sourceRevision: components["schemas"]["MetricSourceRevisionResponse"];
+            /** Format: int32 */
+            publicationFormatVersion?: null | number | string;
+            evaluationPolicyId?: null | string;
+            resultId?: null | string;
+            conflictWitnessId?: null | string;
         };
         OperationalMetricPageResponse: {
             items: components["schemas"]["OperationalMetricItemResponse"][];
@@ -210,6 +215,11 @@ export interface components {
             unit: string;
             reasonCode: null | string;
             reasonOperandName: null | string;
+            /** Format: int32 */
+            publicationFormatVersion?: null | number | string;
+            evaluationPolicyId?: null | string;
+            resultId?: null | string;
+            conflictWitnessId?: null | string;
         };
         ProductionDayShiftOperationalMetricPageResponse: {
             items: components["schemas"]["ProductionDayShiftOperationalMetricResponse"][];
@@ -352,6 +362,33 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     QueryProductionDayOperationalMetrics: {
@@ -378,6 +415,33 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -420,6 +484,33 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Implemented */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

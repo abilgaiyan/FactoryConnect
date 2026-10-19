@@ -80,6 +80,8 @@ internal sealed class SqlServerSchemaMetadataReader
             cancellationToken);
         var checks = await ReadCheckConstraintsAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
         var indexes = await ReadOrdinaryIndexesAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
+        var triggers = await ReadContainmentTriggersAsync(connection, transaction, resolvedObject, cancellationToken);
+        var defaults = await ReadPublicationDefaultsAsync(connection, transaction, resolvedObject, cancellationToken);
 
         return new SqlTableDescriptor(
             resolvedObject.RepositoryIdentity,
@@ -88,7 +90,43 @@ internal sealed class SqlServerSchemaMetadataReader
             keys.UniqueConstraints,
             foreignKeys,
             checks,
-            indexes);
+            indexes, triggers, defaults);
+    }
+
+    private static async Task<ImmutableArray<SqlTriggerDescriptor>> ReadContainmentTriggersAsync(
+        SqlConnection connection, SqlTransaction? transaction, SqlResolvedObject table, CancellationToken token)
+    {
+        if (table.RepositoryIdentity.ObjectName is not ("OperationalMetricConflictWitnessArchive" or
+            "OperationalMetricPublicationResultArchive" or "OperationalMetricResultWitnessReference")) return [];
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = """
+            SELECT t.name, m.definition, t.is_disabled, t.is_instead_of_trigger, t.is_not_for_replication
+            FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
+            WHERE t.parent_id=@Table ORDER BY t.name;
+            """;
+        command.Parameters.AddWithValue("@Table", table.ObjectId);
+        var result = ImmutableArray.CreateBuilder<SqlTriggerDescriptor>();
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token)) result.Add(new(reader.GetString(0), reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+            !reader.GetBoolean(2), reader.GetBoolean(3), reader.GetBoolean(4)));
+        return result.ToImmutable();
+    }
+
+    private static async Task<ImmutableArray<SqlDefaultConstraintDescriptor>> ReadPublicationDefaultsAsync(
+        SqlConnection connection, SqlTransaction? transaction, SqlResolvedObject table, CancellationToken token)
+    {
+        if (table.RepositoryIdentity.ObjectName is not ("OperationalMetricProjectionProcessor" or "OperationalMetricProjection")) return [];
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = """
+            SELECT d.name, c.name, d.definition FROM sys.default_constraints d
+            JOIN sys.columns c ON c.object_id=d.parent_object_id AND c.column_id=d.parent_column_id
+            WHERE d.parent_object_id=@Table AND c.name COLLATE Latin1_General_100_BIN2=N'PublicationFormatVersion';
+            """;
+        command.Parameters.AddWithValue("@Table", table.ObjectId);
+        var result = ImmutableArray.CreateBuilder<SqlDefaultConstraintDescriptor>();
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token)) result.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+        return result.ToImmutable();
     }
 
     private static async Task<ImmutableArray<SqlColumnDescriptor>> ReadColumnsAsync(

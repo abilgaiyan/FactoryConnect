@@ -31,11 +31,16 @@ internal sealed class SqlServerOperationalMetricProjectionStore : IOperationalMe
         return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<OperationalMetricProjectionCheckpoint?>(
             connection, processorId, async (c, transaction, token) =>
             {
+                var verified = await SqlContainmentVerifiedRead.TryReadAsync(c, transaction, processorId, token);
                 var header = await SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(
                     c, transaction, processorId, token);
                 if (header is null) return null;
                 if (header.StreamId != sourceStreamId)
                     throw new InvalidOperationException("Projection checkpoint belongs to a different metric input stream.");
+                if (verified is not null)
+                    return new OperationalMetricProjectionCheckpoint(processorId,
+                        new MetricAggregationCheckpoint(header.AggregationProcessorId, header.StreamId, header.Position),
+                        new OperationalMetricProjectionBatchManifest(verified.LatestKeys));
                 var summaries = await SqlServerOperationalMetricProjectionSummaryReader.ReadSummariesAsync(
                     c, transaction, processorId, true, token);
                 return new OperationalMetricProjectionCheckpoint(processorId,

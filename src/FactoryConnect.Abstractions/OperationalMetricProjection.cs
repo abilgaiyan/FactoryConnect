@@ -121,7 +121,8 @@ public sealed record OperationalMetricProjection
         IEnumerable<OperationalMetricComponentProjectionEvidence>? operandEvidence = null,
         IEnumerable<OperationalMetricDependencyProjectionEvidence>? dependencyEvidence = null,
         AvailabilityScopeConflictEvidenceV1? availabilityScopeConflictEvidence = null,
-        string? evaluationPolicyId = null)
+        string? evaluationPolicyId = null,
+        OperationalMetricPublicationMetadata? publicationMetadata = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(key);
@@ -230,6 +231,9 @@ public sealed record OperationalMetricProjection
             throw new ArgumentException("Dependency projection policy must match the parent policy.", nameof(dependencyEvidence));
         }
         AvailabilityScopeConflictEvidence = availabilityScopeConflictEvidence;
+        if (publicationMetadata is not null && publicationMetadata.EvaluationPolicyId != evaluationPolicyId)
+            throw new ArgumentException("Publication metadata must match the projection policy.", nameof(publicationMetadata));
+        PublicationMetadata = publicationMetadata ?? (evaluationPolicyId is null ? OperationalMetricPublicationMetadata.Legacy : null);
         EvaluationPolicyId = evaluationPolicyId;
         ProcessorId = processorId;
         Key = key;
@@ -270,6 +274,8 @@ public sealed record OperationalMetricProjection
     public AvailabilityScopeConflictEvidenceV1? AvailabilityScopeConflictEvidence { get; }
 
     public string? EvaluationPolicyId { get; }
+
+    public OperationalMetricPublicationMetadata? PublicationMetadata { get; }
 }
 
 /// <summary>Exact latest committed batch membership, not the retained reporting universe.</summary>

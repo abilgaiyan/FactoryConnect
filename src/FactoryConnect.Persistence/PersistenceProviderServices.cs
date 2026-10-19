@@ -20,7 +20,8 @@ public sealed record PersistenceProviderServices
         IMachineStateActivityAuthorityStore? machineStateActivityAuthorityStore = null,
         IProductionContextActivityReader? productionContextActivityReader = null,
         IOperationalMetricProjectionPrerequisite? operationalMetricProjectionPrerequisite = null,
-        IOperationalMetricCoverageAssessmentStore? operationalMetricCoverageAssessmentStore = null)
+        IOperationalMetricCoverageAssessmentStore? operationalMetricCoverageAssessmentStore = null,
+        IOperationalMetricContainmentPublisher? operationalMetricContainmentPublisher = null)
     {
         ArgumentNullException.ThrowIfNull(observationIngestionStore);
         ArgumentNullException.ThrowIfNull(productionContextProcessingStore);
@@ -43,6 +44,7 @@ public sealed record PersistenceProviderServices
         ProductionContextActivityReader = productionContextActivityReader;
         OperationalMetricProjectionPrerequisite = operationalMetricProjectionPrerequisite;
         OperationalMetricCoverageAssessmentStore = operationalMetricCoverageAssessmentStore;
+        OperationalMetricContainmentPublisher = operationalMetricContainmentPublisher;
     }
 
     public IObservationIngestionStore ObservationIngestionStore { get; }
@@ -76,4 +78,6 @@ public sealed record PersistenceProviderServices
     public IOperationalMetricProjectionPrerequisite? OperationalMetricProjectionPrerequisite { get; }
 
     public IOperationalMetricCoverageAssessmentStore? OperationalMetricCoverageAssessmentStore { get; }
+    public IOperationalMetricContainmentPublisher? OperationalMetricContainmentPublisher { get; }
+
 }

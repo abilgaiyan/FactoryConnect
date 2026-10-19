@@ -16,6 +16,7 @@ public abstract record OperationalMetricQueryItem
         ReasonCode = summary.ReasonCode;
         ReasonOperandName = summary.ReasonOperandName;
         SourceRevision = summary.SourceRevision;
+        PublicationMetadata = summary.PublicationMetadata;
     }
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
@@ -37,6 +38,8 @@ public abstract record OperationalMetricQueryItem
     public string? ReasonOperandName { get; }
 
     public MetricAggregationCheckpoint SourceRevision { get; }
+
+    public OperationalMetricPublicationMetadata? PublicationMetadata { get; }
 
     public static OperationalMetricQueryItem FromSummary(
         OperationalMetricProjectionSummary summary)

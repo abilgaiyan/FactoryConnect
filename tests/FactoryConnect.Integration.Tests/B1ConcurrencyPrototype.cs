@@ -62,7 +62,7 @@ internal sealed class B1ConcurrencyPrototype : IAsyncDisposable
     {
         await using var c = await Open();
         Events.Enqueue(new { FixtureDatabase = c.Database, Machine = Machine.Value, Runtime = Environment.Version.ToString(), SqlVersion = await Scalar(c, null, "SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ProductVersion'));") });
-        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(c, TimeSpan.FromMinutes(2), CancellationToken.None);
+        await SqlMigration020TestBaseline.ApplyAsync(c);
         var authority = new SqlServerProductionStandardAuthority(ConnectionString);
         await authority.PublishAsync(new ProductionStandardVersion
         {

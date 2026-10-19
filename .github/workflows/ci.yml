@@ -90,6 +90,114 @@ jobs:
           --configuration Release
           --no-restore
 
+      - name: Accept registered migration 021 schema and transaction boundaries
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlServerMigration021IntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p2-migration-021.trx"
+          --results-directory TestResults/P2Migration021
+
+      - name: Retain registered migration 021 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p2-migration-021-evidence
+          path: TestResults/P2Migration021
+          if-no-files-found: warn
+
+      - name: Verify P3 historical contribution, R/S and recursive result authority
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentHistoricalAuthorityIntegrationTests|FullyQualifiedName~SqlContainmentHistoricalResultIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p3-historical-authority.trx"
+          --results-directory TestResults/P3HistoricalAuthority
+
+      - name: Retain P3 historical authority evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p3-historical-authority-evidence
+          path: TestResults/P3HistoricalAuthority
+          if-no-files-found: warn
+
+      - name: Verify P4 caller-transaction archive foundation
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentArchiveIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p4-archives.trx"
+          --results-directory TestResults/P4Archives
+
+      - name: Retain P4 archive foundation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-archive-foundation-evidence
+          path: TestResults/P4Archives
+          if-no-files-found: warn
+
+      - name: Verify P4 atomic containment publication
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentPublicationIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p4-publication.trx"
+          --results-directory TestResults/P4Publication
+
+      - name: Retain P4 atomic publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-atomic-publication-evidence
+          path: TestResults/P4Publication
+          if-no-files-found: warn
+
+      - name: Verify P5 exact-processor reporting reads
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentVerifiedReadIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=p5-verified-reads.trx"
+          --results-directory TestResults/P5VerifiedReads
+
+      - name: Retain P5 verified reporting read evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5-verified-read-evidence
+          path: TestResults/P5VerifiedReads
+          if-no-files-found: warn
+
+      - name: Verify containment processor composition
+        run: >-
+          dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "FullyQualifiedName~SqlContainmentProcessorCompositionIntegrationTests"
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=containment-composition.trx"
+          --results-directory TestResults/ContainmentComposition
+
+      - name: Retain containment composition evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: containment-composition-evidence
+          path: TestResults/ContainmentComposition
+          if-no-files-found: warn
+
       - name: Check B1 prototype fixture and exact-cut path first
         env:
           B1_VALIDATION_HEAD: ${{ github.event.pull_request.head.sha }}

@@ -12,6 +12,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
     private readonly MetricInputStreamId _sourceStreamId;
     private readonly OperationalMetricEvaluationContextKey _contextKey;
     private readonly OperationalMetricEvaluationPlanner _planner;
+    private readonly bool _useAvailabilityContainmentV1;
 
     public CoherentOperationalMetricEvaluationBatchSource(
         IOperationalMetricDefinitionCatalog catalog,
@@ -19,7 +20,8 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
         IRevisionedOperationalMetricComponentSnapshotReader snapshotReader,
         MetricAggregationProcessorId aggregationProcessorId,
         MetricInputStreamId sourceStreamId,
-        OperationalMetricEvaluationContextKey contextKey)
+        OperationalMetricEvaluationContextKey contextKey,
+        bool useAvailabilityContainmentV1 = false)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(revisionReader);
@@ -35,6 +37,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
                 "FC-027.4D can evaluate only the unpartitioned FC-026 aggregate grain.");
         }
 
+        _useAvailabilityContainmentV1 = useAvailabilityContainmentV1;
         _catalog = catalog;
         _revisionReader = revisionReader;
         _snapshotReader = snapshotReader;
@@ -109,6 +112,17 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
         {
             throw new InvalidOperationException(
                 "Coherent operational metric evaluation requires at least one definition for the affected period scope.");
+        }
+
+        if (_useAvailabilityContainmentV1)
+        {
+            var evaluator = new OperationalMetricEvaluator(_catalog, new PinnedReader(_snapshotReader, revision),
+                _aggregationProcessorId, useAvailabilityContainmentV1: true);
+            var contained = new List<OperationalMetricEvaluation>();
+            foreach (var definition in definitions)
+                contained.Add(await evaluator.EvaluateAsync(new OperationalMetricEvaluationKey(_sourceStreamId.MachineId,
+                    periodId, definition.Id, _contextKey), cancellationToken));
+            return new ReadOnlyCollection<OperationalMetricEvaluation>(contained);
         }
 
         var plans = definitions
@@ -280,4 +294,11 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
                 "Aggregation revision change precedes the caller's known durable FC-026 revision.");
         }
     }
+    private sealed class PinnedReader(IRevisionedOperationalMetricComponentSnapshotReader reader, MetricAggregationCheckpoint cut)
+        : IOperationalMetricComponentSnapshotReader
+    {
+        public ValueTask<OperationalMetricComponentSnapshot> ReadAsync(OperationalMetricComponentSnapshotRequest request,
+            CancellationToken cancellationToken) => reader.ReadAtRevisionAsync(request, cut, cancellationToken);
+    }
+
 }

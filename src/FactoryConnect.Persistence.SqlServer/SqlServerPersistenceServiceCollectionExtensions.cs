@@ -83,7 +83,9 @@ public static class SqlServerPersistenceServiceCollectionExtensions
                         operationalMetricProjectionPrerequisite:
                             new SqlServerOperationalMetricProjectionPrerequisite(connectionString),
                         operationalMetricCoverageAssessmentStore:
-                            new SqlServerOperationalMetricCoverageAssessmentStore(connectionString));
+                            new SqlServerOperationalMetricCoverageAssessmentStore(connectionString),
+                        operationalMetricContainmentPublisher:
+                            new SqlServerOperationalMetricContainmentPublisher(connectionString));
                 },
                 _ =>
                 {

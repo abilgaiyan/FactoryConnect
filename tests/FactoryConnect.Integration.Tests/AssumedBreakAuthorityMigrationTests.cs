@@ -15,6 +15,6 @@ public sealed class AssumedBreakAuthorityMigrationTests
         Assert.Equal(ExpectedTables,
             after.Tables.Skip(before.Tables.Length).Select(x => x.Name.ObjectName));
         Assert.Equal("ImmutableAssumedBreakAuthority", SqlMigrationCatalog.Load().Migrations.Single(x=>x.MigrationId==19).Name);
-        Assert.Same(SqlRepositorySchemaDescriptors.Post020, SqlRepositorySchemaDescriptors.Current);
+        Assert.Same(SqlRepositorySchemaDescriptors.Post021, SqlRepositorySchemaDescriptors.Current);
     }
 }

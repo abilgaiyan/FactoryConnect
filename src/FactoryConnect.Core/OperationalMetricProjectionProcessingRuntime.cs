@@ -11,6 +11,7 @@ public sealed class OperationalMetricProjectionProcessingRuntime
     private readonly OperationalMetricProjectionFactory _projectionFactory;
     private readonly IOperationalMetricProjectionStore _store;
     private readonly IOperationalMetricProjectionPrerequisite? _prerequisite;
+    private readonly IOperationalMetricContainmentPublisher? _containmentPublisher;
     private OperationalMetricProjectionCheckpoint? _checkpoint;
     private bool _checkpointRestored;
 
@@ -21,7 +22,8 @@ public sealed class OperationalMetricProjectionProcessingRuntime
         IOperationalMetricEvaluationBatchSource source,
         OperationalMetricProjectionFactory projectionFactory,
         IOperationalMetricProjectionStore store,
-        IOperationalMetricProjectionPrerequisite? prerequisite = null)
+        IOperationalMetricProjectionPrerequisite? prerequisite = null,
+        IOperationalMetricContainmentPublisher? containmentPublisher = null)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(sourceProcessorId);
@@ -37,6 +39,9 @@ public sealed class OperationalMetricProjectionProcessingRuntime
                 nameof(projectionFactory));
         }
 
+        if (containmentPublisher is not null && processorId != AvailabilityContainmentV1.ProjectionProcessorId(sourceStreamId.MachineId))
+            throw new ArgumentException("Containment publication requires its distinct canonical processor identity.", nameof(processorId));
+        _containmentPublisher = containmentPublisher;
         ProcessorId = processorId;
         _sourceProcessorId = sourceProcessorId;
         _sourceStreamId = sourceStreamId;
@@ -101,7 +106,9 @@ public sealed class OperationalMetricProjectionProcessingRuntime
             ProcessorId,
             batch.SourceRevision,
             manifest);
-        await _store.CommitAsync(
+        if (_containmentPublisher is not null)
+            await _containmentPublisher.PublishAsync(_checkpoint, nextCheckpoint, projections, cancellationToken);
+        else await _store.CommitAsync(
             new OperationalMetricProjectionCommit(
                 ProcessorId,
                 _checkpoint,
@@ -174,6 +181,11 @@ public sealed class OperationalMetricProjectionProcessingRuntime
                 "Replay at the durable projection checkpoint does not contain the exact committed projection key set.");
         }
 
+        if (_containmentPublisher is not null)
+        {
+            await _containmentPublisher.PublishAsync(_checkpoint, _checkpoint, projections, cancellationToken);
+            return;
+        }
         foreach (var projected in projections)
         {
             var existing = await _store.ReadProjectionAsync(
