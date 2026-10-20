@@ -48,7 +48,7 @@ Do not require an assumed membership count of 534: it is the watermark, not a ro
 | --- | --- |
 | Authorization ID, approver, operator, permitted time window | UNSET; explicit one-attempt approval required |
 | Final #141 main commit and repository/source hashes | UNSET pending merge; hash all reader/exporter/schema/SQL source files on the exact checkout |
-| Reader binary and dependency identity | UNSET; record build output hashes, SDK/runtime, Microsoft.Data.SqlClient 7.0.2 resolved dependency inventory; no rebuild drift |
+| Reader binary and dependency identity | UNSET; record build output hashes, SDK/runtime and the actual locked/resolved dependency inventory from the final validated #141 checkout, including transitive dependencies. Inspected SqlReader.csproj declares Microsoft.Data.SqlClient 7.1.1 and direct System.Security.Cryptography.Pkcs 9.0.21; declarations alone do not certify restored artifacts. Retain the restore lock/assets and build dependency manifests with hashes; no rebuild drift |
 | Workstation and Windows process identity | UNSET; actual operator token must match approved dedicated inventory identity; no elevated administrator shell |
 | expected_original_login / database principal | UNSET; exact observed/attested identity, never inferred from a connection alias |
 | Existing backup provenance / immutable copy identity | Retain previously approved provenance; bind its record ID/hash here |
