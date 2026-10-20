@@ -6,12 +6,23 @@ Q0/Q1 were reported executed PASS; this packet does not repeat installation, res
 
 ## Status
 
-Draft SQL/design only. No database connection/execution or SQL Server syntax/performance validation performed. Creating/merging this packet does not authorize Q2 execution.
+The original generic packet is retained below as design/reference material. Q2A execution has since been reported completed and its inventory evidence is preserved; merging does not authorize rerunning it. The generic Q2B script is not authorized for execution. The current revision-534 candidate and offline exporter are distinguished explicitly below.
 Inherited reviewed procedure and permission/administrator attestation requirements remain in force. Guards recheck exact target/read-only continuity and fail-closed sysadmin/db_owner status; they do not redo Q0/Q1.
 Machine: 677b030b-1ede-4a67-82ae-6a494791357f. Dates: business dates [2026-10-16,2026-10-20).
 Target identifiers are explicit from Q1, not inferred from old LocalDB names.
 
-## Separate review/execution stages
+## Current authority and validation checkpoint
+
+- **Q2A — completed inventory evidence:** retain `Q2A-machine-revision-overview.sql` and the previously captured outputs. The reviewed inventory identified stream row 1, processor row 1, 746 revisions from 10 through 2150, and a terminal empty revision page. This is retained discovery evidence, not historical completeness proof.
+- **Generic Q2B — reference only:** `Q2B-exact-cut-fact-lineage.sql` is a six-result-set paged design/reference candidate. It is not an alternative execution-authorized packet for revision 534; its parameter and continuation guidance below remains reference material.
+- **Revision-534 Q2B — authoritative investigation candidate:** [PR #141](https://github.com/abilgaiyan/FactoryConnect/pull/141) supplies `Q2B-revision-534-lineage-review.sql`, with seven ordered result sets and canonical UTF-8/LF SHA-256 `DBB7AF00AA97241F789D982B43A5740C774A79973360BCB6BA66D51D8CAC7719`. Its lineage, schema and output contract governs the revision-534 investigation. Aggregation revision 534 is the committed metric-input watermark for the exact processor; admission is established by its contribution ledger and complete fact reference, not by stored fact existence alone.
+- **V4 exporter — offline validation:** implementation and offline validation gates are reported complete. This validates typed evidence capture and publication tooling, not historical operands or authority. `complete=true` describes complete typed-reader capture only. Actual restricted-reader database execution requires a separate, explicit authorization envelope.
+
+The seven revision-534 sets, in order, are Q2B-target, Q2B-cut, Q2B-contribution-boundary, Q2B-fact-membership, Q2B-duration-operands, Q2B-coverage and Q2B-end-target. Do not feed the generic six-set output to the seven-set exporter.
+
+No new database reads, writes, schema/index changes, reporting replay or production access are authorized by either merge. IMP-1 and historical numeric feasibility remain open / NotEstablished. The following original packet design records its proposed stages and limits; it does not override this checkpoint.
+
+## Original generic review/execution stages
 
 | Packet | Reads | Bound / output | Next gate |
 | --- | --- | --- | --- |
@@ -48,8 +59,8 @@ Q2A/B can establish retained row/membership diagnostics, not producer-batch clos
 ## Execution authorization fields
 
 - Exact reviewed commit and locally parameterized file hashes: pending review.
-- Q2A exact SQL, target, operator, output path, timeout/byte bounds: NOT AUTHORIZED.
-- Q2B processor row/stream row/cut and run/page limit: NOT SELECTED / NOT AUTHORIZED.
+- Q2A: previously completed inventory evidence retained; no new execution authorized by this merge.
+- Generic Q2B: reference only, NOT AUTHORIZED. Frozen revision-534 seven-set candidate: selected in PR #141, actual execution separately HELD.
 - No new restore, login change, migration, receipt backfill, replay or production action.
 
 ## Review corrections and continuation protocol
