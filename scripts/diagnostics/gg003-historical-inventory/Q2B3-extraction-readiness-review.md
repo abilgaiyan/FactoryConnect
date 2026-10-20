@@ -4,7 +4,7 @@ Status: documentation-only review candidate. Q2B.3C execution authorization is N
 This document does not connect to SQL, restore a backup, run the reader, or authorize extraction.
 Baseline: PR #140 squash commit 733ce1e0bead9bc8a0952cc307aa8843bcd98b57.
 Reader/tooling inspected at PR #141 reconciled head 47a3fb76961064a91c603e6d5554ca303ebbe445; its 15 file blobs are identical to the previously green head 8277c357cfdf2838dcd879d9200f737d9c89b507.
-Record the eventual #141 squash commit and its required CI before freezing an execution record. Branch names alone are not execution identities.
+PR #141 squash-merged to main at b857fb0d8df32c6ffdfcaebcb369c0eebb5a5b02 (feature head 47a3fb76961064a91c603e6d5554ca303ebbe445). Its required CI passed before merge. Freeze execution artifacts against the merged main commit, not a branch name or the former feature head.
 
 ## A — Safety envelope assessment
 
