@@ -1,0 +1,35 @@
+name: Q2B offline exporter validation
+on:
+  pull_request:
+    paths:
+      - 'scripts/diagnostics/gg003-historical-inventory/v4-exporter/**'
+      - '.github/workflows/q2b-exporter-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: scripts/diagnostics/gg003-historical-inventory/v4-exporter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Record source hashes (NO database)
+        run: python report_source_hashes.py
+      - name: Python serialization, terminal/schema and publication tests (NO database)
+        run: python -m unittest -v test_evidence_export.py test_provider_spool.py
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build provider adapter (NO database)
+        run: dotnet build SqlReader/SqlReader.csproj --configuration Release
+      - name: Provider-value conversion self-test (NO database)
+        run: dotnet run --project SqlReader/SqlReader.csproj --configuration Release --no-build -- --self-test
