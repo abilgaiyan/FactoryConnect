@@ -6,7 +6,7 @@ namespace FactoryConnect.Core.Tests;
 public sealed class PlannedProductionAvailabilityV2ContractTests
 {
     private sealed record Fragment(string Id, int Start, int End, bool? Running, bool? Planned);
-    private sealed record Outcome(string Status, decimal? Value, int Total, int Eligible, int Planned);
+    private sealed record Outcome(string Status, decimal? Value, int? Total, int? Eligible, int Planned);
 
     [Theory]
     [InlineData(true, true, 1, 60, 60)]
@@ -58,6 +58,22 @@ public sealed class PlannedProductionAvailabilityV2ContractTests
         Assert.Equal("IncompleteActivityCoverage",
             Evaluate([new("tail", 30, 60, false, true)], 60).Status);
         Assert.Equal("IncompleteActivityCoverage", Evaluate([], 60).Status);
+        Assert.Equal("IncompleteActivityCoverage", Evaluate([
+            new("before-gap", 0, 20, false, true),
+            new("after-gap", 40, 60, false, true)], 60).Status);
+    }
+
+    [Fact]
+    public void ProvenZeroPlannedTimeDoesNotRequireKnownActivity()
+    {
+        var result = Evaluate([new("excluded", 0, 60, null, false)], 60);
+        Assert.Equal(new Outcome("NoPlannedProduction", null, null, 0, 0), result);
+        // Unknown eligibility cannot establish an authoritative no-production schedule.
+        Assert.Equal("MissingEligibility", Evaluate([new("unknown", 0, 60, null, null)], 60).Status);
+        // Nor can a schedule gap or contradictory overlapping eligibility.
+        Assert.Equal("IncompleteActivityCoverage", Evaluate([new("partial", 0, 30, null, false)], 60).Status);
+        Assert.Equal("InvalidIntervalEvidence", Evaluate([
+            new("excluded", 0, 60, null, false), new("included", 20, 40, true, true)], 60).Status);
     }
 
     [Fact]
@@ -99,14 +115,18 @@ public sealed class PlannedProductionAvailabilityV2ContractTests
         for (var i = 1; i < ordered.Length; i++)
             if (ordered[i].Start < ordered[i - 1].End) return Failure("InvalidIntervalEvidence");
         if (ordered.Any(x => x.Planned is null)) return Failure("MissingEligibility");
-        if (ordered.Length == 0 || ordered[0].Start != 0 || ordered[^1].End != scopeEnd ||
-            ordered.Any(x => x.Running is null)) return Failure("IncompleteActivityCoverage");
+        if (ordered.Length == 0 || ordered[0].Start != 0 || ordered[^1].End != scopeEnd) return Failure("IncompleteActivityCoverage");
         for (var i = 1; i < ordered.Length; i++)
             if (ordered[i].Start != ordered[i - 1].End) return Failure("IncompleteActivityCoverage");
+        // Complete synthetic eligibility partition proves the denominator independently of activity.
+        var planned = ordered.Where(x => x.Planned == true).Sum(x => x.End - x.Start);
+        if (planned == 0)
+            return new("NoPlannedProduction", null,
+                ordered.Any(x => x.Running is null) ? (int?)null :
+                    ordered.Where(x => x.Running == true).Sum(x => x.End - x.Start), 0, 0);
+        if (ordered.Any(x => x.Running is null)) return Failure("IncompleteActivityCoverage");
         var total = ordered.Where(x => x.Running == true).Sum(x => x.End - x.Start);
         var eligible = ordered.Where(x => x.Running == true && x.Planned == true).Sum(x => x.End - x.Start);
-        var planned = ordered.Where(x => x.Planned == true).Sum(x => x.End - x.Start);
-        return planned == 0 ? new("NoPlannedProduction", null, total, eligible, planned)
-            : new("Calculated", (decimal)eligible / planned, total, eligible, planned);
+        return new("Calculated", (decimal)eligible / planned, total, eligible, planned);
     }
 }
