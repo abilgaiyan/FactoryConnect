@@ -7,7 +7,7 @@ Q0/Q1 were reported executed PASS; this packet does not repeat installation, res
 ## Status
 
 Draft SQL/design only. No database connection/execution or SQL Server syntax/performance validation performed. Creating/merging this packet does not authorize Q2 execution.
-Inherited reviewed procedure and permission/administrator attestation requirements remain in force. Guards recheck only exact target/read-only continuity; they do not redo Q0/Q1.
+Inherited reviewed procedure and permission/administrator attestation requirements remain in force. Guards recheck exact target/read-only continuity and fail-closed sysadmin/db_owner status; they do not redo Q0/Q1.
 Machine: 677b030b-1ede-4a67-82ae-6a494791357f. Dates: business dates [2026-10-16,2026-10-20).
 Target identifiers are explicit from Q1, not inferred from old LocalDB names.
 
@@ -15,14 +15,14 @@ Target identifiers are explicit from Q1, not inferred from old LocalDB names.
 
 | Packet | Reads | Bound / output | Next gate |
 | --- | --- | --- | --- |
-| Q2A | Identity rows, committed revisions, machine/date fact counts and activity/raw discovery counts | Max 100 streams/processors, 2000 machine revisions; abort rather than truncate identity/revision lists | Review identity/cut selection before Q2B |
+| Q2A | Identity rows, committed revisions, machine/date fact counts and activity/raw discovery counts | Max 100 streams/processors; complete per-processor revision totals plus composite-key pages<=500, no historical revision-count cap | Review identity/cut selection before Q2B |
 | Q2B | One approved committed cut's complete contribution summary, grouped counts and fact-lineage pages | Explicit processor row/stream row/cut; page size<=200; no automatic latest selection | Reconcile pages before payload-source packet |
 
 Resource review must approve client query timeout (proposed 60 seconds per command), maximum output (proposed 10 MiB), and maximum pages/run (proposed 20) before execution. These client limits are not SQL scan-cost guarantees and are not encoded as silent TOP truncation. On limit/timeout/error, stop with incomplete evidence; no completeness claim. An approved continuation keeps the same immutable copy/cut and last validated position.
 Q2A aggregate groups can exceed an output bound even with identity caps; capture failure/truncation is a stop condition, never successful evidence. No unbounded raw observation values or JSON payloads are returned.
 
-Expected Q2A: seven result sets (target, identities, revisions, fact counts, raw window counts, activity window counts, end-target).
-Expected Q2B: five result sets (cut, membership summary, period/key counts, lineage page, end-target).
+Expected Q2A default: eight result sets (target, identities, revision inventory, revision page, fact counts, window-counts-held, page request, end-target). With separately approved IncludeWindowCounts=1: nine result sets, replacing held marker with raw/activity count sets.
+Expected Q2B: six result sets (cut, membership summary, period/key counts, lineage page, page progress, end-target).
 No specific source row counts or actual historical cut values are asserted before execution.
 Use sqlcmd error handling (-b) in a separately reviewed invocation; DECLARE/THROW are session-only control, no DDL/DML/EXEC/SELECT INTO or application bootstrap.
 
@@ -51,3 +51,19 @@ Q2A/B can establish retained row/membership diagnostics, not producer-batch clos
 - Q2A exact SQL, target, operator, output path, timeout/byte bounds: NOT AUTHORIZED.
 - Q2B processor row/stream row/cut and run/page limit: NOT SELECTED / NOT AUTHORIZED.
 - No new restore, login change, migration, receipt backfill, replay or production action.
+
+## Review corrections and continuation protocol
+
+CutText and AfterPositionText are varchar(max) inputs validated for canonical ASCII digits, length and lexicographic UInt64 bounds before TRY_CONVERT; no numeric assignment overflow or truncation occurs before validation. Reject empty/negative/fractional/exponent/whitespace/leading-zero text and max+1; cut zero is rejected, cursor zero allowed. decimal(20,0) does represent some numbers above UInt64 max, but cannot accept arbitrarily long unchecked input safely.
+Required future SQL validation vectors: 0/1/UInt64 max/max+1, 21+ digits, NULL, signs, whitespace, decimal/exponent text and cursor>cut. These have not been executed.
+
+Q2B separately reports missing exact joins, absent referenced fact IDs, existing facts with mismatched stream/position, wrong existing fact machine and unverifiable machine due to absent fact. Categories may overlap; do not sum anomaly counts. A zero wrong-machine count with nonzero unverifiable count is not a clean machine check. LEFT JOIN retains unresolved contributions.
+
+Q2A revision pages use composite cursor (processor row ID, revision position), starting (0,0). Continue from the last returned composite key, never MAX across processors. Preserve every page and reconcile unique per-processor keys with TotalCommittedRevisions; acquire a terminal empty page. The inventory covers all machine revisions, not just changed-day rows.
+Q2B retains exact processor/stream/cut and position cursor. The 20-page limit is a per-run pause, not a 4000-row membership cap.
+At every pause save a continuation receipt: reviewed commit/parameterized file hash, immutable database/backup identity, machine/source/cut or revision-discovery scope, page sequence, input cursor, returned min/max/key count, cumulative unique count, summary totals and output hashes. Status is Partial until terminal empty page and count reconciliation. Timeout/truncated/failed pages are not committed to the receipt; resume from the last fully validated cursor, deduplicating only identical repeated page exports.
+A new run needs explicitly approved continuation bounds and same target provenance/parameters. Any target/summary change, skipped range or conflicting duplicate stops as Inconsistent; do not silently restart with latest data. Full completion is recorded by the reviewer as Complete only after these checks; SQL progress markers conservatively remain PARTIAL.
+
+Raw/activity envelope counts default disabled. Enabling requires independent index and estimated-plan review in a separately permitted non-production environment; Q1's selected index output did not establish MachineObservation's access path. Review seek/scan predicates, rows read, sort/memory estimates and machine-prefix/date filtering. Activity's stream-position index does not guarantee selective StartedAt/EndedAt filtering; fact/date grouping and revision totals also require cost review.
+Before ANY execution freeze exact command, commit, target, operator, timeout, output path/byte bounds and per-run page limit. No claim that date predicates or TOP page sizes bound physical I/O. No index changes/hints or runtime test are authorized here.
+Focused SQL Server syntax/estimated-plan validation remains pending separate permission; no connection, plan compilation or query execution has occurred. Repository CI alone does not certify SQL syntax/plans. Q2A-only review/authorization precedes selected Q2B parameters and execution.
