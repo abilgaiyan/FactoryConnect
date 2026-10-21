@@ -41,7 +41,7 @@
 
 | ID | Priority | Status | Issue | Closure evidence | Depends on |
 |---|---|---|---|---|---|
-| STAB-01 | P0 | INVESTIGATE | Effective configuration/startup path inconsistent with required machine sections | Exact release call graph, activation gates, provider precedence, redacted effective-key proof | None |
+| STAB-01 | P0 | INVESTIGATE | Effective configuration/startup path inconsistent with required machine sections | Source trace complete; regression/runtime provenance outstanding. See G1.1 investigation update below. | None |
 | STAB-02 | P0 | OPEN | Restart lacks proven fail-before-stop preflight | Validate replacement without stopping Edge; rollback drill | STAB-01 |
 | STAB-03 | P0 | INVESTIGATE | Shift reports cancel at ~30s; broad reporting latency | Restored-data reproduction, traced cause, correct bounded response | STAB-01/04 as applicable |
 | STAB-04 | P0 | INVESTIGATE | Operational metric processor-gate timeouts | Concurrency/transaction RCA, deterministic tests, no partial publication | Isolated restore |
@@ -112,3 +112,17 @@ Real FANUC CNC observations have been acquired and durably stored. Current prior
 ## 7. Change log
 
 - **2026-10-21:** Initial evidence-based stabilization baseline; 15 issues, G0–G7, G1.1 as first investigation. Documentation only; no production change.
+
+## 8. G1.1 investigation update — 2026-10-21 (development-only)
+
+**Status: INVESTIGATE; G1 exit NOT met.** Source checks are against deployed commit `7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306`; the relevant source blobs were also compared against `main` at `e746aad49794a1d0aebbff0baae2732a2e7fd985` and are unchanged.
+
+**Confirmed source path:** `Program.cs` uses `Host.CreateApplicationBuilder(args)` and calls `AddFactoryConnectEdgeApplication(builder.Configuration)`. The application extension calls `AddFactoryConnectProductionMetricInputs(configuration, inventory.ActivityStreams)` without a feature flag. This immediately calls `ReadMachineConfigurations`; `ReadMachineConfiguration` rejects an empty `Contexts` array and requires `PlannedProduction` before registering the production metric input worker. With only the described incomplete production JSON and no other sources, successful composition is not expected.
+
+**Confirmed competing configuration:** `src/FactoryConnect.Edge/appsettings.json` shipped in the deployed source includes example `ProductionProcessing:Machines:0:Contexts` and `PlannedProduction` (machine ID `11111111-1111-1111-1111-111111111111`, UTC). The deployment template `config/templates/edge.production.template.json` omits those sections. `Restart-FactoryConnectEdge.ps1` projects commissioned JSON properties to process environment variables but its `Assert-SiteConfiguration` validates only machine-level identity/scope fields, not contexts or planned assignment. The .NET default JSON and environment provider layering could therefore preserve or mix example keys if corresponding overrides are absent. This is a plausible configuration provenance path, **not established production runtime evidence**; array/index and machine identity alignment must be verified rather than assumed.
+
+**Safety concern confirmed:** The restart script stops the owned Edge before launching and stabilizing its replacement. This must not be used to test configuration. G2 requires fail-before-stop validation.
+
+**Outstanding before closure:** (1) automated regression tests of missing-section composition and JSON/environment overlay behavior; (2) exact deployed executable/appsettings and process launch source proof; (3) redacted effective-key presence and provenance proof, preferably reproduced offline under Production environment; (4) any narrow validation correction supported by those results. No developer tests were executed in this investigation environment (dotnet SDK unavailable). No factory commands, SQL, restart, replay or deployment were executed.
+
+**References:** [startup](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/Program.cs), [registration](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/EdgeApplicationServiceCollectionExtensions.cs), [reader](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/EdgeProductionMetricInputServiceCollectionExtensions.cs), [shipped appsettings](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/appsettings.json), [template](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/config/templates/edge.production.template.json), [restart](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/scripts/deployment/Restart-FactoryConnectEdge.ps1).
