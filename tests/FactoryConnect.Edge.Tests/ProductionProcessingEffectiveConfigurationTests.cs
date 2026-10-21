@@ -49,15 +49,15 @@ public sealed class ProductionProcessingEffectiveConfigurationTests
         {
             ["ProductionProcessing:Machines:0:MachineId"] =
                 "677b030b-1ede-4a67-82ae-6a494791357f",
-            ["ProductionProcessing:Machines:0:CompanyId"] = "GAJRA",
+            ["ProductionProcessing:BatchSize"] = "200",
         };
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(baseValues)
             .AddInMemoryCollection(overlay)
             .Build();
 
-        Assert.Equal("GAJRA",
-            configuration["ProductionProcessing:Machines:0:CompanyId"]);
+        Assert.Equal("200",
+            configuration["ProductionProcessing:BatchSize"]);
         Assert.Equal("CTX-BASE",
             configuration["ProductionProcessing:Machines:0:Contexts:0:AssignmentId"]);
         Assert.Equal("POT-BASE",
