@@ -24,7 +24,7 @@
 | EV-03 | Actual shifts IST: S1 07:30–16:00 (break 11:30–12:00), S2 16:00–00:00 (20:00–20:30), S3 00:00–07:30 (03:30–04:00) | User-attested; net 8h, 7.5h, 7h if fully planned |
 | EV-04 | Production JSON configures S1 06:00–14:00, S2 14:00–22:00, S3 22:00–06:00, effective 2026-10-15 | Confirmed mismatch; not proven cause of incident |
 | EV-05 | Production `ProductionProcessing.Machines[0]` lacks `Contexts` and `PlannedProduction` | Confirmed in JSON; effective runtime configuration unknown |
-| EV-06 | Deployed-commit source requires at least one context and `GetRequiredSection("PlannedProduction")` when reader executes | Confirmed source contract; conditional activation unresolved |
+| EV-06 | Deployed-commit source requires at least one context and `GetRequiredSection("PlannedProduction")` when reader executes | Confirmed source contract; unconditional registration traced in G1.1 |
 | EV-07 | Edge restart projects JSON to environment and stops the owned Edge before launching a replacement | Confirmed script excerpts; rollback not proven |
 | EV-08 | Core resolver supports multiple planned windows and subtracts breaks; Edge JSON reader constructs only one | Confirmed source behavior |
 | EV-09 | `IsOvernight => EndsAtLocal < StartsAtLocal`; `00:00–00:00` resolves to zero duration, not 24h | Confirmed; prohibited workaround |
@@ -41,7 +41,7 @@
 
 | ID | Priority | Status | Issue | Closure evidence | Depends on |
 |---|---|---|---|---|---|
-| STAB-01 | P0 | INVESTIGATE | Effective configuration/startup path inconsistent with required machine sections | Source trace complete; regression/runtime provenance outstanding. See G1.1 investigation update below. | None |
+| STAB-01 | P0 | INVESTIGATE | Effective configuration/startup path inconsistent with required machine sections | Configuration-isolation RCA accepted; regression 4/4 PASS (user-reported); effective runtime provenance outstanding. See G1.1 investigation update below. | None |
 | STAB-02 | P0 | OPEN | Restart lacks proven fail-before-stop preflight | Validate replacement without stopping Edge; rollback drill | STAB-01 |
 | STAB-03 | P0 | INVESTIGATE | Shift reports cancel at ~30s; broad reporting latency | Restored-data reproduction, traced cause, correct bounded response | STAB-01/04 as applicable |
 | STAB-04 | P0 | INVESTIGATE | Operational metric processor-gate timeouts | Concurrency/transaction RCA, deterministic tests, no partial publication | Isolated restore |
@@ -123,6 +123,39 @@ Real FANUC CNC observations have been acquired and durably stored. Current prior
 
 **Safety concern confirmed:** The restart script stops the owned Edge before launching and stabilizing its replacement. This must not be used to test configuration. G2 requires fail-before-stop validation.
 
-**Outstanding before closure:** (1) execution/review of the regression tests now added at `tests/FactoryConnect.Edge.Tests/ProductionProcessingEffectiveConfigurationTests.cs` (four new tests, not executed); (2) exact deployed executable/appsettings and process launch source proof; (3) redacted effective-key presence and provenance proof, preferably reproduced offline under Production environment; (4) any narrow validation correction supported by those results. No developer tests were executed in this investigation environment (dotnet SDK unavailable). Regression test code is present but its results are **UNVERIFIED**. No factory commands, SQL, restart, replay or deployment were executed.
+### Accepted decision and deployed evidence
+
+**RCA accepted:** Production packages expose sample machine assignments to configuration layering. Omitted commissioned-machine assignments can therefore be satisfied by packaged sample defaults. This confirmed configuration-isolation defect is distinct from the **unverified effective inheritance in running GG-003**.
+
+User-supplied read-only server output establishes:
+- Selected release and current junction: `7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306`.
+- Recorded and observed Edge PID `6500`, executable path and start time agree; start `2026-10-19T16:14:24.4391978Z`.
+- Durable restart attempt `edge-restart-897ae8384c334efc8b23650701c97daa` reports Succeeded/Complete and records that same replacement identity. This is launch-record evidence, not an effective-provider snapshot.
+- Packaged machine index 0 contains sample machine identity, `Contexts[0].AssignmentId=CTX-1`, effective `2026-01-01T00:00:00+00:00`; `PlannedProduction.AssignmentId=POT-1`, timezone `UTC`, window `06:00–14:00`, effective `2026-01-01`.
+- Commissioned machine index 0 supplies GG-003 `677b030b-1ede-4a67-82ae-6a494791357f` but omits both assignments.
+- Context identification uses `AssignmentId`; a blank query for `ContextId` does not establish an absent identifier.
+
+| Inspected artifact | SHA256 (user-supplied) |
+|---|---|
+| Edge executable | `ABBF062816E8B02B8B3DCBF79CFECEE9A2F1B45FAF73D551F87C217B919DB1E5` |
+| Edge DLL | `584D0A01805E19A032F85497A021B4E842FB66FE3F90417298CBE3E44FE54E13` |
+| Packaged appsettings.json | `87FB3F4D4F7EFD52779EC659F907EB881702B0659E8E4429DDE0661773672454` |
+| Commissioned edge.production.json | `CBE7F5A80CE9A04E7A46CC9C55BB96FFF2EAEC4193EFF83890F9F3C7E82AA8B1` |
+
+These hashes identify inspected on-disk files; they do not prove file contents at process startup or effective runtime values. Do not repeat the completed packaged-value inspection.
+
+**Regression validation:** User reports four tests in `ProductionProcessingEffectiveConfigurationTests.cs` PASS on .NET 10, with build PASS (50.9 seconds): missing Contexts rejected; missing PlannedProduction rejected; inherited assignments retained; omitted overlay child keys retained. This execution was external to the assistant environment and was not independently rerun here.
+
+**Outstanding evidence:** Review the exact restart attempt's startup logs for environment/content root and available launch evidence. Establish redacted winning-provider provenance for required machine keys if safely available; an offline reproduction must explicitly state its captured inputs and assumptions and must not be presented as a direct snapshot of the running process. Do not infer historical metric correctness from successful startup. G1 exit remains NOT met and G2 remains blocked.
+
+### Corrective design proposal — no implementation authorization
+
+Production packages must not supply sample machine assignments; each commissioned machine must explicitly own its required context and planned-production assignments. Samples belong in an explicit development/demo configuration. Validate commissioned completeness independently of inherited defaults, and validate replacement composition before stopping the running Edge.
+
+**Coordinated migration is mandatory:** production package isolation, complete commissioned-machine configuration and pre-stop validation must be introduced together. Removing sample defaults independently could make the existing deployment unable to restart.
+
+After remaining provenance review, prepare a reviewable design covering configuration ownership, validation failures, migration order, version compatibility and rollback safeguards. The design must preserve the prior compatible release/configuration pair, prove failed preflight leaves acquisition running, and rehearse recovery in isolation before any production proposal. Do not invent commissioned assignment identities or effective dates, backdate semantics, or rewrite history.
+
+**Authorization/status:** RCA accepted; runtime inheritance plausible but unverified; regression 4/4 PASS as reported; corrective boundary accepted as proposal only; corrective implementation NOT authorized; G2 blocked; Gajra continues running unchanged. This PR remains a draft investigation. No corrective code, configuration edit, restart, deployment, SQL action or replay is authorized by this record.
 
 **References:** [startup](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/Program.cs), [registration](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/EdgeApplicationServiceCollectionExtensions.cs), [reader](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/EdgeProductionMetricInputServiceCollectionExtensions.cs), [shipped appsettings](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/src/FactoryConnect.Edge/appsettings.json), [template](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/config/templates/edge.production.template.json), [restart](https://github.com/abilgaiyan/FactoryConnect/blob/7e0a67fb2fe01aa6c0f1c7d803c5bc7badc23306/scripts/deployment/Restart-FactoryConnectEdge.ps1).
