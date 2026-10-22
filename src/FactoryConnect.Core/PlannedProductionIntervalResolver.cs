@@ -41,6 +41,14 @@ public sealed class PlannedProductionIntervalResolver
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
+        // Validate the exact request independently of the lookaround request.
+        var requestedAssignments = await _reader.ReadAssignmentsAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        var requestedOverrides = await _reader.ReadOverridesAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        ValidateProviderResults(requestedAssignments, requestedOverrides,
+            siteId, factoryDateFrom, factoryDateTo);
+
         var requestedFrom = factoryDateFrom;
         var requestedTo = factoryDateTo;
         factoryDateFrom = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, factoryDateFrom.DayNumber - 2));
@@ -52,41 +60,7 @@ public sealed class PlannedProductionIntervalResolver
         var overrides = await _reader.ReadOverridesAsync(
             siteId, factoryDateFrom, factoryDateTo, cancellationToken);
 
-        var assignmentIds = new HashSet<PlannedProductionScheduleAssignmentId>();
-        foreach (var assignment in assignments)
-        {
-            ArgumentNullException.ThrowIfNull(assignment);
-            assignment.Validate();
-            if (assignment.SiteId != siteId)
-            {
-                throw new InvalidOperationException("Planned production provider returned an assignment for another site.");
-            }
-
-            if (!assignmentIds.Add(assignment.Id))
-            {
-                throw new InvalidOperationException(
-                    $"Planned production provider returned duplicate assignment ID '{assignment.Id}'.");
-            }
-
-            if (assignment.EffectiveFrom >= factoryDateTo ||
-                (assignment.EffectiveTo is not null && assignment.EffectiveTo.Value <= factoryDateFrom))
-            {
-                throw new InvalidOperationException(
-                    "Planned production provider returned an assignment outside the requested effective interval.");
-            }
-        }
-
-        foreach (var calendarOverride in overrides)
-        {
-            ArgumentNullException.ThrowIfNull(calendarOverride);
-            calendarOverride.Validate();
-            if (calendarOverride.SiteId != siteId ||
-                calendarOverride.FactoryDate < factoryDateFrom ||
-                calendarOverride.FactoryDate >= factoryDateTo)
-            {
-                throw new InvalidOperationException("Planned production provider returned an override outside the requested scope.");
-            }
-        }
+        ValidateProviderResults(assignments, overrides, siteId, factoryDateFrom, factoryDateTo);
 
         var output = new List<PlannedProductionInterval>();
         var gross = new List<(ProductionLineId? Scope, DateTimeOffset Start, DateTimeOffset End)>();
@@ -161,6 +135,49 @@ public sealed class PlannedProductionIntervalResolver
             .ThenBy(static interval => interval.ProductionLineId?.Value, StringComparer.Ordinal)
             .ThenBy(static interval => interval.SourceAssignmentId.Value, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static void ValidateProviderResults(
+        IReadOnlyList<PlannedProductionScheduleAssignment> assignments,
+        IReadOnlyList<PlannedProductionCalendarOverride> overrides,
+        SiteId siteId, DateOnly factoryDateFrom, DateOnly factoryDateTo)
+    {
+        var assignmentIds = new HashSet<PlannedProductionScheduleAssignmentId>();
+        foreach (var assignment in assignments)
+        {
+            ArgumentNullException.ThrowIfNull(assignment);
+            assignment.Validate();
+            if (assignment.SiteId != siteId)
+            {
+                throw new InvalidOperationException("Planned production provider returned an assignment for another site.");
+            }
+
+            if (!assignmentIds.Add(assignment.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Planned production provider returned duplicate assignment ID '{assignment.Id}'.");
+            }
+
+            if (assignment.EffectiveFrom >= factoryDateTo ||
+                (assignment.EffectiveTo is not null && assignment.EffectiveTo.Value <= factoryDateFrom))
+            {
+                throw new InvalidOperationException(
+                    "Planned production provider returned an assignment outside the requested effective interval.");
+            }
+        }
+
+        foreach (var calendarOverride in overrides)
+        {
+            ArgumentNullException.ThrowIfNull(calendarOverride);
+            calendarOverride.Validate();
+            if (calendarOverride.SiteId != siteId ||
+                calendarOverride.FactoryDate < factoryDateFrom ||
+                calendarOverride.FactoryDate >= factoryDateTo)
+            {
+                throw new InvalidOperationException("Planned production provider returned an override outside the requested scope.");
+            }
+        }
+
     }
 
     private static PlannedProductionScheduleAssignment? SelectAssignment(

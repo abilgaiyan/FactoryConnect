@@ -53,6 +53,17 @@ public sealed class ShiftOccurrenceResolver
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
+        // Preserve the provider contract for the caller's exact range before
+        // making a separate widened request for neighboring collision evidence.
+        var requestedAssignments = await _reader.ReadAssignmentsAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        ShiftScheduleCollectionValidator.ValidateAssignments(
+            requestedAssignments, siteId, factoryDateFrom, factoryDateTo);
+        var requestedOverrides = await _reader.ReadExceptionsAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        ShiftScheduleCollectionValidator.ValidateOverrides(
+            requestedOverrides, siteId, factoryDateFrom, factoryDateTo);
+
         var requestedFrom = factoryDateFrom;
         var requestedTo = factoryDateTo;
         factoryDateFrom = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, factoryDateFrom.DayNumber - 2));

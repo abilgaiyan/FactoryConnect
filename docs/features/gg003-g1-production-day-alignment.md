@@ -92,3 +92,18 @@ ownership and rejection when the invalid owner itself is requested.
 The CI run for 464ee19c failed during build on CA1859 in ReadPlannedActiveDays.
 Its private return type is now HashSet<DayOfWeek>, as required by the analyzer.
 Updated .NET validation remains pending CI; no local SDK is available.
+
+## Provider-boundary regression repair
+
+The non-SQL CI test run compiled and reported three existing Core provider-boundary
+failures: out-of-request shift assignments, shift overrides and planned assignments
+were accepted after widening the provider request. The original rejection tests are
+unchanged. Both resolvers now first read and validate the caller's exact date range,
+then independently read and validate the padded collision-check range. Neighboring
+assignments and overrides remain available for collision resolution without widening
+the original provider admission contract. Planned provider validation is shared by
+both reads. The prior calendar-limit policy remains unchanged.
+
+The supplied run passed the other 2,055 non-SQL tests (including 871 Core tests),
+with 3 failures. This is not SQL integration evidence. Whitespace checks pass for
+the repair; execution of the updated .NET tests remains pending CI.
