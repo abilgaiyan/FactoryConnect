@@ -130,19 +130,15 @@ internal static class ShiftScheduleCollectionValidator
         ShiftScheduleAssignment left,
         ShiftScheduleAssignment right)
     {
-        if (!EffectiveRangesOverlap(left, right))
-        {
-            return false;
-        }
-
         var rangeStart = left.EffectiveFrom > right.EffectiveFrom
             ? left.EffectiveFrom
             : right.EffectiveFrom;
         var rangeEnd = EarliestEffectiveEnd(left.EffectiveTo, right.EffectiveTo);
-        var inspectionEnd = rangeStart.AddDays(14);
-        if (rangeEnd is not null && rangeEnd.Value < inspectionEnd)
+        rangeStart = rangeStart.AddDays(-2);
+        var inspectionEnd = rangeStart.AddDays(18);
+        if (rangeEnd is not null && rangeEnd.Value.AddDays(2) < inspectionEnd)
         {
-            inspectionEnd = rangeEnd.Value;
+            inspectionEnd = rangeEnd.Value.AddDays(2);
         }
 
         for (var leftDate = rangeStart;
@@ -157,8 +153,8 @@ internal static class ShiftScheduleCollectionValidator
 
             var leftInterval = GetLocalInterval(left, leftDate);
 
-            for (var rightDate = rangeStart.AddDays(-1);
-                 rightDate <= inspectionEnd;
+            for (var rightDate = rangeStart.AddDays(-2);
+                 rightDate <= inspectionEnd.AddDays(2);
                  rightDate = rightDate.AddDays(1))
             {
                 if (!right.IsEffectiveOn(rightDate) ||
@@ -183,28 +179,17 @@ internal static class ShiftScheduleCollectionValidator
         ShiftScheduleAssignment assignment,
         DateOnly factoryDate)
     {
-        var start = factoryDate.ToDateTime(
+        var startDate = factoryDate.AddDays(assignment.StartDayOffset);
+        var start = startDate.ToDateTime(
             assignment.StartsAtLocal,
             DateTimeKind.Unspecified);
         var endDate = assignment.IsOvernight
-            ? factoryDate.AddDays(1)
-            : factoryDate;
+            ? startDate.AddDays(1)
+            : startDate;
         var end = endDate.ToDateTime(
             assignment.EndsAtLocal,
             DateTimeKind.Unspecified);
         return (start, end);
-    }
-
-    private static bool EffectiveRangesOverlap(
-        ShiftScheduleAssignment left,
-        ShiftScheduleAssignment right)
-    {
-        var leftEndsAfterRightStarts =
-            left.EffectiveTo is null || left.EffectiveTo.Value > right.EffectiveFrom;
-        var rightEndsAfterLeftStarts =
-            right.EffectiveTo is null || right.EffectiveTo.Value > left.EffectiveFrom;
-
-        return leftEndsAfterRightStarts && rightEndsAfterLeftStarts;
     }
 
     private static DateOnly? EarliestEffectiveEnd(DateOnly? left, DateOnly? right)

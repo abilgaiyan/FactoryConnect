@@ -16,6 +16,8 @@ public sealed record ShiftScheduleAssignment
     public required DateOnly EffectiveFrom { get; init; }
     public DateOnly? EffectiveTo { get; init; }
 
+    public int StartDayOffset { get; init; } = 0;
+
     public bool IsOvernight => EndsAtLocal < StartsAtLocal;
 
     public bool IsEffectiveOn(DateOnly factoryDate) =>
@@ -24,6 +26,11 @@ public sealed record ShiftScheduleAssignment
 
     public void Validate()
     {
+        if (StartDayOffset is < 0 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(StartDayOffset));
+        }
+
         if (Id.IsEmpty)
         {
             throw new ArgumentException("Shift schedule assignment ID is required.", nameof(Id));

@@ -53,6 +53,11 @@ public sealed class ShiftOccurrenceResolver
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
+        var requestedFrom = factoryDateFrom;
+        var requestedTo = factoryDateTo;
+        factoryDateFrom = factoryDateFrom.AddDays(-2);
+        factoryDateTo = factoryDateTo.AddDays(2);
+
 
         var assignments = await _reader.ReadAssignmentsAsync(
             siteId,
@@ -101,7 +106,17 @@ public sealed class ShiftOccurrenceResolver
             }
         }
 
+        var physical = occurrences.OrderBy(item => item.StartsAtUtc).ToArray();
+        for (var index = 1; index < physical.Length; index++)
+        {
+            if (physical[index].StartsAtUtc < physical[index - 1].EndsAtUtc)
+            {
+                throw new InvalidOperationException("Resolved shifts overlap across business dates.");
+            }
+        }
+
         return occurrences
+            .Where(item => item.FactoryDate >= requestedFrom && item.FactoryDate < requestedTo)
             .OrderBy(static occurrence => occurrence.StartsAtUtc)
             .ThenBy(static occurrence => occurrence.ProductionLineId?.Value, StringComparer.Ordinal)
             .ThenBy(static occurrence => occurrence.ShiftId.Value, StringComparer.Ordinal)
@@ -146,12 +161,13 @@ public sealed class ShiftOccurrenceResolver
         DateOnly factoryDate)
     {
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
-        var localStart = factoryDate.ToDateTime(
+        var startDate = factoryDate.AddDays(assignment.StartDayOffset);
+        var localStart = startDate.ToDateTime(
             assignment.StartsAtLocal,
             DateTimeKind.Unspecified);
         var endDate = assignment.IsOvernight
-            ? factoryDate.AddDays(1)
-            : factoryDate;
+            ? startDate.AddDays(1)
+            : startDate;
         var localEnd = endDate.ToDateTime(
             assignment.EndsAtLocal,
             DateTimeKind.Unspecified);

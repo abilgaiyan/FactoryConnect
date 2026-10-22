@@ -41,6 +41,11 @@ public sealed class PlannedProductionIntervalResolver
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
+        var requestedFrom = factoryDateFrom;
+        var requestedTo = factoryDateTo;
+        factoryDateFrom = factoryDateFrom.AddDays(-2);
+        factoryDateTo = factoryDateTo.AddDays(2);
+
 
         var assignments = await _reader.ReadAssignmentsAsync(
             siteId, factoryDateFrom, factoryDateTo, cancellationToken);
@@ -84,6 +89,7 @@ public sealed class PlannedProductionIntervalResolver
         }
 
         var output = new List<PlannedProductionInterval>();
+        var gross = new List<(DateTimeOffset Start, DateTimeOffset End)>();
 
         for (var date = factoryDateFrom; date < factoryDateTo; date = date.AddDays(1))
         {
@@ -108,16 +114,20 @@ public sealed class PlannedProductionIntervalResolver
             }
 
             var plannedWindows = calendarOverride?.ReplacementPlannedWindows ?? assignment.PlannedWindows;
+            // Validate ordinary ownership even on replacement dates, then apply the override policy.
+            var ordinaryBreaks = PlannedProductionBreakPlacement.Resolve(assignment.PlannedWindows, assignment.BreakWindows);
+            var effectiveBreaks = PlannedProductionBreakPlacement.Resolve(
+                plannedWindows, ordinaryBreaks, hasReplacement);
+            var breaks = effectiveBreaks.Select(pause => ResolveWindow(assignment, date, pause))
+                .OrderBy(static interval => interval.Start).ToArray();
             foreach (var window in plannedWindows)
             {
                 var planned = ResolveWindow(assignment, date, window);
-                var breaks = assignment.BreakWindows
-                    .Select(pause => ResolveWindow(assignment,
-                        window.IsOvernight && pause.StartsAtLocal < window.StartsAtLocal
-                            ? date.AddDays(1) : date, pause))
-                    .OrderBy(static interval => interval.Start)
-                    .ToArray();
-
+                if (gross.Any(other => planned.Start < other.End && other.Start < planned.End))
+                {
+                    throw new InvalidOperationException("Planned windows overlap across business dates.");
+                }
+                gross.Add(planned);
                 foreach (var interval in Subtract([planned], breaks))
                 {
                     output.Add(new PlannedProductionInterval
@@ -135,6 +145,7 @@ public sealed class PlannedProductionIntervalResolver
         }
 
         return output
+            .Where(item => item.FactoryDate >= requestedFrom && item.FactoryDate < requestedTo)
             .OrderBy(static interval => interval.StartsAtUtc)
             .ThenBy(static interval => interval.ProductionLineId?.Value, StringComparer.Ordinal)
             .ThenBy(static interval => interval.SourceAssignmentId.Value, StringComparer.Ordinal)
@@ -209,6 +220,7 @@ public sealed class PlannedProductionIntervalResolver
     {
         window.Validate();
         var zone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
+        date = date.AddDays(window.StartDayOffset);
         var localStart = date.ToDateTime(window.StartsAtLocal, DateTimeKind.Unspecified);
         var endDate = window.IsOvernight ? date.AddDays(1) : date;
         var localEnd = endDate.ToDateTime(window.EndsAtLocal, DateTimeKind.Unspecified);

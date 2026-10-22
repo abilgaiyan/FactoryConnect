@@ -5,10 +5,19 @@ public sealed record PlannedProductionWindow
     public required TimeOnly StartsAtLocal { get; init; }
     public required TimeOnly EndsAtLocal { get; init; }
 
+    private readonly int? _startDayOffset;
+    public int StartDayOffset { get => _startDayOffset ?? 0; init => _startDayOffset = value; }
+    public bool HasExplicitStartDayOffset => _startDayOffset.HasValue;
+
     public bool IsOvernight => EndsAtLocal < StartsAtLocal;
 
     public void Validate()
     {
+        if (StartDayOffset is < 0 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(StartDayOffset));
+        }
+
         if (StartsAtLocal == EndsAtLocal)
         {
             throw new ArgumentException(
@@ -29,14 +38,13 @@ public sealed record PlannedProductionWindow
             ArgumentNullException.ThrowIfNull(window);
             window.Validate();
 
-            if (window.IsOvernight)
+            var start = window.StartDayOffset * TimeSpan.TicksPerDay + window.StartsAtLocal.Ticks;
+            var end = window.StartDayOffset * TimeSpan.TicksPerDay + window.EndsAtLocal.Ticks +
+                (window.IsOvernight ? TimeSpan.TicksPerDay : 0);
+            segments.Add((start, end));
+            if (windows.All(static item => item.StartDayOffset == 0) && window.IsOvernight && window.EndsAtLocal.Ticks > 0)
             {
-                segments.Add((window.StartsAtLocal.Ticks, TimeSpan.TicksPerDay));
                 segments.Add((0, window.EndsAtLocal.Ticks));
-            }
-            else
-            {
-                segments.Add((window.StartsAtLocal.Ticks, window.EndsAtLocal.Ticks));
             }
         }
 
