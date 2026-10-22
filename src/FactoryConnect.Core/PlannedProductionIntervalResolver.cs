@@ -41,12 +41,107 @@ public sealed class PlannedProductionIntervalResolver
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
+        // Validate the exact request independently of the lookaround request.
+        var requestedAssignments = await _reader.ReadAssignmentsAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        var requestedOverrides = await _reader.ReadOverridesAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        ValidateProviderResults(requestedAssignments, requestedOverrides,
+            siteId, factoryDateFrom, factoryDateTo);
+
+        var requestedFrom = factoryDateFrom;
+        var requestedTo = factoryDateTo;
+        factoryDateFrom = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, factoryDateFrom.DayNumber - 2));
+        factoryDateTo = DateOnly.FromDayNumber(Math.Min(DateOnly.MaxValue.DayNumber, factoryDateTo.DayNumber + 2));
+
 
         var assignments = await _reader.ReadAssignmentsAsync(
             siteId, factoryDateFrom, factoryDateTo, cancellationToken);
         var overrides = await _reader.ReadOverridesAsync(
             siteId, factoryDateFrom, factoryDateTo, cancellationToken);
 
+        ValidateProviderResults(assignments, overrides, siteId, factoryDateFrom, factoryDateTo);
+
+        var output = new List<PlannedProductionInterval>();
+        var gross = new List<(ProductionLineId? Scope, DateTimeOffset Start, DateTimeOffset End)>();
+
+        for (var date = factoryDateFrom; date < factoryDateTo; date = date.AddDays(1))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var assignment = SelectAssignment(assignments, productionLineId, date);
+            if (assignment is null)
+            {
+                continue;
+            }
+
+            var calendarOverride = SelectOverride(overrides, productionLineId, date);
+            if (calendarOverride?.IsShutdown == true)
+            {
+                continue;
+            }
+
+            var hasReplacement = calendarOverride?.ReplacementPlannedWindows is not null;
+            if (!hasReplacement && !assignment.ActiveDays.Contains(date.DayOfWeek))
+            {
+                continue;
+            }
+
+            var plannedWindows = calendarOverride?.ReplacementPlannedWindows ?? assignment.PlannedWindows;
+            // Validate ordinary ownership even on replacement dates, then apply the override policy.
+            var ordinaryBreaks = PlannedProductionBreakPlacement.Resolve(assignment.PlannedWindows, assignment.BreakWindows);
+            var effectiveBreaks = PlannedProductionBreakPlacement.Resolve(
+                plannedWindows, ordinaryBreaks, hasReplacement);
+            var isLookaround = date < requestedFrom || date >= requestedTo;
+            var breaks = effectiveBreaks
+                .Where(pause => !isLookaround || FitsCalendar(date, pause))
+                .Select(pause => ResolveWindow(assignment, date, pause))
+                .OrderBy(static interval => interval.Start).ToArray();
+            foreach (var window in plannedWindows)
+            {
+                // Skip only unrepresentable lookaround windows, retaining other windows
+                // from the same business date for collision checks.
+                if (isLookaround && !FitsCalendar(date, window))
+                {
+                    continue;
+                }
+                var planned = ResolveWindow(assignment, date, window);
+                var effectiveScope = productionLineId ?? assignment.ProductionLineId;
+                if (gross.Any(other => other.Scope == effectiveScope &&
+                    planned.Start < other.End && other.Start < planned.End))
+                {
+                    throw new InvalidOperationException("Planned windows overlap across business dates.");
+                }
+                gross.Add((effectiveScope, planned.Start, planned.End));
+                foreach (var interval in Subtract([planned], breaks))
+                {
+                    output.Add(new PlannedProductionInterval
+                    {
+                        SourceAssignmentId = assignment.Id,
+                        CompanyId = assignment.CompanyId,
+                        SiteId = assignment.SiteId,
+                        ProductionLineId = productionLineId ?? assignment.ProductionLineId,
+                        FactoryDate = date,
+                        StartsAtUtc = interval.Start,
+                        EndsAtUtc = interval.End,
+                    });
+                }
+            }
+        }
+
+        return output
+            .Where(item => item.FactoryDate >= requestedFrom && item.FactoryDate < requestedTo)
+            .OrderBy(static interval => interval.StartsAtUtc)
+            .ThenBy(static interval => interval.ProductionLineId?.Value, StringComparer.Ordinal)
+            .ThenBy(static interval => interval.SourceAssignmentId.Value, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static void ValidateProviderResults(
+        IReadOnlyList<PlannedProductionScheduleAssignment> assignments,
+        IReadOnlyList<PlannedProductionCalendarOverride> overrides,
+        SiteId siteId, DateOnly factoryDateFrom, DateOnly factoryDateTo)
+    {
         var assignmentIds = new HashSet<PlannedProductionScheduleAssignmentId>();
         foreach (var assignment in assignments)
         {
@@ -83,62 +178,6 @@ public sealed class PlannedProductionIntervalResolver
             }
         }
 
-        var output = new List<PlannedProductionInterval>();
-
-        for (var date = factoryDateFrom; date < factoryDateTo; date = date.AddDays(1))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var assignment = SelectAssignment(assignments, productionLineId, date);
-            if (assignment is null)
-            {
-                continue;
-            }
-
-            var calendarOverride = SelectOverride(overrides, productionLineId, date);
-            if (calendarOverride?.IsShutdown == true)
-            {
-                continue;
-            }
-
-            var hasReplacement = calendarOverride?.ReplacementPlannedWindows is not null;
-            if (!hasReplacement && !assignment.ActiveDays.Contains(date.DayOfWeek))
-            {
-                continue;
-            }
-
-            var plannedWindows = calendarOverride?.ReplacementPlannedWindows ?? assignment.PlannedWindows;
-            foreach (var window in plannedWindows)
-            {
-                var planned = ResolveWindow(assignment, date, window);
-                var breaks = assignment.BreakWindows
-                    .Select(pause => ResolveWindow(assignment,
-                        window.IsOvernight && pause.StartsAtLocal < window.StartsAtLocal
-                            ? date.AddDays(1) : date, pause))
-                    .OrderBy(static interval => interval.Start)
-                    .ToArray();
-
-                foreach (var interval in Subtract([planned], breaks))
-                {
-                    output.Add(new PlannedProductionInterval
-                    {
-                        SourceAssignmentId = assignment.Id,
-                        CompanyId = assignment.CompanyId,
-                        SiteId = assignment.SiteId,
-                        ProductionLineId = productionLineId ?? assignment.ProductionLineId,
-                        FactoryDate = date,
-                        StartsAtUtc = interval.Start,
-                        EndsAtUtc = interval.End,
-                    });
-                }
-            }
-        }
-
-        return output
-            .OrderBy(static interval => interval.StartsAtUtc)
-            .ThenBy(static interval => interval.ProductionLineId?.Value, StringComparer.Ordinal)
-            .ThenBy(static interval => interval.SourceAssignmentId.Value, StringComparer.Ordinal)
-            .ToArray();
     }
 
     private static PlannedProductionScheduleAssignment? SelectAssignment(
@@ -202,6 +241,9 @@ public sealed class PlannedProductionIntervalResolver
         };
     }
 
+    private static bool FitsCalendar(DateOnly date, PlannedProductionWindow window) =>
+        date.DayNumber + window.StartDayOffset + (window.IsOvernight ? 1 : 0) <= DateOnly.MaxValue.DayNumber;
+
     private static (DateTimeOffset Start, DateTimeOffset End) ResolveWindow(
         PlannedProductionScheduleAssignment assignment,
         DateOnly date,
@@ -209,6 +251,11 @@ public sealed class PlannedProductionIntervalResolver
     {
         window.Validate();
         var zone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
+        if (!FitsCalendar(date, window))
+        {
+            throw new InvalidOperationException("Planned physical interval exceeds the supported calendar.");
+        }
+        date = date.AddDays(window.StartDayOffset);
         var localStart = date.ToDateTime(window.StartsAtLocal, DateTimeKind.Unspecified);
         var endDate = window.IsOvernight ? date.AddDays(1) : date;
         var localEnd = endDate.ToDateTime(window.EndsAtLocal, DateTimeKind.Unspecified);

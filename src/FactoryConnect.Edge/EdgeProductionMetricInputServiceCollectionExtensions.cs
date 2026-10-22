@@ -379,26 +379,10 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             EffectiveFrom = DateOnly.Parse(
                 Required(plannedSection, "EffectiveFrom"),
                 CultureInfo.InvariantCulture),
-            BreakWindows = breakWindowsSection.GetChildren()
-                .Select(window => new PlannedProductionWindow
-                {
-                    StartsAtLocal = TimeOnly.Parse(
-                        Required(window, "StartsAtLocal"), CultureInfo.InvariantCulture),
-                    EndsAtLocal = TimeOnly.Parse(
-                        Required(window, "EndsAtLocal"), CultureInfo.InvariantCulture),
-                }).ToArray(),
-            PlannedWindows =
-            [
-                new PlannedProductionWindow
-                {
-                    StartsAtLocal = TimeOnly.Parse(
-                        Required(plannedSection, "StartsAtLocal"),
-                        CultureInfo.InvariantCulture),
-                    EndsAtLocal = TimeOnly.Parse(
-                        Required(plannedSection, "EndsAtLocal"),
-                        CultureInfo.InvariantCulture),
-                },
-            ],
+            EffectiveTo = ParseOptionalDateOnly(plannedSection, "EffectiveTo"),
+            ActiveDays = ReadPlannedActiveDays(plannedSection),
+            BreakWindows = breakWindowsSection.GetChildren().Select(ReadWindow).ToArray(),
+            PlannedWindows = ReadPlannedWindows(plannedSection),
         };
 
         plannedAssignment.Validate();
@@ -417,26 +401,43 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
 
     private static void ValidateConfiguredBreakWindows(PlannedProductionScheduleAssignment assignment)
     {
-        var planned = assignment.PlannedWindows[0];
-        var duration = (planned.EndsAtLocal.Ticks - planned.StartsAtLocal.Ticks +
-            TimeSpan.TicksPerDay) % TimeSpan.TicksPerDay;
-        var breaks = assignment.BreakWindows.Select(window =>
+        _ = PlannedProductionBreakPlacement.Resolve(assignment.PlannedWindows, assignment.BreakWindows);
+    }
+
+    private static HashSet<DayOfWeek> ReadPlannedActiveDays(IConfigurationSection section)
+    {
+        var days = section.GetSection("ActiveDays").GetChildren().ToArray();
+        return days.Length == 0 ? new HashSet<DayOfWeek>(Enum.GetValues<DayOfWeek>())
+            : days.Select(day => Enum.Parse<DayOfWeek>(day.Value!, true)).ToHashSet();
+    }
+
+    private static PlannedProductionWindow ReadWindow(IConfigurationSection section)
+    {
+        var window = new PlannedProductionWindow
         {
-            var start = (window.StartsAtLocal.Ticks - planned.StartsAtLocal.Ticks +
-                TimeSpan.TicksPerDay) % TimeSpan.TicksPerDay;
-            var length = (window.EndsAtLocal.Ticks - window.StartsAtLocal.Ticks +
-                TimeSpan.TicksPerDay) % TimeSpan.TicksPerDay;
-            return (Start: start, End: start + length);
-        }).OrderBy(static window => window.Start).ToArray();
-        for (var index = 0; index < breaks.Length; index++)
+            StartsAtLocal = TimeOnly.Parse(Required(section, "StartsAtLocal"), CultureInfo.InvariantCulture),
+            EndsAtLocal = TimeOnly.Parse(Required(section, "EndsAtLocal"), CultureInfo.InvariantCulture),
+        };
+        return Optional(section, "StartDayOffset") is { } offset
+            ? window with { StartDayOffset = int.Parse(offset, CultureInfo.InvariantCulture) }
+            : window;
+    }
+
+    private static PlannedProductionWindow[] ReadPlannedWindows(IConfigurationSection section)
+    {
+        var collection = section.GetSection("PlannedWindows");
+        if (collection.Exists())
         {
-            if (breaks[index].End > duration ||
-                (index > 0 && breaks[index].Start < breaks[index - 1].End))
+            if (collection.Value is not null || section["StartsAtLocal"] is not null ||
+                section["EndsAtLocal"] is not null)
             {
-                throw new InvalidOperationException(
-                    $"Planned production assignment '{assignment.Id}' break windows must be contained in the planned window and must not overlap.");
+                throw new InvalidOperationException("Use either PlannedWindows[] or scalar planned times.");
             }
+            var windows = collection.GetChildren().Select(ReadWindow).ToArray();
+            if (windows.Length == 0) throw new InvalidOperationException("PlannedWindows must not be empty.");
+            return windows;
         }
+        return [ReadWindow(section)];
     }
 
     private static ProductionContextAssignment ReadProductionContextAssignment(
@@ -523,6 +524,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             EndsAtLocal = TimeOnly.Parse(
                 Required(section, "EndsAtLocal"),
                 CultureInfo.InvariantCulture),
+            StartDayOffset = int.Parse(section["StartDayOffset"] ?? "0", CultureInfo.InvariantCulture),
             ActiveDays = activeDays,
             EffectiveFrom = DateOnly.Parse(
                 Required(section, "EffectiveFrom"),

@@ -53,6 +53,22 @@ public sealed class ShiftOccurrenceResolver
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
+        // Preserve the provider contract for the caller's exact range before
+        // making a separate widened request for neighboring collision evidence.
+        var requestedAssignments = await _reader.ReadAssignmentsAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        ShiftScheduleCollectionValidator.ValidateAssignments(
+            requestedAssignments, siteId, factoryDateFrom, factoryDateTo);
+        var requestedOverrides = await _reader.ReadExceptionsAsync(
+            siteId, factoryDateFrom, factoryDateTo, cancellationToken);
+        ShiftScheduleCollectionValidator.ValidateOverrides(
+            requestedOverrides, siteId, factoryDateFrom, factoryDateTo);
+
+        var requestedFrom = factoryDateFrom;
+        var requestedTo = factoryDateTo;
+        factoryDateFrom = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, factoryDateFrom.DayNumber - 2));
+        factoryDateTo = DateOnly.FromDayNumber(Math.Min(DateOnly.MaxValue.DayNumber, factoryDateTo.DayNumber + 2));
+
 
         var assignments = await _reader.ReadAssignmentsAsync(
             siteId,
@@ -97,11 +113,28 @@ public sealed class ShiftOccurrenceResolver
                     continue;
                 }
 
+                // Lookaround must not reject a valid requested range for an occurrence
+                // whose physical end is outside the calendar. Keep requested owners strict.
+                if ((factoryDate < requestedFrom || factoryDate >= requestedTo) &&
+                    factoryDate.DayNumber + assignment.StartDayOffset + (assignment.IsOvernight ? 1 : 0) > DateOnly.MaxValue.DayNumber)
+                {
+                    continue;
+                }
                 occurrences.Add(CreateOccurrence(assignment, factoryDate));
             }
         }
 
+        var physical = occurrences.OrderBy(item => item.StartsAtUtc).ToArray();
+        for (var index = 1; index < physical.Length; index++)
+        {
+            if (physical[index].StartsAtUtc < physical[index - 1].EndsAtUtc)
+            {
+                throw new InvalidOperationException("Resolved shifts overlap across business dates.");
+            }
+        }
+
         return occurrences
+            .Where(item => item.FactoryDate >= requestedFrom && item.FactoryDate < requestedTo)
             .OrderBy(static occurrence => occurrence.StartsAtUtc)
             .ThenBy(static occurrence => occurrence.ProductionLineId?.Value, StringComparer.Ordinal)
             .ThenBy(static occurrence => occurrence.ShiftId.Value, StringComparer.Ordinal)
@@ -146,12 +179,17 @@ public sealed class ShiftOccurrenceResolver
         DateOnly factoryDate)
     {
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
-        var localStart = factoryDate.ToDateTime(
+        if (factoryDate.DayNumber + assignment.StartDayOffset + (assignment.IsOvernight ? 1 : 0) > DateOnly.MaxValue.DayNumber)
+        {
+            throw new InvalidOperationException("Shift physical interval exceeds the supported calendar.");
+        }
+        var startDate = factoryDate.AddDays(assignment.StartDayOffset);
+        var localStart = startDate.ToDateTime(
             assignment.StartsAtLocal,
             DateTimeKind.Unspecified);
         var endDate = assignment.IsOvernight
-            ? factoryDate.AddDays(1)
-            : factoryDate;
+            ? startDate.AddDays(1)
+            : startDate;
         var localEnd = endDate.ToDateTime(
             assignment.EndsAtLocal,
             DateTimeKind.Unspecified);

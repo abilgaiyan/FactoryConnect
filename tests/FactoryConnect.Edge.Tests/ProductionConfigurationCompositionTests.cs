@@ -277,6 +277,43 @@ public sealed class ProductionConfigurationCompositionTests
         Assert.Equal(TimeSpan.FromHours(8), Assert.Single(intervals).Duration);
     }
 
+    [Fact]
+    public async Task MultiWindowBinderResolvesFollowingMorningUnderOwningDate()
+    {
+        var values = BaseValues();
+        const string prefix = "ProductionProcessing:PlannedProduction";
+        values.Remove($"{prefix}:StartsAtLocal");
+        values.Remove($"{prefix}:EndsAtLocal");
+        values[$"{prefix}:PlannedWindows:0:StartsAtLocal"] = "00:00:00";
+        values[$"{prefix}:PlannedWindows:0:EndsAtLocal"] = "07:30:00";
+        values[$"{prefix}:PlannedWindows:0:StartDayOffset"] = "1";
+        values[$"{prefix}:BreakWindows:0:StartsAtLocal"] = "03:30:00";
+        values[$"{prefix}:BreakWindows:0:EndsAtLocal"] = "04:00:00";
+        values[$"{prefix}:BreakWindows:0:StartDayOffset"] = "1";
+        values["ProductionProcessing:ShiftSchedules:0:StartsAtLocal"] = "00:00:00";
+        values["ProductionProcessing:ShiftSchedules:0:EndsAtLocal"] = "07:30:00";
+        values["ProductionProcessing:ShiftSchedules:0:StartDayOffset"] = "1";
+        using var provider = Compose(values);
+        var day = new DateOnly(2026, 10, 22);
+        var planned = await provider.GetRequiredService<PlannedProductionIntervalResolver>()
+            .ResolveAsync(new SiteId("SITE-1"), new ProductionLineId("LINE-1"), day, day.AddDays(1), CancellationToken.None);
+        Assert.Equal(420, planned.Sum(item => item.Duration.TotalMinutes));
+        Assert.All(planned, item => Assert.Equal(day, item.FactoryDate));
+        var shifts = await provider.GetRequiredService<ShiftOccurrenceResolver>()
+            .ResolveAsync(new SiteId("SITE-1"), new ProductionLineId("LINE-1"), day, day.AddDays(1), CancellationToken.None);
+        Assert.Equal(day, Assert.Single(shifts).FactoryDate);
+        Assert.Equal(new DateTimeOffset(2026, 10, 23, 0, 0, 0, TimeSpan.Zero), shifts[0].StartsAtUtc);
+    }
+
+    [Fact]
+    public void MixedScalarAndCollectionPlannedConfigurationFails()
+    {
+        var values = BaseValues();
+        values["ProductionProcessing:PlannedProduction:PlannedWindows:0:StartsAtLocal"] = "07:30:00";
+        values["ProductionProcessing:PlannedProduction:PlannedWindows:0:EndsAtLocal"] = "16:00:00";
+        Assert.Throws<InvalidOperationException>(() => Compose(values));
+    }
+
     private static ServiceProvider Compose(Dictionary<string, string?> values, string? json = null)
     {
         var builder = new ConfigurationBuilder().AddInMemoryCollection(values);

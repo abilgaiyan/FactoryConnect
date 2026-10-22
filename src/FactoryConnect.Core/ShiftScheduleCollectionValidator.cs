@@ -130,95 +130,40 @@ internal static class ShiftScheduleCollectionValidator
         ShiftScheduleAssignment left,
         ShiftScheduleAssignment right)
     {
-        if (!EffectiveRangesOverlap(left, right))
+        // Each interval starts at business day + 0/1 and lasts less than a day.
+        // Compare relative business dates, intersecting each effective range separately.
+        // Seven consecutive dates cover the recurring weekday pattern, including transitions.
+        var lastExclusive = DateOnly.MaxValue.DayNumber + 1;
+        for (var delta = -2; delta <= 2; delta++)
         {
-            return false;
-        }
-
-        var rangeStart = left.EffectiveFrom > right.EffectiveFrom
-            ? left.EffectiveFrom
-            : right.EffectiveFrom;
-        var rangeEnd = EarliestEffectiveEnd(left.EffectiveTo, right.EffectiveTo);
-        var inspectionEnd = rangeStart.AddDays(14);
-        if (rangeEnd is not null && rangeEnd.Value < inspectionEnd)
-        {
-            inspectionEnd = rangeEnd.Value;
-        }
-
-        for (var leftDate = rangeStart;
-             leftDate < inspectionEnd;
-             leftDate = leftDate.AddDays(1))
-        {
-            if (!left.IsEffectiveOn(leftDate) ||
-                !left.ActiveDays.Contains(leftDate.DayOfWeek))
+            var from = Math.Max(left.EffectiveFrom.DayNumber, right.EffectiveFrom.DayNumber - delta);
+            var to = Math.Min(left.EffectiveTo?.DayNumber ?? lastExclusive,
+                (right.EffectiveTo?.DayNumber ?? lastExclusive) - delta);
+            for (var day = from; day < to && day < from + 7; day++)
             {
-                continue;
-            }
-
-            var leftInterval = GetLocalInterval(left, leftDate);
-
-            for (var rightDate = rangeStart.AddDays(-1);
-                 rightDate <= inspectionEnd;
-                 rightDate = rightDate.AddDays(1))
-            {
-                if (!right.IsEffectiveOn(rightDate) ||
+                var leftDate = DateOnly.FromDayNumber(day);
+                var rightDate = DateOnly.FromDayNumber(day + delta);
+                if (!left.ActiveDays.Contains(leftDate.DayOfWeek) ||
                     !right.ActiveDays.Contains(rightDate.DayOfWeek))
                 {
                     continue;
                 }
-
-                var rightInterval = GetLocalInterval(right, rightDate);
-                if (leftInterval.Start < rightInterval.End &&
-                    rightInterval.Start < leftInterval.End)
+                var leftInterval = GetLocalInterval(left, day);
+                var rightInterval = GetLocalInterval(right, day + delta);
+                if (leftInterval.Start < rightInterval.End && rightInterval.Start < leftInterval.End)
                 {
                     return true;
                 }
             }
         }
-
         return false;
     }
 
-    private static (DateTime Start, DateTime End) GetLocalInterval(
-        ShiftScheduleAssignment assignment,
-        DateOnly factoryDate)
+    private static (long Start, long End) GetLocalInterval(
+        ShiftScheduleAssignment assignment, int businessDayNumber)
     {
-        var start = factoryDate.ToDateTime(
-            assignment.StartsAtLocal,
-            DateTimeKind.Unspecified);
-        var endDate = assignment.IsOvernight
-            ? factoryDate.AddDays(1)
-            : factoryDate;
-        var end = endDate.ToDateTime(
-            assignment.EndsAtLocal,
-            DateTimeKind.Unspecified);
-        return (start, end);
-    }
-
-    private static bool EffectiveRangesOverlap(
-        ShiftScheduleAssignment left,
-        ShiftScheduleAssignment right)
-    {
-        var leftEndsAfterRightStarts =
-            left.EffectiveTo is null || left.EffectiveTo.Value > right.EffectiveFrom;
-        var rightEndsAfterLeftStarts =
-            right.EffectiveTo is null || right.EffectiveTo.Value > left.EffectiveFrom;
-
-        return leftEndsAfterRightStarts && rightEndsAfterLeftStarts;
-    }
-
-    private static DateOnly? EarliestEffectiveEnd(DateOnly? left, DateOnly? right)
-    {
-        if (left is null)
-        {
-            return right;
-        }
-
-        if (right is null)
-        {
-            return left;
-        }
-
-        return left.Value < right.Value ? left : right;
+        var midnight = ((long)businessDayNumber + assignment.StartDayOffset) * TimeSpan.TicksPerDay;
+        return (midnight + assignment.StartsAtLocal.Ticks,
+            midnight + assignment.EndsAtLocal.Ticks + (assignment.IsOvernight ? TimeSpan.TicksPerDay : 0));
     }
 }
