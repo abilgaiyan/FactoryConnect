@@ -102,6 +102,13 @@ public sealed class ShiftOccurrenceResolver
                     continue;
                 }
 
+                // Lookaround must not reject a valid requested range for an occurrence
+                // whose physical end is outside the calendar. Keep requested owners strict.
+                if ((factoryDate < requestedFrom || factoryDate >= requestedTo) &&
+                    factoryDate.DayNumber + assignment.StartDayOffset + (assignment.IsOvernight ? 1 : 0) > DateOnly.MaxValue.DayNumber)
+                {
+                    continue;
+                }
                 occurrences.Add(CreateOccurrence(assignment, factoryDate));
             }
         }

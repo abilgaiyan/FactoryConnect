@@ -79,3 +79,16 @@ comparison against brute-force occurrence pairs passed 3,136 effective-range,
 weekday and offset combinations. This is supplementary evidence, not a .NET test
 result. The local environment still has no SDK; updated .NET and SQL results remain
 pending the new CI run. Merge and deployment remain held.
+
+## Calendar-limit review policy
+
+A requested owner whose physical interval exceeds DateOnly.MaxValue still fails
+explicitly. An unrepresentable occurrence examined only on a lookaround business
+date is skipped; representable sibling windows remain in collision validation.
+This avoids rejecting a valid requested range for an unrelated future occurrence.
+A focused regression covers both resolvers, break subtraction, successful requested
+ownership and rejection when the invalid owner itself is requested.
+
+The CI run for 464ee19c failed during build on CA1859 in ReadPlannedActiveDays.
+Its private return type is now HashSet<DayOfWeek>, as required by the analyzer.
+Updated .NET validation remains pending CI; no local SDK is available.

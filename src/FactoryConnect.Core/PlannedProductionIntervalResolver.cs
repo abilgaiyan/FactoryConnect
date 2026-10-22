@@ -118,10 +118,19 @@ public sealed class PlannedProductionIntervalResolver
             var ordinaryBreaks = PlannedProductionBreakPlacement.Resolve(assignment.PlannedWindows, assignment.BreakWindows);
             var effectiveBreaks = PlannedProductionBreakPlacement.Resolve(
                 plannedWindows, ordinaryBreaks, hasReplacement);
-            var breaks = effectiveBreaks.Select(pause => ResolveWindow(assignment, date, pause))
+            var isLookaround = date < requestedFrom || date >= requestedTo;
+            var breaks = effectiveBreaks
+                .Where(pause => !isLookaround || FitsCalendar(date, pause))
+                .Select(pause => ResolveWindow(assignment, date, pause))
                 .OrderBy(static interval => interval.Start).ToArray();
             foreach (var window in plannedWindows)
             {
+                // Skip only unrepresentable lookaround windows, retaining other windows
+                // from the same business date for collision checks.
+                if (isLookaround && !FitsCalendar(date, window))
+                {
+                    continue;
+                }
                 var planned = ResolveWindow(assignment, date, window);
                 var effectiveScope = productionLineId ?? assignment.ProductionLineId;
                 if (gross.Any(other => other.Scope == effectiveScope &&
@@ -215,6 +224,9 @@ public sealed class PlannedProductionIntervalResolver
         };
     }
 
+    private static bool FitsCalendar(DateOnly date, PlannedProductionWindow window) =>
+        date.DayNumber + window.StartDayOffset + (window.IsOvernight ? 1 : 0) <= DateOnly.MaxValue.DayNumber;
+
     private static (DateTimeOffset Start, DateTimeOffset End) ResolveWindow(
         PlannedProductionScheduleAssignment assignment,
         DateOnly date,
@@ -222,7 +234,7 @@ public sealed class PlannedProductionIntervalResolver
     {
         window.Validate();
         var zone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
-        if (date.DayNumber + window.StartDayOffset + (window.IsOvernight ? 1 : 0) > DateOnly.MaxValue.DayNumber)
+        if (!FitsCalendar(date, window))
         {
             throw new InvalidOperationException("Planned physical interval exceeds the supported calendar.");
         }

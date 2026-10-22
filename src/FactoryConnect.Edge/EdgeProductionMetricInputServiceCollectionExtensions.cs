@@ -404,7 +404,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         _ = PlannedProductionBreakPlacement.Resolve(assignment.PlannedWindows, assignment.BreakWindows);
     }
 
-    private static IReadOnlySet<DayOfWeek> ReadPlannedActiveDays(IConfigurationSection section)
+    private static HashSet<DayOfWeek> ReadPlannedActiveDays(IConfigurationSection section)
     {
         var days = section.GetSection("ActiveDays").GetChildren().ToArray();
         return days.Length == 0 ? new HashSet<DayOfWeek>(Enum.GetValues<DayOfWeek>())

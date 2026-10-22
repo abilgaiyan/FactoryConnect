@@ -258,6 +258,32 @@ public sealed class ProductionDayOffsetTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(Site, Day, Day.AddDays(1), CancellationToken.None));
     }
 
+    [Fact]
+    public async Task UnrepresentableLookaroundOccurrenceDoesNotInvalidateRequestedOwners()
+    {
+        var from = DateOnly.MaxValue.AddDays(-3);
+        var to = DateOnly.MaxValue.AddDays(-2);
+        var shift = Shifts()[0] with
+        {
+            EffectiveFrom = from, TimeZoneId = new FactoryTimeZoneId("UTC"),
+            StartsAtLocal = new TimeOnly(23, 0), EndsAtLocal = new TimeOnly(2, 0), StartDayOffset = 1,
+        };
+        var shifts = new ShiftOccurrenceResolver(new InMemoryShiftScheduleReader([shift]));
+        var occurrences = await shifts.ResolveAsync(Site, from, to, CancellationToken.None);
+        Assert.Equal(from, Assert.Single(occurrences).FactoryDate);
+        var planned = Planned(Schedule() with
+        {
+            EffectiveFrom = from, TimeZoneId = new FactoryTimeZoneId("UTC"),
+            PlannedWindows = [Window(23, 0, 2, 0, 1)], BreakWindows = [Window(23, 30, 23, 45, 1)],
+        });
+        var intervals = await planned.ResolveAsync(Site, from, to, CancellationToken.None);
+        Assert.All(intervals, item => Assert.Equal(from, item.FactoryDate));
+        Assert.Equal(165, intervals.Sum(item => item.Duration.TotalMinutes));
+        var invalidOwner = DateOnly.MaxValue.AddDays(-1);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => shifts.ResolveAsync(Site, invalidOwner, DateOnly.MaxValue, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => planned.ResolveAsync(Site, invalidOwner, DateOnly.MaxValue, CancellationToken.None));
+    }
+
     private static PlannedProductionIntervalResolver Planned(PlannedProductionScheduleAssignment schedule) =>
         new(new InMemoryPlannedProductionScheduleReader([schedule]));
 
