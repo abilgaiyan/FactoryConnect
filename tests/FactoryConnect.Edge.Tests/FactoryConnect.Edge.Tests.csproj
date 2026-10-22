@@ -9,4 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="../../src/FactoryConnect.Edge/FactoryConnect.Edge.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../tools/FactoryConnect.ConfigurationPreflight/G2ConfigurationPreflight.cs" Link="G2ConfigurationPreflight.cs" />
+  </ItemGroup>
 </Project>
