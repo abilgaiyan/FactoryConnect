@@ -16,7 +16,7 @@ public sealed record ShiftScheduleAssignment
     public required DateOnly EffectiveFrom { get; init; }
     public DateOnly? EffectiveTo { get; init; }
 
-    public int StartDayOffset { get; init; } = 0;
+    public int StartDayOffset { get; init; }
 
     public bool IsOvernight => EndsAtLocal < StartsAtLocal;
 

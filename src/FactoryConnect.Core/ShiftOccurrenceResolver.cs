@@ -55,8 +55,8 @@ public sealed class ShiftOccurrenceResolver
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
         var requestedFrom = factoryDateFrom;
         var requestedTo = factoryDateTo;
-        factoryDateFrom = factoryDateFrom.AddDays(-2);
-        factoryDateTo = factoryDateTo.AddDays(2);
+        factoryDateFrom = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, factoryDateFrom.DayNumber - 2));
+        factoryDateTo = DateOnly.FromDayNumber(Math.Min(DateOnly.MaxValue.DayNumber, factoryDateTo.DayNumber + 2));
 
 
         var assignments = await _reader.ReadAssignmentsAsync(
@@ -161,6 +161,10 @@ public sealed class ShiftOccurrenceResolver
         DateOnly factoryDate)
     {
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
+        if (factoryDate.DayNumber + assignment.StartDayOffset + (assignment.IsOvernight ? 1 : 0) > DateOnly.MaxValue.DayNumber)
+        {
+            throw new InvalidOperationException("Shift physical interval exceeds the supported calendar.");
+        }
         var startDate = factoryDate.AddDays(assignment.StartDayOffset);
         var localStart = startDate.ToDateTime(
             assignment.StartsAtLocal,

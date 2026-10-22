@@ -43,8 +43,8 @@ public sealed class PlannedProductionIntervalResolver
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(factoryDateTo, factoryDateFrom);
         var requestedFrom = factoryDateFrom;
         var requestedTo = factoryDateTo;
-        factoryDateFrom = factoryDateFrom.AddDays(-2);
-        factoryDateTo = factoryDateTo.AddDays(2);
+        factoryDateFrom = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, factoryDateFrom.DayNumber - 2));
+        factoryDateTo = DateOnly.FromDayNumber(Math.Min(DateOnly.MaxValue.DayNumber, factoryDateTo.DayNumber + 2));
 
 
         var assignments = await _reader.ReadAssignmentsAsync(
@@ -89,7 +89,7 @@ public sealed class PlannedProductionIntervalResolver
         }
 
         var output = new List<PlannedProductionInterval>();
-        var gross = new List<(DateTimeOffset Start, DateTimeOffset End)>();
+        var gross = new List<(ProductionLineId? Scope, DateTimeOffset Start, DateTimeOffset End)>();
 
         for (var date = factoryDateFrom; date < factoryDateTo; date = date.AddDays(1))
         {
@@ -123,11 +123,13 @@ public sealed class PlannedProductionIntervalResolver
             foreach (var window in plannedWindows)
             {
                 var planned = ResolveWindow(assignment, date, window);
-                if (gross.Any(other => planned.Start < other.End && other.Start < planned.End))
+                var effectiveScope = productionLineId ?? assignment.ProductionLineId;
+                if (gross.Any(other => other.Scope == effectiveScope &&
+                    planned.Start < other.End && other.Start < planned.End))
                 {
                     throw new InvalidOperationException("Planned windows overlap across business dates.");
                 }
-                gross.Add(planned);
+                gross.Add((effectiveScope, planned.Start, planned.End));
                 foreach (var interval in Subtract([planned], breaks))
                 {
                     output.Add(new PlannedProductionInterval
@@ -220,6 +222,10 @@ public sealed class PlannedProductionIntervalResolver
     {
         window.Validate();
         var zone = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
+        if (date.DayNumber + window.StartDayOffset + (window.IsOvernight ? 1 : 0) > DateOnly.MaxValue.DayNumber)
+        {
+            throw new InvalidOperationException("Planned physical interval exceeds the supported calendar.");
+        }
         date = date.AddDays(window.StartDayOffset);
         var localStart = date.ToDateTime(window.StartsAtLocal, DateTimeKind.Unspecified);
         var endDate = window.IsOvernight ? date.AddDays(1) : date;

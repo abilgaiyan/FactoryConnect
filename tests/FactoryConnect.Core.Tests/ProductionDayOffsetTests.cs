@@ -171,6 +171,93 @@ public sealed class ProductionDayOffsetTests
         });
     }
 
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    public void DisjointEffectiveRangesCompareLastOldOccurrenceInEitherInsertionOrder(int gap, bool reverse)
+    {
+        var old = Shifts()[0] with
+        {
+            EffectiveFrom = Day.AddMonths(-1), EffectiveTo = Day,
+            StartsAtLocal = new TimeOnly(23, 0), EndsAtLocal = new TimeOnly(2, 0), StartDayOffset = 1,
+        };
+        var next = old with
+        {
+            Id = new ShiftScheduleAssignmentId("NEW"), EffectiveFrom = Day.AddDays(gap), EffectiveTo = null,
+            StartsAtLocal = new TimeOnly(1, 0), EndsAtLocal = new TimeOnly(3, 0), StartDayOffset = gap == 0 ? 1 : 0,
+        };
+        Assert.Throws<InvalidOperationException>(() => new InMemoryShiftScheduleReader(reverse ? [next, old] : [old, next]));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ResolverPaddingClampsAtCalendarLimits(bool upper)
+    {
+        var from = upper ? DateOnly.MaxValue.AddDays(-3) : DateOnly.MinValue;
+        var to = upper ? DateOnly.MaxValue : DateOnly.MinValue.AddDays(3);
+        var shift = Shifts()[0] with
+        {
+            EffectiveFrom = from, EffectiveTo = to, TimeZoneId = new FactoryTimeZoneId("UTC"),
+            StartsAtLocal = new TimeOnly(8, 0), EndsAtLocal = new TimeOnly(9, 0),
+        };
+        var shifts = new ShiftOccurrenceResolver(new InMemoryShiftScheduleReader([shift]));
+        var occurrences = await shifts.ResolveAsync(Site, from, to, CancellationToken.None);
+        Assert.Equal(3, occurrences.Count);
+        var planned = Planned(Schedule() with
+        {
+            EffectiveFrom = from, EffectiveTo = to, TimeZoneId = new FactoryTimeZoneId("UTC"),
+            PlannedWindows = [Window(8, 0, 9, 0)], BreakWindows = [],
+        });
+        var intervals = await planned.ResolveAsync(Site, from, to, CancellationToken.None);
+        Assert.Equal(3, intervals.Count);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => shifts.ResolveAsync(Site, to, from, CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => planned.ResolveAsync(Site, from, from, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task PlannedOverlapUsesSelectedLineAuthorityAndSiteFallback()
+    {
+        var lineId = new ProductionLineId("LINE-1");
+        var site = Schedule() with
+        {
+            TimeZoneId = new FactoryTimeZoneId("UTC"), BreakWindows = [],
+            PlannedWindows = [Window(8, 0, 10, 0)],
+        };
+        var line = site with
+        {
+            Id = new PlannedProductionScheduleAssignmentId("LINE"), ProductionLineId = lineId,
+            EffectiveFrom = Day.AddDays(1), PlannedWindows = [Window(9, 0, 11, 0)],
+        };
+        var unrelated = line with
+        {
+            Id = new PlannedProductionScheduleAssignmentId("OTHER"), ProductionLineId = new ProductionLineId("LINE-2"),
+            PlannedWindows = [Window(8, 0, 12, 0)],
+        };
+        var resolver = new PlannedProductionIntervalResolver(new InMemoryPlannedProductionScheduleReader([site, line, unrelated]));
+        var result = await resolver.ResolveAsync(Site, lineId, Day, Day.AddDays(2), CancellationToken.None);
+        Assert.Equal(2, result.Count);
+        Assert.Equal(site.Id, result[0].SourceAssignmentId);
+        Assert.Equal(line.Id, result[1].SourceAssignmentId);
+        Assert.All(result, item => Assert.Equal(lineId, item.ProductionLineId));
+        var siteOnly = await resolver.ResolveAsync(Site, Day, Day.AddDays(2), CancellationToken.None);
+        Assert.All(siteOnly, item => Assert.Equal(site.Id, item.SourceAssignmentId));
+    }
+
+    [Fact]
+    public async Task ShortenedReplacementCannotHideInvalidOrdinaryBreakOwnership()
+    {
+        var invalid = Schedule() with { BreakWindows = [Window(6, 0, 8, 0)] };
+        var replacement = new PlannedProductionCalendarOverride
+        {
+            SiteId = Site, FactoryDate = Day, ReplacementPlannedWindows = [Window(9, 0, 10, 0)],
+        };
+        var resolver = new PlannedProductionIntervalResolver(new InMemoryPlannedProductionScheduleReader([invalid], [replacement]));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(Site, Day, Day.AddDays(1), CancellationToken.None));
+    }
+
     private static PlannedProductionIntervalResolver Planned(PlannedProductionScheduleAssignment schedule) =>
         new(new InMemoryPlannedProductionScheduleReader([schedule]));
 

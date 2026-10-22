@@ -130,80 +130,40 @@ internal static class ShiftScheduleCollectionValidator
         ShiftScheduleAssignment left,
         ShiftScheduleAssignment right)
     {
-        var rangeStart = left.EffectiveFrom > right.EffectiveFrom
-            ? left.EffectiveFrom
-            : right.EffectiveFrom;
-        var rangeEnd = EarliestEffectiveEnd(left.EffectiveTo, right.EffectiveTo);
-        rangeStart = rangeStart.AddDays(-2);
-        var inspectionEnd = rangeStart.AddDays(18);
-        if (rangeEnd is not null && rangeEnd.Value.AddDays(2) < inspectionEnd)
+        // Each interval starts at business day + 0/1 and lasts less than a day.
+        // Compare relative business dates, intersecting each effective range separately.
+        // Seven consecutive dates cover the recurring weekday pattern, including transitions.
+        var lastExclusive = DateOnly.MaxValue.DayNumber + 1;
+        for (var delta = -2; delta <= 2; delta++)
         {
-            inspectionEnd = rangeEnd.Value.AddDays(2);
-        }
-
-        for (var leftDate = rangeStart;
-             leftDate < inspectionEnd;
-             leftDate = leftDate.AddDays(1))
-        {
-            if (!left.IsEffectiveOn(leftDate) ||
-                !left.ActiveDays.Contains(leftDate.DayOfWeek))
+            var from = Math.Max(left.EffectiveFrom.DayNumber, right.EffectiveFrom.DayNumber - delta);
+            var to = Math.Min(left.EffectiveTo?.DayNumber ?? lastExclusive,
+                (right.EffectiveTo?.DayNumber ?? lastExclusive) - delta);
+            for (var day = from; day < to && day < from + 7; day++)
             {
-                continue;
-            }
-
-            var leftInterval = GetLocalInterval(left, leftDate);
-
-            for (var rightDate = rangeStart.AddDays(-2);
-                 rightDate <= inspectionEnd.AddDays(2);
-                 rightDate = rightDate.AddDays(1))
-            {
-                if (!right.IsEffectiveOn(rightDate) ||
+                var leftDate = DateOnly.FromDayNumber(day);
+                var rightDate = DateOnly.FromDayNumber(day + delta);
+                if (!left.ActiveDays.Contains(leftDate.DayOfWeek) ||
                     !right.ActiveDays.Contains(rightDate.DayOfWeek))
                 {
                     continue;
                 }
-
-                var rightInterval = GetLocalInterval(right, rightDate);
-                if (leftInterval.Start < rightInterval.End &&
-                    rightInterval.Start < leftInterval.End)
+                var leftInterval = GetLocalInterval(left, day);
+                var rightInterval = GetLocalInterval(right, day + delta);
+                if (leftInterval.Start < rightInterval.End && rightInterval.Start < leftInterval.End)
                 {
                     return true;
                 }
             }
         }
-
         return false;
     }
 
-    private static (DateTime Start, DateTime End) GetLocalInterval(
-        ShiftScheduleAssignment assignment,
-        DateOnly factoryDate)
+    private static (long Start, long End) GetLocalInterval(
+        ShiftScheduleAssignment assignment, int businessDayNumber)
     {
-        var startDate = factoryDate.AddDays(assignment.StartDayOffset);
-        var start = startDate.ToDateTime(
-            assignment.StartsAtLocal,
-            DateTimeKind.Unspecified);
-        var endDate = assignment.IsOvernight
-            ? startDate.AddDays(1)
-            : startDate;
-        var end = endDate.ToDateTime(
-            assignment.EndsAtLocal,
-            DateTimeKind.Unspecified);
-        return (start, end);
-    }
-
-    private static DateOnly? EarliestEffectiveEnd(DateOnly? left, DateOnly? right)
-    {
-        if (left is null)
-        {
-            return right;
-        }
-
-        if (right is null)
-        {
-            return left;
-        }
-
-        return left.Value < right.Value ? left : right;
+        var midnight = ((long)businessDayNumber + assignment.StartDayOffset) * TimeSpan.TicksPerDay;
+        return (midnight + assignment.StartsAtLocal.Ticks,
+            midnight + assignment.EndsAtLocal.Ticks + (assignment.IsOvernight ? TimeSpan.TicksPerDay : 0));
     }
 }

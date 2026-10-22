@@ -57,3 +57,25 @@ dotnet test FactoryConnect.sln
 Merge, fresh V2 database creation and production deployment are held. GG-003
 acquisition and existing SQL remain unchanged. Confirm the proposed 07:30 business-day
 convention with Gajra before cutover.
+
+## PR #146 review corrections
+
+Removed CA1805's redundant zero initializer. Shift collection checks now intersect
+both effective ranges for each relative business-date displacement (-2 through +2),
+then inspect one full weekday cycle. This includes final old occurrences at adjacent
+or one-day-separated transitions, independent of insertion order.
+
+Resolver lookaround dates clamp to the DateOnly calendar; the original nonempty,
+ordered requested-range check remains. An actual offset interval extending beyond
+the representable calendar fails explicitly rather than overflowing AddDays.
+Planned gross overlap comparisons carry the selected line scope (including fallback
+site authority projected onto a requested line). Other line authorities do not
+participate in that resolution. Tests cover site-only reads, selected line precedence,
+and fallback across effective dates. Ordinary break ownership remains mandatory even
+when a shortened replacement would exclude an invalid break.
+
+Review validation: whitespace checks pass. An independent exhaustive arithmetic
+comparison against brute-force occurrence pairs passed 3,136 effective-range,
+weekday and offset combinations. This is supplementary evidence, not a .NET test
+result. The local environment still has no SDK; updated .NET and SQL results remain
+pending the new CI run. Merge and deployment remain held.
