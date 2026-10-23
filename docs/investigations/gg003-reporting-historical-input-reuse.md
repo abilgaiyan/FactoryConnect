@@ -90,7 +90,7 @@ dotnet build tests\FactoryConnect.Integration.Tests\FactoryConnect.Integration.T
 if ($LASTEXITCODE -ne 0) { throw 'Build failed; tests stopped.' }
 dotnet test tests\FactoryConnect.Integration.Tests\FactoryConnect.Integration.Tests.csproj `
   -c Release --no-build `
-  --filter 'FullyQualifiedName~ContainmentHistoricalInputReuseTests&Category!=SqlServerIntegration'
+  --filter '(FullyQualifiedName~ContainmentHistoricalInputReuseTests|FullyQualifiedName~ContainmentHistoricalSqlCounterTests)&Category!=SqlServerIntegration'
 if ($LASTEXITCODE -ne 0) { throw 'Database-free tests failed.' }
 ```
 
@@ -101,9 +101,41 @@ those checks before merge/release; execute them only after explicit approval.
 ### Preparation results
 
 - .NET SDK 10.0.402, Linux: integration-test project Release build passed with analyzers enabled.
-- Database-free input-reuse tests: 14/14 passed.
+- Database-free input-reuse and synthetic counter tests: 17/17 passed (14 cache-policy cases and 3 counter cases).
 - SQL integration tests: prepared, not executed. Their compilation is covered by the build.
 - Independent code review, fresh-restore measurements and release acceptance: pending.
+
+## Review follow-up: assert real historical SQL execution counts
+
+`SqlContainmentHistoricalLoadCountIntegrationTests` adds two SQL regression tests:
+
+- A five-result batch through the actual containment publisher must execute one contribution
+  query in preparation and another in atomic publication, on two distinct transactions.
+  Exact replay must execute two more queries on two new transactions despite verifying
+  retained and incoming results. Every (transaction, processor row, stream row, revision)
+  group must contain exactly one execution.
+- An advancing atomic publication with retained older-cut evidence and incoming newer-cut
+  evidence must execute exactly two contribution queries in its one transaction. Detail
+  reporting and checkpoint reporting must each independently execute those two queries
+  again in separate transactions. Zero observations and extra loads fail the assertions.
+
+`ContainmentHistoricalSqlCounter` is test-only SqlClient DiagnosticListener instrumentation.
+It observes Before/After/Error events for the existing contribution query, filtered by a
+unique test application name. Fixture setup uses another application and cannot satisfy
+counts. It records transaction object identity and numeric processor/stream/revision identity;
+no SQL, connection strings, credentials or fact payloads are emitted. It does not add a
+production seam, replace the historical reader or change the SQL query. Test connections
+use pooling disabled for observation isolation; this is not a latency benchmark.
+
+Completed ExecuteReader calls are counted separately from pending/failed calls. The SQL
+regressions await the whole publisher/read operation, assert no pending or failed observed
+commands, and check returned reporting revisions. Thus a command event alone cannot certify
+successful reconstruction. Three database-free synthetic-event tests cover completion/error,
+pending counts, application/query filtering and disposal without opening SQL connections.
+
+These SQL assertions are compiled but unexecuted. They establish the intended regression
+contract, not passing SQL evidence. Fresh-restore command counts and performance must still
+be measured independently after authorization. No production source changed in this follow-up.
 
 ## Fresh-restore acceptance (not authorized for execution)
 
