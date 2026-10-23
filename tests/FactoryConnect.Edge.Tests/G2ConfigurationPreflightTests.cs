@@ -6,7 +6,7 @@ using Xunit;
 namespace FactoryConnect.Edge.Tests;
 
 [CollectionDefinition("G2 environment composition", DisableParallelization = true)]
-public sealed class G2EnvironmentCollection { }
+public sealed class G2EnvironmentFixtureGroup { }
 
 [Collection("G2 environment composition")]
 public sealed class G2ConfigurationPreflightTests
