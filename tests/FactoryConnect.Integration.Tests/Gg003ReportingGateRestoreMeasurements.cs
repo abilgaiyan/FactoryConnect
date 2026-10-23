@@ -154,7 +154,7 @@ public sealed class Gg003ReportingGateRestoreMeasurements(ITestOutputHelper outp
             // Observe the writer even if reporting fails.
             var returned = await publication.WaitAsync(token);
             output.WriteLine("publicationCallMs=" + Stopwatch.GetElapsedTime(writerStarted, returned).TotalMilliseconds);
-            var writerGate = Assert.Single(trace.Entries.Where(e => e.Role == "writer" && e.Kind == "gate"));
+            var writerGate = Assert.Single(trace.Entries, e => e.Role == "writer" && e.Kind == "gate");
             output.WriteLine("exclusiveGateAcquisitionMs=" + writerGate.Milliseconds);
             output.WriteLine("exclusiveGateToCallReturnUpperBoundMs=" +
                 Stopwatch.GetElapsedTime(writerGate.CompletedAt, returned).TotalMilliseconds);
