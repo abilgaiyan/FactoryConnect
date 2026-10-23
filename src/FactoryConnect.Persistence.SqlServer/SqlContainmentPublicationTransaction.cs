@@ -36,6 +36,9 @@ internal sealed class SqlContainmentPublicationTransaction(string connectionStri
             // archive slots/witnesses/results/references -> historical authority -> DML -> checkpoint.
             await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction, batch.Processor,
                 OperationalMetricProjectionProcessorGateMode.Exclusive, token);
+            // This scope belongs only to this Exclusive publication transaction.
+            // Never reuse the preparation transaction's historical evidence here.
+            var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction);
             var processor = await Register();
             var checkpoint = await ReadCheckpoint();
             var replay = checkpoint == batch.Cut.Position.Value;
@@ -67,7 +70,7 @@ internal sealed class SqlContainmentPublicationTransaction(string connectionStri
                 Projection(processor, prior.Results[0]).Match(row);
                 MatchEvidence(Evidence(id, prior.Results[0].Document), evidence[id]);
                 // Existing receipts also require complete immutable archive/reference and P3 authority.
-                _ = await SqlContainmentArchiveTransaction.PrepareAsync(connection, transaction, [(ReadOnlyMemory<byte>)payload], true, token);
+                _ = await SqlContainmentArchiveTransaction.PrepareAsync(connection, transaction, [(ReadOnlyMemory<byte>)payload], true, token, historicalReads: historicalReads);
             }
             if (checkpoint is not null)
             {
@@ -112,7 +115,7 @@ internal sealed class SqlContainmentPublicationTransaction(string connectionStri
                 (stage, ct) => Inject(stage switch {
                     ContainmentArchiveStage.WitnessesInserted => ContainmentPublicationStage.WitnessesInserted,
                     ContainmentArchiveStage.ResultsInserted => ContainmentPublicationStage.ResultsInserted,
-                    _ => ContainmentPublicationStage.ReferencesInserted })); // Retained comparisons precede archive DML.
+                    _ => ContainmentPublicationStage.ReferencesInserted }), historicalReads: historicalReads); // Retained comparisons precede archive DML.
             if (replay) { await transaction.CommitAsync(token); return; }
             foreach (var result in batch.Results)
                 if (byHash.TryGetValue(Convert.ToHexString(result.KeyHash), out var old))
