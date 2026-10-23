@@ -11,11 +11,27 @@ internal sealed partial class SqlServerObservationIngestionStore :
     IObservationProcessingCheckpointStore
 {
     internal string ConnectionString { get; }
+    private readonly int? _observationReadCommandTimeoutSeconds;
 
     public SqlServerObservationIngestionStore(string connectionString)
+        : this(connectionString, observationReadCommandTimeoutSeconds: null)
+    {
+    }
+
+    internal SqlServerObservationIngestionStore(
+        string connectionString,
+        int? observationReadCommandTimeoutSeconds)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        if (observationReadCommandTimeoutSeconds is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(observationReadCommandTimeoutSeconds),
+                "The observation read command timeout must be positive.");
+        }
+
         ConnectionString = connectionString;
+        _observationReadCommandTimeoutSeconds = observationReadCommandTimeoutSeconds;
     }
 
     public async ValueTask<ObservationCheckpoint?> ReadCheckpointAsync(
@@ -91,6 +107,11 @@ internal sealed partial class SqlServerObservationIngestionStore :
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        if (_observationReadCommandTimeoutSeconds is int timeoutSeconds)
+        {
+            command.CommandTimeout = timeoutSeconds;
+        }
+
         command.CommandText = request.AfterPosition is null
             ? """
                 SELECT TOP (@ReadLimit)
