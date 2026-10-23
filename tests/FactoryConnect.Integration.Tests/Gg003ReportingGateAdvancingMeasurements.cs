@@ -18,6 +18,7 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
     private const string DateVariable = "FACTORYCONNECT_GG003_GATE_RCA_DATE";
     private static readonly MachineId Machine = new(Guid.Parse("677b030b-1ede-4a67-82ae-6a494791357f"));
     private readonly ConcurrentQueue<string> _phases = new();
+    private (long Started, long Ended)? _initialCheckpointInterval;
     private readonly ConcurrentDictionary<Guid, string> _activePhases = new();
 
     [AdvanceRestoreFact]
@@ -187,12 +188,22 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
             }
             finally
             {
+                var interval = _initialCheckpointInterval;
+                var coverage = sampler.AssessCriticalCoverage(interval?.Started ?? 0, interval?.Ended ?? 0);
+                var coverageJournalSucceeded = sampler.PersistCriticalCoverage(coverage);
                 output.WriteLine(JsonSerializer.Serialize(new { measurement = "diagnostic-acceptance",
-                    workloadSucceeded, samplerFailed = sampler.FailureRecord is not null,
+                    workloadSucceeded, criticalCoverageAccepted = coverage.Accepted, coverageJournalSucceeded,
+                    samplerFailed = sampler.FailureRecord is not null,
                     monitorTaskSucceeded = samplingTask.IsCompletedSuccessfully, journal = sampler.JournalPath }));
                 sampler.Write(output);
                 foreach (var phase in _phases) output.WriteLine(phase);
                 trace.Write(output);
+                // Do not mask a workload or sampler failure already propagating through cleanup.
+                if (workloadFailure is null && samplingTask.IsCompletedSuccessfully)
+                {
+                    Assert.True(coverageJournalSucceeded, "Critical coverage assessment could not be journaled.");
+                    Assert.True(coverage.Accepted, "Initial checkpoint diagnostic coverage rejected: " + coverage.Reason);
+                }
             }
         }
     }
@@ -253,6 +264,7 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
         finally
         {
             var ended = Stopwatch.GetTimestamp();
+            if (operation == "initial-checkpoint-read") _initialCheckpointInterval = (started, ended);
             _activePhases.TryRemove(phaseId, out _);
             _phases.Enqueue(JsonSerializer.Serialize(new
             {
