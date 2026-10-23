@@ -5,12 +5,14 @@ namespace FactoryConnect.Integration.Tests;
 
 public sealed class ReportingGateDmvOverheadProbeTests
 {
+    private static readonly string[] ExpectedVariantNames =
+        ["sessions", "sessions-requests", "sessions-requests-connections", "full-existing"];
     private const string ValidConnection = @"Server=(localdb)\MSSQLLocalDB;Database=FactoryConnect_GG003_DMV_RCA_UNIT;Integrated Security=true";
 
     [Fact]
     public void CatalogHasFourOrderedSelectOnlySystemDmvVariants()
     {
-        Assert.Equal(new[] { "sessions", "sessions-requests", "sessions-requests-connections", "full-existing" },
+        Assert.Equal(ExpectedVariantNames,
             ReportingGateDmvOverheadProbe.Queries.Select(q => q.Name));
         Assert.All(ReportingGateDmvOverheadProbe.Queries, query =>
         {
