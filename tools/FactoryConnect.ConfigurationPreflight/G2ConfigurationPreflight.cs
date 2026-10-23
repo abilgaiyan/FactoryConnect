@@ -17,6 +17,9 @@ public sealed record G2PreflightResult(string Status, string[] Blockers, string?
 
 public static class G2ConfigurationPreflight
 {
+    private static readonly string[] ExpectedShiftIds = ["SHIFT-1", "SHIFT-2", "SHIFT-3"];
+    private static readonly double[] ExpectedShiftDurationsMinutes = [510, 480, 450];
+
     private static readonly string[] ExplicitAssignmentPrefixes =
         ["ProductionProcessing__Machines", "ProductionProcessing__ShiftSchedules"];
 
@@ -104,9 +107,9 @@ public static class G2ConfigurationPreflight
                 var dayShifts = day.OrderBy(static shift => shift.StartsAtUtc).ToArray();
                 if (dayShifts.Length != 3 ||
                     !dayShifts.Select(static shift => shift.ShiftId.ToString())
-                        .SequenceEqual(new[] { "SHIFT-1", "SHIFT-2", "SHIFT-3" }) ||
+                        .SequenceEqual(ExpectedShiftIds) ||
                     !dayShifts.Select(static shift => shift.Duration.TotalMinutes)
-                        .SequenceEqual(new double[] { 510, 480, 450 }))
+                        .SequenceEqual(ExpectedShiftDurationsMinutes))
                     throw new InvalidOperationException("Expected GG-003 three-shift gross schedule required.");
             }
             if (planned.Count == 0) throw new InvalidOperationException("Planned production coverage is empty.");
@@ -131,7 +134,7 @@ public static class G2ConfigurationPreflight
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a < b ? a : b;
     private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a > b ? a : b;
 
-    private static void RequireExplicitAssignments(IConfiguration configuration, Dictionary<string, string> projected)
+    private static void RequireExplicitAssignments(ConfigurationManager configuration, Dictionary<string, string> projected)
     {
         // Compare complete subtrees, including array tails left by JSON/environment layering.
         foreach (var prefix in ExplicitAssignmentPrefixes)
