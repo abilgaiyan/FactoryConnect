@@ -4,7 +4,7 @@ Baseline source: cada09dc056f6f9cfaa422d0af077140d053ca91.
 This branch adds test code only. It changes no production timeout, isolation, gate scope, configuration or service lifecycle.
 
 ## Status
-R3.1 monitor correction is CODE/BUILD REVIEW ONLY. Do not run another SQL measurement until separately authorized.
+R3.1A coverage follow-up is CODE/BUILD REVIEW ONLY. Do not run another SQL measurement until separately authorized.
 Preserve both advanced clones at revision 537; no measurement rerun is authorized by the commands below.
 
 At f49122e8, the developer reported both opt-in tests passing in separate local runs:
@@ -272,3 +272,51 @@ Sampler tests inject connection/sample failures and cancellation through the sam
 they check propagated failures, durable JSONL failure evidence, readiness, and file closure.
 New code is not compiled/executed in the editing environment (no .NET SDK). SQL timeout attribution
 still awaits a separately authorized measurement. No new clone or rerun is requested at this stage.
+
+
+## R3.1A critical-phase coverage guard — review/build only
+
+At d91cb0f the developer reported build PASS and all 13 database-free trace/sampler cases PASS.
+That does not establish live DMV overhead or sampling completeness. No further SQL run is authorized.
+
+The coverage assessment now binds the exact measured initial-checkpoint-read start/end timestamps:
+- Record each COMPLETED query cycle timestamp separately from target-session row observations.
+- Only observations from a fully successful cycle count. A partial/failed row stream cannot certify coverage.
+- Require at least one successful cycle and at least one initial-checkpoint session observation INSIDE
+  the critical interval. Samples entirely before/after the phase are not accepted.
+- Sort/deduplicate timestamps, then assess leading, internal and trailing gaps across the interval.
+  Record first/last target observation, sample/observation counts, critical duration, maximum cycle gap
+  and maximum observation gap. The maximum-gap metrics include their boundary gaps.
+- Explicit review policy: maximum gap 1000 ms (four nominal 250 ms sampling intervals). This is
+  diagnostic acceptance only, not a production timeout or performance requirement. It is intentionally
+  conservative: a fast phase with no in-phase observation is insufficient evidence, not automatic PASS.
+- The one-second policy remains subject to this code review; do not loosen it merely to obtain a pass.
+- A zero-exception sampler with sparse samples can now FAIL diagnostic acceptance. Workload success,
+  monitor-task success, critical-coverage acceptance and journal persistence are reported independently.
+- Append the assessment to the closed per-run JSONL journal and console/TRX, including on failure.
+  Failure to persist the assessment also rejects diagnostic acceptance.
+- Print all diagnostic evidence before enforcing the guard; preserve an already-propagating workload
+  or sampler error rather than masking it with a second coverage assertion.
+
+The DMV SQL text, five-second timeout, nominal sampling interval, command fingerprint/correlation and
+publication behavior remain unchanged. Existing separate connection/query/row-stream cycle timings
+will measure overhead when a SQL run is separately authorized; this change does not fix or establish
+the cause of the earlier monitor timeout.
+
+Nine new database-free coverage cases cover dense sampling, absent/outside samples, missing target
+session evidence, leading/middle/trailing gaps, duplicate/unordered timestamps and a missing phase.
+The existing lifecycle failure test also checks durable rejected-coverage persistence without clearing
+the original fault.
+
+Build/validate ONLY:
+~~~powershell
+git pull --ff-only
+if ($LASTEXITCODE -ne 0) { throw 'Pull failed.' }
+dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-restore
+if ($LASTEXITCODE -ne 0) { throw 'Build failed; tests stopped.' }
+dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ReportingGateCommandTraceTests|FullyQualifiedName~ReportingGateWaitSamplerTests|FullyQualifiedName~ReportingGateCriticalCoverageTests' --logger 'console;verbosity=normal'
+~~~
+
+Expected 22 cases; no SQL database opens. No .NET SDK is available in the editing environment,
+so local compilation/execution remain pending. Preserve both revision-537 clones. Review the
+implementation and these results before deciding on a new disposable-clone measurement.
