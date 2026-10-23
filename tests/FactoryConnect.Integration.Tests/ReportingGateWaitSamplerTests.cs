@@ -47,6 +47,12 @@ public sealed class ReportingGateWaitSamplerTests
             Assert.Contains(sampler.Events, line => line.Contains("sampler-query-start", StringComparison.Ordinal));
             Assert.Contains(sampler.Events, line => line.Contains("sampler-query-complete", StringComparison.Ordinal));
             Assert.True(run.IsFaulted);
+            var coverage = sampler.AssessCriticalCoverage(1, 2);
+            Assert.False(coverage.Accepted);
+            Assert.True(sampler.PersistCriticalCoverage(coverage));
+            Assert.Contains(await File.ReadAllLinesAsync(sampler.JournalPath),
+                line => line.Contains("critical-phase-coverage", StringComparison.Ordinal));
+            Assert.True(run.IsFaulted); // Persisting the assessment never clears the monitor failure.
         }
         finally { File.Delete(sampler.JournalPath); }
     }
