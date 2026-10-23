@@ -17,6 +17,9 @@ public sealed record G2PreflightResult(string Status, string[] Blockers, string?
 
 public static class G2ConfigurationPreflight
 {
+    private static readonly string[] ExplicitAssignmentPrefixes =
+        ["ProductionProcessing__Machines", "ProductionProcessing__ShiftSchedules"];
+
     // This helper changes process environment temporarily. Call only from the dedicated
     // preflight process, or a nonparallel test collection. No host is built or started.
     public static async Task<G2PreflightResult> ValidateAsync(
@@ -40,7 +43,7 @@ public static class G2ConfigurationPreflight
         projected["ASPNETCORE_ENVIRONMENT"] = "Production";
         var saved = projected.Keys.ToDictionary(static key => key,
             static key => Environment.GetEnvironmentVariable(key), StringComparer.OrdinalIgnoreCase);
-        IConfigurationRoot? configuration = null;
+        ConfigurationManager? configuration = null;
         try
         {
             foreach (var item in projected) Environment.SetEnvironmentVariable(item.Key, item.Value);
@@ -131,7 +134,7 @@ public static class G2ConfigurationPreflight
     private static void RequireExplicitAssignments(IConfiguration configuration, Dictionary<string, string> projected)
     {
         // Compare complete subtrees, including array tails left by JSON/environment layering.
-        foreach (var prefix in new[] { "ProductionProcessing__Machines", "ProductionProcessing__ShiftSchedules" })
+        foreach (var prefix in ExplicitAssignmentPrefixes)
         {
             var expected = projected.Where(item => item.Key.StartsWith(prefix + "__", StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(item => item.Key.Replace("__", ":", StringComparison.Ordinal),
