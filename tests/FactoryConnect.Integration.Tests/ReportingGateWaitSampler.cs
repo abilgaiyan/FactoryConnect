@@ -29,11 +29,11 @@ internal sealed class ReportingGateWaitSampler(string connectionString, string a
                 await using var command = connection.CreateCommand();
                 command.CommandTimeout = 5;
                 command.CommandText = """
-                    SELECT s.session_id,s.program_name,c.connection_id AS client_connection_id,r.request_id,
+                    SELECT s.session_id,s.program_name,s.login_time AS session_login_time,c.connection_id AS server_connection_id,r.request_id,
                            r.status,r.wait_type,r.wait_time,r.blocking_session_id,
-                           r.transaction_id,st.transaction_id AS session_transaction_id,
+                           r.transaction_id AS server_transaction_id,st.transaction_id AS server_session_transaction_id,
                            s.open_transaction_count,l.resource_description,l.request_mode,
-                           l.request_status,l.request_owner_id
+                           l.request_status,l.request_owner_id AS server_lock_owner_id
                     FROM sys.dm_exec_sessions s
                     LEFT JOIN sys.dm_exec_connections c ON c.session_id=s.session_id
                     LEFT JOIN sys.dm_exec_requests r ON r.session_id=s.session_id
