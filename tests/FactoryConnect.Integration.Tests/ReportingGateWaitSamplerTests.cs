@@ -7,7 +7,7 @@ public sealed class ReportingGateWaitSamplerTests
     [Fact]
     public async Task ConnectionFailureIsJournaledBeforeTheSameExceptionPropagates()
     {
-        var sampler = Create();
+        using var sampler = Create();
         var error = new InvalidOperationException("test-only failure");
         try
         {
@@ -29,7 +29,7 @@ public sealed class ReportingGateWaitSamplerTests
     [Fact]
     public async Task QueryFailureAfterReadinessRecordsCoverageAndRemainsFaulted()
     {
-        var sampler = Create();
+        using var sampler = Create();
         var calls = 0;
         var error = new TimeoutException("test-only query failure");
         try
@@ -54,7 +54,7 @@ public sealed class ReportingGateWaitSamplerTests
     [Fact]
     public async Task CancellationStopsSamplingAndClosesJournalWithoutAFalseFailure()
     {
-        var sampler = Create();
+        using var sampler = Create();
         using var cancellation = new CancellationTokenSource();
         try
         {
