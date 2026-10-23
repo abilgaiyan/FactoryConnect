@@ -12,11 +12,13 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
 
     internal static async Task<VerifiedReferenceTime> ReadAsync(SqlConnection connection, SqlTransaction transaction,
         MetricAggregationCheckpoint cut, OperationalMetricPeriodId period,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
-        // Obtain membership independently; never accept source facts supplied by an envelope.
-        var inputs = await SqlContainmentHistoricalContributionReader.ReadAsync(connection, transaction, cut, cancellationToken);
+        // Obtain independently validated membership from this transaction; never from an envelope.
+        historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
+        historicalReads.RequireOwner(connection, transaction);
+        var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
         try
         {
             return await ReadCoreAsync(connection, transaction, cut, period, inputs, cancellationToken);
