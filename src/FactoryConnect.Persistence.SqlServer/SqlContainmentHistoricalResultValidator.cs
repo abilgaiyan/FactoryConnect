@@ -9,7 +9,8 @@ namespace FactoryConnect.Persistence.SqlServer;
 internal static class SqlContainmentHistoricalResultValidator
 {
     internal static async Task<ContainmentResultDocument> VerifyAsync(SqlConnection connection, SqlTransaction transaction,
-        ReadOnlyMemory<byte> canonicalEnvelope, CancellationToken cancellationToken)
+        ReadOnlyMemory<byte> canonicalEnvelope, CancellationToken cancellationToken,
+        SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         ContainmentResultDocument claim;
@@ -17,20 +18,22 @@ internal static class SqlContainmentHistoricalResultValidator
         catch (InvalidDataException error)
         { throw new ContainmentHistoricalIntegrityException("Malformed historical result envelope.", error); }
         // UnsupportedContainmentCodecException, SQL failures and cancellation retain their own identities.
-        var reconstructed = await ReconstructAsync(connection, transaction, claim.Key, claim.SourceRevision, cancellationToken);
+        var reconstructed = await ReconstructAsync(connection, transaction, claim.Key, claim.SourceRevision, cancellationToken, historicalReads);
         if (!OperationalMetricDependencySnapshotV2Codec.Encode(reconstructed).AsSpan().SequenceEqual(canonicalEnvelope.Span))
             throw new ContainmentHistoricalIntegrityException("Result or recursive dependency evidence differs from independently reconstructed historical authority.");
         return reconstructed;
     }
 
     internal static async Task<ContainmentResultDocument> ReconstructAsync(SqlConnection connection, SqlTransaction transaction,
-        OperationalMetricEvaluationKey key, MetricAggregationCheckpoint cut, CancellationToken cancellationToken) =>
-        (await ReconstructVerifiedAsync(connection, transaction, key, cut, cancellationToken)).Document;
+        OperationalMetricEvaluationKey key, MetricAggregationCheckpoint cut, CancellationToken cancellationToken,
+        SqlContainmentHistoricalReadScope? historicalReads = null) =>
+        (await ReconstructVerifiedAsync(connection, transaction, key, cut, cancellationToken, historicalReads)).Document;
 
     // The projection contains Core-built witness proof, never a decoded wire witness.
     internal static async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> ReconstructVerifiedAsync(
         SqlConnection connection, SqlTransaction transaction, OperationalMetricEvaluationKey key,
-        MetricAggregationCheckpoint cut, CancellationToken cancellationToken)
+        MetricAggregationCheckpoint cut, CancellationToken cancellationToken,
+        SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         ArgumentNullException.ThrowIfNull(key);
@@ -38,7 +41,9 @@ internal static class SqlContainmentHistoricalResultValidator
         if (key.MachineId != cut.StreamId.MachineId || key.ContextKey != OperationalMetricEvaluationContextKey.Unpartitioned ||
             !BuiltInOperationalMetricDefinitions.All.Any(d => d.Id == key.DefinitionId))
             throw new ArgumentException("Historical containment supports only exact unpartitioned built-in machine keys.", nameof(key));
-        var reader = new TransactionSnapshotReader(connection, transaction, cut);
+        historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
+        historicalReads.RequireOwner(connection, transaction);
+        var reader = new TransactionSnapshotReader(connection, transaction, cut, historicalReads);
         var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
         try
         {
@@ -57,14 +62,14 @@ internal static class SqlContainmentHistoricalResultValidator
     }
 
     private sealed class TransactionSnapshotReader(SqlConnection connection, SqlTransaction transaction,
-        MetricAggregationCheckpoint cut) : IOperationalMetricComponentSnapshotReader
+        MetricAggregationCheckpoint cut, SqlContainmentHistoricalReadScope historicalReads) : IOperationalMetricComponentSnapshotReader
     {
         internal ContainmentHistoricalAuthority? ReferenceBinding { get; private set; }
 
         public async ValueTask<OperationalMetricComponentSnapshot> ReadAsync(OperationalMetricComponentSnapshotRequest request,
             CancellationToken cancellationToken)
         {
-            var inputs = await SqlContainmentHistoricalContributionReader.ReadAsync(connection, transaction, cut, cancellationToken);
+            var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
             var aggregates = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs);
             var components = new List<OperationalMetricComponent>();
             foreach (var operand in request.Operands)
@@ -75,7 +80,7 @@ internal static class SqlContainmentHistoricalResultValidator
                 if (sourceKey == MetricInputKeys.ProductionReferenceTime)
                 {
                     var reference = await SqlContainmentReferenceTimeAuthorityValidator.ReadAsync(connection, transaction,
-                        cut, request.EvaluationKey.PeriodId, cancellationToken);
+                        cut, request.EvaluationKey.PeriodId, cancellationToken, historicalReads);
                     ReferenceBinding = reference.Binding;
                     aggregate = reference.Aggregate;
                 }
