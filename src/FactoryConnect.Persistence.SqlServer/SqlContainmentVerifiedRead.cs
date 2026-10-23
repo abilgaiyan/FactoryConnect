@@ -68,6 +68,7 @@ internal static class SqlContainmentVerifiedRead
         var latestRetainedIds = retained.Where(r => manifest.Contains((long)r["OperationalMetricProjectionRowId"]!)).Select(r => r["ContainmentResultId"] is byte[] bytes ? Convert.ToHexString(bytes) : throw Integrity("Retained result binding is absent.")).Order(StringComparer.Ordinal);
         if (!latestArchiveIds.SequenceEqual(latestRetainedIds) || inventory.Any(r => (decimal)r["SourceRevisionPosition"]! > (decimal)source.Position.Value))
             throw Integrity("Archive inventory contradicts the reporting checkpoint.");
+        var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction);
         var projections = new List<OperationalMetricProjection>(); var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
         foreach (var row in retained)
         {
@@ -90,8 +91,8 @@ internal static class SqlContainmentVerifiedRead
             if (expectedEvidence.Length != observedEvidence.Count) throw Integrity("Retained evidence inventory differs from canonical evidence.");
             for (var i = 0; i < expectedEvidence.Length; i++) expectedEvidence[i].Match(observedEvidence[i]);
             // Read-only mode holds shared locks and has an explicit return before all archive DML.
-            _ = await SqlContainmentArchiveTransaction.PrepareAsync(connection, transaction, [(ReadOnlyMemory<byte>)bytes], true, token, verifyOnly: true);
-            var verified = await SqlContainmentHistoricalResultValidator.ReconstructVerifiedAsync(connection, transaction, result.Document.Key, batch.Cut, token);
+            _ = await SqlContainmentArchiveTransaction.PrepareAsync(connection, transaction, [(ReadOnlyMemory<byte>)bytes], true, token, verifyOnly: true, historicalReads: historicalReads);
+            var verified = await SqlContainmentHistoricalResultValidator.ReconstructVerifiedAsync(connection, transaction, result.Document.Key, batch.Cut, token, historicalReads);
             if (!OperationalMetricDependencySnapshotV2Codec.Encode(verified.Document).AsSpan().SequenceEqual(bytes))
                 throw Integrity("Historical reconstruction differs from retained canonical result.");
             if (projections.Any(p => p.Key == verified.Projection.Key)) throw Integrity("Duplicate retained evaluation identity.");
