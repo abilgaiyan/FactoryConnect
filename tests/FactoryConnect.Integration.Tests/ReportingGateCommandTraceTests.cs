@@ -30,12 +30,12 @@ public sealed class ReportingGateCommandTraceTests
         command.CommandText = "SELECT * FROM dbo.MetricAggregationContribution WHERE Position=@Position";
         command.Parameters.AddWithValue("@Position", "private-value-one");
         var first = Guid.NewGuid();
-        trace.OnNext(new("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command, OperationId = first, TransactionId = 123L }));
-        trace.OnNext(new("Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command, OperationId = first, TransactionId = 123L }));
+        trace.OnNext(new KeyValuePair<string, object?>("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command, OperationId = first, TransactionId = 123L }));
+        trace.OnNext(new KeyValuePair<string, object?>("Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command, OperationId = first, TransactionId = 123L }));
         command.Parameters["@Position"].Value = "private-value-two";
         var second = Guid.NewGuid();
-        trace.OnNext(new("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command, OperationId = second, TransactionId = 123L }));
-        trace.OnNext(new("Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command, OperationId = second, TransactionId = 123L }));
+        trace.OnNext(new KeyValuePair<string, object?>("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command, OperationId = second, TransactionId = 123L }));
+        trace.OnNext(new KeyValuePair<string, object?>("Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command, OperationId = second, TransactionId = 123L }));
         var entries = trace.Entries;
         Assert.Collection(entries,
             entry => Assert.Equal(first, entry.OperationId),
