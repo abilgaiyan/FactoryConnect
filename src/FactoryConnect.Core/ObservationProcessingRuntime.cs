@@ -9,6 +9,7 @@ public sealed class ObservationProcessingRuntime
     private readonly IObservationProcessor _processor;
     private readonly ObservationStreamId _streamId;
     private readonly ObservationProcessingRuntimeOptions _options;
+    private readonly IObservationReadRetryPolicy? _readRetryPolicy;
     private ObservationProcessingCheckpoint? _checkpoint;
     private bool _checkpointRestored;
 
@@ -18,6 +19,17 @@ public sealed class ObservationProcessingRuntime
         IObservationProcessor processor,
         ObservationStreamId streamId,
         ObservationProcessingRuntimeOptions options)
+        : this(reader, checkpointStore, processor, streamId, options, null)
+    {
+    }
+
+    public ObservationProcessingRuntime(
+        IDurableObservationReader reader,
+        IObservationProcessingCheckpointStore checkpointStore,
+        IObservationProcessor processor,
+        ObservationStreamId streamId,
+        ObservationProcessingRuntimeOptions options,
+        IObservationReadRetryPolicy? readRetryPolicy)
     {
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(checkpointStore);
@@ -31,6 +43,7 @@ public sealed class ObservationProcessingRuntime
         _processor = processor;
         _streamId = streamId;
         _options = options;
+        _readRetryPolicy = readRetryPolicy;
     }
 
     public async Task<ObservationReadBatch> RunCycleAsync(
@@ -38,12 +51,25 @@ public sealed class ObservationProcessingRuntime
     {
         await RestoreCheckpointAsync(cancellationToken);
 
-        var batch = await _reader.ReadAsync(
-            new ObservationReadRequest(
-                _streamId,
-                _checkpoint?.Position,
-                _options.BatchSize),
-            cancellationToken);
+        var request = new ObservationReadRequest(
+            _streamId, _checkpoint?.Position, _options.BatchSize);
+        ObservationReadBatch batch;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                batch = await _reader.ReadAsync(request, cancellationToken);
+                break;
+            }
+            catch (Exception exception) when (
+                !cancellationToken.IsCancellationRequested &&
+                _readRetryPolicy is not null &&
+                _readRetryPolicy.ShouldRetry(exception))
+            {
+                await _readRetryPolicy.DelayAsync(exception, cancellationToken);
+            }
+        }
 
         if (batch.Observations.Count == 0)
         {

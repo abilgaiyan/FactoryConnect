@@ -81,6 +81,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
         }
 
         services.AddSingleton(options);
+        services.AddSingleton<SqlObservationReadRetryPolicy>();
         services.AddSingleton<InMemoryMappedMachineObservationSink>();
         services.AddSingleton<IMappedMachineObservationSink>(
             static provider =>
@@ -189,7 +190,8 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                                 checkpoints,
                                 mappingProcessor,
                                 streamId,
-                                options),
+                                options,
+                                provider.GetRequiredService<SqlObservationReadRetryPolicy>()),
                             new MappedObservationProcessingRuntime(
                                 mappedReader,
                                 cursorReader,
