@@ -174,3 +174,22 @@ These synthetic fixture results do not measure GG-003 report latency, Exclusive 
 duration or peak memory. Broader SQL conformance, independent review, fresh revision-534
 restore validation and release acceptance remain pending. No assistant SQL execution
 or production change was performed.
+
+
+## Authorized CI and corrected local result — 24 October 2026
+
+Ajay reported the corrected scope regression run passed 3/3, with zero failed or
+skipped tests, and a successful build. Together with the inspected execution-count
+TRX (2/2 PASS), the focused synthetic SQL regressions now pass locally.
+The corrected run is user-reported console evidence; its TRX has not been inspected.
+
+Ajay explicitly authorized ordinary repository CI, including disposable SQL integration
+tests, and squash merge of PR #152 only if all checks pass. Earlier statements above
+that SQL tests were unexecuted or CI was not yet authorized describe prior checkpoints.
+This documentation commit intentionally omits the CI skip marker to start ordinary PR CI.
+Full CI results are pending at this commit.
+
+Fresh revision-534 restore performance validation and production deployment remain
+separate and unapproved. Reports remain unrecovered; individual-query latency and
+peak-memory impact remain unproven. Local validation artifacts belong under
+`artifacts/TestResults`.
