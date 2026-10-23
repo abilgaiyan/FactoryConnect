@@ -153,3 +153,24 @@ be measured independently after authorization. No production source changed in t
 
 No database execution, service restart, production deployment or Gajra change is part of
 this implementation. Reports remain unrecovered until separately validated and released.
+
+## Developer SQL evidence follow-up
+
+Ajay supplied `sql-load-count.trx` and `sql-scope.trx` from local developer execution.
+The execution-count regressions passed 2/2, with no failed or skipped tests.
+The scope regressions passed 2/3: owner/lifetime rejection and corrupt-input/weak-isolation
+rejection passed. The canonical-equivalence/forged-claim test reached its forgery setup
+but failed while encoding a changed ratio value with unchanged operands, before the
+historical-verification rejection assertion. This is a test-construction defect; it
+does not establish a historical-verification failure or complete that regression.
+
+The correction preserves the ratio and changes only the claimed source-authority binding.
+An explicit codec decode check ensures the forged claim is internally canonical before
+the warmed-scope historical verifier is invoked. This follows the existing canonical
+forged-authority test pattern. The corrected test has not yet been built or rerun.
+The supplied console output also reports six build warnings; warning details are pending.
+
+These synthetic fixture results do not measure GG-003 report latency, Exclusive gate
+duration or peak memory. Broader SQL conformance, independent review, fresh revision-534
+restore validation and release acceptance remain pending. No assistant SQL execution
+or production change was performed.
