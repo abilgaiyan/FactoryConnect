@@ -4,6 +4,9 @@ Baseline source: cada09dc056f6f9cfaa422d0af077140d053ca91.
 This branch adds test code only. It changes no production timeout, isolation, gate scope, configuration or service lifecycle.
 
 ## Status
+R3.1 monitor correction is CODE/BUILD REVIEW ONLY. Do not run another SQL measurement until separately authorized.
+Preserve both advanced clones at revision 537; no measurement rerun is authorized by the commands below.
+
 At f49122e8, the developer reported both opt-in tests passing in separate local runs:
 - Known processor: deliberate default gate timeout reproduced; coherence/replay/isolation assertions passed.
 - Stage-B GG003 format-2 clone at revision 534: exact replay and unchanged-state assertions passed.
@@ -211,7 +214,7 @@ dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.T
 dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ReportingGateCommandTraceTests' --logger 'console;verbosity=normal'
 ~~~
 
-After build and non-mutating validation pass, restore ANOTHER fresh clone from the same accepted
+Historical next-run instructions (HELD pending separate authorization): after review, restore ANOTHER fresh clone from the same accepted
 revision-534 backup. In the Stage 3 restore commands, change EVERY target database/data/log name
 from FactoryConnect_GG003_GATE_ADVANCE_20261023 to
 FactoryConnect_GG003_GATE_ADVANCE_20261023_PREFLIGHT.
@@ -220,3 +223,52 @@ Keep the backup path unchanged. No WITH REPLACE, checkpoint reset, reuse of the 
 or Gajra action. Run the advancing filter once and retain detailed output/TRX under a new result name.
 A shorter initial read on a fresh run does not explain the earlier 213-second interval; compare
 command fingerprints, phase boundaries, wait types, blockers and sampling coverage before attribution.
+
+
+## R3.1 diagnostic-monitor correction — review/build only
+
+The 7932ff19 PREFLIGHT run advanced 534 -> 537 and reached reporting/readback checks, but the TEST FAILED
+when cleanup observed the sampler's earlier SQL timeout. Do not call it diagnostic acceptance PASS.
+Initial checkpoint read: 158368.2059 ms; historical-contribution commands: 78 / 151228.9831 ms;
+six executions of fingerprint 4BDBBCDE5A0B8C84A52B67617ECA232592BCB90FB576CB5A1B5A3439263D9746
+totalled 149808.2512 ms. This fingerprint exactly matches the incorporated-fact query in
+SqlContainmentHistoricalContributionReader.ReadAsync. The original run had nine slow commands;
+this later run had six. Do not merge counts or equate the two execution histories.
+Sampling lasted ~8.8 seconds, completed six cycles and retained five rows; it did not cover the
+whole initial read. One PAGEIOLATCH_SH sample with blocker 0 cannot explain the remaining interval.
+
+Correction scope:
+- Keep the existing DMV query, nominal 250 ms interval and FIVE-SECOND diagnostic command timeout.
+  No retry, timeout increase, query/index change or production lock change.
+- Journal connection-open start/completion independently from DMV query-start, ExecuteReader return,
+  row-stream completion and whole-cycle completion. Record the interval from previous completion
+  to next query start so scheduling/observer delays are visible rather than unexplained gaps.
+- Each record carries monotonic timestamps and a snapshot of active named phases (including concurrent
+  runtime/publisher/report phases). outside-named-phase explicitly denotes uninstrumented guards/readback.
+- On failure, record exception/inner-exception TYPE, SQL error Number when applicable, operation and
+  sampler elapsed time, stopped stage/phase, successful sample count, observed rows and last success.
+  Do not log exception messages, SQL text or parameter values. Preserve task fault/diagnostic failure.
+- Create a unique JSONL journal at artifacts/TestResults/Gg003GateSampler/<application>.jsonl.
+  Journal records are auto-flushed; failure/stop records request file flush to disk. Console/TRX prints
+  its absolute path. All sampled rows are journaled; console retains its existing 5000-row cap.
+  If journal writing fails, retain explicit in-memory error evidence and keep the measurement failed.
+- Cleanup prints workloadSucceeded separately from monitorTaskSucceeded/samplerFailed. A sampler
+  failure never becomes publication failure. If workload and monitor both fail, retain the workload's
+  primary exception and explicitly report the monitor's secondary failure plus its journal.
+- Existing command fingerprint/session/role/timestamp correlation is unchanged. SqlClient IDs and
+  server DMV transaction/connection IDs remain distinct namespaces.
+- File writes and DMV access both add observer overhead. Successful sampling does not prove absence
+  of short waits; per-cycle timings locate monitor delay but do not themselves establish its SQL cause.
+
+Build and run ONLY database-free diagnostics for this review:
+~~~powershell
+git pull --ff-only
+dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-restore
+dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ReportingGateCommandTraceTests|FullyQualifiedName~ReportingGateWaitSamplerTests' --logger 'console;verbosity=normal'
+~~~
+
+Expected: 13 cases (existing 10 trace cases + 3 sampler lifecycle cases), zero SQL database opens.
+Sampler tests inject connection/sample failures and cancellation through the same monitor lifecycle;
+they check propagated failures, durable JSONL failure evidence, readiness, and file closure.
+New code is not compiled/executed in the editing environment (no .NET SDK). SQL timeout attribution
+still awaits a separately authorized measurement. No new clone or rerun is requested at this stage.
