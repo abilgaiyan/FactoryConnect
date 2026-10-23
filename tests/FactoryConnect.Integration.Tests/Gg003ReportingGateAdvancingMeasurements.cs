@@ -18,6 +18,7 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
     private const string DateVariable = "FACTORYCONNECT_GG003_GATE_RCA_DATE";
     private static readonly MachineId Machine = new(Guid.Parse("677b030b-1ede-4a67-82ae-6a494791357f"));
     private readonly ConcurrentQueue<string> _phases = new();
+    private readonly ConcurrentDictionary<Guid, string> _activePhases = new();
 
     [AdvanceRestoreFact]
     public async Task ActualRuntimeAdvancesOneCompleteRevisionWithConcurrentReportingAndPhaseMeasurements()
@@ -33,9 +34,13 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
         var application = "FC-Gate-Advance-" + Guid.NewGuid().ToString("N");
         string Role(string role) => ReportingGateCommandTrace.Connection(settings.ConnectionString, application, role);
         using var trace = new ReportingGateCommandTrace(application);
-        var sampler = new ReportingGateWaitSampler(settings.ConnectionString, application);
+        var sampler = new ReportingGateWaitSampler(settings.ConnectionString, application,
+            () => _activePhases.IsEmpty ? "outside-named-phase" :
+                string.Join(",", _activePhases.Values.Distinct().Order(StringComparer.Ordinal)));
         using var sampling = CancellationTokenSource.CreateLinkedTokenSource(token);
         var samplingTask = sampler.RunAsync(sampling.Token);
+        Exception? workloadFailure = null;
+        var workloadSucceeded = false;
         try
         {
             await sampler.Ready.Task.WaitAsync(token);
@@ -162,13 +167,29 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
             output.WriteLine("publicationTransactionCommitMs=" + commit.Milliseconds);
             output.WriteLine("finalCheckpoint=" + proposed.SourceRevision.Position.Value);
             output.WriteLine("One complete next runtime batch committed. No synthetic batch, direct checkpoint manipulation, migration or source advancement.");
+            workloadSucceeded = true;
+        }
+        catch (Exception error)
+        {
+            workloadFailure = error;
+            throw;
         }
         finally
         {
             await sampling.CancelAsync();
             try { await samplingTask; }
+            catch (Exception monitorError) when (workloadFailure is not null)
+            {
+                output.WriteLine(JsonSerializer.Serialize(new { measurement = "secondary-monitor-failure",
+                    exceptionType = monitorError.GetType().FullName,
+                    primaryExceptionType = workloadFailure.GetType().FullName }));
+                // Keep the original workload failure; the monitor journal retains its independent failure.
+            }
             finally
             {
+                output.WriteLine(JsonSerializer.Serialize(new { measurement = "diagnostic-acceptance",
+                    workloadSucceeded, samplerFailed = sampler.FailureRecord is not null,
+                    monitorTaskSucceeded = samplingTask.IsCompletedSuccessfully, journal = sampler.JournalPath }));
                 sampler.Write(output);
                 foreach (var phase in _phases) output.WriteLine(phase);
                 trace.Write(output);
@@ -225,11 +246,14 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
     private async Task<T> Measure<T>(string operation, Func<Task<T>> run)
     {
         var started = Stopwatch.GetTimestamp();
+        var phaseId = Guid.NewGuid();
+        _activePhases[phaseId] = operation;
         var succeeded = false;
         try { var result = await run(); succeeded = true; return result; }
         finally
         {
             var ended = Stopwatch.GetTimestamp();
+            _activePhases.TryRemove(phaseId, out _);
             _phases.Enqueue(JsonSerializer.Serialize(new
             {
                 measurement = "phase", operation, startedAt = started, completedAt = ended,
