@@ -8,7 +8,7 @@ namespace FactoryConnect.Integration.Tests;
 
 // Test-only, sampled evidence. The journal survives a failed test/cleanup.
 internal sealed class ReportingGateWaitSampler(string connectionString, string application,
-    Func<string>? phaseSnapshot = null)
+    Func<string>? phaseSnapshot = null) : IDisposable
 {
     private readonly ConcurrentQueue<string> _samples = new();
     private readonly ConcurrentQueue<string> _events = new();
@@ -186,6 +186,17 @@ internal sealed class ReportingGateWaitSampler(string connectionString, string a
         var json = JsonSerializer.Serialize(value);
         _events.Enqueue(json);
         _journal?.WriteLine(json);
+    }
+
+    public void Dispose()
+    {
+        try { _journal?.Dispose(); }
+        finally
+        {
+            _journalStream?.Dispose();
+            _journal = null;
+            _journalStream = null;
+        }
     }
 
     internal void Write(ITestOutputHelper output)
