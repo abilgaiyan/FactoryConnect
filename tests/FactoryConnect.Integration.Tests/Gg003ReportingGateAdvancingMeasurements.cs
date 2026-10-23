@@ -34,7 +34,7 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
         var application = "FC-Gate-Advance-" + Guid.NewGuid().ToString("N");
         string Role(string role) => ReportingGateCommandTrace.Connection(settings.ConnectionString, application, role);
         using var trace = new ReportingGateCommandTrace(application);
-        var sampler = new ReportingGateWaitSampler(settings.ConnectionString, application,
+        using var sampler = new ReportingGateWaitSampler(settings.ConnectionString, application,
             () => _activePhases.IsEmpty ? "outside-named-phase" :
                 string.Join(",", _activePhases.Values.Distinct().Order(StringComparer.Ordinal)));
         using var sampling = CancellationTokenSource.CreateLinkedTokenSource(token);
