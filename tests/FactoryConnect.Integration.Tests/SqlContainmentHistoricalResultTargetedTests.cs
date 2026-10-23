@@ -138,6 +138,7 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests
         await new SqlServerProductionReferenceTimeConvergenceCoordinator(TargetConnectionString).ConvergeAsync(next, seed.Machine, seed.Cut.Position);
         await using var connection = TargetConnection(); await connection.OpenAsync();
         await using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+        var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction);
         foreach (var (period, expectedIds, expectedValue) in new[]
         {
             ((OperationalMetricPeriodId)new OperationalMetricPeriodId.Shift(seed.Shift), new[] { seed.SourceId.Value }, 0.4m),
@@ -147,12 +148,12 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests
         {
             var key = new OperationalMetricEvaluationKey(seed.Machine, period, BuiltInOperationalMetricDefinitions.PerformanceId,
                 OperationalMetricEvaluationContextKey.Unpartitioned);
-            var document = await SqlContainmentHistoricalResultValidator.ReconstructAsync(connection, transaction, key, next, default);
+            var document = await SqlContainmentHistoricalResultValidator.ReconstructAsync(connection, transaction, key, next, default, historicalReads);
             Assert.Equal(2, document.Authority!.CompletedReferenceRevision);
             Assert.Equal(expectedIds, document.Authority.SourceQuantityIds);
             Assert.Equal(expectedValue, document.Value);
             _ = await SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction,
-                OperationalMetricDependencySnapshotV2Codec.Encode(document), default);
+                OperationalMetricDependencySnapshotV2Codec.Encode(document), default, historicalReads);
         }
     }
 
@@ -203,14 +204,16 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests
         var next = new MetricAggregationCheckpoint(seed.Cut.ProcessorId, seed.Cut.StreamId, input.Position);
         await using var connection = TargetConnection(); await connection.OpenAsync();
         await using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
-        var original = OperationalMetricDependencySnapshotV2Codec.Encode(await Reconstruct(connection, transaction, seed));
+        var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction);
+        var original = OperationalMetricDependencySnapshotV2Codec.Encode(await SqlContainmentHistoricalResultValidator.ReconstructAsync(
+            connection, transaction, Key(seed, false, BuiltInOperationalMetricDefinitions.OeeId), seed.Cut, default, historicalReads));
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(25));
         var advancement = new SqlServerMetricAggregationStore(TargetConnectionString).CommitAsync(
             new(seed.Cut.ProcessorId, seed.Cut, next, [input]), cancellation.Token).AsTask();
         try
         {
             _ = await ObserveWriterBoundary(connection, transaction, advancement);
-            _ = await SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, original, default);
+            _ = await SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, original, default, historicalReads);
         }
         finally { await transaction.RollbackAsync(); await advancement.WaitAsync(TimeSpan.FromSeconds(15)); }
         await using (var after = connection.BeginTransaction(IsolationLevel.Serializable))
