@@ -4,7 +4,7 @@ Baseline source: cada09dc056f6f9cfaa422d0af077140d053ca91.
 This branch adds test code only. It changes no production timeout, isolation, gate scope, configuration or service lifecycle.
 
 ## Status
-R3.1A coverage follow-up is CODE/BUILD REVIEW ONLY. Do not run another SQL measurement until separately authorized.
+R3.1B read-only DMV probe is CODE/BUILD REVIEW ONLY. Do not run another SQL measurement until separately authorized.
 Preserve both advanced clones at revision 537; no measurement rerun is authorized by the commands below.
 
 At f49122e8, the developer reported both opt-in tests passing in separate local runs:
@@ -320,3 +320,80 @@ dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Te
 Expected 22 cases; no SQL database opens. No .NET SDK is available in the editing environment,
 so local compilation/execution remain pending. Preserve both revision-537 clones. Review the
 implementation and these results before deciding on a new disposable-clone measurement.
+
+
+## R3.1B separate read-only DMV overhead probe — code review only
+
+At c4473bf the R31A clone run advanced 534 -> 537 with readback checks, reproduced the reporting
+shared-gate timeout naturally (~15.00 s), and FAILED diagnostic acceptance. Five historical-contribution
+query executions totalled ~126.95 s inside exclusive publication ownership (gate-to-commit-return
+upper bound ~130.84 s; commit ~3.17 ms). Historical SQL slowness remains unexplained.
+The monitor connection opened in ~794 ms; its fifth DMV query failed before ExecuteReaderAsync
+returned, after ~5.16 s, SQL error -2. Critical trailing observation gap ~160.78 s correctly failed
+the accepted one-second coverage policy. Preserve the R31A and earlier revision-537 clones.
+
+New source: ReportingGateDmvOverheadProbe.cs; database-free tests:
+ReportingGateDmvOverheadProbeTests.cs. This is a separate workstream from historical-query tuning.
+
+Read-only design:
+- Only fixed system-DMV SELECT queries, plus a DB_NAME/IsLocalDB guard. No FactoryConnect stores,
+  processor gate calls, projection cycles, reconstruction, checkpoint reads/writes, migrations or DML.
+- Requires an independently prepared LocalDB restore named FactoryConnect_GG003_DMV_RCA_<suffix>.
+  The preserved GATE_ADVANCE/GATE_RCA clones are rejected. Do not create or run anything yet.
+- Connection strings use ApplicationIntent=ReadOnly, pooling disabled and diagnostic ConnectTimeout=5.
+  ReadOnly intent is connection intent; the fixed SELECT-only measurement code defines this probe's
+  read-only behavior. Each variant has a separate non-pooled connection.
+- One passive anchor connection with no transaction/gate makes the application filter nonempty.
+  Only that anchor and the active observer intentionally match the random probe application prefix.
+  This does not simulate the activity/lock population of an advancing publication.
+- Variants execute sequentially, in fixed order: sessions; sessions+requests;
+  sessions+requests+connections; full-existing (transactions and APPLICATION-lock joins).
+  The full-existing query preserves the sampler SQL text; a normalized-line-ending SHA256 test binds it.
+  Do not optimize the full query or remove ORDER BY/joins as part of this comparison.
+- Default three cycles per variant (allowed 1–10), nominal 250 ms inter-cycle delay, five-minute
+  overall cancellation budget. Every cycle creates a NEW command with CommandTimeout=5 and its own
+  @Prefix parameter. That SqlClient command timeout is not a strict five-second whole-cycle wall clock.
+- Separate stage records: connection open, ExecuteReaderAsync, ReadAsync consumption. Full-cycle
+  elapsed, total rows, distinct session count and rows/session expose result multiplication.
+  Start/completion timestamps and completion-to-next-start intervals expose scheduling/disposal gaps.
+  Metadata only: no SQL text, parameter values, connection strings, exception messages or machine payloads.
+- Variant, cycle, stage, exception TYPE, SQL Number and elapsed time are journaled before propagation.
+  Failure terminates the probe and is never recorded as a successful sample. Earlier completed cycles
+  remain evidence. There is no timeout retry or replacement of a failed measurement.
+- Unique JSONL journal under AppContext.BaseDirectory/artifacts/TestResults/DmvOverhead; the exact
+  absolute path is printed. Auto-flush per record and disk flush on failure/finalization preserve
+  evidence. Journal failures are explicit; probe failure is not swallowed.
+- Row streaming and journal I/O can contribute observer overhead; success while idle does not establish
+  sampling reliability during a 130-second exclusive publication. Variant order, caching, SQL permissions
+  and other LocalDB instance activity can affect comparisons. Do not attribute the prior timeout from
+  one successful baseline run.
+
+Separate estimated-plan inspection:
+- Disabled by default; optional only under explicit SQL execution authorization and separate plan opt-in.
+- Uses a new non-pooled connection per variant and session-only SET SHOWPLAN_XML ON, then obtains an
+  ESTIMATED plan without executing the SELECT. Closing the connection discards that session setting.
+- Five-second timeout per plan command; stage failures propagate and are journaled.
+- Save sanitized .sqlplan files beside the journal; remove compiled/runtime parameter-value attributes
+  and replace the generated application prefix before writing. No actual-plan execution/capture.
+- Estimated plans help inspect join order/cardinality assumptions, but do not establish actual wait cause.
+
+Opt-in environment variable names for review (DO NOT set/run until separately authorized):
+- FACTORYCONNECT_GG003_DMV_PROBE_CONNECTION_STRING
+- FACTORYCONNECT_GG003_DMV_PROBE_AUTHORIZATION (explicit R3.1B-READ-ONLY marker)
+- FACTORYCONNECT_GG003_DMV_PROBE_CYCLES (optional, default 3)
+- FACTORYCONNECT_GG003_DMV_PROBE_ESTIMATED_PLANS (optional 1, default off)
+Missing Windows/connection/authorization skips the SQL fact; a wrong marker/unsafe target fails
+before opening SQL. A skip is not acceptance.
+
+Current authorized actions: pull, build and DATABASE-FREE tests only:
+~~~powershell
+git pull --ff-only
+if ($LASTEXITCODE -ne 0) { throw 'Pull failed.' }
+dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-restore
+if ($LASTEXITCODE -ne 0) { throw 'Build failed; tests stopped.' }
+dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ReportingGateDmvOverheadProbeTests' --logger 'console;verbosity=normal'
+~~~
+
+Expected 18 database-free cases. The editing environment has no .NET SDK or developer SQL instance;
+compilation/execution remain pending. Keep PR draft. Code/build review must precede a separate
+authorization decision for SQL measurement. No clone creation, SQL execution or Gajra action is requested.
