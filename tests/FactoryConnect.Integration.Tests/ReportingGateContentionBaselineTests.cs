@@ -66,7 +66,7 @@ public sealed class ReportingGateContentionBaselineTests(
             Assert.Equal(batch.Cut, summary.SourceRevision);
             Assert.Contains(batch.Results, result => result.Document.Key == summary.Key);
         });
-        var writerGate = Assert.Single(trace.Entries.Where(e => e.Role == "writer" && e.Kind == "gate"));
+        var writerGate = Assert.Single(trace.Entries, e => e.Role == "writer" && e.Kind == "gate");
         Assert.Contains(trace.Entries, e => e.Role == "reader" && e.Kind == "gate");
         output.WriteLine("publicationCallMs=" + publicationTimer.Elapsed.TotalMilliseconds);
         output.WriteLine("deliberatePauseMs=" + pauseTimer.Elapsed.TotalMilliseconds);
