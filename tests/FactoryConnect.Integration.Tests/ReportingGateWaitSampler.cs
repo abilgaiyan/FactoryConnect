@@ -12,6 +12,9 @@ internal sealed class ReportingGateWaitSampler(string connectionString, string a
 {
     private readonly ConcurrentQueue<string> _samples = new();
     private readonly ConcurrentQueue<string> _events = new();
+    private readonly ConcurrentQueue<long> _successfulSamples = new();
+    private readonly ConcurrentQueue<long> _criticalObservations = new();
+    private readonly List<long> _currentCriticalObservations = [];
     private int _sampleCount;
     private int _rows;
     private long _started;
@@ -60,11 +63,14 @@ internal sealed class ReportingGateWaitSampler(string connectionString, string a
                     at = _operationStarted, phase = Phase(),
                     sincePreviousCompletionMs = Stopwatch.GetElapsedTime(previousCompletion, _operationStarted).TotalMilliseconds });
                 var queryStarted = _operationStarted;
+                _currentCriticalObservations.Clear();
                 await sample(token);
                 var completed = Stopwatch.GetTimestamp();
                 Record(new { measurement = "sampler-query-complete", sequence = _sampleCount + 1,
                     startedAt = queryStarted, completedAt = completed,
                     milliseconds = Stopwatch.GetElapsedTime(queryStarted, completed).TotalMilliseconds, phase = Phase() });
+                _successfulSamples.Enqueue(completed);
+                foreach (var observedAt in _currentCriticalObservations) _criticalObservations.Enqueue(observedAt);
                 _sampleCount++;
                 _lastSuccess = completed;
                 previousCompletion = completed;
@@ -162,10 +168,13 @@ internal sealed class ReportingGateWaitSampler(string connectionString, string a
         var count = 0;
         while (await rows.ReadAsync(token))
         {
+            var observedAt = Stopwatch.GetTimestamp();
+            if (Convert.ToString(rows["program_name"], System.Globalization.CultureInfo.InvariantCulture)?.EndsWith(":initial-checkpoint", StringComparison.Ordinal) == true)
+                _currentCriticalObservations.Add(observedAt);
             var data = new Dictionary<string, object?>
             {
                 ["measurement"] = "sql-wait-sample", ["sampleStartedAt"] = began,
-                ["observedAt"] = Stopwatch.GetTimestamp(), ["phase"] = Phase(),
+                ["observedAt"] = observedAt, ["phase"] = Phase(),
             };
             for (var i = 0; i < rows.FieldCount; i++)
                 data[rows.GetName(i)] = rows.IsDBNull(i) ? null : rows.GetValue(i);
@@ -186,6 +195,33 @@ internal sealed class ReportingGateWaitSampler(string connectionString, string a
         var json = JsonSerializer.Serialize(value);
         _events.Enqueue(json);
         _journal?.WriteLine(json);
+    }
+
+
+    internal ReportingGateCriticalCoverage.Assessment AssessCriticalCoverage(long started, long ended) =>
+        ReportingGateCriticalCoverage.Assess(started, ended, _successfulSamples.ToArray(), _criticalObservations.ToArray());
+
+    // Called after RunAsync is observed and its journal is closed. Failure remains explicit.
+    internal bool PersistCriticalCoverage(ReportingGateCriticalCoverage.Assessment assessment)
+    {
+        var json = JsonSerializer.Serialize(new { measurement = "critical-phase-coverage",
+            phase = "initial-checkpoint-read", assessment });
+        _events.Enqueue(json);
+        try
+        {
+            using var stream = new FileStream(JournalPath, FileMode.Append, FileAccess.Write, FileShare.Read);
+            using var writer = new StreamWriter(stream, System.Text.Encoding.UTF8, 1024, leaveOpen: true);
+            writer.WriteLine(json);
+            writer.Flush();
+            stream.Flush(flushToDisk: true);
+            return true;
+        }
+        catch (Exception error)
+        {
+            _events.Enqueue(JsonSerializer.Serialize(new { measurement = "coverage-journal-failure",
+                exceptionType = error.GetType().FullName, at = Stopwatch.GetTimestamp() }));
+            return false;
+        }
     }
 
     public void Dispose()
