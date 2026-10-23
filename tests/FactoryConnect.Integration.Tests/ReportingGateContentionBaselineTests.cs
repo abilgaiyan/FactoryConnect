@@ -66,7 +66,13 @@ public sealed class ReportingGateContentionBaselineTests(
             Assert.Equal(batch.Cut, summary.SourceRevision);
             Assert.Contains(batch.Results, result => result.Document.Key == summary.Key);
         });
-        var writerGate = Assert.Single(trace.Entries, e => e.Role == "writer" && e.Kind == "gate");
+        // Publication and its archive helper can acquire the transaction-owned gate repeatedly.
+        // Measure from the first exclusive acquisition, not a later nested acquisition.
+        var writerGates = trace.Entries
+            .Where(e => e.Role == "writer" && e.Kind == "gate" && e.LockMode == "Exclusive")
+            .OrderBy(e => e.StartedAt).ToArray();
+        Assert.NotEmpty(writerGates);
+        var writerGate = writerGates[0];
         Assert.Contains(trace.Entries, e => e.Role == "reader" && e.Kind == "gate");
         output.WriteLine("publicationCallMs=" + publicationTimer.Elapsed.TotalMilliseconds);
         output.WriteLine("deliberatePauseMs=" + pauseTimer.Elapsed.TotalMilliseconds);
