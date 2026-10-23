@@ -33,7 +33,7 @@ internal sealed class ReportingGateCommandTrace : IObserver<DiagnosticListener>,
     }
 
     internal sealed record Entry(string Role, string Kind, double Milliseconds, long StartedAt, long CompletedAt, bool Failed, string? LockMode,
-        int SessionId = 0, Guid ClientConnectionId = default, string? TransactionId = null, Guid OperationId = default);
+        int SessionId = 0, Guid ClientConnectionId = default, string? TransactionId = null, Guid OperationId = default, string? CommandFingerprint = null);
     internal Entry[] Entries => _entries.ToArray();
 
     public void OnNext(DiagnosticListener value)
@@ -80,13 +80,7 @@ internal sealed class ReportingGateCommandTrace : IObserver<DiagnosticListener>,
         if (!_pending.TryRemove(command, out var started)) return;
         var ended = Stopwatch.GetTimestamp();
         var sql = command.CommandText;
-        var kind = sql.Contains("sp_getapplock", StringComparison.Ordinal) ? "gate" :
-            sql.Contains("OperationalMetricProjectionCheckpoint", StringComparison.Ordinal) ?
-                (sql.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) ||
-                 sql.TrimStart().StartsWith("INSERT", StringComparison.OrdinalIgnoreCase) ? "checkpoint-write-sql" : "checkpoint-sql") :
-            sql.Contains("OperationalMetricProjectionEvidence", StringComparison.Ordinal) ? "evidence-sql" :
-            sql.Contains("PublicationResultArchive", StringComparison.Ordinal) ? "result-archive-sql" :
-            sql.Contains("ConflictWitnessArchive", StringComparison.Ordinal) ? "witness-archive-sql" : "other-sql";
+        var kind = ClassifySql(sql);
         var entry = new Entry(application[(_application.Length + 1)..], kind,
             Stopwatch.GetElapsedTime(started, ended).TotalMilliseconds, started, ended,
             value.Key.EndsWith("WriteCommandError", StringComparison.Ordinal),
@@ -94,7 +88,8 @@ internal sealed class ReportingGateCommandTrace : IObserver<DiagnosticListener>,
                 System.Globalization.CultureInfo.InvariantCulture) : null,
             command.Connection.State == System.Data.ConnectionState.Open ? command.Connection.ServerProcessId : 0, command.Connection.ClientConnectionId,
             Convert.ToString(Property(value.Value, "TransactionId"), System.Globalization.CultureInfo.InvariantCulture),
-            Property(value.Value, "OperationId") is Guid operationId ? operationId : Guid.Empty);
+            Property(value.Value, "OperationId") is Guid operationId ? operationId : Guid.Empty,
+            FingerprintSql(sql));
         _entries.Enqueue(entry);
         if (kind == "gate")
         {
@@ -105,6 +100,44 @@ internal sealed class ReportingGateCommandTrace : IObserver<DiagnosticListener>,
                     static _ => new(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult(entry);
         }
     }
+
+
+    // Fixed labels only. Neither SQL text nor parameters are returned to the logger.
+    internal static string ClassifySql(string sql)
+    {
+        if (sql.Contains("sp_getapplock", StringComparison.OrdinalIgnoreCase)) return "gate";
+        if (sql.Contains("OperationalMetricProjectionCheckpoint", StringComparison.OrdinalIgnoreCase))
+            return sql.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) ||
+                sql.TrimStart().StartsWith("INSERT", StringComparison.OrdinalIgnoreCase)
+                ? "checkpoint-write-sql" : "checkpoint-sql";
+        (string Marker, string Category)[] families =
+        [
+            ("OperationalMetricProjectionEvidence", "evidence-sql"),
+            ("PublicationResultArchive", "result-archive-sql"),
+            ("ConflictWitnessArchive", "witness-archive-sql"),
+            ("ProductionReferenceTimePublicationTransition", "reference-time-transition-sql"),
+            ("ProductionReferenceTimePublicationCut", "reference-time-cut-sql"),
+            ("ProductionReferenceTimeOutcome", "reference-time-outcome-sql"),
+            ("ProductionStandardAuthorityRevision", "standard-authority-sql"),
+            ("ProductionStandardVersion", "standard-version-sql"),
+            ("MetricAggregationContribution", "historical-contribution-sql"),
+            ("MetricAggregationRevisionShiftOccurrence", "aggregation-shift-revision-sql"),
+            ("MetricAggregationRevisionProductionDay", "aggregation-day-revision-sql"),
+            ("MetricAggregationRevision", "aggregation-revision-sql"),
+            ("MetricAggregationProcessor", "aggregation-processor-sql"),
+            ("OperationalMetricProjectionManifest", "publication-manifest-sql"),
+            ("OperationalMetricProjectionProcessor", "projection-processor-sql"),
+            ("OperationalMetricProjection", "retained-projection-sql"),
+            ("MetricInputFact", "source-fact-sql"),
+            ("MetricInputStream", "source-stream-sql"),
+        ];
+        foreach (var family in families)
+            if (sql.Contains(family.Marker, StringComparison.OrdinalIgnoreCase)) return family.Category;
+        return "other-sql";
+    }
+
+    internal static string FingerprintSql(string sql) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sql)));
 
     internal void Write(ITestOutputHelper output)
     {
@@ -122,7 +155,7 @@ internal sealed class ReportingGateCommandTrace : IObserver<DiagnosticListener>,
             {
                 measurement = "sql-operation", entry.Role, entry.Kind, entry.Milliseconds,
                 entry.StartedAt, entry.CompletedAt, entry.Failed, entry.SessionId,
-                entry.ClientConnectionId, entry.TransactionId, entry.OperationId,
+                entry.ClientConnectionId, entry.TransactionId, entry.OperationId, entry.CommandFingerprint,
             }));
         foreach (var group in Entries.GroupBy(e => (e.Role, e.Kind)))
             output.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
@@ -131,6 +164,8 @@ internal sealed class ReportingGateCommandTrace : IObserver<DiagnosticListener>,
                 commands = group.Count(), milliseconds = group.Sum(e => e.Milliseconds),
                 failures = group.Count(e => e.Failed),
             }));
+        output.WriteLine("SqlClient TransactionId/ClientConnectionId are diagnostic identifiers; DMV server transaction/connection IDs are separate namespaces. Correlate across sources by session, role and overlapping timestamps.");
+        output.WriteLine("CommandFingerprint is SHA256 of command text only; parameter values are never inspected. Categories are table-family hints, not SQL plans or exclusive internal phases.");
         output.WriteLine("SQL timings end at Execute return; row streaming, CPU verification and transaction completion are outside these sums.");
     }
 
