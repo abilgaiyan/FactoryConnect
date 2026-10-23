@@ -12,8 +12,14 @@ At f49122e8, the developer reported both opt-in tests passing in separate local 
   Baseline whole-publication read 7825.2076 ms; standalone verification 7343.16 ms;
   independent one-result reconstruction 64.5656 ms. 25 retained summaries, 5 for 2026-10-15.
 The earlier skipped execution is separate and is not measurement evidence.
-R1/R2A/R2B accepted; R3 remains incomplete. The new advancing probe has not been compiled or run
-in the editing environment (no .NET SDK / SQL restore access). Production attribution remains open.
+R1/R2A/R2B accepted. At 9be8d64f the developer also reported build/baseline PASS and a separate
+advancing probe PASS: actual next batch 534 -> 537, publisher 3631.7697 ms, gate-to-commit-return
+upper bound 2697.1636 ms, commit 2.2984 ms, shared command 2654.4003 ms, concurrent reporting
+10656.2289 ms. DMV samples identified report session 80 waiting LCK_M_S behind publisher 79.
+These are accepted clone results, not production attribution. Preserve that revision-537 clone.
+Nine initial-checkpoint other-sql commands totalled 213288.1893 ms before sampler startup.
+The follow-up below addresses that coverage gap; it has not been compiled or run in the editing
+environment (no .NET SDK / SQL restore access). R3 attribution remains incomplete.
 
 ## R1 baseline
 Resource: FactoryConnect:OperationalMetricProjection:Processor:v1: plus uppercase SHA256 of StringOrderKeyV2Codec.Encode(exact processor ID).
@@ -160,14 +166,57 @@ The concurrent period read must match the post-publication retained period, or r
 - A separate monitor samples requests, session transactions and APPLICATION locks every nominal
   250 ms during the runtime advance and overlapping report. It records wait type/time, blocker,
   request/session transaction IDs, lock owner/mode/status, connection ID and timestamp.
-  Sampling starts before the runtime; readiness/DMV errors fail the test. Stop/read diagnostics are
+  Sampling starts before the INITIAL checkpoint read and continues through all readback/verification; readiness/DMV errors fail the test. Stop/read diagnostics are
   observed even if publication or reporting fails.
 - Sampling overhead changes measured timings. Absence of sampled waits is not proof of no blocking;
   short waits can be missed, and an application-lock resource description can be truncated.
   Output is capped at 5000 DMV rows with an explicit truncation flag and coverage counters.
-  Standalone verification probes run AFTER this sampling interval, and have command/commit
-  diagnostics but no concurrent DMV sampling. Do not infer their SQL waits from this run.
+  The original 9be8d64f run stopped sampling before standalone verification; the follow-up extends coverage through those probes. Do not retrospectively infer waits for the original uncovered intervals.
 - Phase timings do not cover clone creation, every guard/fingerprint or complete test-runner overhead.
   The prior 326-second run cannot be explained by subtracting these new phases.
 - No production implementation, timeout, lock scope, isolation, schema or service lifecycle changes.
   Keep PR draft until compilation, local measurements and review complete.
+
+
+## Initial checkpoint-read attribution follow-up
+
+The format-2 ReadCheckpointAsync path performs complete retained verification before returning
+its checkpoint/manifest. The slow nine commands are not established to be checkpoint-row SELECTs.
+Do not label them writes or blocking until categories and sampled waits establish the cause.
+
+The existing sampler now starts and reports readiness before the initial store read. One outer
+try/finally owns sampler cancellation, awaiting completion and diagnostic output for ALL preflight,
+publication, readback and verification failures. The runtime task is also observed in its own finally.
+The first read uses role initial-checkpoint and phase initial-checkpoint-read; runtime/readback
+checkpoint calls retain the separate checkpoint role. next-revision-discovery has its own timer.
+Read-only standalone verification is now within sampling coverage as well.
+
+Command categories are fixed table-family hints (contributions, revision inventories, reference-time
+transition/cut/outcome, standard authority/version, retained projections/manifests and bindings).
+Priority resolves overlapping table names. A category is not a query plan or exclusive execution stage.
+Every emitted slow SQL operation includes a SHA256 CommandFingerprint of command text; it does not
+inspect parameter values or print SQL text. Fingerprints identify repeated command text, not their
+parameter-specific cost. Unknown shapes remain other-sql rather than receiving an invented label.
+
+SqlClient TransactionId is its diagnostic/internal identifier. DMV server_transaction_id and
+server_session_transaction_id are SERVER identifiers; do not join those numeric fields directly.
+Likewise DMV server_connection_id is not assumed equal to SqlClient ClientConnectionId.
+Correlate sources through session ID, session login time, application/role and overlapping monotonic
+timestamps. Sampling output keeps those namespaces explicit.
+
+First pull/build and run ONLY the in-memory diagnostic tests (no database is opened):
+~~~powershell
+git pull --ff-only
+dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-restore
+dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj -c Release --no-build --filter 'FullyQualifiedName~ReportingGateCommandTraceTests' --logger 'console;verbosity=normal'
+~~~
+
+After build and non-mutating validation pass, restore ANOTHER fresh clone from the same accepted
+revision-534 backup. In the Stage 3 restore commands, change EVERY target database/data/log name
+from FactoryConnect_GG003_GATE_ADVANCE_20261023 to
+FactoryConnect_GG003_GATE_ADVANCE_20261023_PREFLIGHT.
+Set FACTORYCONNECT_GG003_GATE_ADVANCE_CONNECTION_STRING to that new target as well.
+Keep the backup path unchanged. No WITH REPLACE, checkpoint reset, reuse of the revision-537 clone
+or Gajra action. Run the advancing filter once and retain detailed output/TRX under a new result name.
+A shorter initial read on a fresh run does not explain the earlier 213-second interval; compare
+command fingerprints, phase boundaries, wait types, blockers and sampling coverage before attribution.
