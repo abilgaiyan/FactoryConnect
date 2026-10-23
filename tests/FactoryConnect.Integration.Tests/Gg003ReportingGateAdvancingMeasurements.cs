@@ -33,149 +33,147 @@ public sealed class Gg003ReportingGateAdvancingMeasurements(ITestOutputHelper ou
         var application = "FC-Gate-Advance-" + Guid.NewGuid().ToString("N");
         string Role(string role) => ReportingGateCommandTrace.Connection(settings.ConnectionString, application, role);
         using var trace = new ReportingGateCommandTrace(application);
-        await using var inspect = new SqlConnection(settings.ConnectionString);
-        await inspect.OpenAsync(token);
-        await using (var guard = inspect.CreateCommand())
-        {
-            guard.CommandText = "SELECT DB_NAME();";
-            Assert.Equal(settings.InitialCatalog, (string)(await guard.ExecuteScalarAsync(token))!);
-        }
-        var processor = AvailabilityContainmentV1.ProjectionProcessorId(Machine);
-        var stream = MetricInputStreamId.ForMachine(Machine);
-        var aggregationProcessor = new MetricAggregationProcessorId($"metric-aggregation:{Machine.Value}");
-        var aggregation = new SqlServerMetricAggregationStore(Role("source"));
-        var store = new SqlServerOperationalMetricProjectionStore(Role("checkpoint"));
-        var before = await store.ReadCheckpointAsync(processor, stream, token);
-        Assert.NotNull(before);
-        // This investigation starts from a fresh copy of the accepted revision-534 evidence.
-        Assert.Equal(534UL, before.SourceRevision.Position.Value);
-        var next = await aggregation.ReadNextAsync(aggregationProcessor, stream, before.SourceRevision, token);
-        Assert.NotNull(next);
-        Assert.True(next.Revision.Position > before.SourceRevision.Position);
-        Assert.NotNull(await aggregation.ReadExactAsync(next.Revision, token));
-        output.WriteLine("processor=" + processor.Value);
-        output.WriteLine("gate=" + SqlServerOperationalMetricProjectionProcessorGate.EncodeResource(processor));
-        output.WriteLine("startCheckpoint=" + before.SourceRevision.Position.Value);
-        output.WriteLine("nextRevision=" + next.Revision.Position.Value);
-        output.WriteLine("requestedDate=" + date);
-        output.WriteLine("stopwatchFrequency=" + Stopwatch.Frequency);
-        var immutableBefore = await Gg003RestoredContainmentRuntimeAcceptanceTests.Fingerprint(inspect);
-        var revisionsBefore = await RevisionLedger(inspect, token);
-        var baseline = await Measure("baseline-whole-publication", () =>
-            new SqlServerOperationalMetricProjectionSummaryReader(Role("baseline"))
-                .ReadCurrentPublicationSummariesAsync(processor, token).AsTask());
-        var requested = baseline.Where(s => s.Key.MachineId == Machine &&
-            s.Key.PeriodId is OperationalMetricPeriodId.ProductionDay day &&
-            day.ProductionDayId.BusinessDate == date &&
-            s.Key.ContextKey == OperationalMetricEvaluationContextKey.Unpartitioned).ToArray();
-        Assert.NotEmpty(requested);
-        var period = requested[0].Key.PeriodId;
-
-        var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
-        var source = new CoherentOperationalMetricEvaluationBatchSource(catalog, aggregation, aggregation,
-            aggregationProcessor, stream, OperationalMetricEvaluationContextKey.Unpartitioned,
-            useAvailabilityContainmentV1: true);
-        var publisher = new MeasuredPublisher(this, Role("publisher"), before, next.Revision);
-        var runtime = new OperationalMetricProjectionProcessingRuntime(processor, aggregationProcessor, stream,
-            new MeasuredSource(this, source), new OperationalMetricProjectionFactory(catalog, processor), store,
-            new NextPrerequisite(this, Role("prerequisite"), next.Revision), publisher);
         var sampler = new ReportingGateWaitSampler(settings.ConnectionString, application);
         using var sampling = CancellationTokenSource.CreateLinkedTokenSource(token);
         var samplingTask = sampler.RunAsync(sampling.Token);
-        Task<int>? advance = null;
-        var advanced = false;
-        IReadOnlyList<OperationalMetricProjectionSummary>? concurrent = null;
         try
         {
             await sampler.Ready.Task.WaitAsync(token);
-            var gateTask = trace.ExclusiveGateAsync("publisher");
-            advance = Task.Run(() => Measure("complete-runtime-cycle", () => runtime.RunCycleAsync(token).AsTask()), token);
-            // Do not wait 30 minutes for a gate if batch construction fails first.
-            await Task.WhenAny(gateTask, advance).WaitAsync(token);
-            if (!gateTask.IsCompleted)
+            await using var inspect = new SqlConnection(settings.ConnectionString);
+            await inspect.OpenAsync(token);
+            await using (var guard = inspect.CreateCommand())
             {
-                await advance;
-                throw new InvalidDataException("Runtime returned without an observed exclusive publication gate.");
+                guard.CommandText = "SELECT DB_NAME();";
+                Assert.Equal(settings.InitialCatalog, (string)(await guard.ExecuteScalarAsync(token))!);
             }
-            var gate = await gateTask;
-            Assert.False(gate.Failed);
+            var processor = AvailabilityContainmentV1.ProjectionProcessorId(Machine);
+            var stream = MetricInputStreamId.ForMachine(Machine);
+            var aggregationProcessor = new MetricAggregationProcessorId($"metric-aggregation:{Machine.Value}");
+            var aggregation = new SqlServerMetricAggregationStore(Role("source"));
+            var store = new SqlServerOperationalMetricProjectionStore(Role("checkpoint"));
+            output.WriteLine("processor=" + processor.Value);
+            output.WriteLine("gate=" + SqlServerOperationalMetricProjectionProcessorGate.EncodeResource(processor));
+            output.WriteLine("stopwatchFrequency=" + Stopwatch.Frequency);
+            var before = await Measure("initial-checkpoint-read", () =>
+                new SqlServerOperationalMetricProjectionStore(Role("initial-checkpoint"))
+                    .ReadCheckpointAsync(processor, stream, token).AsTask());
+            Assert.NotNull(before);
+            // This investigation starts from a fresh copy of the accepted revision-534 evidence.
+            Assert.Equal(534UL, before.SourceRevision.Position.Value);
+            var next = await Measure("next-revision-discovery", () =>
+                aggregation.ReadNextAsync(aggregationProcessor, stream, before.SourceRevision, token).AsTask());
+            Assert.NotNull(next);
+            Assert.True(next.Revision.Position > before.SourceRevision.Position);
+            Assert.NotNull(await aggregation.ReadExactAsync(next.Revision, token));
+            output.WriteLine("startCheckpoint=" + before.SourceRevision.Position.Value);
+            output.WriteLine("nextRevision=" + next.Revision.Position.Value);
+            output.WriteLine("requestedDate=" + date);
+            var immutableBefore = await Gg003RestoredContainmentRuntimeAcceptanceTests.Fingerprint(inspect);
+            var revisionsBefore = await RevisionLedger(inspect, token);
+            var baseline = await Measure("baseline-whole-publication", () =>
+                new SqlServerOperationalMetricProjectionSummaryReader(Role("baseline"))
+                    .ReadCurrentPublicationSummariesAsync(processor, token).AsTask());
+            var requested = baseline.Where(s => s.Key.MachineId == Machine &&
+                s.Key.PeriodId is OperationalMetricPeriodId.ProductionDay day &&
+                day.ProductionDayId.BusinessDate == date &&
+                s.Key.ContextKey == OperationalMetricEvaluationContextKey.Unpartitioned).ToArray();
+            Assert.NotEmpty(requested);
+            var period = requested[0].Key.PeriodId;
+    
+            var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
+            var source = new CoherentOperationalMetricEvaluationBatchSource(catalog, aggregation, aggregation,
+                aggregationProcessor, stream, OperationalMetricEvaluationContextKey.Unpartitioned,
+                useAvailabilityContainmentV1: true);
+            var publisher = new MeasuredPublisher(this, Role("publisher"), before, next.Revision);
+            var runtime = new OperationalMetricProjectionProcessingRuntime(processor, aggregationProcessor, stream,
+                new MeasuredSource(this, source), new OperationalMetricProjectionFactory(catalog, processor), store,
+                new NextPrerequisite(this, Role("prerequisite"), next.Revision), publisher);
+            Task<int>? advance = null;
+            IReadOnlyList<OperationalMetricProjectionSummary>? concurrent = null;
             try
             {
-                concurrent = await Measure("concurrent-period-read", () =>
-                    new SqlServerOperationalMetricProjectionSummaryReader(Role("report"))
-                        .ReadPeriodSummariesAsync(processor, Machine, period,
-                            OperationalMetricEvaluationContextKey.Unpartitioned, token).AsTask());
-                output.WriteLine("concurrentRead=success");
+                var gateTask = trace.ExclusiveGateAsync("publisher");
+                advance = Task.Run(() => Measure("complete-runtime-cycle", () => runtime.RunCycleAsync(token).AsTask()), token);
+                // Do not wait 30 minutes for a gate if batch construction fails first.
+                await Task.WhenAny(gateTask, advance).WaitAsync(token);
+                if (!gateTask.IsCompleted)
+                {
+                    await advance;
+                    throw new InvalidDataException("Runtime returned without an observed exclusive publication gate.");
+                }
+                var gate = await gateTask;
+                Assert.False(gate.Failed);
+                try
+                {
+                    concurrent = await Measure("concurrent-period-read", () =>
+                        new SqlServerOperationalMetricProjectionSummaryReader(Role("report"))
+                            .ReadPeriodSummariesAsync(processor, Machine, period,
+                                OperationalMetricEvaluationContextKey.Unpartitioned, token).AsTask());
+                    output.WriteLine("concurrentRead=success");
+                }
+                catch (TimeoutException error) when (error.Message == "Processor gate acquisition timed out.")
+                {
+                    output.WriteLine("concurrentRead=processor-gate-timeout");
+                }
+                Assert.True(await advance > 0);
             }
-            catch (TimeoutException error) when (error.Message == "Processor gate acquisition timed out.")
+            finally
             {
-                output.WriteLine("concurrentRead=processor-gate-timeout");
+                if (advance is not null) await advance;
             }
-            Assert.True(await advance > 0);
-            advanced = true;
+            var proposed = publisher.Proposed;
+            Assert.NotNull(proposed);
+            Assert.Equal(next.Revision, proposed.SourceRevision);
+            Assert.Equal(proposed, await store.ReadCheckpointAsync(processor, stream, token));
+            var after = await Measure("post-advance-whole-publication", () =>
+                new SqlServerOperationalMetricProjectionSummaryReader(Role("after"))
+                    .ReadCurrentPublicationSummariesAsync(processor, token).AsTask());
+            foreach (var projection in publisher.Projections)
+            {
+                var summary = Assert.Single(after, s => s.Key == projection.Key);
+                Assert.Equal(projection.SourceRevision, summary.SourceRevision);
+                Assert.Equal(projection.Status, summary.Status);
+                Assert.Equal(projection.Value, summary.Value);
+                Assert.Equal(projection.Unit, summary.Unit);
+                Assert.Equal(projection.ReasonCode, summary.ReasonCode);
+                Assert.Equal(projection.ReasonOperandName, summary.ReasonOperandName);
+            }
+            if (concurrent is not null)
+            {
+                var expected = after.Where(s => s.Key.MachineId == Machine && s.Key.PeriodId == period &&
+                    s.Key.ContextKey == OperationalMetricEvaluationContextKey.Unpartitioned);
+                Assert.Equal(expected.Select(Identity).Order(StringComparer.Ordinal),
+                    concurrent.Select(Identity).Order(StringComparer.Ordinal));
+            }
+            Assert.Equal(immutableBefore, await Gg003RestoredContainmentRuntimeAcceptanceTests.Fingerprint(inspect));
+            Assert.Equal(revisionsBefore, await RevisionLedger(inspect, token));
+    
+            // The real publisher is used above, without callback substitution or invented envelopes.
+            // These are independent read-only probes of each retained envelope, not inferred subtractions.
+            await VerifyRetainedPhases(settings.ConnectionString, application, processor, token);
+            var exclusive = trace.Entries.Where(e => e.Role == "publisher" && e.Kind == "gate" &&
+                e.LockMode == "Exclusive").OrderBy(e => e.StartedAt).First();
+            Assert.False(string.IsNullOrWhiteSpace(exclusive.TransactionId));
+            var commit = Assert.Single(trace.Entries, e => e.Role == "publisher" &&
+                e.Kind == "transaction-commit" && e.TransactionId == exclusive.TransactionId);
+            Assert.False(commit.Failed);
+            output.WriteLine("exclusiveGateToCommitReturnUpperBoundMs=" +
+                Stopwatch.GetElapsedTime(exclusive.CompletedAt, commit.CompletedAt).TotalMilliseconds);
+            output.WriteLine("publicationTransactionCommitMs=" + commit.Milliseconds);
+            output.WriteLine("finalCheckpoint=" + proposed.SourceRevision.Position.Value);
+            output.WriteLine("One complete next runtime batch committed. No synthetic batch, direct checkpoint manipulation, migration or source advancement.");
         }
         finally
         {
-            // Always observe both tasks and retain diagnostics, including failure paths.
-            try { if (advance is not null) await advance; }
+            await sampling.CancelAsync();
+            try { await samplingTask; }
             finally
             {
-                await sampling.CancelAsync();
-                try { await samplingTask; }
-                finally
-                {
-                    sampler.Write(output);
-                    if (!advanced)
-                    {
-                        foreach (var phase in _phases) output.WriteLine(phase);
-                        trace.Write(output);
-                    }
-                }
+                sampler.Write(output);
+                foreach (var phase in _phases) output.WriteLine(phase);
+                trace.Write(output);
             }
         }
-        var proposed = publisher.Proposed;
-        Assert.NotNull(proposed);
-        Assert.Equal(next.Revision, proposed.SourceRevision);
-        Assert.Equal(proposed, await store.ReadCheckpointAsync(processor, stream, token));
-        var after = await Measure("post-advance-whole-publication", () =>
-            new SqlServerOperationalMetricProjectionSummaryReader(Role("after"))
-                .ReadCurrentPublicationSummariesAsync(processor, token).AsTask());
-        foreach (var projection in publisher.Projections)
-        {
-            var summary = Assert.Single(after, s => s.Key == projection.Key);
-            Assert.Equal(projection.SourceRevision, summary.SourceRevision);
-            Assert.Equal(projection.Status, summary.Status);
-            Assert.Equal(projection.Value, summary.Value);
-            Assert.Equal(projection.Unit, summary.Unit);
-            Assert.Equal(projection.ReasonCode, summary.ReasonCode);
-            Assert.Equal(projection.ReasonOperandName, summary.ReasonOperandName);
-        }
-        if (concurrent is not null)
-        {
-            var expected = after.Where(s => s.Key.MachineId == Machine && s.Key.PeriodId == period &&
-                s.Key.ContextKey == OperationalMetricEvaluationContextKey.Unpartitioned);
-            Assert.Equal(expected.Select(Identity).Order(StringComparer.Ordinal),
-                concurrent.Select(Identity).Order(StringComparer.Ordinal));
-        }
-        Assert.Equal(immutableBefore, await Gg003RestoredContainmentRuntimeAcceptanceTests.Fingerprint(inspect));
-        Assert.Equal(revisionsBefore, await RevisionLedger(inspect, token));
-
-        // The real publisher is used above, without callback substitution or invented envelopes.
-        // These are independent read-only probes of each retained envelope, not inferred subtractions.
-        await VerifyRetainedPhases(settings.ConnectionString, application, processor, token);
-        foreach (var phase in _phases) output.WriteLine(phase);
-        trace.Write(output);
-        var exclusive = trace.Entries.Where(e => e.Role == "publisher" && e.Kind == "gate" &&
-            e.LockMode == "Exclusive").OrderBy(e => e.StartedAt).First();
-        Assert.False(string.IsNullOrWhiteSpace(exclusive.TransactionId));
-        var commit = Assert.Single(trace.Entries, e => e.Role == "publisher" &&
-            e.Kind == "transaction-commit" && e.TransactionId == exclusive.TransactionId);
-        Assert.False(commit.Failed);
-        output.WriteLine("exclusiveGateToCommitReturnUpperBoundMs=" +
-            Stopwatch.GetElapsedTime(exclusive.CompletedAt, commit.CompletedAt).TotalMilliseconds);
-        output.WriteLine("publicationTransactionCommitMs=" + commit.Milliseconds);
-        output.WriteLine("finalCheckpoint=" + proposed.SourceRevision.Position.Value);
-        output.WriteLine("One complete next runtime batch committed. No synthetic batch, direct checkpoint manipulation, migration or source advancement.");
     }
 
     private async Task VerifyRetainedPhases(string connectionString, string application,
