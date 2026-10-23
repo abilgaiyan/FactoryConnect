@@ -154,7 +154,13 @@ public sealed class Gg003ReportingGateRestoreMeasurements(ITestOutputHelper outp
             // Observe the writer even if reporting fails.
             var returned = await publication.WaitAsync(token);
             output.WriteLine("publicationCallMs=" + Stopwatch.GetElapsedTime(writerStarted, returned).TotalMilliseconds);
-            var writerGate = Assert.Single(trace.Entries, e => e.Role == "writer" && e.Kind == "gate");
+            // Publication and its archive helper can acquire the transaction-owned gate repeatedly.
+            // Measure from the first exclusive acquisition, not a later nested acquisition.
+            var writerGates = trace.Entries
+                .Where(e => e.Role == "writer" && e.Kind == "gate" && e.LockMode == "Exclusive")
+                .OrderBy(e => e.StartedAt).ToArray();
+            Assert.NotEmpty(writerGates);
+            var writerGate = writerGates[0];
             output.WriteLine("exclusiveGateAcquisitionMs=" + writerGate.Milliseconds);
             output.WriteLine("exclusiveGateToCallReturnUpperBoundMs=" +
                 Stopwatch.GetElapsedTime(writerGate.CompletedAt, returned).TotalMilliseconds);
