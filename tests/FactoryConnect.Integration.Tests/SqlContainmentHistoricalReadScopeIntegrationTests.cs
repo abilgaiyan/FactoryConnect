@@ -30,7 +30,13 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests
         }
         var performance = await SqlContainmentHistoricalResultValidator.ReconstructAsync(connection, transaction,
             Key(seed, false, BuiltInOperationalMetricDefinitions.PerformanceId), seed.Cut, default, scope);
-        var forged = OperationalMetricDependencySnapshotV2Codec.Encode(Copy(performance, value: 0.5m));
+        // Keep the claim internally canonical so rejection exercises historical
+        // verification with warmed inputs, rather than the codec's ratio checks.
+        var authority = performance.Authority!;
+        var forgedAuthority = new ContainmentHistoricalAuthority(authority.CompletedReferenceRevision,
+            ["forged-source"], authority.StandardRevisions);
+        var forged = OperationalMetricDependencySnapshotV2Codec.Encode(Copy(performance, authority: forgedAuthority));
+        _ = OperationalMetricDependencySnapshotV2Codec.Decode(forged);
         await Assert.ThrowsAsync<ContainmentHistoricalIntegrityException>(() =>
             SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, forged, default, scope));
         Assert.Same(inputs, await scope.ReadAsync(seed.Cut, default));
