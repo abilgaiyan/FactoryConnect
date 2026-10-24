@@ -80,6 +80,27 @@ public sealed class MachineStateEvaluatorTests
         Assert.Equal(MachineState.Unknown, state);
     }
 
+    [Theory]
+    [InlineData("RUNNING", MachineState.Running)]
+    [InlineData("IDLE", MachineState.Idle)]
+    [InlineData("FAULT", MachineState.Fault)]
+    [InlineData("STOPPED", MachineState.Stopped)]
+    [InlineData("OFF", MachineState.Unknown)]
+    [InlineData("INVALID", MachineState.Unknown)]
+    [InlineData(null, MachineState.Unknown)]
+    public void AtomicOperationalStateDoesNotFallBackToBooleanEvidence(string? value, MachineState expected)
+    {
+        var status = new MachineSignalValue
+        { Key = CanonicalSignalKeys.OperationalState, Type = SignalType.Enumeration, Value = value };
+        Assert.Equal(expected, MachineStateEvaluator.Evaluate(CreateSnapshot(
+            status, Signal(CanonicalSignalKeys.Fault, true), Signal(CanonicalSignalKeys.Running, true))));
+        Assert.Equal(MachineState.Unknown, MachineStateEvaluator.Evaluate(CreateSnapshot(
+            status with { Quality = ObservationQuality.Uncertain }, Signal(CanonicalSignalKeys.Running, true))));
+        Assert.Equal(MachineState.Unknown, MachineStateEvaluator.Evaluate(CreateSnapshot(
+            status with { Type = SignalType.Digital }, Signal(CanonicalSignalKeys.Running, true))));
+        Assert.Equal(MachineState.Unknown, MachineStateEvaluator.Evaluate(CreateSnapshot(status, status)));
+    }
+
     private static MachineSignalSnapshot CreateSnapshot(
         params MachineSignalValue[] signals) =>
         new(MachineId.New(), signals, DateTimeOffset.UtcNow);

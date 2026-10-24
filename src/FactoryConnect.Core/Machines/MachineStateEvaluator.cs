@@ -8,6 +8,28 @@ public static class MachineStateEvaluator
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
+        // An explicit atomic status owns the result, including unavailable/invalid input.
+        // Never fall back to stale Boolean evidence from a previous configuration.
+        var operational = snapshot.Signals.Where(signal => string.Equals(
+            signal.Key, CanonicalSignalKeys.OperationalState, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (operational.Length != 0)
+        {
+            if (operational.Length != 1 || operational[0].Quality != ObservationQuality.Good ||
+                operational[0].Type != SignalType.Enumeration)
+            {
+                return MachineState.Unknown;
+            }
+
+            return operational[0].Value switch
+            {
+                "RUNNING" => MachineState.Running,
+                "IDLE" => MachineState.Idle,
+                "FAULT" => MachineState.Fault,
+                "STOPPED" => MachineState.Stopped,
+                _ => MachineState.Unknown,
+            };
+        }
+
         if (TryGetDigitalSignal(snapshot, CanonicalSignalKeys.Fault, out var fault) && fault)
         {
             return MachineState.Fault;

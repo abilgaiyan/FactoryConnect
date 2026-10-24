@@ -64,9 +64,10 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             pollingInterval);
         var mappings = ReadMappingConfigurations(section, streams);
         var executionNormalizations = ReadExecutionNormalizations(section, mappings);
+        var moxaNormalizations = ReadMoxaStatusNormalizations(section, mappings);
         var demoCanonicalInputs = bool.TryParse(
             configuration["DemoCanonicalInputs:Enabled"], out var demoEnabled) && demoEnabled;
-        if (demoCanonicalInputs && executionNormalizations.Count != 0)
+        if (demoCanonicalInputs && (executionNormalizations.Count != 0 || moxaNormalizations.Count != 0))
         {
             throw new InvalidOperationException("Production execution normalization cannot be combined with demo canonical inputs.");
         }
@@ -177,6 +178,11 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     {
                         mappingProcessor = new ExecutionNormalizationProcessor(
                             mappingProcessor, streamId, execution.Source, execution.Address);
+                    }
+                    if (moxaNormalizations.TryGetValue(streamId, out var moxa))
+                    {
+                        mappingProcessor = new MoxaStatusNormalizationProcessor(
+                            mappingProcessor, streamId, moxa.Source, moxa.Address);
                     }
                     if (demoCanonicalInputs)
                     {
@@ -365,6 +371,58 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
             result.Add(streamId, (source, address));
         }
 
+        return result;
+    }
+
+    private static Dictionary<ObservationStreamId, (string Source, string Address)> ReadMoxaStatusNormalizations(
+        IConfigurationSection section,
+        IReadOnlyDictionary<ObservationStreamId, MachineSignalMappingConfiguration> mappings)
+    {
+        var streamSections = section.GetSection("Streams").GetChildren().ToArray();
+        if (streamSections.Length > 0 && section.GetSection("MoxaStatusNormalization").Exists())
+        {
+            throw new InvalidOperationException("Configure MOXA status normalization per stream when Streams is present.");
+        }
+
+        Dictionary<ObservationStreamId, (string Source, string Address)> result = [];
+        foreach (var (streamId, configuration) in mappings)
+        {
+            var owner = streamSections.Length == 0 ? section : streamSections.Single(stream =>
+                Guid.Parse(Required(stream, "MachineId")) == streamId.MachineId.Value &&
+                string.Equals(Required(stream, "StreamKey"), streamId.StreamKey, StringComparison.Ordinal));
+            var normalization = owner.GetSection("MoxaStatusNormalization");
+            var statusMappings = configuration.Mappings.Where(mapping => string.Equals(
+                mapping.SignalKey, CanonicalSignalKeys.OperationalState, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (!normalization.Exists())
+            {
+                if (statusMappings.Length != 0)
+                {
+                    throw new InvalidOperationException("state.operational requires explicit MOXA status normalization.");
+                }
+                continue;
+            }
+
+            if (owner.GetSection("ExecutionNormalization").Exists())
+            {
+                throw new InvalidOperationException("MOXA and execution normalization cannot own the same stream.");
+            }
+            var source = Required(normalization, "Source");
+            var address = Required(normalization, "Address");
+            ArgumentException.ThrowIfNullOrWhiteSpace(source);
+            ArgumentException.ThrowIfNullOrWhiteSpace(address);
+            var matches = configuration.Mappings.Where(mapping =>
+                string.Equals(mapping.Source, source, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(mapping.Address, address, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (statusMappings.Length != 1 || matches.Length != 1 ||
+                matches[0] != statusMappings[0] || matches[0].Type != SignalType.Enumeration ||
+                matches[0].Invert || configuration.Mappings.Any(mapping => IsStateDrivingSignal(mapping.SignalKey)))
+            {
+                throw new InvalidOperationException(
+                    "MOXA normalization requires one non-inverted Enumeration state.operational mapping " +
+                    "and no Boolean state-driving mappings in that stream.");
+            }
+            result.Add(streamId, (source, address));
+        }
         return result;
     }
 
