@@ -53,14 +53,22 @@ public sealed class OperationalMetricProjectionProcessingRuntime
 
     public OperationalMetricProjectionProcessorId ProcessorId { get; }
 
-    public async ValueTask<int> RunCycleAsync(CancellationToken cancellationToken = default)
+    public ValueTask<int> RunCycleAsync(CancellationToken cancellationToken = default) =>
+        RunCycleAsync(allowCurrentRevisionReplay: true, cancellationToken);
+
+    /// <summary>Polls for advancement after complete durable checkpoint restoration.</summary>
+    public ValueTask<int> RunPollingCycleAsync(CancellationToken cancellationToken = default) =>
+        RunCycleAsync(allowCurrentRevisionReplay: false, cancellationToken);
+
+    private async ValueTask<int> RunCycleAsync(bool allowCurrentRevisionReplay, CancellationToken cancellationToken)
     {
         await RestoreCheckpointAsync(cancellationToken);
 
         var request = new OperationalMetricEvaluationBatchRequest(
             _sourceProcessorId,
             _sourceStreamId,
-            _checkpoint?.SourceRevision);
+            _checkpoint?.SourceRevision,
+            allowCurrentRevisionReplay);
         var preparedRevision = _prerequisite is null
             ? null
             : await _prerequisite.PrepareAsync(request, cancellationToken);
@@ -81,6 +89,10 @@ public sealed class OperationalMetricProjectionProcessingRuntime
             throw new InvalidDataException(
                 "Operational evaluation batch differs from the exact prepared reference-time revision.");
         }
+        if (!allowCurrentRevisionReplay && _checkpoint is not null &&
+            batch.SourceRevision.Position <= _checkpoint.SourceRevision.Position)
+            throw new InvalidDataException("Polling batch must advance beyond the durable projection checkpoint.");
+
         var projections = ProjectBatch(batch);
         var manifest = new OperationalMetricProjectionBatchManifest(
             projections.Select(static projection => projection.Key));

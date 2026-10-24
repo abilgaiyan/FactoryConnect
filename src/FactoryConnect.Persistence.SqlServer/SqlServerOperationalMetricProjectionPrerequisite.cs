@@ -47,7 +47,7 @@ internal sealed class SqlServerOperationalMetricProjectionPrerequisite(
                 : null;
         }
 
-        if (request.KnownRevision is null)
+        if (request.KnownRevision is null || !request.AllowCurrentRevisionReplay)
         {
             return null;
         }

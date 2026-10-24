@@ -230,6 +230,69 @@ public sealed class OperationalMetricProjectionProcessingRuntimeTests
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task PollingStopsBeforeBatchReadWhenPrerequisiteReportsIdleAndThenAdvances()
+    {
+        var fixture = CreateFixture();
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+        Assert.Equal(1, await fixture.Runtime.RunCycleAsync());
+        var prerequisite = new ControlledPrerequisite();
+        var restarted = CreateRuntime(fixture, fixture.Source, prerequisite);
+        for (var poll = 0; poll < 20; poll++)
+            Assert.Equal(0, await restarted.RunPollingCycleAsync());
+        Assert.Single(fixture.Source.Requests);
+        Assert.All(prerequisite.Requests, r =>
+        {
+            Assert.False(r.AllowCurrentRevisionReplay);
+            Assert.Equal(Revision(fixture, 40), r.KnownRevision);
+        });
+        prerequisite.Prepared = Revision(fixture, 41);
+        fixture.Source.Enqueue(Batch(fixture, 41, 0.625m));
+        Assert.Equal(1, await restarted.RunPollingCycleAsync());
+        Assert.Equal(Revision(fixture, 41), (await fixture.Store.ReadCheckpointAsync(
+            fixture.ProjectionProcessorId, fixture.SourceStreamId, default))!.SourceRevision);
+    }
+
+    [Fact]
+    public async Task PollingRejectsSourceThatIgnoresAdvancementOnlyRequest()
+    {
+        var fixture = CreateFixture();
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+        Assert.Equal(1, await fixture.Runtime.RunCycleAsync());
+        fixture.Source.Enqueue(Batch(fixture, 40, 0.5m));
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await fixture.Runtime.RunPollingCycleAsync());
+    }
+
+    [Fact]
+    public async Task FailedStartupVerificationIsRetriedBeforeAnyPollingWork()
+    {
+        var fixture = CreateFixture();
+        var prerequisite = new ControlledPrerequisite();
+        var store = new RejectingCheckpointStore();
+        var runtime = new OperationalMetricProjectionProcessingRuntime(fixture.ProjectionProcessorId,
+            fixture.SourceProcessorId, fixture.SourceStreamId, fixture.Source, fixture.Factory, store, prerequisite);
+        for (var attempt = 0; attempt < 2; attempt++)
+            await Assert.ThrowsAsync<InvalidDataException>(async () => await runtime.RunPollingCycleAsync());
+        Assert.Equal(2, store.Reads);
+        Assert.Empty(prerequisite.Requests);
+        Assert.Empty(fixture.Source.Requests);
+    }
+
+    private sealed class RejectingCheckpointStore : IOperationalMetricProjectionStore
+    {
+        public int Reads { get; private set; }
+        public ValueTask<OperationalMetricProjectionCheckpoint?> ReadCheckpointAsync(
+            OperationalMetricProjectionProcessorId processorId, MetricInputStreamId sourceStreamId, CancellationToken cancellationToken)
+        {
+            Reads++;
+            throw new InvalidDataException("Corrupt retained publication.");
+        }
+        public ValueTask<OperationalMetricProjection?> ReadProjectionAsync(OperationalMetricProjectionProcessorId processorId,
+            OperationalMetricEvaluationKey key, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public ValueTask CommitAsync(OperationalMetricProjectionCommit commit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
     private static RuntimeFixture CreateFixture()
     {
         var machineId = MachineId.New();
