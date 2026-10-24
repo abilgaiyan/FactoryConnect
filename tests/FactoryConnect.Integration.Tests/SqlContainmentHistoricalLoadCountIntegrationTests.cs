@@ -32,14 +32,14 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
         Assert.Equal(2, initial.Length);
         AssertOneLoadPerCutAndTransaction(counter, initial);
         Assert.All(initial, e => Assert.Equal(batch.Cut.Position.Value, e.Position));
-        Assert.NotSame(initial[0].Transaction, initial[1].Transaction);
+        Assert.NotEqual(initial[0].TransactionOrdinal, initial[1].TransactionOrdinal);
 
         // Replay verifies retained and incoming results in its own publication scope.
         await publisher.PublishAsync(proposed, proposed, projections, default);
         var all = counter.Executions;
         Assert.Equal(4, all.Length);
         AssertOneLoadPerCutAndTransaction(counter, all);
-        Assert.Equal(4, all.Select(e => e.Transaction).Distinct().Count());
+        Assert.Equal(4, all.Select(e => e.TransactionOrdinal).Distinct().Count());
         Assert.All(all, e => Assert.Equal(batch.Cut.Position.Value, e.Position));
     }
 
@@ -55,7 +55,7 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
         await new SqlContainmentPublicationTransaction(counter.ConnectionString).PublishAsync(next, Checkpoint(prior), default);
         var publication = counter.Executions;
         AssertTwoCuts(counter, publication, prior.Cut, incoming.Cut);
-        Assert.Same(publication[0].Transaction, publication[1].Transaction);
+        Assert.Equal(publication[0].TransactionOrdinal, publication[1].TransactionOrdinal);
 
         var reader = new SqlServerOperationalMetricProjectionQueryReader(counter.ConnectionString);
         var detail = await reader.ReadDetailAsync(incoming.Processor, incoming.Results[0].Document.Key, default);
@@ -63,8 +63,8 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
         Assert.Equal(incoming.Cut, detail.SourceRevision);
         var reporting = counter.Executions.Skip(publication.Length).ToArray();
         AssertTwoCuts(counter, reporting, prior.Cut, incoming.Cut);
-        Assert.Same(reporting[0].Transaction, reporting[1].Transaction);
-        Assert.NotSame(publication[0].Transaction, reporting[0].Transaction);
+        Assert.Equal(reporting[0].TransactionOrdinal, reporting[1].TransactionOrdinal);
+        Assert.NotEqual(publication[0].TransactionOrdinal, reporting[0].TransactionOrdinal);
 
         var checkpoint = await new SqlServerOperationalMetricProjectionStore(counter.ConnectionString)
             .ReadCheckpointAsync(incoming.Processor, incoming.Cut.StreamId, default);
@@ -72,8 +72,8 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
         Assert.Equal(incoming.Cut, checkpoint.SourceRevision);
         var checkpointReads = counter.Executions.Skip(publication.Length + reporting.Length).ToArray();
         AssertTwoCuts(counter, checkpointReads, prior.Cut, incoming.Cut);
-        Assert.Same(checkpointReads[0].Transaction, checkpointReads[1].Transaction);
-        Assert.NotSame(reporting[0].Transaction, checkpointReads[0].Transaction);
+        Assert.Equal(checkpointReads[0].TransactionOrdinal, checkpointReads[1].TransactionOrdinal);
+        Assert.NotEqual(reporting[0].TransactionOrdinal, checkpointReads[0].TransactionOrdinal);
     }
 
     private static OperationalMetricProjectionCheckpoint Checkpoint(ContainmentArchiveBatch batch) =>
@@ -95,7 +95,7 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
         Assert.NotEmpty(executions);
         Assert.Null(counter.ListenerError);
         Assert.Equal(0, counter.PendingCount);
-        Assert.All(executions, e => { Assert.False(e.Failed); Assert.NotNull(e.Transaction); });
-        Assert.All(executions.GroupBy(e => (e.Transaction, e.Processor, e.Stream, e.Position)), group => Assert.Single(group));
+        Assert.All(executions, e => { Assert.False(e.Failed); Assert.True(e.TransactionOrdinal > 0); Assert.True(e.HadTransactionAtStart); Assert.True(e.TransactionBoundToConnectionAtStart); Assert.NotNull(e.Elapsed); });
+        Assert.All(executions.GroupBy(e => (e.TransactionOrdinal, e.Processor, e.Stream, e.Position)), group => Assert.Single(group));
     }
 }

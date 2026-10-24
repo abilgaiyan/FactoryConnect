@@ -88,3 +88,30 @@ fingerprints, and unchanged complete publication snapshot after actual exact
 publisher replay at 537. The advancement runtime's historical loads must be unique
 per transaction/processor/stream/cut. The experiment stops at 537; it does not
 claim to catch up to source head 741 or recover Gajra production reports.
+
+
+## Transaction-start instrumentation correction
+
+Stage B is held following a reported bootstrap assertion failure. Production historical
+reader transaction binding is unchanged. Disposing a transaction does not turn a
+captured reference into null; the earlier failure's precise cause is not established.
+
+Completed diagnostic records now contain an ordinal and immutable start-time flags,
+rather than a live SqlTransaction reference. Ordinals are local to each counter and
+assigned by reference identity through a ConditionalWeakTable. The same instance keeps
+one ordinal; distinct instances never intentionally share one. No SQL transaction is
+kept alive by completed records. Missing transactions use ordinal zero as an invalid
+sentinel, never an invented shared identity; SQL regression/harness validation rejects
+missing transactions and mismatched connection bindings before grouping exact cuts.
+
+Synthetic regressions exercise absent/mismatched bindings, immutable snapshots, and
+concurrent stable/distinct identity assignment using opaque object tokens. Existing
+SQL regression tests assert the real command-start flags after publisher/read transactions
+finish. Synthetic tests do not prove actual SqlClient transaction binding.
+
+Safe preflight now expects 12 cases: eight counter cases and four target-guard cases.
+Do not rerun bootstrap on the already-mutated clone. Inspect its actual database identity,
+migration history, aggregation checkpoint and all projection processor checkpoints first.
+A state check is not a resume command; the harness still requires no containment checkpoint.
+Preserve prior JSONL evidence. Reported long SQL event durations remain observations,
+with cause and gate timing unestablished.

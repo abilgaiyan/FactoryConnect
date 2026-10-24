@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Integration.Tests;
@@ -14,6 +15,9 @@ internal sealed class ContainmentHistoricalSqlCounter : IObserver<DiagnosticList
     private sealed record PendingExecution(Execution Execution, long StartedAt);
 
     private readonly ConcurrentDictionary<SqlCommand, PendingExecution> _pending = new();
+    private sealed record TransactionIdentity(long Ordinal);
+    private readonly ConditionalWeakTable<object, TransactionIdentity> _transactions = new();
+    private long _nextTransactionOrdinal;
     private readonly ConcurrentQueue<Execution> _completed = new();
     private readonly ConcurrentBag<IDisposable> _subscriptions = new();
     private readonly IDisposable _all;
@@ -26,7 +30,21 @@ internal sealed class ContainmentHistoricalSqlCounter : IObserver<DiagnosticList
     }
 
     internal string ConnectionString { get; }
-    internal sealed record Execution(SqlTransaction? Transaction, long Processor, long Stream, ulong Position, bool Failed = false, TimeSpan? Elapsed = null);
+    internal sealed record Execution(long TransactionOrdinal, bool HadTransactionAtStart,
+        bool TransactionBoundToConnectionAtStart, long Processor, long Stream, ulong Position,
+        bool Failed = false, TimeSpan? Elapsed = null);
+
+    internal sealed record TransactionStart(long Ordinal, bool HadTransaction, bool BoundToConnection);
+
+    // Pure identity seam for database-free regressions. Production supplies the actual
+    // command transaction and its Connection exactly once at the Before event.
+    internal TransactionStart CaptureTransactionStart(object? transaction, object? connection, object? transactionConnection)
+    {
+        if (transaction is null) return new(0, false, false); // Invalid/missing, never a grouping identity.
+        var identity = _transactions.GetValue(transaction,
+            _ => new TransactionIdentity(Interlocked.Increment(ref _nextTransactionOrdinal)));
+        return new(identity.Ordinal, true, connection is not null && ReferenceEquals(connection, transactionConnection));
+    }
     internal Execution[] Executions => _completed.ToArray();
     internal int PendingCount => _pending.Count;
     internal Exception? ListenerError { get; private set; }
@@ -46,7 +64,9 @@ internal sealed class ContainmentHistoricalSqlCounter : IObserver<DiagnosticList
                 !command.CommandText.StartsWith("SELECT s.MachineId, s.StreamKey, f.Position, f.FactId, f.MetricInputKey, ", StringComparison.Ordinal) ||
                 !command.CommandText.Contains("FROM dbo.MetricAggregationContribution c ", StringComparison.Ordinal) ||
                 !command.CommandText.Contains("AND c.Position <= @ThroughPosition ", StringComparison.Ordinal)) return;
-            var execution = new Execution(command.Transaction,
+            var transaction = command.Transaction;
+            var start = CaptureTransactionStart(transaction, command.Connection, transaction?.Connection);
+            var execution = new Execution(start.Ordinal, start.HadTransaction, start.BoundToConnection,
                 Convert.ToInt64(command.Parameters["@ProcessorRowId"].Value, CultureInfo.InvariantCulture),
                 Convert.ToInt64(command.Parameters["@StreamRowId"].Value, CultureInfo.InvariantCulture),
                 Convert.ToUInt64(command.Parameters["@ThroughPosition"].Value, CultureInfo.InvariantCulture));

@@ -136,7 +136,7 @@ public sealed class Gg003RealDataPerformanceTests
             Assert.NotNull(at537); Assert.Equal(537UL, at537.SourceRevision.Position.Value);
             ValidateCounter(counter);
             // All runtime verification/publisher transactions must load each exact cut at most once.
-            Assert.All(counter.Executions.GroupBy(e => (e.Transaction, e.Processor, e.Stream, e.Position)), g => Assert.Single(g));
+            Assert.All(counter.Executions.GroupBy(e => (e.TransactionOrdinal, e.Processor, e.Stream, e.Position)), g => Assert.Single(g));
             Assert.Equal(0, reportingCounter.PendingCount); Assert.Null(reportingCounter.ListenerError);
             // Reader success and overlap coverage are recorded independently from workload correctness.
             // Do not infer that a request overlapped Exclusive ownership from cycle overlap alone.
@@ -186,21 +186,18 @@ public sealed class Gg003RealDataPerformanceTests
 
     private static object Summary(ContainmentHistoricalSqlCounter counter)
     {
-        var transactions = new List<SqlTransaction?>();
         return new { counter.PendingCount, ListenerErrorType = counter.ListenerError?.GetType().FullName,
-            Executions = counter.Executions.Select(e =>
+            Executions = counter.Executions.Select(e => new
             {
-                var transaction = transactions.FindIndex(t => ReferenceEquals(t, e.Transaction));
-                if (transaction < 0) { transaction = transactions.Count; transactions.Add(e.Transaction); }
-                return new { TransactionOrdinal = transaction + 1, e.Processor, e.Stream, e.Position, e.Failed,
-                    ElapsedMilliseconds = e.Elapsed?.TotalMilliseconds };
+                e.TransactionOrdinal, e.HadTransactionAtStart, e.TransactionBoundToConnectionAtStart,
+                e.Processor, e.Stream, e.Position, e.Failed, ElapsedMilliseconds = e.Elapsed?.TotalMilliseconds
             }).ToArray() };
     }
 
     private static void ValidateCounter(ContainmentHistoricalSqlCounter counter)
     {
         Assert.Null(counter.ListenerError); Assert.Equal(0, counter.PendingCount); Assert.NotEmpty(counter.Executions);
-        Assert.All(counter.Executions, e => { Assert.False(e.Failed); Assert.NotNull(e.Transaction); Assert.NotNull(e.Elapsed); });
+        Assert.All(counter.Executions, e => { Assert.False(e.Failed); Assert.True(e.TransactionOrdinal > 0); Assert.True(e.HadTransactionAtStart); Assert.True(e.TransactionBoundToConnectionAtStart); Assert.NotNull(e.Elapsed); });
     }
 
     private static async Task<decimal> Legacy(SqlConnection connection, CancellationToken ct)

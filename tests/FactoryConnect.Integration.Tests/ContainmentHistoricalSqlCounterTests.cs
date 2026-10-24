@@ -29,6 +29,9 @@ public sealed class ContainmentHistoricalSqlCounterTests
         Assert.Equal(7, observed.Processor);
         Assert.Equal(9, observed.Stream);
         Assert.Equal(failed, observed.Failed);
+        Assert.False(observed.HadTransactionAtStart);
+        Assert.False(observed.TransactionBoundToConnectionAtStart);
+        Assert.Equal(0L, observed.TransactionOrdinal);
         Assert.NotNull(observed.Elapsed);
         Assert.True(observed.Elapsed.Value >= TimeSpan.Zero);
         Assert.Equal(0, counter.PendingCount);
@@ -88,11 +91,52 @@ public sealed class ContainmentHistoricalSqlCounterTests
         var b = Assert.Single(executions, e => e.Position == 537);
         Assert.Equal(7L, a.Processor); Assert.Equal(8L, b.Processor);
         Assert.Equal(9L, a.Stream); Assert.Equal(9L, b.Stream);
-        Assert.Same(first.Transaction, a.Transaction); Assert.Same(second.Transaction, b.Transaction);
+        Assert.All(executions, e =>
+        {
+            Assert.False(e.HadTransactionAtStart);
+            Assert.False(e.TransactionBoundToConnectionAtStart);
+            Assert.Equal(0L, e.TransactionOrdinal);
+        });
         Assert.False(a.Failed); Assert.True(b.Failed);
         Assert.All(executions, e => { Assert.NotNull(e.Elapsed); Assert.True(e.Elapsed.Value >= TimeSpan.Zero); });
         Assert.Equal(0, counter.PendingCount);
         Assert.Null(counter.ListenerError);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CapturesMissingAndMismatchedBindingWithoutInventingIdentity(bool hasTransaction, bool bound)
+    {
+        using var counter = new ContainmentHistoricalSqlCounter("Server=(local);Database=counter;Integrated Security=true");
+        object? transaction = hasTransaction ? new object() : null;
+        var connection = new object();
+        var snapshot = counter.CaptureTransactionStart(transaction, connection, bound ? connection : null);
+        Assert.Equal(hasTransaction, snapshot.HadTransaction);
+        Assert.Equal(hasTransaction && bound, snapshot.BoundToConnection);
+        if (hasTransaction) Assert.True(snapshot.Ordinal > 0);
+        else Assert.Equal(0L, snapshot.Ordinal);
+        // Later loss of the live binding does not mutate an already captured snapshot.
+        var later = counter.CaptureTransactionStart(transaction, connection, null);
+        Assert.Equal(snapshot.Ordinal, later.Ordinal);
+        Assert.False(later.BoundToConnection);
+        Assert.Equal(hasTransaction && bound, snapshot.BoundToConnection);
+    }
+
+    [Fact]
+    public async Task ConcurrentSnapshotsKeepReferenceIdentityDistinctAndStable()
+    {
+        using var counter = new ContainmentHistoricalSqlCounter("Server=(local);Database=counter;Integrated Security=true");
+        var connection = new object();
+        var first = new object(); var second = new object();
+        var snapshots = await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(() =>
+            (First: i % 2 == 0, Snapshot: counter.CaptureTransactionStart(i % 2 == 0 ? first : second, connection, connection)))));
+        var firstIds = snapshots.Where(s => s.First).Select(s => s.Snapshot.Ordinal).Distinct().ToArray();
+        var secondIds = snapshots.Where(s => !s.First).Select(s => s.Snapshot.Ordinal).Distinct().ToArray();
+        Assert.Single(firstIds); Assert.Single(secondIds);
+        Assert.NotEqual(firstIds[0], secondIds[0]);
+        Assert.All(snapshots, s => { Assert.True(s.Snapshot.Ordinal > 0); Assert.True(s.Snapshot.HadTransaction); Assert.True(s.Snapshot.BoundToConnection); });
     }
 
     private static SqlCommand HistoricalCommand(SqlConnection connection)
