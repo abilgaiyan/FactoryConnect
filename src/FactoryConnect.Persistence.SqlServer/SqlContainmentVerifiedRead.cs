@@ -29,6 +29,8 @@ internal static class SqlContainmentVerifiedRead
             await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction, processor,
                 OperationalMetricProjectionProcessorGateMode.Shared, token);
         }
+        using var verificationTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.verify");
+        verificationTiming?.SetTag("processor.id", processor.Value);
         await using (var schema = Command("SELECT COL_LENGTH('dbo.OperationalMetricProjectionProcessor','PublicationFormatVersion');"))
             if (await schema.ExecuteScalarAsync(token) is null or DBNull)
             {
@@ -104,6 +106,8 @@ internal static class SqlContainmentVerifiedRead
                 core.AvailabilityScopeConflictEvidence, core.EvaluationPolicyId, metadata));
             if (manifest.Contains(rowId)) latestKeys.Add(verified.Projection.Key);
         }
+        verificationTiming?.SetTag("retained.result.count", retained.Count);
+        verificationTiming?.SetTag("verification.completed", true);
         return new Publication(projections.AsReadOnly(), latestKeys);
 
         SqlCommand Command(string sql) { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; return command; }

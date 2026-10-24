@@ -38,8 +38,12 @@ internal static class SqlServerOperationalMetricProjectionProcessorGate
         command.Parameters.Add("@Resource", SqlDbType.NVarChar, 255).Value = EncodeResource(processorId);
         command.Parameters.Add("@Mode", SqlDbType.VarChar, 32).Value = mode.ToString();
         command.Parameters.Add("@Timeout", SqlDbType.Int).Value = timeoutMilliseconds;
+        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("processor.gate.acquire");
+        timing?.SetTag("processor.id", processorId.Value);
+        timing?.SetTag("gate.mode", mode.ToString());
         var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken),
             System.Globalization.CultureInfo.InvariantCulture);
+        timing?.SetTag("gate.result", result);
         if (result == -2) throw new OperationCanceledException("Processor gate acquisition cancelled.", cancellationToken);
         if (result == -1) throw new TimeoutException("Processor gate acquisition timed out.");
         if (result < 0) throw new InvalidOperationException($"Processor gate acquisition failed with return code {result}.");

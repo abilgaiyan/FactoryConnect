@@ -67,7 +67,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSource : IOperationa
             request.KnownRevision,
             cancellationToken).ConfigureAwait(false);
 
-        if (change is null && request.KnownRevision is not null)
+        if (change is null && request.KnownRevision is not null && request.AllowCurrentRevisionReplay)
         {
             change = await _revisionReader.ReadExactAsync(
                 request.KnownRevision,

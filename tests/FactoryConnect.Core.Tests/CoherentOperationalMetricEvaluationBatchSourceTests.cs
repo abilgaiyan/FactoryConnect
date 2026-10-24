@@ -235,6 +235,43 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
         Assert.Equal(10, checkpoint.BatchManifest.ProjectionKeys.Count);
     }
 
+    [Fact]
+    public async Task RepeatedCaughtUpPollsDoNotReadSnapshotsOrCallPublisherButExplicitReplayDoes()
+    {
+        var fixture = CreateReaderFixture(includeShift: false);
+        var processor = AvailabilityContainmentV1.ProjectionProcessorId(fixture.StreamId.MachineId);
+        var publisher = new CountingPublisher();
+        var store = new InMemoryOperationalMetricProjectionStore();
+        var runtime = new OperationalMetricProjectionProcessingRuntime(processor,
+            fixture.AggregationProcessorId, fixture.StreamId, fixture.Source,
+            new OperationalMetricProjectionFactory(new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All), processor),
+            store, containmentPublisher: publisher);
+
+        Assert.Equal(5, await runtime.RunPollingCycleAsync());
+        Assert.Equal(1, publisher.Calls);
+        var reads = fixture.Reader.ReadCount;
+        for (var poll = 0; poll < 20; poll++)
+            Assert.Equal(0, await runtime.RunPollingCycleAsync());
+        Assert.Equal(1, publisher.Calls); // Zero additional publisher calls across idle polls.
+        Assert.Equal(reads, fixture.Reader.ReadCount);
+        Assert.Equal(0, await runtime.RunCycleAsync());
+        Assert.Equal(2, publisher.Calls);
+        Assert.True(fixture.Reader.ReadCount > reads);
+    }
+
+    private sealed class CountingPublisher : IOperationalMetricContainmentPublisher
+    {
+        public int Calls { get; private set; }
+        public ValueTask PublishAsync(OperationalMetricProjectionCheckpoint? expectedCheckpoint,
+            OperationalMetricProjectionCheckpoint proposedCheckpoint,
+            IReadOnlyList<OperationalMetricProjection> projections, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private static ReaderFixture CreateReaderFixture(
         bool includeShift,
         decimal actualProductionTime = 300m,
