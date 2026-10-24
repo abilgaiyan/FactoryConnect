@@ -102,7 +102,7 @@ public sealed class Gg003PerformanceSchemaPreparationTests
         foreach (var (table, order) in tables)
         {
             var json = (string)(await Scalar(connection,
-                $"SELECT * FROM dbo.{table} ORDER BY {order} FOR JSON PATH,INCLUDE_NULL_VALUES;", ct))!;
+                $"DECLARE @Snapshot nvarchar(max) = (SELECT * FROM dbo.{table} ORDER BY {order} FOR JSON PATH,INCLUDE_NULL_VALUES); SELECT @Snapshot;", ct))!;
             var rows = JsonNode.Parse(json)!.AsArray();
             if (table is "OperationalMetricProjectionProcessor" or "OperationalMetricProjection")
                 foreach (var row in rows)
