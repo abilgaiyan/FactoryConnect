@@ -176,7 +176,7 @@ public sealed class Gg003RealDataPerformanceTests
     private static async Task<string[]> ArchivedWitnesses(SqlConnection connection, CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT * FROM dbo.OperationalMetricConflictWitnessArchive ORDER BY WitnessId FOR JSON PATH,INCLUDE_NULL_VALUES;";
+        command.CommandText = "DECLARE @Snapshot nvarchar(max) = (SELECT * FROM dbo.OperationalMetricConflictWitnessArchive ORDER BY WitnessId FOR JSON PATH,INCLUDE_NULL_VALUES); SELECT @Snapshot;";
         var json = (string)(await command.ExecuteScalarAsync(ct))!;
         using var document = JsonDocument.Parse(json);
         var rows = document.RootElement.EnumerateArray().Select(e => e.GetRawText()).ToArray();
