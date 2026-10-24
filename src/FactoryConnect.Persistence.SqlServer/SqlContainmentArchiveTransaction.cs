@@ -21,11 +21,14 @@ internal static class SqlContainmentArchiveTransaction
 
     internal static async Task<IReadOnlyList<ContainmentArchiveReceipt>> PrepareAsync(SqlConnection connection,
         SqlTransaction transaction, IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting,
-        CancellationToken cancellationToken, Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection = null, bool verifyOnly = false)
+        CancellationToken cancellationToken, Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection = null, bool verifyOnly = false,
+        SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         if (verifyOnly && !requireExisting) throw new ArgumentException("Read-only verification requires all archives to exist.", nameof(requireExisting));
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
+        historicalReads.RequireOwner(connection, transaction);
         cancellationToken.ThrowIfCancellationRequested();
         await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction, batch.Processor,
             verifyOnly ? OperationalMetricProjectionProcessorGateMode.Shared : OperationalMetricProjectionProcessorGateMode.Exclusive, cancellationToken);
@@ -87,7 +90,7 @@ internal static class SqlContainmentArchiveTransaction
         }
         // No archive DML is allowed until every incoming result passes P3 in this exact transaction.
         foreach (var result in batch.Results)
-            _ = await SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, result.Payload, cancellationToken);
+            _ = await SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, result.Payload, cancellationToken, historicalReads);
         var factRows = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var witness in batch.Witnesses)
         {

@@ -26,10 +26,11 @@ internal sealed class SqlServerOperationalMetricContainmentPublisher(string conn
         {
             await connection.OpenAsync(cancellationToken);
             await using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+            var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction);
             foreach (var projection in frozen)
             {
                 var verified = await SqlContainmentHistoricalResultValidator.ReconstructVerifiedAsync(connection, transaction,
-                    projection.Key, cut, cancellationToken);
+                    projection.Key, cut, cancellationToken, historicalReads);
                 if (!OperationalMetricProjectionEquivalence.AreEquivalent(projection, verified.Projection))
                     throw new ContainmentHistoricalIntegrityException("Runtime projection contradicts independently reconstructed historical evidence.");
                 envelopes.Add(OperationalMetricDependencySnapshotV2Codec.Encode(verified.Document));
