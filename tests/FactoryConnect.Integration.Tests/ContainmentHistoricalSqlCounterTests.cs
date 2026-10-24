@@ -75,17 +75,17 @@ public sealed class ContainmentHistoricalSqlCounterTests
         {
             await Task.Run(() =>
             {
-                counter.OnNext(new("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command }));
+                counter.OnNext(new KeyValuePair<string, object?>("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command }));
                 Assert.True(started.SignalAndWait(TimeSpan.FromSeconds(10)));
-                counter.OnNext(new(failed ? "Microsoft.Data.SqlClient.WriteCommandError" :
+                counter.OnNext(new KeyValuePair<string, object?>(failed ? "Microsoft.Data.SqlClient.WriteCommandError" :
                     "Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command }));
             });
         }
         await Task.WhenAll(Emit(first, false), Emit(second, true));
         var executions = counter.Executions;
         Assert.Equal(2, executions.Length);
-        var a = Assert.Single(executions.Where(e => e.Position == 534));
-        var b = Assert.Single(executions.Where(e => e.Position == 537));
+        var a = Assert.Single(executions, e => e.Position == 534);
+        var b = Assert.Single(executions, e => e.Position == 537);
         Assert.Equal(7L, a.Processor); Assert.Equal(8L, b.Processor);
         Assert.Equal(9L, a.Stream); Assert.Equal(9L, b.Stream);
         Assert.Same(first.Transaction, a.Transaction); Assert.Same(second.Transaction, b.Transaction);
