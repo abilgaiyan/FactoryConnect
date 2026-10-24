@@ -176,3 +176,12 @@ FC-011 does not introduce:
 - state derivation
 
 These concerns build on the stable signal-mapping boundary established here.
+
+## Atomic operational status
+
+An opt-in `state.operational` Enumeration mapping is supported for a configured
+`MoxaStatusNormalization` profile. It owns state evaluation as one observation;
+invalid or unavailable status returns Unknown instead of falling back to stale
+Boolean evidence. It cannot be mixed with Boolean state-driving mappings in the
+same stream. See [MOXA status normalization](moxa-status-normalization.md) for the
+source contract, configuration, and the operational OFF-to-Stopped limitation.
