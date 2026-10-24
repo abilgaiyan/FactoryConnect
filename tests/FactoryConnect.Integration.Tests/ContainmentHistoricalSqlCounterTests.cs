@@ -29,6 +29,8 @@ public sealed class ContainmentHistoricalSqlCounterTests
         Assert.Equal(7, observed.Processor);
         Assert.Equal(9, observed.Stream);
         Assert.Equal(failed, observed.Failed);
+        Assert.NotNull(observed.Elapsed);
+        Assert.True(observed.Elapsed.Value >= TimeSpan.Zero);
         Assert.Equal(0, counter.PendingCount);
         Assert.Null(counter.ListenerError);
     }
@@ -44,6 +46,7 @@ public sealed class ContainmentHistoricalSqlCounterTests
         listener.Write("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command });
         listener.Write("Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command });
         Assert.Single(counter.Executions);
+        Assert.NotNull(counter.Executions[0].Elapsed);
         Assert.Empty(other.Executions);
         command.CommandText = "SELECT COUNT_BIG(*) FROM dbo.MetricAggregationRevision;";
         listener.Write("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command });

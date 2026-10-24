@@ -12,6 +12,7 @@ internal sealed class ContainmentHistoricalSqlCounter : IObserver<DiagnosticList
 {
     private readonly string _application = "FC-HistoricalCount:" + Guid.NewGuid().ToString("N");
     private readonly ConcurrentDictionary<SqlCommand, Execution> _pending = new();
+    private readonly ConcurrentDictionary<SqlCommand, long> _startedAt = new();
     private readonly ConcurrentQueue<Execution> _completed = new();
     private readonly ConcurrentBag<IDisposable> _subscriptions = new();
     private readonly IDisposable _all;
@@ -24,7 +25,7 @@ internal sealed class ContainmentHistoricalSqlCounter : IObserver<DiagnosticList
     }
 
     internal string ConnectionString { get; }
-    internal sealed record Execution(SqlTransaction? Transaction, long Processor, long Stream, ulong Position, bool Failed = false);
+    internal sealed record Execution(SqlTransaction? Transaction, long Processor, long Stream, ulong Position, bool Failed = false, TimeSpan? Elapsed = null);
     internal Execution[] Executions => _completed.ToArray();
     internal int PendingCount => _pending.Count;
     internal Exception? ListenerError { get; private set; }
@@ -49,13 +50,32 @@ internal sealed class ContainmentHistoricalSqlCounter : IObserver<DiagnosticList
                 Convert.ToInt64(command.Parameters["@StreamRowId"].Value, CultureInfo.InvariantCulture),
                 Convert.ToUInt64(command.Parameters["@ThroughPosition"].Value, CultureInfo.InvariantCulture));
             if (!_pending.TryAdd(command, execution))
+            {
                 ListenerError = new InvalidOperationException("Duplicate historical SQL start event.");
+            }
+            else
+            {
+                _startedAt[command] = Stopwatch.GetTimestamp();
+            }
         }
         else if (value.Key.EndsWith("WriteCommandAfter", StringComparison.Ordinal) ||
                  value.Key.EndsWith("WriteCommandError", StringComparison.Ordinal))
         {
             if (_pending.TryRemove(command, out var execution))
-                _completed.Enqueue(execution with { Failed = value.Key.EndsWith("WriteCommandError", StringComparison.Ordinal) });
+            {
+                var failed = value.Key.EndsWith("WriteCommandError", StringComparison.Ordinal);
+                TimeSpan? elapsed = null;
+                if (_startedAt.TryRemove(command, out var startedAt))
+                {
+                    elapsed = Stopwatch.GetElapsedTime(startedAt);
+                }
+
+                _completed.Enqueue(execution with
+                {
+                    Failed = failed,
+                    Elapsed = elapsed
+                });
+            }
         }
     }
 
