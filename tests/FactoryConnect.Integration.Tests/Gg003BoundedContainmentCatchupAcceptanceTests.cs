@@ -82,7 +82,7 @@ public sealed class Gg003BoundedContainmentCatchupAcceptanceTests
         Assert.True(result.DurableReadbackSucceeded);
     }
 
-    private static async Task<string> Fingerprint(SqlConnection connection)
+    internal static async Task<string> Fingerprint(SqlConnection connection)
     {
         var legacyAndInputs = await Gg003RestoredContainmentRuntimeAcceptanceTests.Fingerprint(connection);
         await using var command = connection.CreateCommand();

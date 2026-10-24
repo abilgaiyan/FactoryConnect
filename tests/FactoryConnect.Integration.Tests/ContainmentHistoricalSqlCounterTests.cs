@@ -60,6 +60,41 @@ public sealed class ContainmentHistoricalSqlCounterTests
         Assert.Equal(0, counter.PendingCount);
     }
 
+
+    [Fact]
+    public async Task OverlappingCommandsPreserveIdentityAndDuration()
+    {
+        using var counter = new ContainmentHistoricalSqlCounter("Server=(local);Database=counter;Integrated Security=true");
+        using var connection = new SqlConnection(counter.ConnectionString);
+        using var first = HistoricalCommand(connection);
+        using var second = HistoricalCommand(connection);
+        second.Parameters["@ThroughPosition"].Value = 537m;
+        second.Parameters["@ProcessorRowId"].Value = 8L;
+        using var started = new Barrier(2);
+        async Task Emit(SqlCommand command, bool failed)
+        {
+            await Task.Run(() =>
+            {
+                counter.OnNext(new("Microsoft.Data.SqlClient.WriteCommandBefore", new { Command = command }));
+                Assert.True(started.SignalAndWait(TimeSpan.FromSeconds(10)));
+                counter.OnNext(new(failed ? "Microsoft.Data.SqlClient.WriteCommandError" :
+                    "Microsoft.Data.SqlClient.WriteCommandAfter", new { Command = command }));
+            });
+        }
+        await Task.WhenAll(Emit(first, false), Emit(second, true));
+        var executions = counter.Executions;
+        Assert.Equal(2, executions.Length);
+        var a = Assert.Single(executions.Where(e => e.Position == 534));
+        var b = Assert.Single(executions.Where(e => e.Position == 537));
+        Assert.Equal(7L, a.Processor); Assert.Equal(8L, b.Processor);
+        Assert.Equal(9L, a.Stream); Assert.Equal(9L, b.Stream);
+        Assert.Same(first.Transaction, a.Transaction); Assert.Same(second.Transaction, b.Transaction);
+        Assert.False(a.Failed); Assert.True(b.Failed);
+        Assert.All(executions, e => { Assert.NotNull(e.Elapsed); Assert.True(e.Elapsed.Value >= TimeSpan.Zero); });
+        Assert.Equal(0, counter.PendingCount);
+        Assert.Null(counter.ListenerError);
+    }
+
     private static SqlCommand HistoricalCommand(SqlConnection connection)
     {
         var command = connection.CreateCommand();
