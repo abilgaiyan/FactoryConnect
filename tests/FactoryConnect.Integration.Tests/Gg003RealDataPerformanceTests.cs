@@ -11,7 +11,7 @@ namespace FactoryConnect.Integration.Tests;
 
 // Opt-in only. No migrations, restores, source writes, host startup or production changes.
 [Trait("Category", "SqlServerIntegration")]
-public sealed class Gg003RealDataPerformanceTests
+public sealed partial class Gg003RealDataPerformanceTests
 {
     internal const string Database = "FactoryConnect_GG003_STAGEB_REPLAY_PR152_PERF_20261024";
     private const string Variable = "FACTORYCONNECT_GG003_PERF_CONNECTION_STRING";

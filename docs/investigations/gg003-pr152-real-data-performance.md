@@ -115,3 +115,68 @@ migration history, aggregation checkpoint and all projection processor checkpoin
 A state check is not a resume command; the harness still requires no containment checkpoint.
 Preserve prior JSONL evidence. Reported long SQL event durations remain observations,
 with cause and gate timing unestablished.
+
+
+## Advance-only 534 to 537 experiment
+
+The inspected transaction-start TRX passed 12/12. Developer SQL readback showed schema
+21, legacy 524, containment 534 and aggregation 741. Preserve the successful bootstrap
+and all earlier reports. The fresh-start test is unsuitable for this mutated clone.
+
+`Gg003RealDataPerformanceTests.AdvanceOnly534To537WithMeasuredHistoricalSqlAndConcurrentReporting`
+is a separate opt-in fact. It uses only the already guarded exact database and requires
+migration IDs 1..21, exact containment 534, legacy 524, aggregation head 741, exact source
+537 and next revision 537. It never calls bootstrap or migration code. It will consume
+the clone's revision-534 state when run. If a reusable 534 state is needed, take and
+verify a separate backup/clone first; this harness does neither automatically.
+
+Before running SQL, compile and execute the existing synthetic cases plus the four
+new interval-overlap cases:
+
+```powershell
+dotnet test tests\FactoryConnect.Integration.Tests\FactoryConnect.Integration.Tests.csproj `
+  -c Release `
+  --filter '(FullyQualifiedName~ContainmentHistoricalSqlCounterTests|FullyQualifiedName~Gg003PerformanceGuardTests|FullyQualifiedName~Gg003AdvanceOnlyOverlapTests)&Category!=SqlServerIntegration' `
+  --results-directory 'artifacts\TestResults\gg003-pr152-validation\advance-only-preflight' `
+  --logger 'trx;LogFileName=advance-only-preflight.trx'
+```
+
+Expected: 16/16. This addition has not been compiled or executed by the assistant.
+Use the exact test filter, never the entire performance class, when later releasing SQL:
+
+- Connection variable: `FACTORYCONNECT_GG003_PERF_CONNECTION_STRING` (same exact LocalDB clone).
+- Repository root variable: `FACTORYCONNECT_GG003_PERF_REPO_ROOT`.
+- Separate consent variable: `FACTORYCONNECT_GG003_PERF_ADVANCE_CONFIRM=ADVANCE534_TO537`.
+- Clear that consent variable after execution, including failures.
+- Filter: `FullyQualifiedName=FactoryConnect.Integration.Tests.Gg003RealDataPerformanceTests.AdvanceOnly534To537WithMeasuredHistoricalSqlAndConcurrentReporting`.
+- Keep TRX beneath `artifacts/TestResults/gg003-pr152-validation/advance-only`.
+
+A new uniquely named `AdvanceOnly534To537-<GUID>.jsonl` is created in that directory.
+Earlier JSONL/TRX files are not overwritten by the harness. Baselines include hashes
+of source/legacy/revision-ledger state, the complete publication snapshot (containment
+and legacy rows), and the retained witness archive rows. Raw evidence is not emitted.
+
+The report distinguishes:
+
+1. Correctness: verified checkpoint 537, exact-537 latest-manifest projections, coherent
+   witness/OEE binding, preserved older witness archive rows, source/legacy isolation,
+   aggregation still 741, and unchanged complete publication state after exact publisher replay.
+2. Instrumentation: nonempty runtime/replay events, valid start bindings, completed
+   successful commands with durations, no listener error/pending commands, and no repeated
+   transaction/exact-cut load. A successful reporting read must also have observed historical
+   events. Observed reporting historical-command errors fail instrumentation but remain recorded.
+3. Concurrency coverage: PASS only when measured monotonic runtime invocation and reporting
+   request intervals intersect. Otherwise MISSED (or NOT_ATTEMPTED); a passing correctness
+   test does not upgrade this result. Reporting success/revision/error is recorded independently.
+
+The operation interval starts before RunCycleAsync and ends in its finally block,
+independently of how long the test waits to observe it. The reporting interval is
+measured independently. This establishes invocation overlap only, not SQL-request or
+gate overlap. No Exclusive ownership, Shared-gate wait or peak-memory measurement is
+claimed. There is no automatic performance-acceptance threshold.
+
+Final evidence is emitted on success or failure. On failure, read-only durable checkpoint
+reconciliation is attempted with a separate bounded token. No automatic resume/retry is
+permitted, even if failure occurred after commit. A failed instrumentation check can
+coexist with Correctness=PASS; preserve both outcomes. Failed integrity verification leaves
+Correctness=NOT_COMPLETED rather than claiming rollback. Neither outcome claims production recovery.
