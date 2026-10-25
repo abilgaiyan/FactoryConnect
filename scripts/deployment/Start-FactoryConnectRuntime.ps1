@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
-    [Parameter()][ValidateSet('Reconcile','BootSafe')][string]$StartupMode = 'Reconcile',
+    [Parameter()][ValidateSet('Reconcile','BootSafe','Restart')][string]$StartupMode = 'Reconcile',
     [Parameter()][ValidateRange(1,300)][int]$EdgeStabilizationSeconds = 5,
     [Parameter()][ValidateRange(1,300)][int]$HealthTimeoutSeconds = 60,
     [Parameter()][ValidateRange(1,600)][int]$ShutdownTimeoutSeconds
@@ -230,7 +230,7 @@ $states[$n]=(Get-RecordedProcessState $r).State};
 if(@($states.Values|Where-Object{$_-eq'Mismatch'}).Count-gt0){throw 'Runtime identity mismatch detected; no process will be stopped or started.'}
  # Inventory precedes even healthy reuse. Enumerate all processes so discovery
  # errors fail closed instead of being mistaken for an empty inventory.
- if ($StartupMode -eq 'BootSafe') {
+ if ($StartupMode -in @('BootSafe','Restart')) {
      $runtimeNames = @('FactoryConnect.Edge','FactoryConnect.Api','FactoryConnect.Dashboard')
      foreach ($process in @(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -in $runtimeNames })) {
          $matched = $false
@@ -248,7 +248,7 @@ if(@($states.Values|Where-Object{$_-eq'Mismatch'}).Count-gt0){throw 'Runtime ide
      }
  }
  $allOwned=@($states.Values|Where-Object{$_-eq'Owned'}).Count-eq3;
-if($allOwned-and(Test-HttpOk $apiHealth)-and(Test-HttpOk $live)-and(Test-HttpOk $ready)){[pscustomobject]@{Status='AlreadyRunning';
+if($StartupMode-ne'Restart'-and$allOwned-and(Test-HttpOk $apiHealth)-and(Test-HttpOk $live)-and(Test-HttpOk $ready)){[pscustomobject]@{Status='AlreadyRunning';
 SourceCommit=$releaseId;
 InstallRoot=$root;
 Current=$current};
