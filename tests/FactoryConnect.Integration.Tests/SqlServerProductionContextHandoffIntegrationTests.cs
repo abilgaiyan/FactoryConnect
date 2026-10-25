@@ -19,6 +19,71 @@ public sealed class SqlServerProductionContextHandoffIntegrationTests :
     }
 
     [Fact]
+    public async Task AdmissionBoundaryPersistsWithCheckpointOnlyBatchAndRejectsReconfiguration()
+    {
+        var stream = new ObservationStreamId(new MachineId(Guid.NewGuid()), "moxa-admission");
+        var processor = new ObservationProcessorId($"production-context:{Guid.NewGuid():N}");
+        var start = DateTimeOffset.Parse("2026-10-25T07:30:00+05:30", System.Globalization.CultureInfo.InvariantCulture);
+        var store = new SqlServerProductionContextProcessingStore(_fixture.ConnectionString);
+        Assert.Null(await store.ReadCheckpointAsync(processor, stream, start, CancellationToken.None));
+        await store.CommitAsync(new ProductionContextProcessingCommit
+        {
+            ProductionStartsAt = start,
+            ExpectedCheckpoint = null,
+            NextCheckpoint = new ObservationProcessingCheckpoint(processor, stream, new ObservationPosition(14)),
+        }, CancellationToken.None);
+        var restarted = new SqlServerProductionContextProcessingStore(_fixture.ConnectionString);
+        var checkpoint = await restarted.ReadCheckpointAsync(processor, stream, start.ToUniversalTime(), CancellationToken.None);
+        Assert.Equal(14UL, checkpoint!.Position.Value);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => restarted.ReadCheckpointAsync(
+            processor, stream, start.AddSeconds(1), CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => restarted.ReadCheckpointAsync(
+            processor, stream, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => restarted.CommitAsync(new ProductionContextProcessingCommit
+        {
+            ProductionStartsAt = start.AddSeconds(1),
+            ExpectedCheckpoint = checkpoint,
+            NextCheckpoint = new ObservationProcessingCheckpoint(processor, stream, new ObservationPosition(16)),
+        }, CancellationToken.None));
+        Assert.Equal(checkpoint, await restarted.ReadCheckpointAsync(processor, stream, start, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ConcurrentDifferentAdmissionBindingsHaveOneWinner()
+    {
+        var stream = new ObservationStreamId(new MachineId(Guid.NewGuid()), "moxa-admission-race");
+        var processor = new ObservationProcessorId($"production-context:{Guid.NewGuid():N}");
+        var start = new DateTimeOffset(2026, 10, 25, 2, 0, 0, TimeSpan.Zero);
+        async Task<bool> Bind(DateTimeOffset value)
+        {
+            try
+            {
+                await new SqlServerProductionContextProcessingStore(_fixture.ConnectionString)
+                    .ReadCheckpointAsync(processor, stream, value, CancellationToken.None);
+                return true;
+            }
+            catch (InvalidOperationException) { return false; }
+        }
+        var results = await Task.WhenAll(Bind(start), Bind(start.AddHours(1)));
+        Assert.Single(results, result => result);
+    }
+
+    [Fact]
+    public async Task ExistingUnboundedCheckpointRejectsNewBoundary()
+    {
+        var stream = new ObservationStreamId(new MachineId(Guid.NewGuid()), "existing-admission");
+        var processor = new ObservationProcessorId($"production-context:{Guid.NewGuid():N}");
+        var store = new SqlServerProductionContextProcessingStore(_fixture.ConnectionString);
+        await store.CommitAsync(new ProductionContextProcessingCommit
+        {
+            ExpectedCheckpoint = null,
+            NextCheckpoint = new ObservationProcessingCheckpoint(processor, stream, new ObservationPosition(1)),
+        }, CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadCheckpointAsync(
+            processor, stream, DateTimeOffset.UtcNow, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ActivityOutputsPositionedFactAndCheckpointCommitTogether()
     {
         var machineId = new MachineId(Guid.NewGuid());

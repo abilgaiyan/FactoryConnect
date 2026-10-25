@@ -94,6 +94,13 @@ public sealed class RosterValidatedProductionContextProcessingStore :
         CancellationToken cancellationToken) =>
         _inner.ReadCheckpointAsync(processorId, streamId, cancellationToken);
 
+    public Task<ObservationProcessingCheckpoint?> ReadCheckpointAsync(
+        ObservationProcessorId processorId,
+        ObservationStreamId streamId,
+        DateTimeOffset? productionStartsAt,
+        CancellationToken cancellationToken) =>
+        _inner.ReadCheckpointAsync(processorId, streamId, productionStartsAt, cancellationToken);
+
     public async Task CommitAsync(
         ProductionContextProcessingCommit commit,
         CancellationToken cancellationToken)

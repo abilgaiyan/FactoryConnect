@@ -340,6 +340,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             ProductionLineId = lineId,
             MachineId = machineId,
             StreamId = activityStreamId,
+            ProductionStartsAt = ParseOptionalDateTimeOffset(section, "ProductionStartsAt"),
         };
         scope.Validate();
 
