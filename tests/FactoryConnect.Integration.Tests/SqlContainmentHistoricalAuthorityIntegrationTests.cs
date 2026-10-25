@@ -75,7 +75,7 @@ public sealed class SqlContainmentHistoricalAuthorityIntegrationTests(SqlContain
         foreach (var stage in new[] { "historical.exact-cut.resolve", "historical.sql.execute",
             "historical.rows.read-materialize-validate", "historical.aggregate", "historical.read.validate" })
         {
-            var span = Assert.Single(stages.Where(activity => activity.OperationName == stage));
+            var span = Assert.Single(stages, activity => activity.OperationName == stage);
             Assert.Equal(true, span.GetTagItem("stage.completed"));
             Assert.True(span.Duration >= TimeSpan.Zero);
         }
