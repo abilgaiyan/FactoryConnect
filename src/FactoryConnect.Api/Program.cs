@@ -45,6 +45,7 @@ builder.Services.AddFactoryConnectCurrentMachineState(
 
 var app = builder.Build();
 
+app.UseReportingTimings();
 app.UseExceptionHandler();
 
 app.MapGet("/health", () => Results.Ok(new

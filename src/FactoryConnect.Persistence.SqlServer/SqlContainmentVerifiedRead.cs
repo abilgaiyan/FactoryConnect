@@ -93,8 +93,10 @@ internal static class SqlContainmentVerifiedRead
             if (expectedEvidence.Length != observedEvidence.Count) throw Integrity("Retained evidence inventory differs from canonical evidence.");
             for (var i = 0; i < expectedEvidence.Length; i++) expectedEvidence[i].Match(observedEvidence[i]);
             // Read-only mode holds shared locks and has an explicit return before all archive DML.
-            _ = await SqlContainmentArchiveTransaction.PrepareAsync(connection, transaction, [(ReadOnlyMemory<byte>)bytes], true, token, verifyOnly: true, historicalReads: historicalReads);
-            var verified = await SqlContainmentHistoricalResultValidator.ReconstructVerifiedAsync(connection, transaction, result.Document.Key, batch.Cut, token, historicalReads);
+            var handoffs = await SqlContainmentArchiveTransaction.VerifyExistingAsync(
+                connection, transaction, [(ReadOnlyMemory<byte>)bytes], token, historicalReads);
+            if (handoffs.Count != 1) throw Integrity("Retained result verification returned an unexpected handoff inventory.");
+            var verified = handoffs[0].Read(connection, transaction, result.Id, result.Document.Key, batch.Cut, token);
             if (!OperationalMetricDependencySnapshotV2Codec.Encode(verified.Document).AsSpan().SequenceEqual(bytes))
                 throw Integrity("Historical reconstruction differs from retained canonical result.");
             if (projections.Any(p => p.Key == verified.Projection.Key)) throw Integrity("Duplicate retained evaluation identity.");

@@ -10,7 +10,13 @@ internal static class SqlContainmentHistoricalResultValidator
 {
     internal static async Task<ContainmentResultDocument> VerifyAsync(SqlConnection connection, SqlTransaction transaction,
         ReadOnlyMemory<byte> canonicalEnvelope, CancellationToken cancellationToken,
-        SqlContainmentHistoricalReadScope? historicalReads = null)
+        SqlContainmentHistoricalReadScope? historicalReads = null) =>
+        (await VerifyProjectionAsync(connection, transaction, canonicalEnvelope, cancellationToken, historicalReads)).Document;
+
+    // Returns the Core-built projection only after independent reconstruction matches all canonical bytes.
+    internal static async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> VerifyProjectionAsync(
+        SqlConnection connection, SqlTransaction transaction, ReadOnlyMemory<byte> canonicalEnvelope,
+        CancellationToken cancellationToken, SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         ContainmentResultDocument claim;
@@ -18,9 +24,10 @@ internal static class SqlContainmentHistoricalResultValidator
         catch (InvalidDataException error)
         { throw new ContainmentHistoricalIntegrityException("Malformed historical result envelope.", error); }
         // UnsupportedContainmentCodecException, SQL failures and cancellation retain their own identities.
-        var reconstructed = await ReconstructAsync(connection, transaction, claim.Key, claim.SourceRevision, cancellationToken, historicalReads);
-        if (!OperationalMetricDependencySnapshotV2Codec.Encode(reconstructed).AsSpan().SequenceEqual(canonicalEnvelope.Span))
+        var reconstructed = await ReconstructVerifiedAsync(connection, transaction, claim.Key, claim.SourceRevision, cancellationToken, historicalReads);
+        if (!OperationalMetricDependencySnapshotV2Codec.Encode(reconstructed.Document).AsSpan().SequenceEqual(canonicalEnvelope.Span))
             throw new ContainmentHistoricalIntegrityException("Result or recursive dependency evidence differs from independently reconstructed historical authority.");
+        cancellationToken.ThrowIfCancellationRequested();
         return reconstructed;
     }
 
@@ -41,6 +48,9 @@ internal static class SqlContainmentHistoricalResultValidator
         if (key.MachineId != cut.StreamId.MachineId || key.ContextKey != OperationalMetricEvaluationContextKey.Unpartitioned ||
             !BuiltInOperationalMetricDefinitions.All.Any(d => d.Id == key.DefinitionId))
             throw new ArgumentException("Historical containment supports only exact unpartitioned built-in machine keys.", nameof(key));
+        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.result.reconstruct");
+        timing?.SetTag("processor.id", cut.ProcessorId.Value);
+        timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
         historicalReads.RequireOwner(connection, transaction);
         var reader = new TransactionSnapshotReader(connection, transaction, cut, historicalReads);
@@ -55,6 +65,7 @@ internal static class SqlContainmentHistoricalResultValidator
                 node => node.Key.DefinitionId == BuiltInOperationalMetricDefinitions.PerformanceId ? reader.ReferenceBinding : null);
             // Apply the same complete canonical semantic contract to independently reconstructed evidence.
             _ = OperationalMetricDependencySnapshotV2Codec.Encode(document);
+            timing?.SetTag("stage.completed", true);
             return (document, projection);
         }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException)
@@ -70,7 +81,7 @@ internal static class SqlContainmentHistoricalResultValidator
             CancellationToken cancellationToken)
         {
             var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
-            var aggregates = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs);
+            var aggregates = await historicalReads.ReadAggregatesAsync(cut, cancellationToken);
             var components = new List<OperationalMetricComponent>();
             foreach (var operand in request.Operands)
             {

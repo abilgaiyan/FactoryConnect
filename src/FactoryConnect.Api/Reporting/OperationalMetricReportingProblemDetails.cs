@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core.Metrics;
 
@@ -5,6 +6,8 @@ namespace FactoryConnect.Api.Reporting;
 
 internal static class OperationalMetricReportingProblemDetails
 {
+    private static readonly ActivitySource TimingSource = new("FactoryConnect.Reporting");
+
     private const string InvalidRequestType =
         "urn:factoryconnect:problem:reporting:invalid-request";
     private const string MalformedContinuationTokenType =
@@ -30,8 +33,14 @@ internal static class OperationalMetricReportingProblemDetails
 
         try
         {
+            using var queryTiming = TimingSource.StartActivity("reporting.query");
             var page = await operation(cancellationToken).ConfigureAwait(false);
-            return Results.Ok(OperationalMetricHttpMapper.ToResponse(page));
+            queryTiming?.SetTag("stage.completed", true);
+            queryTiming?.Dispose();
+            using var materializeTiming = TimingSource.StartActivity("reporting.response.materialize");
+            var response = OperationalMetricHttpMapper.ToResponse(page);
+            materializeTiming?.SetTag("stage.completed", true);
+            return Results.Ok(response);
         }
         catch (ArgumentException exception)
         {
@@ -53,8 +62,14 @@ internal static class OperationalMetricReportingProblemDetails
 
         try
         {
+            using var queryTiming = TimingSource.StartActivity("reporting.query");
             var page = await operation(cancellationToken).ConfigureAwait(false);
-            return Results.Ok(OperationalMetricHttpMapper.ToResponse(page));
+            queryTiming?.SetTag("stage.completed", true);
+            queryTiming?.Dispose();
+            using var materializeTiming = TimingSource.StartActivity("reporting.response.materialize");
+            var response = OperationalMetricHttpMapper.ToResponse(page);
+            materializeTiming?.SetTag("stage.completed", true);
+            return Results.Ok(response);
         }
         catch (ProductionDayShiftRosterCoverageRequiredException exception)
         {
