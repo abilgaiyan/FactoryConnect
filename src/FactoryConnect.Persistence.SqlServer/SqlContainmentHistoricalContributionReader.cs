@@ -8,6 +8,9 @@ namespace FactoryConnect.Persistence.SqlServer;
 /// <summary>Reads complete incorporated facts from the caller's stable historical transaction.</summary>
 internal static class SqlContainmentHistoricalContributionReader
 {
+    internal sealed record ValidatedHistoricalContributions(
+        IReadOnlyList<PositionedMetricInputFact> Inputs,
+        MetricAggregateContributionSet Aggregates);
     internal static void RequireStableTransaction(SqlConnection connection, SqlTransaction transaction)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -18,6 +21,11 @@ internal static class SqlContainmentHistoricalContributionReader
     }
 
     internal static async Task<IReadOnlyList<PositionedMetricInputFact>> ReadAsync(
+        SqlConnection connection, SqlTransaction transaction, MetricAggregationCheckpoint cut,
+        CancellationToken cancellationToken) =>
+        (await ReadValidatedAsync(connection, transaction, cut, cancellationToken)).Inputs;
+
+    internal static async Task<ValidatedHistoricalContributions> ReadValidatedAsync(
         SqlConnection connection, SqlTransaction transaction, MetricAggregationCheckpoint cut,
         CancellationToken cancellationToken)
     {
@@ -93,10 +101,11 @@ internal static class SqlContainmentHistoricalContributionReader
                 throw new ContainmentHistoricalIntegrityException("Malformed historical contribution.", error);
             }
         }
-        try { _ = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs); }
+        MetricAggregateContributionSet aggregates;
+        try { aggregates = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs); }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException)
         { throw new ContainmentHistoricalIntegrityException("Conflicting historical contribution membership.", error); }
-        return inputs.AsReadOnly();
+        return new(inputs.AsReadOnly(), aggregates);
     }
 
     private static void Bind(SqlCommand command, long processor, long stream, MetricAggregationCheckpoint cut)
