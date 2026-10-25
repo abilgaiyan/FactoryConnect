@@ -83,6 +83,74 @@ public sealed class SqlServerAcquisitionBatchedVerificationTests(SqlContainmentA
         Assert.Equal(damaged, await SnapshotAsync());
     }
 
+    [Theory]
+    [InlineData("SignalType", "CK_MachineObservation_SignalType")]
+    [InlineData("Quality", "CK_MachineObservation_Quality")]
+    public async Task InvalidPersistedEnumsKeepExactReadAndCommitExceptionClassifications(string column, string constraint)
+    {
+        var store = new SqlServerObservationIngestionStore(fixture.ConnectionString);
+        var history = await AcquisitionHistoryWorkload.SeedAsync(store, 2, 129);
+        var latest = history[^1];
+        var stream = latest.Checkpoint.StreamId;
+        var original = column == "SignalType" ? (byte)history[0].Observations[1].Observation.Type : (byte)history[0].Observations[1].Observation.Quality;
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync();
+        try
+        {
+            // Only this disposable fixture is damaged. Restore both data and trusted constraint below.
+            await using (var damage = connection.CreateCommand())
+            {
+                BindStream(damage, stream);
+                damage.CommandText = $"ALTER TABLE dbo.MachineObservation NOCHECK CONSTRAINT {constraint}; UPDATE dbo.MachineObservation SET {column}=255 WHERE MachineId=@Machine AND StreamKeyBinary=@Stream AND Position=2;";
+                await damage.ExecuteNonQueryAsync();
+            }
+            var damaged = await SnapshotAsync();
+            var read = await store.ReadExactAsync(stream, Identity(latest));
+            Assert.Equal(AcquisitionEvidenceReadStatus.Corrupt, read.Status);
+            Assert.Null(read.Record);
+            var recovery = await store.ReadRecoveryExactAsync(stream, Identity(latest), "unselected-recovery");
+            Assert.Equal(AcquisitionEvidenceReadStatus.Corrupt, recovery.Status);
+            // Unlike a Boolean membership mismatch, enum materialization throws before ReadEvidenceAsync returns.
+            await Assert.ThrowsAsync<InvalidDataException>(() => store.CommitAsync(latest).AsTask());
+            var next = AcquisitionHistoryWorkload.Batch(stream, latest.Checkpoint, 129);
+            await Assert.ThrowsAsync<InvalidDataException>(() => store.CommitAsync(next).AsTask());
+            Assert.Equal(damaged, await SnapshotAsync());
+        }
+        finally
+        {
+            await using var restore = connection.CreateCommand();
+            BindStream(restore, stream);
+            restore.Parameters.Add("@Original", System.Data.SqlDbType.TinyInt).Value = original;
+            restore.CommandText = $"UPDATE dbo.MachineObservation SET {column}=@Original WHERE MachineId=@Machine AND StreamKeyBinary=@Stream AND Position=2; ALTER TABLE dbo.MachineObservation WITH CHECK CHECK CONSTRAINT {constraint};";
+            await restore.ExecuteNonQueryAsync();
+        }
+        Assert.Equal(AcquisitionEvidenceReadStatus.Found, (await store.ReadExactAsync(stream, Identity(latest))).Status);
+    }
+
+    [Fact]
+    public async Task ExactDatabaseIdentityCannotBeDuplicatedUnderTheExistingSchema()
+    {
+        var store = new SqlServerObservationIngestionStore(fixture.ConnectionString);
+        var history = await AcquisitionHistoryWorkload.SeedAsync(store, 1, 129);
+        var batch = history[0];
+        var before = await SnapshotAsync();
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var duplicate = connection.CreateCommand();
+        BindStream(duplicate, batch.Checkpoint.StreamId);
+        duplicate.CommandText = """
+            INSERT dbo.MachineObservation
+              (MachineId,StreamKeyBinary,InstanceId,Sequence,Position,Source,Address,SignalType,ObservationValue,Quality,ObservedAt)
+            SELECT MachineId,StreamKeyBinary,InstanceId,Sequence,Position+10000,Source,Address,SignalType,ObservationValue,Quality,ObservedAt
+            FROM dbo.MachineObservation WHERE MachineId=@Machine AND StreamKeyBinary=@Stream AND Position=2;
+            """;
+        var error = await Assert.ThrowsAsync<SqlException>(() => duplicate.ExecuteNonQueryAsync());
+        Assert.Equal(2627, error.Number);
+        Assert.Contains("PK_MachineObservation", error.Message, StringComparison.Ordinal);
+        Assert.Equal(before, await SnapshotAsync());
+        Assert.Equal(AcquisitionEvidenceReadStatus.Found, (await store.ReadExactAsync(batch.Checkpoint.StreamId, Identity(batch))).Status);
+    }
+
     [Fact]
     public async Task ExactMachineStreamAndInstanceIdentitySurvivesCollidingSequences()
     {
@@ -94,7 +162,7 @@ public sealed class SqlServerAcquisitionBatchedVerificationTests(SqlContainmentA
             new ObservationStreamId(MachineId.New(), stream.StreamKey) })
         {
             var collision = AcquisitionHistoryWorkload.Batch(other, null, 129);
-            await store.CommitAsync(new(collision.ExpectedCheckpoint, collision.Checkpoint,
+            await store.CommitAsync(new ObservationIngestionBatch(collision.ExpectedCheckpoint, collision.Checkpoint,
                 collision.Observations.Select(item => new SequencedMachineObservation(item.Sequence, item.Observation with { Value = "OTHER" })).ToArray(),
                 collision.SuccessfulContactTime, collision.AcquisitionEvidence));
         }

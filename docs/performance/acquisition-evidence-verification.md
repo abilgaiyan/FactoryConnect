@@ -79,3 +79,26 @@ on extension, exact stream/case/instance identity, duplicate/replayed occurrence
 post-write cancellation/rollback/restart and competing writers with larger histories.
 Clone/production validation is a separate acceptance gate; no factory fix or duration
 improvement is claimed by this PR before that gate is measured.
+
+## Corruption classification contract
+
+The original per-observation reader also throws `InvalidDataException` when a
+persisted SignalType or Quality is not defined. Preserve its caller-specific behavior:
+
+| Defect | Exact/recovery evidence read | Ingestion replay | New append from damaged predecessor |
+| --- | --- | --- | --- |
+| Missing/content-mismatched source (Boolean failure) | Corrupt | InvalidOperationException | InvalidDataException; whole transaction rolls back |
+| Invalid persisted enum (materialization exception) | Corrupt | InvalidDataException | InvalidDataException; whole transaction rolls back |
+
+The exact reader catches the enum exception; ingestion deliberately does not translate
+it into a Boolean result. Tests must not normalize all commit failures to one exception
+class. Targeted enum tests damage an older chunk in a disposable database, check all
+five structures remain unchanged, then restore the row and trusted check constraint.
+
+Duplicate exact `(MachineId, StreamKeyBinary, InstanceId, Sequence)` rows cannot exist
+under the existing `PK_MachineObservation`. A separate SQL regression checks rejection
+of such an INSERT without changing schema. The new dictionary's duplicate-row guard
+is defensive fail-closed behavior for an invalid schema/result set; the old SingleRow
+point reader did not establish equivalent behavior for a database with that primary
+key removed. Do not claim that impossible-state guard has been SQL-exercised under the
+valid schema, or weaken constraints in production to manufacture it.
