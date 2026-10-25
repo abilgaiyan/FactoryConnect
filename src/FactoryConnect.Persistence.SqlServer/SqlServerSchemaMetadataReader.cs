@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using Microsoft.Data.SqlClient;
 
@@ -81,7 +82,7 @@ internal sealed class SqlServerSchemaMetadataReader
         var checks = await ReadCheckConstraintsAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
         var indexes = await ReadOrdinaryIndexesAsync(connection, transaction, resolvedObject.ObjectId, cancellationToken);
         var triggers = await ReadContainmentTriggersAsync(connection, transaction, resolvedObject, cancellationToken);
-        var defaults = await ReadPublicationDefaultsAsync(connection, transaction, resolvedObject, cancellationToken);
+        var defaults = await ReadTrackedDefaultsAsync(connection, transaction, resolvedObject, cancellationToken);
 
         return new SqlTableDescriptor(
             resolvedObject.RepositoryIdentity,
@@ -112,17 +113,24 @@ internal sealed class SqlServerSchemaMetadataReader
         return result.ToImmutable();
     }
 
-    private static async Task<ImmutableArray<SqlDefaultConstraintDescriptor>> ReadPublicationDefaultsAsync(
+    private static async Task<ImmutableArray<SqlDefaultConstraintDescriptor>> ReadTrackedDefaultsAsync(
         SqlConnection connection, SqlTransaction? transaction, SqlResolvedObject table, CancellationToken token)
     {
-        if (table.RepositoryIdentity.ObjectName is not ("OperationalMetricProjectionProcessor" or "OperationalMetricProjection")) return [];
+        var column = table.RepositoryIdentity.ObjectName switch
+        {
+            "OperationalMetricProjectionProcessor" or "OperationalMetricProjection" => "PublicationFormatVersion",
+            "ProductionContextProcessor" => "AdmissionBound",
+            _ => null,
+        };
+        if (column is null) return [];
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = """
             SELECT d.name, c.name, d.definition FROM sys.default_constraints d
             JOIN sys.columns c ON c.object_id=d.parent_object_id AND c.column_id=d.parent_column_id
-            WHERE d.parent_object_id=@Table AND c.name COLLATE Latin1_General_100_BIN2=N'PublicationFormatVersion';
+            WHERE d.parent_object_id=@Table AND c.name COLLATE Latin1_General_100_BIN2=@Column;
             """;
         command.Parameters.AddWithValue("@Table", table.ObjectId);
+        command.Parameters.Add("@Column", SqlDbType.NVarChar, 128).Value = column;
         var result = ImmutableArray.CreateBuilder<SqlDefaultConstraintDescriptor>();
         await using var reader = await command.ExecuteReaderAsync(token);
         while (await reader.ReadAsync(token)) result.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
