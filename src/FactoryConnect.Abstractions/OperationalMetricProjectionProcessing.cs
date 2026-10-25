@@ -8,6 +8,15 @@ public sealed record OperationalMetricEvaluationBatchRequest
         MetricAggregationProcessorId sourceProcessorId,
         MetricInputStreamId sourceStreamId,
         MetricAggregationCheckpoint? knownRevision)
+        : this(sourceProcessorId, sourceStreamId, knownRevision, allowCurrentRevisionReplay: true)
+    {
+    }
+
+    public OperationalMetricEvaluationBatchRequest(
+        MetricAggregationProcessorId sourceProcessorId,
+        MetricInputStreamId sourceStreamId,
+        MetricAggregationCheckpoint? knownRevision,
+        bool allowCurrentRevisionReplay)
     {
         ArgumentNullException.ThrowIfNull(sourceProcessorId);
         ArgumentNullException.ThrowIfNull(sourceStreamId);
@@ -24,6 +33,7 @@ public sealed record OperationalMetricEvaluationBatchRequest
         SourceProcessorId = sourceProcessorId;
         SourceStreamId = sourceStreamId;
         KnownRevision = knownRevision;
+        AllowCurrentRevisionReplay = allowCurrentRevisionReplay;
     }
 
     public MetricAggregationProcessorId SourceProcessorId { get; }
@@ -31,6 +41,9 @@ public sealed record OperationalMetricEvaluationBatchRequest
     public MetricInputStreamId SourceStreamId { get; }
 
     public MetricAggregationCheckpoint? KnownRevision { get; }
+
+    /// <summary>False for worker polling; true for callers requesting exact-cut replay validation.</summary>
+    public bool AllowCurrentRevisionReplay { get; }
 }
 
 public sealed record OperationalMetricEvaluationBatch

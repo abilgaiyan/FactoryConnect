@@ -38,7 +38,7 @@ public sealed class OperationalMetricProjectionProcessingWorker(
         {
             try
             {
-                var processed = await runtime.RunCycleAsync(stoppingToken);
+                var processed = await runtime.RunPollingCycleAsync(stoppingToken);
                 if (processed > 0)
                 {
                     continue;
