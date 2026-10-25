@@ -23,8 +23,8 @@ internal static class SqlContainmentArchiveTransaction
         SqlTransaction transaction, IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting,
         CancellationToken cancellationToken, Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection = null, bool verifyOnly = false,
         SqlContainmentHistoricalReadScope? historicalReads = null) =>
-        (await PrepareCoreAsync(connection, transaction, envelopes, requireExisting, cancellationToken,
-            failureInjection, verifyOnly, historicalReads, captureProjections: false)).Receipts;
+        (await PrepareCoreAsync(connection, transaction, envelopes, requireExisting,
+            failureInjection, verifyOnly, historicalReads, captureProjections: false, cancellationToken)).Receipts;
 
     // This collection is published only after the entire batch and every witness have passed.
     internal static async Task<IReadOnlyList<VerifiedProjectionHandoff>> VerifyExistingAsync(SqlConnection connection,
@@ -32,7 +32,7 @@ internal static class SqlContainmentArchiveTransaction
         SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         var prepared = await PrepareCoreAsync(connection, transaction, envelopes, requireExisting: true,
-            cancellationToken, failureInjection: null, verifyOnly: true, historicalReads, captureProjections: true);
+            failureInjection: null, verifyOnly: true, historicalReads, captureProjections: true, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         return prepared.Projections;
@@ -42,9 +42,9 @@ internal static class SqlContainmentArchiveTransaction
         IReadOnlyList<VerifiedProjectionHandoff> Projections);
 
     private static async Task<Preparation> PrepareCoreAsync(SqlConnection connection, SqlTransaction transaction,
-        IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting, CancellationToken cancellationToken,
+        IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting,
         Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection, bool verifyOnly,
-        SqlContainmentHistoricalReadScope? historicalReads, bool captureProjections)
+        SqlContainmentHistoricalReadScope? historicalReads, bool captureProjections, CancellationToken cancellationToken)
     {
         if (verifyOnly && !requireExisting) throw new ArgumentException("Read-only verification requires all archives to exist.", nameof(requireExisting));
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
