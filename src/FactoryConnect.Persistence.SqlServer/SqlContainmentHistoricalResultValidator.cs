@@ -10,7 +10,13 @@ internal static class SqlContainmentHistoricalResultValidator
 {
     internal static async Task<ContainmentResultDocument> VerifyAsync(SqlConnection connection, SqlTransaction transaction,
         ReadOnlyMemory<byte> canonicalEnvelope, CancellationToken cancellationToken,
-        SqlContainmentHistoricalReadScope? historicalReads = null)
+        SqlContainmentHistoricalReadScope? historicalReads = null) =>
+        (await VerifyProjectionAsync(connection, transaction, canonicalEnvelope, cancellationToken, historicalReads)).Document;
+
+    // Returns the Core-built projection only after independent reconstruction matches all canonical bytes.
+    internal static async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> VerifyProjectionAsync(
+        SqlConnection connection, SqlTransaction transaction, ReadOnlyMemory<byte> canonicalEnvelope,
+        CancellationToken cancellationToken, SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         ContainmentResultDocument claim;
@@ -18,9 +24,10 @@ internal static class SqlContainmentHistoricalResultValidator
         catch (InvalidDataException error)
         { throw new ContainmentHistoricalIntegrityException("Malformed historical result envelope.", error); }
         // UnsupportedContainmentCodecException, SQL failures and cancellation retain their own identities.
-        var reconstructed = await ReconstructAsync(connection, transaction, claim.Key, claim.SourceRevision, cancellationToken, historicalReads);
-        if (!OperationalMetricDependencySnapshotV2Codec.Encode(reconstructed).AsSpan().SequenceEqual(canonicalEnvelope.Span))
+        var reconstructed = await ReconstructVerifiedAsync(connection, transaction, claim.Key, claim.SourceRevision, cancellationToken, historicalReads);
+        if (!OperationalMetricDependencySnapshotV2Codec.Encode(reconstructed.Document).AsSpan().SequenceEqual(canonicalEnvelope.Span))
             throw new ContainmentHistoricalIntegrityException("Result or recursive dependency evidence differs from independently reconstructed historical authority.");
+        cancellationToken.ThrowIfCancellationRequested();
         return reconstructed;
     }
 
