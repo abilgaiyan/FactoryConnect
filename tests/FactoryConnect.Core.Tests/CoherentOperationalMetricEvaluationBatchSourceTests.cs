@@ -238,7 +238,7 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
     [Fact]
     public async Task RepeatedCaughtUpPollsDoNotReadSnapshotsOrCallPublisherButExplicitReplayDoes()
     {
-        var fixture = CreateReaderFixture(includeShift: false);
+        var fixture = CreateReaderFixture(includeShift: false, useAvailabilityContainmentV1: true);
         var processor = AvailabilityContainmentV1.ProjectionProcessorId(fixture.StreamId.MachineId);
         var publisher = new CountingPublisher();
         var store = new InMemoryOperationalMetricProjectionStore();
@@ -267,6 +267,11 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             IReadOnlyList<OperationalMetricProjection> projections, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Assert.All(projections, projection =>
+            {
+                Assert.Equal(AvailabilityContainmentV1.PolicyId, projection.EvaluationPolicyId);
+                Assert.Equal(AvailabilityContainmentV1.ProjectionProcessorId(projection.Key.MachineId), projection.ProcessorId);
+            });
             Calls++;
             return ValueTask.CompletedTask;
         }
@@ -279,7 +284,8 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
         decimal productionReferenceTime = 240m,
         decimal producedQuantity = 100m,
         decimal goodQuantity = 90m,
-        decimal machinePowerOnTime = 750m)
+        decimal machinePowerOnTime = 750m,
+        bool useAvailabilityContainmentV1 = false)
     {
         var machineId = MachineId.New();
         var streamId = MetricInputStreamId.ForMachine(machineId);
@@ -318,7 +324,8 @@ public sealed class CoherentOperationalMetricEvaluationBatchSourceTests
             adapter,
             aggregationProcessorId,
             streamId,
-            OperationalMetricEvaluationContextKey.Unpartitioned);
+            OperationalMetricEvaluationContextKey.Unpartitioned,
+            useAvailabilityContainmentV1: useAvailabilityContainmentV1);
 
         return new ReaderFixture(
             aggregationProcessorId,
