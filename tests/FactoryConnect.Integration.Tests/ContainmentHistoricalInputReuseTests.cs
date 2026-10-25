@@ -1,5 +1,7 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
+using FactoryConnect.Core;
+using ValidatedContributions = FactoryConnect.Persistence.SqlServer.SqlContainmentHistoricalContributionReader.ValidatedHistoricalContributions;
 
 namespace FactoryConnect.Integration.Tests;
 
@@ -10,6 +12,9 @@ public sealed class ContainmentHistoricalInputReuseTests
         ulong revision = 534, MachineId? machine = null) => new(new(processor),
         new(machine ?? new MachineId(Guid.Parse("677b030b-1ede-4a67-82ae-6a494791357f")), stream), new(revision));
 
+    private static ValidatedContributions Validated(IReadOnlyList<PositionedMetricInputFact> inputs) =>
+        new(inputs, MetricInputContributionAggregator.Aggregate(Cut().StreamId, inputs));
+
     [Fact]
     public async Task EqualExactCutsReuseOneSuccessfulLoadAndOwnTheCollection()
     {
@@ -18,15 +23,17 @@ public sealed class ContainmentHistoricalInputReuseTests
         var cache = new SqlContainmentHistoricalReadScope.EvidenceCache((_, _) =>
         {
             calls++;
-            return Task.FromResult<IReadOnlyList<PositionedMetricInputFact>>(source);
+            return Task.FromResult(Validated(source));
         });
         var first = await cache.ReadAsync(Cut(), default);
         source.Add(null!); // A loader-owned collection cannot change already accepted membership.
         var second = await cache.ReadAsync(Cut(), default);
         Assert.Same(first, second);
-        Assert.Empty(second);
+        Assert.Same(first.Inputs, second.Inputs);
+        Assert.Same(first.Aggregates, second.Aggregates);
+        Assert.Empty(second.Inputs);
         Assert.Equal(1, calls);
-        Assert.Throws<NotSupportedException>(() => ((IList<PositionedMetricInputFact>)first).Add(null!));
+        Assert.Throws<NotSupportedException>(() => ((IList<PositionedMetricInputFact>)first.Inputs).Add(null!));
     }
 
     [Theory]
@@ -42,7 +49,7 @@ public sealed class ContainmentHistoricalInputReuseTests
         var cache = new SqlContainmentHistoricalReadScope.EvidenceCache((_, _) =>
         {
             calls++;
-            return Task.FromResult<IReadOnlyList<PositionedMetricInputFact>>([]);
+            return Task.FromResult(Validated([]));
         });
         var other = dimension switch
         {
@@ -65,11 +72,11 @@ public sealed class ContainmentHistoricalInputReuseTests
     public async Task SeparateScopesDoNotReuseEvidence()
     {
         var calls = 0;
-        Task<IReadOnlyList<PositionedMetricInputFact>> Load(MetricAggregationCheckpoint _, CancellationToken token)
+        Task<ValidatedContributions> Load(MetricAggregationCheckpoint _, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             calls++;
-            return Task.FromResult<IReadOnlyList<PositionedMetricInputFact>>([]);
+            return Task.FromResult(Validated([]));
         }
         var first = new SqlContainmentHistoricalReadScope.EvidenceCache(Load);
         var second = new SqlContainmentHistoricalReadScope.EvidenceCache(Load);
@@ -88,12 +95,12 @@ public sealed class ContainmentHistoricalInputReuseTests
         var cache = new SqlContainmentHistoricalReadScope.EvidenceCache((_, _) =>
         {
             calls++;
-            return calls == 1 ? Task.FromException<IReadOnlyList<PositionedMetricInputFact>>(failure)
-                : Task.FromResult<IReadOnlyList<PositionedMetricInputFact>>([]);
+            return calls == 1 ? Task.FromException<ValidatedContributions>(failure)
+                : Task.FromResult(Validated([]));
         });
         var error = await Record.ExceptionAsync(() => cache.ReadAsync(Cut(), default));
         Assert.Same(failure, error);
-        Assert.Empty(await cache.ReadAsync(Cut(), default));
+        Assert.Empty((await cache.ReadAsync(Cut(), default)).Inputs);
         Assert.Equal(2, calls);
     }
 
@@ -106,7 +113,7 @@ public sealed class ContainmentHistoricalInputReuseTests
         {
             calls++;
             if (calls == 1) cancellation.Cancel();
-            return Task.FromResult<IReadOnlyList<PositionedMetricInputFact>>([]);
+            return Task.FromResult(Validated([]));
         });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cache.ReadAsync(Cut(), cancellation.Token));
         _ = await cache.ReadAsync(Cut(), default);
@@ -122,7 +129,7 @@ public sealed class ContainmentHistoricalInputReuseTests
         var cache = new SqlContainmentHistoricalReadScope.EvidenceCache((_, _) =>
         {
             calls++;
-            return Task.FromResult<IReadOnlyList<PositionedMetricInputFact>>([]);
+            return Task.FromResult(Validated([]));
         });
         if (warm) _ = await cache.ReadAsync(Cut(), default);
         using var cancellation = new CancellationTokenSource();
@@ -134,12 +141,12 @@ public sealed class ContainmentHistoricalInputReuseTests
     [Fact]
     public async Task OverlappingUseFailsClosedAndDoesNotStartAnotherSqlLoad()
     {
-        var loaded = new TaskCompletionSource<IReadOnlyList<PositionedMetricInputFact>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loaded = new TaskCompletionSource<ValidatedContributions>(TaskCreationOptions.RunContinuationsAsynchronously);
         var calls = 0;
         var cache = new SqlContainmentHistoricalReadScope.EvidenceCache((_, _) => { calls++; return loaded.Task; });
         var pending = cache.ReadAsync(Cut(), default);
         await Assert.ThrowsAsync<InvalidOperationException>(() => cache.ReadAsync(Cut(revision: 537), default));
-        loaded.SetResult([]);
+        loaded.SetResult(Validated([]));
         var inputs = await pending;
         Assert.Same(inputs, await cache.ReadAsync(Cut(), default));
         Assert.Equal(1, calls);
