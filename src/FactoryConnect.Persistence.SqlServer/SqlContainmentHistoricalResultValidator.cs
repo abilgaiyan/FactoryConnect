@@ -70,7 +70,7 @@ internal static class SqlContainmentHistoricalResultValidator
             CancellationToken cancellationToken)
         {
             var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
-            var aggregates = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs);
+            var aggregates = await historicalReads.ReadAggregatesAsync(cut, cancellationToken);
             var components = new List<OperationalMetricComponent>();
             foreach (var operand in request.Operands)
             {
