@@ -45,3 +45,37 @@ an explicitly disposable restored GG-003 database, preserving hashes, identities
 checkpoints, contact authority, replay and corruption rejection. Capture concurrent
 observation-reader completion, SQL waits and lock duration as well as transaction time.
 No clone or factory database is changed by these instructions automatically.
+
+## A2 bounded source reads
+
+For each historical publication, fetch distinct sequence identities in chunks of
+128, with exact MachineId + binary StreamKey + InstanceId predicates. Each row
+contains position and all content-equivalence fields. Compare every original
+occurrence after fetching, including duplicates; only deduplicate the SQL lookup
+keys. Keep boundary-existence checks and the accepted-position coverage/order rules.
+Every publication in the requested prefix is still read and verified.
+
+Source-verification command counts for successful history are:
+
+- A1: `2 * observation occurrences + non-null publication boundaries`.
+- A2: `sum(ceil(distinct sequences per publication / 128)) + non-null publication boundaries`.
+
+Both exclude the single prefix SQL command and normal acquisition reconciliation/DML.
+The deterministic 3-publication / 257-observation-per-publication workload therefore
+expects 1547 source commands on A1 and 14 on A2. These are expected algorithmic counts,
+not measured results until SqlClient instrumentation executes against SQL Server.
+The diagnostics test includes the same synthetic workload on both commits and emits
+actual command counts, source-stage time, raw-write time and transaction lifetime.
+The A2-specific test asserts actual captured commands and parameter bounds.
+
+```powershell
+dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj --filter 'FullyQualifiedName~SqlServerAcquisitionBatchedVerificationTests|FullyQualifiedName~SqlServerAcquisitionPersistenceDiagnosticsTests|FullyQualifiedName~SqlServerAcquisitionEvidenceIntegrationTests|FullyQualifiedName~SqlServerAcquisitionContactAuthorityIntegrationTests|FullyQualifiedName~SqlServerObservationIngestionStoreConformanceTests' --logger 'trx;LogFileName=acquisition-verification.trx'
+```
+
+Existing rollback-at-each-table, concurrent replay/CAS, legacy opening, contact-only,
+recovery and predecessor-corruption tests remain acceptance requirements. New cases
+exercise chunk boundaries, very large unsigned identity values, older-prefix damage
+on extension, exact stream/case/instance identity, duplicate/replayed occurrences,
+post-write cancellation/rollback/restart and competing writers with larger histories.
+Clone/production validation is a separate acceptance gate; no factory fix or duration
+improvement is claimed by this PR before that gate is measured.

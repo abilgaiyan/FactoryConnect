@@ -17,6 +17,8 @@ public sealed class SqlServerAcquisitionEvidenceReader(string connectionString) 
 
 internal sealed partial class SqlServerObservationIngestionStore
 {
+    internal const int HistoricalObservationLookupBatchSize = 128;
+    private sealed record HistoricalObservationSource(ulong Position, MachineObservation Observation);
     public async ValueTask<AcquisitionRecoveryReadResult> ReadRecoveryExactAsync(ObservationStreamId stream, string publicationIdentity,
         string recoveryIdentity, CancellationToken cancellationToken = default)
     {
@@ -130,26 +132,20 @@ internal sealed partial class SqlServerObservationIngestionStore
             work.SqlCommands++;
             if (!await EvidenceBoundaryExistsAsync(c, t, stream, streamKey, record.AcceptedBefore, token)) return false;
         }
+        // Fetch each distinct identity once, but compare every occurrence below: duplicate
+        // sequences with contradictory content must still fail. The whole prefix remains checked.
+        var sequences = record.Batch.Observations.Select(item => item.Sequence).Distinct().ToArray();
+        var persistedSources = await ReadHistoricalObservationSourcesAsync(c, t, stream, streamKey,
+            record.Batch.Checkpoint.InstanceId, sequences, work, token);
         var newPositions = new HashSet<ulong>();
         var seenSequences = new HashSet<ulong>();
         var nextPosition = before;
         foreach (var item in record.Batch.Observations)
         {
-            work.SqlCommands++;
-            var persisted = await ReadObservationAsync(c, t, record.Batch.Checkpoint, streamKey, item.Sequence, token);
-            if (persisted is null || !SqlServerObservationEquivalence.AreEquivalent(persisted, item.Observation)) return false;
-            await using var position = c.CreateCommand(); position.Transaction = t;
-            position.CommandText = """
-                SELECT Position FROM dbo.MachineObservation
-                WHERE MachineId=@MachineId AND StreamKeyBinary=@StreamKeyBinary AND InstanceId=@Instance AND Sequence=@Sequence;
-                """;
-            AddStreamIdentityParameters(position, stream, streamKey);
-            position.Parameters.Add(SqlServerUInt64.CreateParameter("@Instance", record.Batch.Checkpoint.InstanceId));
-            position.Parameters.Add(SqlServerUInt64.CreateParameter("@Sequence", item.Sequence));
-            work.SqlCommands++;
-            var value = await position.ExecuteScalarAsync(token);
-            if (value is not decimal raw) return false;
-            var actual = SqlServerUInt64.Materialize(raw);
+            token.ThrowIfCancellationRequested();
+            if (!persistedSources.TryGetValue(item.Sequence, out var persisted) ||
+                !SqlServerObservationEquivalence.AreEquivalent(persisted.Observation, item.Observation)) return false;
+            var actual = persisted.Position;
             if (actual == 0 || actual > through) return false;
             if (!seenSequences.Add(item.Sequence)) continue;
             if (actual > before)
@@ -160,6 +156,56 @@ internal sealed partial class SqlServerObservationIngestionStore
         }
         // Every newly accepted position must be bound by this publication; prior/replayed rows do not count as new.
         return (ulong)newPositions.Count == through - before;
+    }
+
+    private static async Task<Dictionary<ulong, HistoricalObservationSource>> ReadHistoricalObservationSourcesAsync(
+        SqlConnection connection, SqlTransaction transaction, ObservationStreamId stream, byte[] streamKey,
+        ulong instance, ulong[] sequences, AcquisitionPersistenceDiagnostics.VerificationWork work,
+        CancellationToken cancellationToken)
+    {
+        var sources = new Dictionary<ulong, HistoricalObservationSource>();
+        foreach (var chunk in sequences.Chunk(HistoricalObservationLookupBatchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            var parameters = Enumerable.Range(0, chunk.Length).Select(index => "@Sequence" + index.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            command.CommandText = """
+                SELECT Sequence, Position, Source, Address, SignalType, ObservationValue, Quality, ObservedAt
+                FROM dbo.MachineObservation
+                WHERE MachineId=@MachineId AND StreamKeyBinary=@StreamKeyBinary AND InstanceId=@Instance
+                  AND Sequence IN (
+                """ + string.Join(",", parameters) + ");";
+            AddStreamIdentityParameters(command, stream, streamKey);
+            command.Parameters.Add(SqlServerUInt64.CreateParameter("@Instance", instance));
+            for (var index = 0; index < chunk.Length; index++)
+                command.Parameters.Add(SqlServerUInt64.CreateParameter(parameters[index], chunk[index]));
+            work.SqlCommands++;
+            await using var rows = await command.ExecuteReaderAsync(cancellationToken);
+            while (await rows.ReadAsync(cancellationToken))
+            {
+                var sequence = SqlServerUInt64.Materialize(rows.GetDecimal(0));
+                var position = SqlServerUInt64.Materialize(rows.GetDecimal(1));
+                var type = (SignalType)rows.GetByte(4);
+                var quality = (ObservationQuality)rows.GetByte(6);
+                if (!Enum.IsDefined(type) || !Enum.IsDefined(quality))
+                    throw new InvalidDataException("Persisted observation contains an unsupported enum value.");
+                var persistedValue = rows.IsDBNull(5) ? null : rows.GetString(5);
+                var observation = new MachineObservation
+                {
+                    MachineId = stream.MachineId,
+                    Source = rows.GetString(2),
+                    Address = rows.GetString(3),
+                    Type = type,
+                    Value = SqlServerObservationValueCodec.Deserialize(type, persistedValue),
+                    Quality = quality,
+                    Timestamp = rows.GetDateTimeOffset(7)
+                };
+                if (!sources.TryAdd(sequence, new HistoricalObservationSource(position, observation)))
+                    throw new InvalidDataException("Historical observation identity is not unique within the exact stream and instance.");
+            }
+        }
+        return sources;
     }
 
     private static async Task<bool> EvidenceBoundaryExistsAsync(SqlConnection c, SqlTransaction t,

@@ -78,17 +78,23 @@ internal sealed class AcquisitionPersistenceCapture : IObserver<DiagnosticListen
     private readonly ConcurrentBag<IDisposable> _subscriptions = [];
     private readonly ConcurrentQueue<Activity> _spans = new();
     private readonly ConcurrentQueue<SqlTransaction?> _transactions = new();
+    private readonly ConcurrentQueue<int> _parameterCounts = new();
     private readonly string _application = "FC-AcquisitionMeasure:" + Guid.NewGuid().ToString("N");
     private long _sourceCommands;
 
-    internal AcquisitionPersistenceCapture(string connectionString)
+    internal AcquisitionPersistenceCapture(string connectionString, Action<Activity>? onStopped = null)
     {
         ConnectionString = new SqlConnectionStringBuilder(connectionString) { ApplicationName = _application }.ConnectionString;
         _listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "FactoryConnect.Acquisition",
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activity => { if (activity.TraceId == _parent.TraceId) _spans.Enqueue(activity); }
+            ActivityStopped = activity =>
+            {
+                if (activity.TraceId != _parent.TraceId) return;
+                _spans.Enqueue(activity);
+                onStopped?.Invoke(activity);
+            }
         };
         ActivitySource.AddActivityListener(_listener);
         _all = DiagnosticListener.AllListeners.Subscribe(this);
@@ -97,6 +103,7 @@ internal sealed class AcquisitionPersistenceCapture : IObserver<DiagnosticListen
     internal string ConnectionString { get; }
     internal Activity[] Spans => _spans.ToArray();
     internal SqlTransaction?[] SourceTransactions => _transactions.ToArray();
+    internal int[] SourceParameterCounts => _parameterCounts.ToArray();
     internal long SourceCommands => Interlocked.Read(ref _sourceCommands);
     internal Exception? Error { get; private set; }
 
@@ -115,6 +122,7 @@ internal sealed class AcquisitionPersistenceCapture : IObserver<DiagnosticListen
             command.Connection is null || new SqlConnectionStringBuilder(command.Connection.ConnectionString).ApplicationName != _application) return;
         Interlocked.Increment(ref _sourceCommands);
         _transactions.Enqueue(command.Transaction);
+        _parameterCounts.Enqueue(command.Parameters.Count);
     }
 
     public void OnError(Exception error) => Error = error;
