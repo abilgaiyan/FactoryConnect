@@ -32,6 +32,10 @@ internal static class SqlContainmentHistoricalContributionReader
         RequireStableTransaction(connection, transaction);
         ArgumentNullException.ThrowIfNull(cut);
         cancellationToken.ThrowIfCancellationRequested();
+        using var historicalTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.read.validate");
+        historicalTiming?.SetTag("processor.id", cut.ProcessorId.Value);
+        historicalTiming?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        using var identityTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.exact-cut.resolve");
         long processorRowId;
         long streamRowId;
         await using (var exact = connection.CreateCommand())
@@ -62,6 +66,8 @@ internal static class SqlContainmentHistoricalContributionReader
             if ((long)(await exact.ExecuteScalarAsync(cancellationToken))! != 1L)
                 throw new MissingContainmentHistoricalAuthorityException("The exact aggregation revision is absent.");
         }
+        identityTiming?.SetTag("stage.completed", true);
+        identityTiming?.Dispose();
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         // Read the narrow contribution index in cut order, then seek each complete fact.
@@ -86,7 +92,11 @@ internal static class SqlContainmentHistoricalContributionReader
             "ORDER BY c.Position ASC OPTION (FORCE ORDER, MAXDOP 1);";
         Bind(command, processorRowId, streamRowId, cut);
         var inputs = new List<PositionedMetricInputFact>();
+        using var sqlTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.sql.execute");
         await using var rows = await command.ExecuteReaderAsync(cancellationToken);
+        sqlTiming?.SetTag("stage.completed", true);
+        sqlTiming?.Dispose();
+        using var rowsTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.rows.read-materialize-validate");
         while (await rows.ReadAsync(cancellationToken))
         {
             try
@@ -105,10 +115,17 @@ internal static class SqlContainmentHistoricalContributionReader
                 throw new ContainmentHistoricalIntegrityException("Malformed historical contribution.", error);
             }
         }
+        rowsTiming?.SetTag("input.count", inputs.Count);
+        rowsTiming?.SetTag("stage.completed", true);
+        rowsTiming?.Dispose();
+        using var aggregationTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.aggregate");
         MetricAggregateContributionSet aggregates;
         try { aggregates = MetricInputContributionAggregator.Aggregate(cut.StreamId, inputs); }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException)
         { throw new ContainmentHistoricalIntegrityException("Conflicting historical contribution membership.", error); }
+        aggregationTiming?.SetTag("input.count", inputs.Count);
+        aggregationTiming?.SetTag("stage.completed", true);
+        historicalTiming?.SetTag("stage.completed", true);
         return new(inputs.AsReadOnly(), aggregates);
     }
 
