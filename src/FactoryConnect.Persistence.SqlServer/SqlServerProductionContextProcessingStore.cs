@@ -18,40 +18,32 @@ internal sealed class SqlServerProductionContextProcessingStore :
         _connectionString = connectionString;
     }
 
+    public Task<ObservationProcessingCheckpoint?> ReadCheckpointAsync(
+        ObservationProcessorId processorId,
+        ObservationStreamId streamId,
+        CancellationToken cancellationToken) =>
+        ReadCheckpointAsync(processorId, streamId, null, cancellationToken);
+
     public async Task<ObservationProcessingCheckpoint?> ReadCheckpointAsync(
         ObservationProcessorId processorId,
         ObservationStreamId streamId,
+        DateTimeOffset? productionStartsAt,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(processorId);
         ArgumentNullException.ThrowIfNull(streamId);
-
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
-        var processorRowId = await FindProcessorRowIdAsync(
-            connection,
-            transaction: null,
-            processorId,
-            streamId,
-            lockForUpdate: false,
-            cancellationToken);
-        if (processorRowId is null)
-        {
-            return null;
-        }
-
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        var rowId = await GetOrCreateProcessorRowIdAsync(
+            connection, transaction, processorId, streamId, cancellationToken);
+        await BindAdmissionAsync(connection, transaction, rowId, productionStartsAt, cancellationToken);
         var position = await ReadCheckpointPositionAsync(
-            connection,
-            transaction: null,
-            processorRowId.Value,
-            lockForUpdate: false,
-            cancellationToken);
-        return position is null
-            ? null
-            : new ObservationProcessingCheckpoint(
-                processorId,
-                streamId,
-                new ObservationPosition(position.Value));
+            connection, transaction, rowId, lockForUpdate: true, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return position is null ? null : new ObservationProcessingCheckpoint(
+            processorId, streamId, new ObservationPosition(position.Value));
     }
 
     public async Task CommitAsync(
@@ -78,6 +70,8 @@ internal sealed class SqlServerProductionContextProcessingStore :
                 next.ProcessorId,
                 next.StreamId,
                 cancellationToken);
+            await BindAdmissionAsync(connection, sqlTransaction, processorRowId,
+                commit.ProductionStartsAt, cancellationToken);
             var current = await ReadCheckpointPositionAsync(
                 connection,
                 sqlTransaction,
@@ -134,6 +128,43 @@ internal sealed class SqlServerProductionContextProcessingStore :
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    private static async Task BindAdmissionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long rowId,
+        DateTimeOffset? productionStartsAt,
+        CancellationToken cancellationToken)
+    {
+        await using var read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText = "SELECT AdmissionBound, ProductionStartsAt FROM dbo.ProductionContextProcessor WITH (UPDLOCK, HOLDLOCK) WHERE ProductionContextProcessorRowId = @Id;";
+        read.Parameters.Add("@Id", SqlDbType.BigInt).Value = rowId;
+        bool bound;
+        DateTimeOffset? existing;
+        await using (var reader = await read.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+                throw new InvalidOperationException("Production-context processor is missing.");
+            bound = reader.GetBoolean(0);
+            existing = reader.IsDBNull(1) ? null : reader.GetDateTimeOffset(1);
+        }
+        if (bound)
+        {
+            if (existing != productionStartsAt)
+                throw new InvalidOperationException("Production admission boundary is immutable for this processor and stream.");
+            return;
+        }
+        if (productionStartsAt is not null && await ReadCheckpointPositionAsync(
+            connection, transaction, rowId, lockForUpdate: true, cancellationToken) is not null)
+            throw new InvalidOperationException("Cannot add a production boundary after processing has advanced.");
+        await using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = "UPDATE dbo.ProductionContextProcessor SET AdmissionBound = 1, ProductionStartsAt = @Start WHERE ProductionContextProcessorRowId = @Id;";
+        update.Parameters.Add("@Id", SqlDbType.BigInt).Value = rowId;
+        update.Parameters.Add("@Start", SqlDbType.DateTimeOffset).Value = (object?)productionStartsAt ?? DBNull.Value;
+        await update.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static void ValidateCommitShape(ProductionContextProcessingCommit commit)

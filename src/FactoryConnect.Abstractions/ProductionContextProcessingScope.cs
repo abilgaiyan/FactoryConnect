@@ -8,6 +8,8 @@ public sealed record ProductionContextProcessingScope
     public required MachineId MachineId { get; init; }
     public required ObservationStreamId StreamId { get; init; }
 
+    public DateTimeOffset? ProductionStartsAt { get; init; }
+
     public void Validate()
     {
         if (CompanyId.IsEmpty)

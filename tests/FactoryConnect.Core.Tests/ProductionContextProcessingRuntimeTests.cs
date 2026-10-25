@@ -94,6 +94,95 @@ public sealed class ProductionContextProcessingRuntimeTests
         Assert.Empty(fixture.Store.MetricFacts);
     }
 
+    [Fact]
+    public async Task BeforeBoundaryAdvancesWithoutOutputAndRestartResumes()
+    {
+        var fixture = CreateFixture("LINE-1", "MACHINE-A", 8);
+        fixture = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start } };
+        fixture.ActivityReader.Add(CreateActivity(fixture.MachineId, fixture.StreamId, 1,
+            fixture.Start.AddDays(-300), fixture.Start));
+        Assert.Equal(1, await fixture.CreateRuntime(1).RunCycleAsync());
+        Assert.Empty(fixture.Store.ContextualizedActivity);
+        Assert.Empty(fixture.Store.MetricFacts);
+        var checkpoint = await fixture.Store.ReadCheckpointAsync(fixture.ProcessorId,
+            fixture.StreamId, fixture.Start, CancellationToken.None);
+        Assert.Equal(new ObservationPosition(1), checkpoint!.Position);
+        fixture.ActivityReader.Add(CreateActivity(fixture.MachineId, fixture.StreamId, 2,
+            fixture.Start, fixture.Start.AddMinutes(1)));
+        Assert.Equal(1, await fixture.CreateRuntime(1).RunCycleAsync());
+        Assert.Equal(fixture.Start, Assert.Single(fixture.Store.ContextualizedActivity).StartsAtUtc);
+    }
+
+    [Fact]
+    public async Task CrossingBoundaryPreservesSourceAndAdmitsOnlyTail()
+    {
+        var fixture = CreateFixture("LINE-1", "MACHINE-A", 8);
+        fixture = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start } };
+        var original = CreateActivity(fixture.MachineId, fixture.StreamId, 1,
+            fixture.Start.AddDays(-300), fixture.Start.AddMinutes(1));
+        fixture.ActivityReader.Add(original);
+        Assert.Equal(1, await fixture.CreateRuntime(10).RunCycleAsync());
+        var output = Assert.Single(fixture.Store.ContextualizedActivity);
+        Assert.Equal(fixture.Start, output.StartsAtUtc);
+        Assert.Equal(fixture.Start.AddMinutes(1), output.EndsAtUtc);
+        Assert.Equal(original.Position, output.SourcePosition);
+        Assert.Equal(original.InstanceId, output.SourceInstanceId);
+        Assert.Equal(original.Sequence, output.SourceSequence);
+        Assert.Equal(fixture.Start.AddDays(-300), original.Period.StartedAt);
+        Assert.Equal(0, await fixture.CreateRuntime(10).RunCycleAsync());
+        Assert.Single(fixture.Store.ContextualizedActivity);
+    }
+
+    [Fact]
+    public async Task BoundaryBindingRejectsChangedOrRemovedStart()
+    {
+        var fixture = CreateFixture("LINE-1", "MACHINE-A", 8);
+        fixture = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start } };
+        Assert.Equal(0, await fixture.CreateRuntime(10).RunCycleAsync());
+        var changed = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start.AddSeconds(1) } };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => changed.CreateRuntime(10).RunCycleAsync());
+        var removed = fixture with { Scope = fixture.Scope with { ProductionStartsAt = null } };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => removed.CreateRuntime(10).RunCycleAsync());
+    }
+
+    [Fact]
+    public async Task ExistingProcessedStreamCannotAcquireBoundary()
+    {
+        var fixture = CreateFixture("LINE-1", "MACHINE-A", 8);
+        fixture.ActivityReader.Add(CreateActivity(fixture.MachineId, fixture.StreamId, 1,
+            fixture.Start, fixture.Start.AddMinutes(1)));
+        await fixture.CreateRuntime(10).RunCycleAsync();
+        fixture = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start } };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.CreateRuntime(10).RunCycleAsync());
+    }
+
+    [Fact]
+    public async Task AdmittedShiftGapStillFailsWithoutCheckpoint()
+    {
+        var fixture = CreateFixture("LINE-1", "MACHINE-A", 0);
+        fixture = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start } };
+        fixture.ActivityReader.Add(CreateActivity(fixture.MachineId, fixture.StreamId, 1,
+            fixture.Start, fixture.Start.AddHours(1)));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.CreateRuntime(10).RunCycleAsync());
+        Assert.Null(await fixture.Store.ReadCheckpointAsync(fixture.ProcessorId,
+            fixture.StreamId, fixture.Start, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ExcludedBatchCommitFailureRetriesWithoutAdvancing()
+    {
+        var fixture = CreateFixture("LINE-1", "MACHINE-A", 8);
+        fixture = fixture with { Scope = fixture.Scope with { ProductionStartsAt = fixture.Start } };
+        fixture.ActivityReader.Add(CreateActivity(fixture.MachineId, fixture.StreamId, 1,
+            fixture.Start.AddHours(-1), fixture.Start));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.CreateRuntime(10,
+            new FailingProductionContextProcessingStore(fixture.Store)).RunCycleAsync());
+        Assert.Null(await fixture.Store.ReadCheckpointAsync(fixture.ProcessorId,
+            fixture.StreamId, fixture.Start, CancellationToken.None));
+        Assert.Equal(1, await fixture.CreateRuntime(10).RunCycleAsync());
+        Assert.Empty(fixture.Store.PositionedMetricInputs);
+    }
+
     private static RuntimeFixture CreateFixture(
         string line,
         string machineName,
@@ -238,6 +327,13 @@ public sealed class ProductionContextProcessingRuntimeTests
             ObservationStreamId streamId,
             CancellationToken cancellationToken) =>
             _inner.ReadCheckpointAsync(processorId, streamId, cancellationToken);
+
+        public Task<ObservationProcessingCheckpoint?> ReadCheckpointAsync(
+            ObservationProcessorId processorId,
+            ObservationStreamId streamId,
+            DateTimeOffset? productionStartsAt,
+            CancellationToken cancellationToken) =>
+            _inner.ReadCheckpointAsync(processorId, streamId, productionStartsAt, cancellationToken);
 
         public Task CommitAsync(
             ProductionContextProcessingCommit commit,

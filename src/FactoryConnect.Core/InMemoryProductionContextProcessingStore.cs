@@ -13,6 +13,8 @@ public sealed class InMemoryProductionContextProcessingStore :
     private readonly Dictionary<MetricInputStreamId, List<PositionedMetricInputFact>> _metricInputStreams = [];
     private readonly Dictionary<MetricInputFactId, PositionedMetricInputFact> _positionedByFactId = [];
 
+    private readonly Dictionary<(string ProcessorId, ObservationStreamId StreamId), DateTimeOffset?> _admission = [];
+
     public IReadOnlyCollection<ContextualizedActivityInterval> ContextualizedActivity => _contextualized.Values;
     public IReadOnlyCollection<ProductionTimeEligibilityInterval> EligibilityIntervals => _eligibility.Values;
     public IReadOnlyCollection<DurableMetricInputFact> MetricFacts => _metricFacts.Values;
@@ -29,6 +31,36 @@ public sealed class InMemoryProductionContextProcessingStore :
 
         _checkpoints.TryGetValue((processorId.Value, streamId), out var checkpoint);
         return Task.FromResult(checkpoint);
+    }
+
+    public Task<ObservationProcessingCheckpoint?> ReadCheckpointAsync(
+        ObservationProcessorId processorId,
+        ObservationStreamId streamId,
+        DateTimeOffset? productionStartsAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(processorId);
+        ArgumentNullException.ThrowIfNull(streamId);
+        cancellationToken.ThrowIfCancellationRequested();
+        BindAdmission(processorId, streamId, productionStartsAt);
+        return ReadCheckpointAsync(processorId, streamId, cancellationToken);
+    }
+
+    private void BindAdmission(ObservationProcessorId processorId, ObservationStreamId streamId,
+        DateTimeOffset? productionStartsAt)
+    {
+        var key = (processorId.Value, streamId);
+        if (_admission.TryGetValue(key, out var existing))
+        {
+            if (existing != productionStartsAt)
+                throw new InvalidOperationException("Production admission boundary is immutable for this processor and stream.");
+        }
+        else
+        {
+            if (productionStartsAt is not null && _checkpoints.ContainsKey(key))
+                throw new InvalidOperationException("Cannot add a production boundary after processing has advanced.");
+            _admission.Add(key, productionStartsAt);
+        }
     }
 
     public ValueTask<MetricInputReadBatch> ReadAsync(
@@ -85,6 +117,7 @@ public sealed class InMemoryProductionContextProcessingStore :
         ArgumentNullException.ThrowIfNull(commit.NextCheckpoint);
 
         var next = commit.NextCheckpoint;
+        BindAdmission(next.ProcessorId, next.StreamId, commit.ProductionStartsAt);
         var key = (next.ProcessorId.Value, next.StreamId);
         _checkpoints.TryGetValue(key, out var current);
 

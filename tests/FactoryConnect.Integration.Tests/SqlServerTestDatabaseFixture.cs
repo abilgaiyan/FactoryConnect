@@ -104,6 +104,8 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
                 databaseConnection,
                 SqlServerSchema.ReadDurableProductionReferenceTimePublicationTransitionSchema());
             await ExecuteSchemaAsync(databaseConnection,SqlServerSchema.ReadDurableAcquisitionEvidenceSchema());
+            await ExecuteSchemaAsync(databaseConnection,
+                SqlMigrationCatalog.Load().Migrations.Single(migration => migration.MigrationId == 22).CanonicalSql);
         }
         catch
         {

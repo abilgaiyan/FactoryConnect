@@ -76,6 +76,20 @@ public sealed class ProductionContextProcessingRuntime
         foreach (var source in batch)
         {
             var period = source.Period;
+            if (period.EndedAt <= period.StartedAt)
+                throw new InvalidOperationException("Source activity period must have a positive duration.");
+            var admittedSource = source;
+            if (_scope.ProductionStartsAt is { } start)
+            {
+                if (period.EndedAt <= start) continue;
+                if (period.StartedAt < start)
+                {
+                    period = period with { StartedAt = start };
+                    admittedSource = new DurableMachineActivityPeriod(
+                        source.ProcessorId, source.Position, source.StreamId,
+                        source.InstanceId, source.Sequence, period);
+                }
+            }
             var contexts = await _contextReader.ReadAsync(
                 _scope.MachineId,
                 period.StartedAt,
@@ -94,7 +108,7 @@ public sealed class ProductionContextProcessingRuntime
             resolvedShifts.AddRange(shifts);
 
             var activityIntervals = ActivityContextIntervalAllocator.Allocate(
-                source,
+                admittedSource,
                 shifts,
                 contexts);
             contextualized.AddRange(activityIntervals);
@@ -128,6 +142,7 @@ public sealed class ProductionContextProcessingRuntime
         await _store.CommitAsync(
             new ProductionContextProcessingCommit
             {
+                ProductionStartsAt = _scope.ProductionStartsAt,
                 ExpectedCheckpoint = _checkpoint,
                 NextCheckpoint = nextCheckpoint,
                 ContextualizedActivity = contextualized,
@@ -151,6 +166,7 @@ public sealed class ProductionContextProcessingRuntime
         _checkpoint = await _store.ReadCheckpointAsync(
             ProcessorId,
             _scope.StreamId,
+            _scope.ProductionStartsAt,
             cancellationToken);
         _checkpointRestored = true;
     }
