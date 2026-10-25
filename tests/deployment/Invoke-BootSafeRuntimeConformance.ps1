@@ -27,7 +27,7 @@ function Get-Process {
 }
 function Stop-RecordedOwnedProcess($Record) { $script:stops++ }
 $results=[ordered]@{}
-foreach ($mode in @('BootSafe','Reconcile')) {
+foreach ($mode in @('BootSafe','Reconcile','Restart')) {
     foreach ($case in @('Healthy','Unhealthy','Cold','Partial','Mismatch','Unrecorded','HealthyDuplicate','InventoryFailure')) {
         $StartupMode=$mode
         $script:healthy=$case -in @('Healthy','HealthyDuplicate')
@@ -48,12 +48,13 @@ foreach ($mode in @('BootSafe','Reconcile')) {
         $releaseId='fixture'; $root='fixture'; $current='fixture'
         $rejected=$false; $output=$null
         try { $output=. $admission } catch { $rejected=$true }
-        $mustReject=($case -eq 'Mismatch') -or ($mode -eq 'BootSafe' -and $case -in @('Unhealthy','Partial','Unrecorded','HealthyDuplicate','InventoryFailure'))
+        $mustReject=($case -eq 'Mismatch') -or ($mode -eq 'BootSafe' -and $case -in @('Unhealthy','Partial','Unrecorded','HealthyDuplicate','InventoryFailure')) -or ($mode -eq 'Restart' -and $case -in @('Unrecorded','HealthyDuplicate','InventoryFailure'))
         if ($rejected -ne $mustReject) { throw "$mode/$case rejection incorrect." }
         if ($mustReject -and ($script:stops -ne 0 -or $mutationStarted)) { throw "$mode/$case mutated before rejection." }
-        if ($case -eq 'Healthy' -and ($output.Status -ne 'AlreadyRunning' -or $script:stops -ne 0 -or $mutationStarted)) { throw "$mode healthy reuse failed." }
+        if ($mode -ne 'Restart' -and $case -eq 'Healthy' -and ($output.Status -ne 'AlreadyRunning' -or $script:stops -ne 0 -or $mutationStarted)) { throw "$mode healthy reuse failed." }
+        if ($mode -eq 'Restart' -and $case -eq 'Healthy' -and ($null -ne $output -or $script:stops -ne 3 -or -not $mutationStarted)) { throw 'Explicit restart did not reconcile healthy owned processes.' }
         if ($case -eq 'Cold' -and (-not $mutationStarted -or $script:stops -ne 0)) { throw "$mode cold admission failed." }
-        if ($mode -eq 'Reconcile' -and $case -in @('Partial','Unhealthy')) {
+        if ($mode -in @('Reconcile','Restart') -and $case -in @('Partial','Unhealthy')) {
             $count=if($case -eq 'Partial'){1}else{3}
             if ($script:stops -ne $count) { throw 'Deployment reconciliation regressed.' }
         }
