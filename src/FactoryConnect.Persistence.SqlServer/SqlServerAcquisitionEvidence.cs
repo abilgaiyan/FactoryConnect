@@ -56,6 +56,9 @@ internal sealed partial class SqlServerObservationIngestionStore
     private static async Task<AcquisitionEvidenceReadResult> ReadEvidenceAsync(SqlConnection c, SqlTransaction t,
         ObservationStreamId stream, byte[] identity, CancellationToken token)
     {
+        using var historyTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.evidence.history.verify", stream);
+        using var prefixTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.evidence.prefix.read-validate", stream);
+        prefixTiming?.SetTag("sql.command.count", 1);
         await using var command = c.CreateCommand(); command.Transaction = t;
         command.CommandText = """
             SELECT IdentityHash, PublicationOrdinal, PreviousIdentity, AcceptedBefore, AcceptedThrough, PayloadVersion, ContentHash, PayloadBinary
@@ -92,26 +95,47 @@ internal sealed partial class SqlServerObservationIngestionStore
         }
         // Close the publication reader before reconciling sources on this same serializable transaction (no MARS required).
         await reader.DisposeAsync();
-        foreach (var record in prefix)
-            if (!await VerifyObservationSourcesAsync(c, t, stream, record, token))
-                return new(AcquisitionEvidenceReadStatus.Corrupt);
+        prefixTiming?.SetTag("publication.count", prefix.Count);
+        prefixTiming?.SetTag("stage.completed", true);
+        prefixTiming?.Dispose();
+        var work = new AcquisitionPersistenceDiagnostics.VerificationWork();
+        using var sourcesTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.evidence.sources.verify", stream);
+        sourcesTiming?.SetTag("publication.count", prefix.Count);
+        sourcesTiming?.SetTag("observation.count", prefix.Sum(record => (long)record.Batch.Observations.Count));
+        try
+        {
+            foreach (var record in prefix)
+                if (!await VerifyObservationSourcesAsync(c, t, stream, record, work, token))
+                    return new(AcquisitionEvidenceReadStatus.Corrupt);
+            sourcesTiming?.SetTag("stage.completed", true);
+        }
+        finally { sourcesTiming?.SetTag("sql.command.count", work.SqlCommands); }
+        historyTiming?.SetTag("stage.completed", true);
         return found is null ? new(AcquisitionEvidenceReadStatus.Absent) : new(AcquisitionEvidenceReadStatus.Found, found);
     }
     private static async Task<bool> VerifyObservationSourcesAsync(SqlConnection c, SqlTransaction t,
-        ObservationStreamId stream, AcquisitionEvidenceRecord record, CancellationToken token)
+        ObservationStreamId stream, AcquisitionEvidenceRecord record, AcquisitionPersistenceDiagnostics.VerificationWork work,
+        CancellationToken token)
     {
         var streamKey = OrdinalStringKeyCodec.Encode(stream.StreamKey);
         var before = record.AcceptedBefore?.Value ?? 0;
         var through = record.AcceptedThrough?.Value ?? 0;
-        if (record.AcceptedThrough is not null && !await EvidenceBoundaryExistsAsync(
-                c, t, stream, streamKey, record.AcceptedThrough, token)) return false;
-        if (record.AcceptedBefore is not null && !await EvidenceBoundaryExistsAsync(
-                c, t, stream, streamKey, record.AcceptedBefore, token)) return false;
+        if (record.AcceptedThrough is not null)
+        {
+            work.SqlCommands++;
+            if (!await EvidenceBoundaryExistsAsync(c, t, stream, streamKey, record.AcceptedThrough, token)) return false;
+        }
+        if (record.AcceptedBefore is not null)
+        {
+            work.SqlCommands++;
+            if (!await EvidenceBoundaryExistsAsync(c, t, stream, streamKey, record.AcceptedBefore, token)) return false;
+        }
         var newPositions = new HashSet<ulong>();
         var seenSequences = new HashSet<ulong>();
         var nextPosition = before;
         foreach (var item in record.Batch.Observations)
         {
+            work.SqlCommands++;
             var persisted = await ReadObservationAsync(c, t, record.Batch.Checkpoint, streamKey, item.Sequence, token);
             if (persisted is null || !SqlServerObservationEquivalence.AreEquivalent(persisted, item.Observation)) return false;
             await using var position = c.CreateCommand(); position.Transaction = t;
@@ -122,6 +146,7 @@ internal sealed partial class SqlServerObservationIngestionStore
             AddStreamIdentityParameters(position, stream, streamKey);
             position.Parameters.Add(SqlServerUInt64.CreateParameter("@Instance", record.Batch.Checkpoint.InstanceId));
             position.Parameters.Add(SqlServerUInt64.CreateParameter("@Sequence", item.Sequence));
+            work.SqlCommands++;
             var value = await position.ExecuteScalarAsync(token);
             if (value is not decimal raw) return false;
             var actual = SqlServerUInt64.Materialize(raw);
@@ -162,6 +187,7 @@ internal sealed partial class SqlServerObservationIngestionStore
     private static async Task AppendEvidenceAsync(SqlConnection c, SqlTransaction t, ObservationIngestionBatch batch,
         byte[] identity, byte[] payload, ObservationPosition? before, ObservationPosition? through, CancellationToken token)
     {
+        using var appendTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.evidence.append", batch.Checkpoint.StreamId);
         long ordinal = 1; byte[]? previous = null;
         await using (var head = c.CreateCommand())
         {
@@ -198,6 +224,7 @@ internal sealed partial class SqlServerObservationIngestionStore
             "UPDATE dbo.AcquisitionEvidenceHead SET IdentityHash=@Identity WHERE MachineId=@MachineId AND StreamKeyBinary=@StreamKeyBinary;";
         AddStreamIdentityParameters(advance,batch.Checkpoint.StreamId,OrdinalStringKeyCodec.Encode(batch.Checkpoint.StreamId.StreamKey));
         advance.Parameters.Add("@Identity",SqlDbType.Binary,32).Value=identity; await advance.ExecuteNonQueryAsync(token);
+        appendTiming?.SetTag("stage.completed", true);
     }
     private static void AddPosition(SqlCommand c, string name, ObservationPosition? value)
     {
