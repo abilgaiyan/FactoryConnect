@@ -48,8 +48,13 @@ internal static class SqlServerOperationalMetricProjectionStableRead
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(readPublication);
+        using var lifetimeTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("reporting.transaction.lifetime");
+        lifetimeTiming?.SetTag("processor.id", processorId.Value);
+        using var openTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("reporting.transaction.open");
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
             SqlContainmentVerifiedRead.IsContainmentIdentity(processorId) ? IsolationLevel.Serializable : IsolationLevel.ReadCommitted, cancellationToken);
+        openTiming?.SetTag("stage.completed", true);
+        openTiming?.Dispose();
         try
         {
             await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction,
@@ -58,6 +63,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
             {
                 var before = observeCheckpointChanges
                     ? await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken) : null;
+                lifetimeTiming?.SetTag("revision.position", before?.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 T result;
                 try { result = await readPublication(connection, transaction, cancellationToken); }
                 catch (InvalidOperationException) when (observeCheckpointChanges)
@@ -71,7 +77,10 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                     ? await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken) : null;
                 if (before != after) continue;
                 cancellationToken.ThrowIfCancellationRequested();
+                using var commitTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("reporting.transaction.commit");
                 await transaction.CommitAsync(cancellationToken);
+                commitTiming?.SetTag("stage.completed", true);
+                lifetimeTiming?.SetTag("stage.completed", true);
                 return result;
             }
             throw new InvalidOperationException("Projection read exceeded the checkpoint retry budget.");
