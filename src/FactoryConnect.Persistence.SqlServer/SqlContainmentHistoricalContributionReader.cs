@@ -64,6 +64,10 @@ internal static class SqlContainmentHistoricalContributionReader
         }
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        // Read the narrow contribution index in cut order, then seek each complete fact.
+        // Keep both outer joins: missing/mismatched facts must reach the integrity checks.
+        // Serial loop joins avoid a parallel exchange/hash join and a wide-row order sort.
+        // This access-path candidate still requires representative restored-database plan validation.
         command.CommandText =
             "SELECT s.MachineId, s.StreamKey, f.Position, f.FactId, f.MetricInputKey, " +
             "f.MetricValue, f.Unit, f.StartsAtUtc, f.EndsAtUtc, f.CompanyId, f.SiteId, " +
@@ -74,12 +78,12 @@ internal static class SqlContainmentHistoricalContributionReader
             "f.SourceQuantityEvidenceId, f.OccurrenceSiteId, f.OccurrenceShiftScheduleAssignmentId, " +
             "f.OccurrenceShiftId, f.OccurrenceStartsAtUtc, f.OccurrenceEndsAtUtc, " +
             "f.ProductionDaySiteId, f.ProductionBusinessDate, c.Position, c.MetricInputStreamRowId " +
-            "FROM dbo.MetricAggregationContribution c " +
-            "LEFT JOIN dbo.MetricInputFact f ON f.MetricInputFactRowId = c.MetricInputFactRowId AND f.MetricInputStreamRowId = c.MetricInputStreamRowId AND f.Position = c.Position " +
-            "LEFT JOIN dbo.MetricInputStream s ON s.MetricInputStreamRowId = f.MetricInputStreamRowId " +
+            "FROM dbo.MetricAggregationContribution c WITH (INDEX(UQ_MetricAggregationContribution_Position), FORCESEEK) " +
+            "LEFT LOOP JOIN dbo.MetricInputFact f WITH (INDEX(PK_MetricInputFact), FORCESEEK) ON f.MetricInputFactRowId = c.MetricInputFactRowId AND f.MetricInputStreamRowId = c.MetricInputStreamRowId AND f.Position = c.Position " +
+            "LEFT LOOP JOIN dbo.MetricInputStream s ON s.MetricInputStreamRowId = f.MetricInputStreamRowId " +
             "WHERE c.MetricAggregationProcessorRowId = @ProcessorRowId " +
             "AND c.Position <= @ThroughPosition " +
-            "ORDER BY c.Position ASC;";
+            "ORDER BY c.Position ASC OPTION (FORCE ORDER, MAXDOP 1);";
         Bind(command, processorRowId, streamRowId, cut);
         var inputs = new List<PositionedMetricInputFact>();
         await using var rows = await command.ExecuteReaderAsync(cancellationToken);
