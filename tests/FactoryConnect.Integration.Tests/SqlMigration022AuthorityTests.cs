@@ -6,6 +6,13 @@ public sealed class SqlMigration022AuthorityTests
 {
     private static readonly string[] AdmissionColumns = ["AdmissionBound", "ProductionStartsAt"];
     [Fact]
+    public void SharedUpgradeAndConcurrencyHistoryExpectationMatchesEmbeddedCatalog()
+    {
+        Assert.Equal(SqlMigrationCatalog.Load().Migrations.Select(migration => migration.MigrationId),
+            SqlMigrationTestExpectations.CurrentMigrationIds);
+    }
+
+    [Fact]
     public void AdmissionSchemaOnlyExtendsProductionContextProcessor()
     {
         var previous = SqlRepositorySchemaDescriptors.Post021;
