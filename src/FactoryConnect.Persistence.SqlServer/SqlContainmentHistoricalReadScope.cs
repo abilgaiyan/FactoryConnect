@@ -1,10 +1,12 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Core;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
 
 /// <summary>
-/// Reuses only validated source inputs within one caller-owned Serializable transaction.
+/// Reuses validated source inputs and their validated aggregate contribution set within one
+/// caller-owned Serializable transaction and exact aggregation revision.
 /// Callers must not write source facts, contribution membership or aggregation revisions in this scope.
 /// Result evaluation and reference-time authority decisions are deliberately not cached.
 /// </summary>
@@ -20,7 +22,7 @@ internal sealed class SqlContainmentHistoricalReadScope
         _connection = connection;
         _transaction = transaction;
         _inputs = new EvidenceCache((cut, token) =>
-            SqlContainmentHistoricalContributionReader.ReadAsync(connection, transaction, cut, token));
+            SqlContainmentHistoricalContributionReader.ReadValidatedAsync(connection, transaction, cut, token));
     }
 
     internal void RequireOwner(SqlConnection connection, SqlTransaction transaction)
@@ -31,22 +33,34 @@ internal sealed class SqlContainmentHistoricalReadScope
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
     }
 
-    internal Task<IReadOnlyList<PositionedMetricInputFact>> ReadAsync(MetricAggregationCheckpoint cut,
-        CancellationToken cancellationToken)
+    internal async Task<IReadOnlyList<PositionedMetricInputFact>> ReadAsync(MetricAggregationCheckpoint cut,
+        CancellationToken cancellationToken) =>
+        (await ReadEvidenceAsync(cut, cancellationToken)).Inputs;
+
+    internal async Task<MetricAggregateContributionSet> ReadAggregatesAsync(MetricAggregationCheckpoint cut,
+        CancellationToken cancellationToken) =>
+        (await ReadEvidenceAsync(cut, cancellationToken)).Aggregates;
+
+    private Task<Evidence> ReadEvidenceAsync(MetricAggregationCheckpoint cut, CancellationToken cancellationToken)
     {
         RequireOwner(_connection, _transaction);
         return _inputs.ReadAsync(cut, cancellationToken);
     }
 
+    internal sealed record Evidence(
+        IReadOnlyList<PositionedMetricInputFact> Inputs,
+        MetricAggregateContributionSet Aggregates);
+
     // Database-free policy seam. The production loader above always runs the existing SQL reader
     // (binding, exact-revision, membership and fact integrity checks) before a value is accepted.
     internal sealed class EvidenceCache(
-        Func<MetricAggregationCheckpoint, CancellationToken, Task<IReadOnlyList<PositionedMetricInputFact>>> load)
+        Func<MetricAggregationCheckpoint, CancellationToken,
+            Task<SqlContainmentHistoricalContributionReader.ValidatedHistoricalContributions>> load)
     {
-        private readonly Dictionary<MetricAggregationCheckpoint, IReadOnlyList<PositionedMetricInputFact>> _cuts = [];
+        private readonly Dictionary<MetricAggregationCheckpoint, Evidence> _cuts = [];
         private int _reading;
 
-        internal async Task<IReadOnlyList<PositionedMetricInputFact>> ReadAsync(MetricAggregationCheckpoint cut,
+        internal async Task<Evidence> ReadAsync(MetricAggregationCheckpoint cut,
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(cut);
@@ -58,10 +72,10 @@ internal sealed class SqlContainmentHistoricalReadScope
             try
             {
                 if (_cuts.TryGetValue(cut, out var cached)) return cached;
-                var inputs = await load(cut, cancellationToken);
+                var validated = await load(cut, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
-                // Own the collection; neither loader nor consumer can mutate cached membership.
-                var frozen = Array.AsReadOnly(inputs.ToArray());
+                // Own input membership; aggregates were built from this exact validated membership.
+                var frozen = new Evidence(Array.AsReadOnly(validated.Inputs.ToArray()), validated.Aggregates);
                 cancellationToken.ThrowIfCancellationRequested();
                 _cuts.Add(cut, frozen);
                 return frozen;
