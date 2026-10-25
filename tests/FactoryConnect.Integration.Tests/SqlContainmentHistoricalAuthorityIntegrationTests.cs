@@ -1,4 +1,5 @@
 using System.Data;
+using System.Diagnostics;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core.Metrics;
 using FactoryConnect.Persistence.SqlServer;
@@ -56,9 +57,28 @@ public sealed class SqlContainmentHistoricalAuthorityIntegrationTests(SqlContain
         // Position 4 is unincorporated; position 5 belongs only to the later revision.
         var expected = seed.Inputs.Where(input => input.Position.Value <= (ulong)throughPosition &&
             input.Position.Value != 4).ToArray();
+        using var parent = new Activity("historical-timing-test").Start();
+        var stages = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "FactoryConnect.Reporting",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activity =>
+            {
+                if (activity.TraceId == parent.TraceId) stages.Add(activity);
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
         var actual = await SqlContainmentHistoricalContributionReader.ReadValidatedAsync(
             connection, transaction, cut, default);
         Assert.Equal(expected, actual.Inputs);
+        foreach (var stage in new[] { "historical.exact-cut.resolve", "historical.sql.execute",
+            "historical.rows.read-materialize-validate", "historical.aggregate", "historical.read.validate" })
+        {
+            var span = Assert.Single(stages.Where(activity => activity.OperationName == stage));
+            Assert.Equal(true, span.GetTagItem("stage.completed"));
+            Assert.True(span.Duration >= TimeSpan.Zero);
+        }
         await transaction.RollbackAsync();
     }
 
