@@ -18,6 +18,8 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests
         var before = await Snapshot(connection, transaction);
         var scope = new SqlContainmentHistoricalReadScope(connection, transaction);
         var inputs = await scope.ReadAsync(seed.Cut, default);
+        var aggregates = await scope.ReadAggregatesAsync(seed.Cut, default);
+        Assert.Same(aggregates, await scope.ReadAggregatesAsync(seed.Cut, default));
         foreach (var day in ScopePeriods)
         foreach (var definition in BuiltInOperationalMetricDefinitions.All)
         {
@@ -40,6 +42,7 @@ public sealed partial class SqlContainmentHistoricalResultIntegrationTests
         await Assert.ThrowsAsync<ContainmentHistoricalIntegrityException>(() =>
             SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, forged, default, scope));
         Assert.Same(inputs, await scope.ReadAsync(seed.Cut, default));
+        Assert.Same(aggregates, await scope.ReadAggregatesAsync(seed.Cut, default));
         Assert.Equal(before, await Snapshot(connection, transaction));
     }
 
