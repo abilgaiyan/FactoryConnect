@@ -15,13 +15,18 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
         CancellationToken cancellationToken, SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.validate");
+        timing?.SetTag("processor.id", cut.ProcessorId.Value);
+        timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         // Obtain independently validated membership from this transaction; never from an envelope.
         historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
         historicalReads.RequireOwner(connection, transaction);
         var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
         try
         {
-            return await ReadCoreAsync(connection, transaction, cut, period, inputs, cancellationToken);
+            var verified = await ReadCoreAsync(connection, transaction, cut, period, inputs, cancellationToken);
+            timing?.SetTag("stage.completed", true);
+            return verified;
         }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or FormatException or OverflowException)
         { throw new ContainmentHistoricalIntegrityException("Malformed historical reference-time authority.", error); }
@@ -49,37 +54,9 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
         catch (InvalidOperationException error)
         { throw new ContainmentHistoricalIntegrityException("Conflicting produced-source membership.", error); }
 
-        var revisions = new List<MetricInputPosition>();
-        await using (var command = Command(connection, transaction,
-            "SELECT Position FROM dbo.MetricAggregationRevision WHERE MetricAggregationProcessorRowId = @Processor AND Position <= @A ORDER BY Position;", processor))
-        {
-            command.Parameters.Add(SqlServerUInt64.CreateParameter("@A", cut.Position.Value));
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken)) revisions.Add(new(SqlServerUInt64.Materialize(reader.GetDecimal(0))));
-        }
-        if (revisions.Count == 0 || revisions[^1] != cut.Position)
-            throw new MissingContainmentHistoricalAuthorityException("The exact aggregation revision is absent.");
-        var transitions = new List<ProductionReferenceTimePublicationTransition>();
-        MetricInputPosition? previous = null;
-        long reference = 0;
-        foreach (var revision in revisions)
-        {
-            var transition = await SqlServerProductionReferenceTimePublicationTransitionStore.ReadAsync(
-                connection, transaction, cut.ProcessorId, processor, revision, false, cancellationToken);
-            if (transition is not { IsCompleted: true, CompletedReferenceTimeRevision: not null })
-                throw new MissingContainmentHistoricalAuthorityException("A historical reference-time transition is absent or pending.");
-            if (transition.ExpectedPreviousAggregationPosition != previous || transition.StartingReferenceTimeRevision.Value != reference)
-                throw new ContainmentHistoricalIntegrityException("Historical reference-time transitions do not form the exact A/R chain.");
-            reference = transition.CompletedReferenceTimeRevision.Value.Value;
-            await using var pair = Command(connection, transaction,
-                "SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimePublicationCut WHERE MetricAggregationProcessorRowId = @Processor AND MetricAggregationPosition = @A AND ProductionReferenceTimeRevision = @R;", processor);
-            pair.Parameters.Add(SqlServerUInt64.CreateParameter("@A", revision.Value));
-            pair.Parameters.Add(SqlServerUInt64.CreateParameter("@R", checked((ulong)reference)));
-            if ((long)(await pair.ExecuteScalarAsync(cancellationToken))! != 1)
-                throw new MissingContainmentHistoricalAuthorityException("The completed (A,R) publication cut is absent.");
-            transitions.Add(transition);
-            previous = revision;
-        }
+        var transitions = await ReadTransitionChainAsync(connection, transaction, cut, processor, cancellationToken);
+        var reference = transitions[^1].CompletedReferenceTimeRevision!.Value.Value;
+        using var outcomesTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.outcomes.read");
         var outcomes = new List<PublishedProductionReferenceTimeOutcome>();
         await using (var command = Command(connection, transaction,
             SqlServerProductionReferenceTimeOutcomeStore.OutcomeSelect +
@@ -89,6 +66,10 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) outcomes.Add(SqlServerProductionReferenceTimeOutcomeStore.Materialize(reader));
         }
+        outcomesTiming?.SetTag("input.count", outcomes.Count);
+        outcomesTiming?.SetTag("stage.completed", true);
+        outcomesTiming?.Dispose();
+        using var semanticTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.semantic.validate");
         if (outcomes.Select(o => o.SourceQuantityEvidenceId).Distinct().Count() != outcomes.Count)
             throw new ContainmentHistoricalIntegrityException("Duplicate historical source outcomes.");
         // Admission publishes one R per outcome. No phantom or missing R can certify a completed cut.
@@ -151,8 +132,66 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
         var duration = ProductionReferenceTimeCompleteness.SumIdealDurationSeconds(relevant.Select(s => s.Evidence.Id).ToArray(),
             resolutions, cut.StreamId.MachineId, (period as OperationalMetricPeriodId.Shift)?.ShiftOccurrenceId,
             (period as OperationalMetricPeriodId.ProductionDay)?.ProductionDayId);
+        semanticTiming?.SetTag("stage.completed", true);
         return new(binding, duration is null ? null : new MetricAggregateValue(duration.Value, MetricInputFactUnits.Seconds,
             resolutions.LongLength, resolutions.Min(o => o.OccurredAtUtc), resolutions.Max(o => o.OccurredAtUtc)));
+    }
+
+    // One set-based read replaces the previous revision-list + 2 SQL calls per revision.
+    // LEFT JOINs preserve absent transition/cut detection; every predecessor and R boundary is
+    // still checked, at this exact processor/cut, inside the caller's Serializable transaction.
+    internal static async Task<IReadOnlyList<ProductionReferenceTimePublicationTransition>> ReadTransitionChainAsync(
+        SqlConnection connection, SqlTransaction transaction, MetricAggregationCheckpoint cut, long processor,
+        CancellationToken cancellationToken)
+    {
+        SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.transition-chain");
+        timing?.SetTag("processor.id", cut.ProcessorId.Value);
+        timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var transitions = new List<ProductionReferenceTimePublicationTransition>();
+        await using var command = Command(connection, transaction, """
+            SELECT r.Position, t.TargetMetricAggregationPosition,
+                   t.ExpectedPreviousMetricAggregationPosition, t.ProductionStandardAuthorityRevision,
+                   t.StartingProductionReferenceTimeRevision, t.State, t.FinalProductionReferenceTimeRevision,
+                   (SELECT COUNT_BIG(*) FROM dbo.ProductionReferenceTimePublicationCut p
+                    WHERE p.MetricAggregationProcessorRowId = r.MetricAggregationProcessorRowId
+                      AND p.MetricAggregationPosition = r.Position
+                      AND p.ProductionReferenceTimeRevision = t.FinalProductionReferenceTimeRevision)
+            FROM dbo.MetricAggregationRevision r
+            LEFT JOIN dbo.ProductionReferenceTimePublicationTransition t
+              ON t.MetricAggregationProcessorRowId = r.MetricAggregationProcessorRowId
+             AND t.TargetMetricAggregationPosition = r.Position
+            WHERE r.MetricAggregationProcessorRowId = @Processor AND r.Position <= @A
+            ORDER BY r.Position;
+            """, processor);
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@A", cut.Position.Value));
+        MetricInputPosition? previous = null;
+        long reference = 0;
+        await using var rows = await command.ExecuteReaderAsync(cancellationToken);
+        while (await rows.ReadAsync(cancellationToken))
+        {
+            var revision = new MetricInputPosition(SqlServerUInt64.Materialize(rows.GetDecimal(0)));
+            if (rows.IsDBNull(1) || rows.GetByte(5) != 1 || rows.IsDBNull(6))
+                throw new MissingContainmentHistoricalAuthorityException("A historical reference-time transition is absent or pending.");
+            var transition = new ProductionReferenceTimePublicationTransition(cut.ProcessorId, revision,
+                rows.IsDBNull(2) ? null : new MetricInputPosition(SqlServerUInt64.Materialize(rows.GetDecimal(2))),
+                rows.IsDBNull(3) ? null : checked((long)rows.GetDecimal(3)),
+                new ProductionReferenceTimeAuthorityRevision(checked((long)rows.GetDecimal(4))),
+                new ProductionReferenceTimeAuthorityRevision(checked((long)rows.GetDecimal(6))), true);
+            if (transition.ExpectedPreviousAggregationPosition != previous || transition.StartingReferenceTimeRevision.Value != reference)
+                throw new ContainmentHistoricalIntegrityException("Historical reference-time transitions do not form the exact A/R chain.");
+            reference = transition.CompletedReferenceTimeRevision!.Value.Value;
+            if (rows.GetInt64(7) != 1)
+                throw new MissingContainmentHistoricalAuthorityException("The completed (A,R) publication cut is absent.");
+            transitions.Add(transition);
+            previous = revision;
+        }
+        if (previous != cut.Position)
+            throw new MissingContainmentHistoricalAuthorityException("The exact aggregation revision is absent.");
+        timing?.SetTag("input.count", transitions.Count);
+        timing?.SetTag("sql.command.count", 1);
+        timing?.SetTag("stage.completed", true);
+        return transitions.AsReadOnly();
     }
 
     private static bool Belongs(ProductionQuantitySourceEntry source, OperationalMetricPeriodId period) => period switch
