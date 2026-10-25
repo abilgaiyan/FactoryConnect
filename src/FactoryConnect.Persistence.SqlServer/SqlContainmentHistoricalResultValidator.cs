@@ -41,6 +41,9 @@ internal static class SqlContainmentHistoricalResultValidator
         if (key.MachineId != cut.StreamId.MachineId || key.ContextKey != OperationalMetricEvaluationContextKey.Unpartitioned ||
             !BuiltInOperationalMetricDefinitions.All.Any(d => d.Id == key.DefinitionId))
             throw new ArgumentException("Historical containment supports only exact unpartitioned built-in machine keys.", nameof(key));
+        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.result.reconstruct");
+        timing?.SetTag("processor.id", cut.ProcessorId.Value);
+        timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
         historicalReads.RequireOwner(connection, transaction);
         var reader = new TransactionSnapshotReader(connection, transaction, cut, historicalReads);
@@ -55,6 +58,7 @@ internal static class SqlContainmentHistoricalResultValidator
                 node => node.Key.DefinitionId == BuiltInOperationalMetricDefinitions.PerformanceId ? reader.ReferenceBinding : null);
             // Apply the same complete canonical semantic contract to independently reconstructed evidence.
             _ = OperationalMetricDependencySnapshotV2Codec.Encode(document);
+            timing?.SetTag("stage.completed", true);
             return (document, projection);
         }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException)
