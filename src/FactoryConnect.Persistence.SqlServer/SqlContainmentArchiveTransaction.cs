@@ -22,7 +22,29 @@ internal static class SqlContainmentArchiveTransaction
     internal static async Task<IReadOnlyList<ContainmentArchiveReceipt>> PrepareAsync(SqlConnection connection,
         SqlTransaction transaction, IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting,
         CancellationToken cancellationToken, Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection = null, bool verifyOnly = false,
+        SqlContainmentHistoricalReadScope? historicalReads = null) =>
+        (await PrepareCoreAsync(connection, transaction, envelopes, requireExisting, cancellationToken,
+            failureInjection, verifyOnly, historicalReads, captureProjections: false)).Receipts;
+
+    // This collection is published only after the entire batch and every witness have passed.
+    internal static async Task<IReadOnlyList<VerifiedProjectionHandoff>> VerifyExistingAsync(SqlConnection connection,
+        SqlTransaction transaction, IReadOnlyList<ReadOnlyMemory<byte>> envelopes, CancellationToken cancellationToken,
         SqlContainmentHistoricalReadScope? historicalReads = null)
+    {
+        var prepared = await PrepareCoreAsync(connection, transaction, envelopes, requireExisting: true,
+            cancellationToken, failureInjection: null, verifyOnly: true, historicalReads, captureProjections: true);
+        cancellationToken.ThrowIfCancellationRequested();
+        SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        return prepared.Projections;
+    }
+
+    private sealed record Preparation(IReadOnlyList<ContainmentArchiveReceipt> Receipts,
+        IReadOnlyList<VerifiedProjectionHandoff> Projections);
+
+    private static async Task<Preparation> PrepareCoreAsync(SqlConnection connection, SqlTransaction transaction,
+        IReadOnlyList<ReadOnlyMemory<byte>> envelopes, bool requireExisting, CancellationToken cancellationToken,
+        Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection, bool verifyOnly,
+        SqlContainmentHistoricalReadScope? historicalReads, bool captureProjections)
     {
         if (verifyOnly && !requireExisting) throw new ArgumentException("Read-only verification requires all archives to exist.", nameof(requireExisting));
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
@@ -89,8 +111,15 @@ internal static class SqlContainmentArchiveTransaction
             else if (references.Count != 0) throw Integrity("A new result has orphan witness references.");
         }
         // No archive DML is allowed until every incoming result passes P3 in this exact transaction.
+        var verifiedProjections = new List<VerifiedProjectionHandoff>();
         foreach (var result in batch.Results)
-            _ = await SqlContainmentHistoricalResultValidator.VerifyAsync(connection, transaction, result.Payload, cancellationToken, historicalReads);
+        {
+            var verified = await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
+                connection, transaction, result.Payload, cancellationToken, historicalReads);
+            if (captureProjections)
+                verifiedProjections.Add(new VerifiedProjectionHandoff(connection, transaction, result.Id,
+                    verified.Document, verified.Projection));
+        }
         var factRows = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var witness in batch.Witnesses)
         {
@@ -121,7 +150,7 @@ internal static class SqlContainmentArchiveTransaction
             if (requireExisting && witnessRows[hex] is null) throw Integrity("Replay cannot insert a missing witness.");
         }
         if (verifyOnly)
-            return batch.Results.Select(r => new ContainmentArchiveReceipt(r.Id.ToArray(), r.Document.Key)).ToArray();
+            return Complete();
         foreach (var witness in batch.Witnesses.Where(w => witnessRows[Convert.ToHexString(w.Id)] is null))
         {
             await using var command = CreateForMode("""
@@ -168,7 +197,16 @@ internal static class SqlContainmentArchiveTransaction
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
         await Inject(ContainmentArchiveStage.ReferencesInserted);
-        return batch.Results.Select(r => new ContainmentArchiveReceipt(r.Id.ToArray(), r.Document.Key)).ToArray();
+        return Complete();
+
+        Preparation Complete()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+            return new Preparation(
+                batch.Results.Select(r => new ContainmentArchiveReceipt(r.Id.ToArray(), r.Document.Key)).ToArray(),
+                Array.AsReadOnly(verifiedProjections.ToArray()));
+        }
 
         SqlCommand CreateForMode(string sql) => Create(connection, transaction, sql, verifyOnly);
 
@@ -177,6 +215,40 @@ internal static class SqlContainmentArchiveTransaction
             cancellationToken.ThrowIfCancellationRequested();
             // Identical replay executes no DML and does not traverse mutation failure hooks.
             if (failureInjection is not null && existing.Values.Any(v => !v)) await failureInjection(stage, cancellationToken);
+        }
+    }
+
+    internal sealed class VerifiedProjectionHandoff
+    {
+        private readonly SqlConnection _connection;
+        private readonly SqlTransaction _transaction;
+        private readonly byte[] _resultId;
+        private readonly ContainmentResultDocument _document;
+        private readonly OperationalMetricProjection _projection;
+
+        internal VerifiedProjectionHandoff(SqlConnection connection, SqlTransaction transaction, byte[] resultId,
+            ContainmentResultDocument document, OperationalMetricProjection projection)
+        {
+            _connection = connection;
+            _transaction = transaction;
+            _resultId = resultId.ToArray();
+            _document = document;
+            _projection = projection;
+        }
+
+        internal (ContainmentResultDocument Document, OperationalMetricProjection Projection) Read(
+            SqlConnection connection, SqlTransaction transaction, ReadOnlyMemory<byte> resultId,
+            OperationalMetricEvaluationKey key, MetricAggregationCheckpoint cut, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(connection, _connection) || !ReferenceEquals(transaction, _transaction))
+                throw new InvalidOperationException("Verified projections cannot cross connection or transaction boundaries.");
+            SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+            if (!_resultId.AsSpan().SequenceEqual(resultId.Span) || _document.Key != key ||
+                _document.SourceRevision != cut || _projection.Key != key || _projection.SourceRevision != cut ||
+                _projection.ProcessorId != _document.ProcessorId)
+                throw Integrity("Verified projection handoff contradicts the exact result identity or source cut.");
+            return (_document, _projection);
         }
     }
 
