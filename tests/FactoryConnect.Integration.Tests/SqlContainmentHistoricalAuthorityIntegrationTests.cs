@@ -42,6 +42,26 @@ public sealed class SqlContainmentHistoricalAuthorityIntegrationTests(SqlContain
         await transaction.RollbackAsync();
     }
 
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    public async Task OrderedHistoricalAccessPreservesCompleteFactsAtExactCut(int throughPosition)
+    {
+        var seed = await SeedAsync();
+        await using var connection = fixture.CreateConnection();
+        await connection.OpenAsync();
+        await using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+        var cut = new MetricAggregationCheckpoint(seed.Cut.ProcessorId, seed.Cut.StreamId,
+            new MetricInputPosition((ulong)throughPosition));
+        // Position 4 is unincorporated; position 5 belongs only to the later revision.
+        var expected = seed.Inputs.Where(input => input.Position.Value <= (ulong)throughPosition &&
+            input.Position.Value != 4).ToArray();
+        var actual = await SqlContainmentHistoricalContributionReader.ReadValidatedAsync(
+            connection, transaction, cut, default);
+        Assert.Equal(expected, actual.Inputs);
+        await transaction.RollbackAsync();
+    }
+
     [Fact]
     public async Task MissingRevisionAndProcessorDifferFromContradictoryStream()
     {
