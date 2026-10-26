@@ -18,6 +18,12 @@ internal sealed class SqlServerOperationalMetricProjectionQueryReader : IOperati
         _summaryReader = new SqlServerOperationalMetricProjectionSummaryReader(connectionString);
     }
 
+    public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodsSummariesAsync(
+        OperationalMetricProjectionProcessorId processorId, MachineId machineId,
+        IReadOnlyList<OperationalMetricPeriodId> periodIds,
+        OperationalMetricEvaluationContextKey contextKey, CancellationToken cancellationToken) =>
+        _summaryReader.ReadPeriodsSummariesAsync(processorId, machineId, periodIds, contextKey, cancellationToken);
+
     public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,

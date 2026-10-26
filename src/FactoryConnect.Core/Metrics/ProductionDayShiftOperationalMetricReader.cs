@@ -30,29 +30,39 @@ public sealed class ProductionDayShiftOperationalMetricReader :
         ArgumentNullException.ThrowIfNull(query);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var results = new List<ProductionDayShiftOperationalMetricReport>();
+        // Resolve all authoritative roster coverage before reading any metric publication.
+        var selections = new List<(ProductionDayShiftReportingSource Selection, MachineShiftOccurrenceRoster Roster)>();
         foreach (var selection in query.Sources)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var source = selection.Source;
-            var roster = await _rosterStore.ReadAsync(
-                source.MachineId,
-                selection.ProductionDayId,
-                cancellationToken).ConfigureAwait(false)
+            var roster = await _rosterStore.ReadAsync(selection.Source.MachineId,
+                selection.ProductionDayId, cancellationToken).ConfigureAwait(false)
                 ?? throw new ProductionDayShiftRosterCoverageRequiredException(
-                    source.MachineId,
-                    selection.ProductionDayId);
-
+                    selection.Source.MachineId, selection.ProductionDayId);
             ValidateRoster(selection, roster);
+            selections.Add((selection, roster));
+        }
 
-            foreach (var ownership in roster.Occurrences)
+        var results = new List<ProductionDayShiftOperationalMetricReport>();
+        foreach (var group in selections.GroupBy(static item => item.Selection.Source))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var source = group.Key;
+            var occurrences = group.SelectMany(item => item.Roster.Occurrences.Select(
+                ownership => (Roster: item.Roster, Ownership: ownership))).ToArray();
+            var metricReports = await _metricReader.ReadShiftsAsync(
+                source.ProcessorId, source.MachineId,
+                occurrences.Select(static item => item.Ownership.ShiftOccurrenceId).ToArray(),
+                query.ContextKey, cancellationToken).ConfigureAwait(false);
+            if (metricReports.Count != occurrences.Length)
+                throw new InvalidDataException("Operational metric reader returned incomplete shift selection.");
+
+            for (var index = 0; index < occurrences.Length; index++)
             {
-                var metricReport = await _metricReader.ReadShiftAsync(
-                    source.ProcessorId,
-                    source.MachineId,
-                    ownership.ShiftOccurrenceId,
-                    query.ContextKey,
-                    cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                var roster = occurrences[index].Roster;
+                var ownership = occurrences[index].Ownership;
+                var metricReport = metricReports[index];
 
                 if (metricReport is not null)
                 {

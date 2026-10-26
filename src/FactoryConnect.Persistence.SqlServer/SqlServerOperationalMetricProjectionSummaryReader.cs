@@ -16,6 +16,36 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         _connectionString = connectionString;
     }
 
+    // One stable transaction and complete verification for this exact processor. Filtering
+    // and materialization occur before commit; no verified authority escapes for reuse.
+    public async ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodsSummariesAsync(
+        OperationalMetricProjectionProcessorId processorId, MachineId machineId,
+        IReadOnlyList<OperationalMetricPeriodId> periodIds,
+        OperationalMetricEvaluationContextKey contextKey, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(processorId);
+        if (machineId.IsEmpty) throw new ArgumentException("Machine ID is required.", nameof(machineId));
+        ArgumentNullException.ThrowIfNull(periodIds);
+        ArgumentNullException.ThrowIfNull(contextKey);
+        contextKey.Validate();
+        var periods = periodIds.ToHashSet();
+        foreach (var period in periods) ArgumentNullException.ThrowIfNull(period);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (periods.Count == 0) return [];
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<IReadOnlyList<OperationalMetricProjectionSummary>>(
+            connection, processorId, async (c, transaction, token) =>
+            {
+                var publication = await ReadSummariesAsync(c, transaction, processorId, false, token);
+                token.ThrowIfCancellationRequested();
+                return publication.Where(summary => summary.Key.MachineId == machineId &&
+                    periods.Contains(summary.Key.PeriodId) && summary.Key.ContextKey == contextKey)
+                    .OrderBy(static summary => summary.Key.DefinitionId.MetricKey, StringComparer.Ordinal)
+                    .ThenBy(static summary => summary.Key.DefinitionId.Version, StringComparer.Ordinal).ToArray();
+            }, cancellationToken);
+    }
+
     public async ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,

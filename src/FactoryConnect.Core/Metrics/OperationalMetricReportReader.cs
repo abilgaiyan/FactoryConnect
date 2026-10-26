@@ -13,6 +13,37 @@ public sealed class OperationalMetricReportReader : IOperationalMetricReportRead
         _projectionReader = projectionReader;
     }
 
+    public async ValueTask<IReadOnlyList<ShiftOperationalMetricReport?>> ReadShiftsAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        MachineId machineId,
+        IReadOnlyList<ShiftOccurrenceId> shiftOccurrenceIds,
+        OperationalMetricEvaluationContextKey contextKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(shiftOccurrenceIds);
+        var periods = shiftOccurrenceIds.Select(shift =>
+            (OperationalMetricPeriodId)new OperationalMetricPeriodId.Shift(shift)).ToArray();
+        foreach (var period in periods) ValidateIdentity(processorId, machineId, period, contextKey);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (periods.Length == 0) return [];
+        var summaries = await _projectionReader.ReadPeriodsSummariesAsync(
+            processorId, machineId, periods, contextKey, cancellationToken).ConfigureAwait(false);
+        if (summaries.Any(summary => summary.ProcessorId != processorId ||
+            summary.Key.MachineId != machineId || summary.Key.ContextKey != contextKey ||
+            !periods.Contains(summary.Key.PeriodId)))
+            throw new InvalidDataException("Projection summary reader returned data outside the requested reporting identity.");
+        var reports = new ShiftOperationalMetricReport?[periods.Length];
+        for (var index = 0; index < periods.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = MaterializeItems(processorId, machineId, periods[index], contextKey,
+                summaries.Where(summary => summary.Key.PeriodId == periods[index]).ToArray());
+            reports[index] = result is null ? null : new ShiftOperationalMetricReport(
+                processorId, machineId, shiftOccurrenceIds[index], contextKey, result.SourceRevision, result.Metrics);
+        }
+        return reports;
+    }
+
     public async ValueTask<ShiftOperationalMetricReport?> ReadShiftAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,
@@ -118,6 +149,16 @@ public sealed class OperationalMetricReportReader : IOperationalMetricReportRead
             contextKey,
             cancellationToken).ConfigureAwait(false);
 
+        return MaterializeItems(processorId, machineId, periodId, contextKey, summaries);
+    }
+
+    private static PeriodReadResult? MaterializeItems(
+        OperationalMetricProjectionProcessorId processorId,
+        MachineId machineId,
+        OperationalMetricPeriodId periodId,
+        OperationalMetricEvaluationContextKey contextKey,
+        IReadOnlyList<OperationalMetricProjectionSummary> summaries)
+    {
         if (summaries.Count == 0)
         {
             return null;

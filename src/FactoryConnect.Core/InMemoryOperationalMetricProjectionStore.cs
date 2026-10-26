@@ -55,9 +55,15 @@ public sealed class InMemoryOperationalMetricProjectionStore :
     }
 
     public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
+        OperationalMetricProjectionProcessorId processorId, MachineId machineId,
+        OperationalMetricPeriodId periodId, OperationalMetricEvaluationContextKey contextKey,
+        CancellationToken cancellationToken) =>
+        ReadPeriodsSummariesAsync(processorId, machineId, [periodId], contextKey, cancellationToken);
+
+    public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodsSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,
-        OperationalMetricPeriodId periodId,
+        IReadOnlyList<OperationalMetricPeriodId> periodIds,
         OperationalMetricEvaluationContextKey contextKey,
         CancellationToken cancellationToken)
     {
@@ -67,7 +73,9 @@ public sealed class InMemoryOperationalMetricProjectionStore :
             throw new ArgumentException("Machine ID is required.", nameof(machineId));
         }
 
-        ArgumentNullException.ThrowIfNull(periodId);
+        ArgumentNullException.ThrowIfNull(periodIds);
+        var periods = periodIds.ToHashSet();
+        foreach (var period in periods) ArgumentNullException.ThrowIfNull(period);
         ArgumentNullException.ThrowIfNull(contextKey);
         contextKey.Validate();
         cancellationToken.ThrowIfCancellationRequested();
@@ -78,7 +86,7 @@ public sealed class InMemoryOperationalMetricProjectionStore :
                 .Where(pair =>
                     pair.Key.ProcessorId == processorId &&
                     pair.Key.Key.MachineId == machineId &&
-                    pair.Key.Key.PeriodId == periodId &&
+                    periods.Contains(pair.Key.Key.PeriodId) &&
                     pair.Key.Key.ContextKey == contextKey)
                 .Select(static pair => new OperationalMetricProjectionSummary(pair.Value))
                 .OrderBy(static summary => summary.Key.DefinitionId.MetricKey, StringComparer.Ordinal)
