@@ -1,8 +1,8 @@
 # D1-A1 protected historical-read feasibility: frozen experiment contract
 
 Status: frozen design baseline. Diagnostic implementation is authorized and a test-only
-harness is now provided in Gg003ProtectedReadFeasibilityTests.cs. Compilation and SQL
-execution remain pending. See gg003-d1a1-execution.md for exact coverage and gaps.
+harness is now provided in Gg003ProtectedReadFeasibilityTests.cs. The original SQL run produced 21/23 PASS with boundary-deadlock and timeout failures.
+Revised setup compilation and SQL reruns remain pending; D1-A1 is not accepted. See gg003-d1a1-execution.md for exact coverage and gaps.
 D1-A2 production optimization remains blocked.
 
 ## Git and evidence boundary
@@ -105,3 +105,14 @@ fresh restore and equivalent workload.
 Implementation alone supplies no SQL execution results.
 Do not close D1-A1 merely because individual writers block. D1-A2 requires a
 separate production design review and authorization after these results.
+
+
+## Failure investigation boundary
+
+The original partial-read-set boundary schedule remains an unresolved failed
+experiment. Its separately opted-in reproducer retains the no-deadlock assertion.
+The revised standard fixture protects its complete source dependency set before
+starting a mutator; success there must not be presented as proof for partial windows.
+Session lock-timeout setup now uses parameter-free commands and verifies the effective
+value; expected SQL error 1222 is unchanged. See the execution runbook for original
+evidence, hypotheses, lock/graph capture and individual rerun commands.

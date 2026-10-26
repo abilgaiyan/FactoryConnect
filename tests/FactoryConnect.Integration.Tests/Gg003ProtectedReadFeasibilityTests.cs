@@ -29,13 +29,29 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
     [InlineData("boundary")]
     public async Task ProtectedPredicatesRemainStableThroughRepeatedActualVerification(string mutation)
     {
+        await RunProtectedMutationAsync(mutation, completeReadSet: true);
+    }
+
+    // Retains the original failing partial-read-set schedule. SQL 1205 still fails.
+    [PartialWindowFact]
+    public async Task PartialBoundaryWindowReproducesOriginalUnresolvedSchedule()
+    {
+        await RunProtectedMutationAsync("boundary", completeReadSet: false);
+    }
+
+    private async Task RunProtectedMutationAsync(string mutation, bool completeReadSet)
+    {
+        var started = DateTimeOffset.UtcNow;
         var f = await SeedAsync();
         await using var a = await OpenAsync(f.Connection);
         await using var b = await OpenAsync(f.Connection);
         await using var t = (SqlTransaction)await a.BeginTransactionAsync(IsolationLevel.Serializable);
         await DescribeAsync(a, t, "protected begin");
-        var rows = await SourcesAsync(a, t, f.Stream, [(1, 1), (2, 1)]);
-        Assert.Equal(2, rows.Count); // Same sequence in different instances stays distinct.
+        (ulong Instance, ulong Sequence)[] keys = completeReadSet
+            ? [(1, 1), (1, 2), (1, 3), (2, 1)] : [(1, 1), (2, 1)];
+        var rows = await SourcesAsync(a, t, f.Stream, keys);
+        Assert.Equal(keys.Length, rows.Count);
+        output.WriteLine("schedule={0}; protected source identities={1}; complete verifier fixture needs four identities", completeReadSet ? "complete-read-set" : "original-partial-read-set", keys.Length);
         Assert.Equal(2, (await BoundariesAsync(a, t, f.Stream, [2, 4])).Count);
         var interval = Stopwatch.StartNew();
         await LocksAsync(a, t);
@@ -54,16 +70,28 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
         try
         {
             await WaitAsync(a, t, b.ServerProcessId, writer);
+            await LocksAsync(a, t, b.ServerProcessId);
             Assert.Equal(AcquisitionEvidenceReadStatus.Found, (await VerifyAsync(a, t, f)).Status);
             output.WriteLine("order: first actual verifier completed; retain lookup scope for next dependent verification");
             Assert.Equal(AcquisitionEvidenceReadStatus.Found, (await VerifyAsync(a, t, f)).Status);
             Assert.False(writer.IsCompleted);
         }
+        catch (SqlException error) when (error.Number == 1205)
+        {
+            output.WriteLine("SQL 1205 remains a failed experiment. Capturing available system_health evidence before rethrow.");
+            await DeadlockEvidenceAsync(f.Connection, a.ServerProcessId, b.ServerProcessId, started);
+            throw;
+        }
         finally
         {
-            await t.RollbackAsync();
+            await RollbackIfActiveAsync(t);
             output.WriteLine("protected interval after lookup disposal until rollback: {0:F3} ms (bracket, not exact lock acquisition time)", interval.Elapsed.TotalMilliseconds);
-            Assert.Equal(1, await writer.WaitAsync(TimeSpan.FromSeconds(30)));
+            try { Assert.Equal(1, await writer.WaitAsync(TimeSpan.FromSeconds(30))); }
+            catch (SqlException error) when (error.Number == 1205)
+            {
+                await DeadlockEvidenceAsync(f.Connection, a.ServerProcessId, b.ServerProcessId, started);
+                throw;
+            }
         }
         output.WriteLine("writer completion latency including execution/coordination: {0:F3} ms", writerClock.Elapsed.TotalMilliseconds);
         Assert.Equal(AcquisitionEvidenceReadStatus.Corrupt, (await new SqlServerObservationIngestionStore(f.Connection)
@@ -156,23 +184,32 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => VerifyAsync(a, t, f, cancelled.Token));
             await t.RollbackAsync();
         }
+        var originalLockTimeout = await ReadSessionLockTimeoutAsync(a, null);
         await using var writerTransaction = (SqlTransaction)await b.BeginTransactionAsync();
         await ExecuteAsync(b, writerTransaction, f.Stream,
             "UPDATE dbo.MachineObservation SET ObservationValue=N'A1-uncommitted' WHERE MachineId=@M AND StreamKeyBinary=@K AND Position=1;");
         try
         {
-            // Session-local diagnostic failure bound, not a production timeout change.
-            await ExecuteAsync(a, null, f.Stream, "SET LOCK_TIMEOUT 0;");
+            // Use a parameter-free session batch, not the parameterized stream helper.
             foreach (var isolation in new[] { IsolationLevel.ReadCommitted, IsolationLevel.Serializable })
             {
                 await using var t = (SqlTransaction)await a.BeginTransactionAsync(isolation);
+                await SetSessionLockTimeoutAsync(a, t, 0);
+                var effectiveTimeout = await ReadSessionLockTimeoutAsync(a, t);
+                Assert.Equal(0, effectiveTimeout);
+                output.WriteLine("session={0}; isolation={1}; @@LOCK_TIMEOUT={2}; verifier command timeout remains unchanged", a.ServerProcessId, isolation, effectiveTimeout);
                 var error = await Assert.ThrowsAsync<SqlException>(() => VerifyAsync(a, t, f));
                 Assert.Equal(1222, error.Number);
                 output.WriteLine("{0}: actual verifier SQL lock error {1}; no corruption translation", isolation, error.Number);
                 await t.RollbackAsync();
             }
         }
-        finally { await writerTransaction.RollbackAsync(); await ExecuteAsync(a, null, f.Stream, "SET LOCK_TIMEOUT -1;"); }
+        finally
+        {
+            await writerTransaction.RollbackAsync();
+            await SetSessionLockTimeoutAsync(a, null, originalLockTimeout);
+            Assert.Equal(originalLockTimeout, await ReadSessionLockTimeoutAsync(a, null));
+        }
     }
 
     [ProtectedTheory]
@@ -396,11 +433,68 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
         output.WriteLine("{0:O} {1} session/isolation/RCSI/snapshot/transaction/version={2}", DateTimeOffset.UtcNow, phase, JsonSerializer.Serialize(values));
     }
 
-    private async Task LocksAsync(SqlConnection c, SqlTransaction t)
+    private async Task LocksAsync(SqlConnection c, SqlTransaction t, int? otherSession = null)
     {
-        await using var command = Command(c, t, null, "SELECT resource_type,request_mode,request_status,resource_associated_entity_id,resource_description FROM sys.dm_tran_locks WHERE resource_database_id=DB_ID() AND request_session_id=@@SPID;");
+        await using var command = Command(c, t, null, "SELECT request_session_id,resource_type,request_mode,request_status,resource_associated_entity_id,resource_description FROM sys.dm_tran_locks WHERE resource_database_id=DB_ID() AND (request_session_id=@@SPID OR request_session_id=@Other);");
+        command.Parameters.Add("@Other", SqlDbType.Int).Value = otherSession ?? -1;
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync()) { var values = new object[reader.FieldCount]; reader.GetValues(values); output.WriteLine("LOCK {0}", JsonSerializer.Serialize(values)); }
+        await reader.DisposeAsync();
+        await using var map = Command(c, t, null, "SELECT p.hobt_id,i.name FROM sys.partitions p JOIN sys.indexes i ON i.object_id=p.object_id AND i.index_id=p.index_id WHERE p.object_id=OBJECT_ID(N'dbo.MachineObservation');");
+        await using var indexes = await map.ExecuteReaderAsync();
+        while (await indexes.ReadAsync()) output.WriteLine("INDEX_HOBT {0} {1}", indexes[0], indexes[1]);
+    }
+
+    private async Task DeadlockEvidenceAsync(string connection, int holder, int writer, DateTimeOffset started)
+    {
+        try
+        {
+            await using var c = await OpenAsync(connection);
+            await using var command = Command(c, null, null, "SELECT DB_ID(),CONVERT(nvarchar(max),t.target_data) FROM sys.dm_xe_sessions s JOIN sys.dm_xe_session_targets t ON t.event_session_address=s.address WHERE s.name=N'system_health' AND t.target_name=N'ring_buffer';");
+            command.CommandTimeout = 5;
+            await using var reader = await command.ExecuteReaderAsync();
+            var count = 0;
+            while (await reader.ReadAsync())
+            {
+                var database = reader.GetInt32(0).ToString(CultureInfo.InvariantCulture);
+                var xml = XDocument.Parse(reader.GetString(1));
+                foreach (var entry in xml.Descendants("event").Where(element => (string?)element.Attribute("name") == "xml_deadlock_report"))
+                {
+                    if (!DateTimeOffset.TryParse((string?)entry.Attribute("timestamp"), CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal, out var timestamp) || timestamp < started) continue;
+                    var graph = entry.Descendants("deadlock").FirstOrDefault();
+                    if (graph is null || !graph.Descendants().Attributes("dbid").Any(attribute => attribute.Value == database)) continue;
+                    var sessions = graph.Descendants("process").Select(element => (string?)element.Attribute("spid")).ToArray();
+                    if (!sessions.Contains(holder.ToString(CultureInfo.InvariantCulture), StringComparer.Ordinal) ||
+                        !sessions.Contains(writer.ToString(CultureInfo.InvariantCulture), StringComparer.Ordinal)) continue;
+                    output.WriteLine("MATCHING_DEADLOCK_XML {0}", graph.ToString(SaveOptions.DisableFormatting)); count++;
+                }
+            }
+            output.WriteLine("matching system_health deadlock graphs={0}; missing/asynchronous/truncated evidence does not disprove a deadlock", count);
+        }
+        catch (Exception error) when (error is SqlException or System.Xml.XmlException or InvalidOperationException)
+        { output.WriteLine("deadlock evidence unavailable: {0}; original SQL failure remains authoritative", error.GetType().Name); }
+    }
+
+    private static async Task<int> ReadSessionLockTimeoutAsync(SqlConnection c, SqlTransaction? t)
+    {
+        await using var command = c.CreateCommand(); command.Transaction = t;
+        command.CommandText = "SELECT @@LOCK_TIMEOUT;"; command.CommandTimeout = 5;
+        return Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private static async Task SetSessionLockTimeoutAsync(SqlConnection c, SqlTransaction? t, int milliseconds)
+    {
+        await using var command = c.CreateCommand(); command.Transaction = t;
+        command.CommandText = "SET LOCK_TIMEOUT " + milliseconds.ToString(CultureInfo.InvariantCulture) + ";";
+        command.CommandTimeout = 5;
+        Assert.Empty(command.Parameters);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task RollbackIfActiveAsync(SqlTransaction transaction)
+    {
+        if (transaction.Connection is not null) await transaction.RollbackAsync();
     }
 
     private sealed record Fixture(string Connection, ObservationStreamId Stream, ObservationIngestionBatch Last);
@@ -481,6 +575,15 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
         await using var command = Command(c, null, stream, "SELECT (SELECT * FROM dbo.ObservationStreamCheckpoint WHERE MachineId=@M AND StreamKeyBinary=@K FOR JSON PATH,INCLUDE_NULL_VALUES),(SELECT * FROM dbo.MachineObservation WHERE MachineId=@M AND StreamKeyBinary=@K ORDER BY Position FOR JSON PATH,INCLUDE_NULL_VALUES),(SELECT * FROM dbo.AcquisitionContactAuthority WHERE MachineId=@M AND StreamKeyBinary=@K FOR JSON PATH,INCLUDE_NULL_VALUES),(SELECT * FROM dbo.AcquisitionEvidencePublication WHERE MachineId=@M AND StreamKeyBinary=@K ORDER BY PublicationOrdinal FOR JSON PATH,INCLUDE_NULL_VALUES),(SELECT * FROM dbo.AcquisitionEvidenceHead WHERE MachineId=@M AND StreamKeyBinary=@K FOR JSON PATH,INCLUDE_NULL_VALUES);");
         await using var reader = await command.ExecuteReaderAsync(); Assert.True(await reader.ReadAsync());
         var values = new object[reader.FieldCount]; reader.GetValues(values); return JsonSerializer.Serialize(values);
+    }
+    public sealed class PartialWindowFactAttribute : FactAttribute
+    {
+        public PartialWindowFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Prefix + "CONNECTION_STRING")) ||
+                Environment.GetEnvironmentVariable(Prefix + "REPRODUCE_PARTIAL_WINDOW") != "1")
+                Skip = "Original unresolved partial-window schedule; requires explicit REPRODUCE_PARTIAL_WINDOW=1 on disposable clone.";
+        }
     }
     public sealed class ProtectedFactAttribute : FactAttribute
     { public ProtectedFactAttribute() { if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Prefix + "CONNECTION_STRING"))) Skip = "Opt-in fresh D1-A1 clone required."; } }
