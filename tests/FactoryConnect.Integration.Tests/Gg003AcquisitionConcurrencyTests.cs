@@ -228,7 +228,7 @@ public sealed class Gg003AcquisitionConcurrencyTests(ITestOutputHelper output)
         var settings = new SqlConnectionStringBuilder(Environment.GetEnvironmentVariable(Prefix + "CONNECTION_STRING")
             ?? throw new InvalidOperationException("D1-C connection missing."));
         Assert.Equal(Database, settings.InitialCatalog);
-        Assert.True(settings.DataSource.StartsWith("(localdb)\\", StringComparison.OrdinalIgnoreCase));
+        Assert.StartsWith("(localdb)\\", settings.DataSource, StringComparison.OrdinalIgnoreCase);
         Assert.True(string.IsNullOrEmpty(settings.AttachDBFilename));
         await using (var guard = new SqlConnection(settings.ConnectionString))
         {
