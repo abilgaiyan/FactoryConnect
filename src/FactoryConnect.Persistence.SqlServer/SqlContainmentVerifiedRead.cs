@@ -112,6 +112,8 @@ internal static class SqlContainmentVerifiedRead
         verificationTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations);
         verificationTiming?.SetTag("ReferenceTimeAuthorityValidationExecutions", referenceTimeReads.ReferenceTimeAuthorityValidationExecutions);
         verificationTiming?.SetTag("ReferenceTimeAuthorityCacheHits", referenceTimeReads.CacheHits);
+        verificationTiming?.SetTag("ReferenceTimePeriodEvaluations", referenceTimeReads.PeriodEvaluations);
+        verificationTiming?.SetTag("ReferenceTimeEvidenceContract", SqlContainmentReferenceTimeAuthorityValidator.EvidenceContract);
         verificationTiming?.SetTag("retained.result.count", retained.Count);
         verificationTiming?.SetTag("verification.completed", true);
         return new Publication(projections.AsReadOnly(), latestKeys);

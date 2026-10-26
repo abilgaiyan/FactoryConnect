@@ -1,40 +1,54 @@
-# Reporting-only reference-time authority reuse
+# PR #162: reporting-only validated cut evidence reuse
 
 Base: `df1bbac1c0bb5ab26d43af6d71d92c78d28bb9d2` (PR #161).
+The accepted Phase A/Phase B amendment is implemented on the existing PR #162 branch. Runtime correctness and performance acceptance remain pending. The earlier non-null period-duration cache is replaced, not layered beneath this implementation.
 
-## Contract and boundary
+## Implemented contract
 
-The existing reference-time validator returns `VerifiedReferenceTime`: a canonical period-specific authority binding and a nullable duration aggregate. Its successful return follows all membership, transition, outcome, source/standard, canonical consistency and completeness checks. A null aggregate represents missing/unresolved period reference time; a successful SQL read alone is not a reusable result.
+`SqlContainmentReferenceTimeAuthorityValidator.ValidatedCutEvidence` has a private constructor. Its full phase-A loader accepts the complete aggregation checkpoint and owner but NO requested period. All existing source reconstruction, units, transition-chain, R-prefix, delta/admission, standard inventory and canonical-outcome checks finish before it returns a proof. The cut-wide validation body and SQL/transition helper logic were preserved during extraction; a source comparison confirmed the validation body is unchanged apart from whitespace, and the SQL/helper tail is byte-identical to the earlier implementation.
 
-`SqlContainmentReportingReferenceTimeScope` is allocated only in `SqlContainmentVerifiedRead.TryReadAsync`. It is passed through the historical-read scope to the unchanged validator logic. Other callers retain uncached validation, including archive/publication preparation. No schema, isolation, gate, lock, timeout, or acquisition production changes are included.
+Proofs hold the exact cut and owner, completed R, complete canonical sources and validated resolutions required by period derivation. Inventories stay private. Source contributing positions and outcome conflicting-standard identifiers are copied into owned read-only collections. Canonical source evidence contains immutable scalar/value members. No lazy SQL or deferred query escapes.
 
-The identity contains the complete `MetricAggregationCheckpoint` (aggregation processor, machine/stream and position), the exact `OperationalMetricPeriodId` (including full shift/day identity), and fixed `AvailabilityContainmentV1.PolicyId`. The scope owns one connection and Serializable transaction. Reference identity, open/stable transaction state and cancellation are checked before any hit; ownership/cancellation are checked again after loading and before admission. Concurrent scope use is rejected. No scope may be supplied to a transaction that writes reference-time authority.
+`SqlContainmentReportingReferenceTimeScope` is created only in `SqlContainmentVerifiedRead`. Its dictionary contains validated CUT EVIDENCE, keyed by full MetricAggregationCheckpoint (aggregation processor, machine/stream, position), fixed containment policy and `reference-time-cut-evidence-v1`. There is no period-result dictionary. Connection/transaction identity, active Serializable state, exact returned-proof identity and cancellation are checked on admission and hits. Overlap is rejected. Failures, partial loads and cancellation are not admitted. The transaction must not write any authority dependency while the scope exists; production reporting performs no such writes.
 
-Only fully validated results with a non-null duration are admitted. Failures, corruption, cancellation and missing/unresolved duration results are never admitted. An OEE root unavailable because of Availability can still use valid Performance authority: this cache does not hold OEE/Performance evaluation outcomes. Binding collections and duration values are immutable. Every root still evaluates independently and every retained envelope still undergoes its own canonical byte comparison; no root evaluation cache is introduced.
+A complete empty or canonically unresolved history can now be reused. Empty query results alone are insufficient: every existing chain, prefix, delta and consistency check must pass. This caches a validated authority-evidence object, never an unavailable/insufficient metric result.
 
-Successful containment-verification completion logs expose:
+Phase B always runs independently. It selects exact period sources/outcomes, constructs a fresh binding and applies the unchanged completeness/duration rules. Null durations, resolved-subset rejection, period identity, source ordering, standard revisions, units and timestamp bounds remain as before. Every retained root still reconstructs and every canonical envelope is independently compared. Archive/evidence/witness/index/manifest verification remains unchanged.
 
-- `RootReconstructionInvocations`: every root reconstruction in the reporting scope.
-- `ReferenceTimeAuthorityValidationExecutions`: actual loader attempts, excluding cache hits.
-- `ReferenceTimeAuthorityCacheHits`: successful decision reuse.
+Callers without a reporting scope execute uncached phase A followed by phase B. Publication/preparation and acquisition production paths do not allocate the reuse scope. No schema, SQL, isolation, gates, lock modes or timeout changes are included.
 
-`historical.reference-time.validate` now surrounds actual validation executions, not memoized accesses. Counters are attached to the completed `containment.publication.verify` span. They are not cross-request totals. Failed requests must be inspected using their error and span evidence; the final success counter record may be absent.
+## Diagnostics: new evidence contract
 
-## Important GG-003 benchmark limitation
+On completed `containment.publication.verify` logs:
 
-The supplied `PR161-profile-api.log` contains four requests. All 312 stopped `historical.reference-time.outcomes.read` spans (78 per request) report `InputCount=0`. Source completeness rules return no duration when produced-source membership is empty, and reject missing required outcomes otherwise. Thus these successful zero-outcome validations are expected to return null duration.
+| Field | Definition |
+|---|---|
+| RootReconstructionInvocations | Every root reconstruction in this reporting verification |
+| ReferenceTimeAuthorityValidationExecutions | Actual phase-A evidence-loader attempts, including failures when observable; excludes hits |
+| ReferenceTimeAuthorityCacheHits | Complete cut-evidence reuse, including validated empty histories |
+| ReferenceTimePeriodEvaluations | Every phase-B invocation after successful evidence access |
+| ReferenceTimeEvidenceContract | `reference-time-cut-evidence-v1` |
 
-Under the approved rule excluding unavailable/insufficient results, this implementation is expected to yield **zero cache hits for that recorded state**. It must not be represented as a demonstrated or expected latency improvement for that dataset. Confirm the actual runtime counters against the disposable clone. If they remain 195 roots / 78 executions / 0 hits, that is faithful enforcement of the safeguard, not performance acceptance.
+The old `historical.reference-time.validate` span is replaced with `historical.reference-time.evidence.validate` and `historical.reference-time.period.evaluate`. Existing nested transition/outcome/semantic spans remain in phase A. Compare like stages explicitly; do not relabel the earlier period-duration-cache counts. Failed requests may have no final successful verification/counter record; retain errors and span traces.
 
-A subsequent design could consider independently validated completed-cut authority evidence while deriving missing period results anew. That is a different admission contract; it is not implemented here. Do not silently admit null-duration results to obtain benchmark hits.
+From supplied PR161-profile-api.log: four requests, reporting.query median 27.17044165 s, ASP.NET median 27.17585265 s, 195 roots/request, 78 reference-time validations/request and 20 contribution-SQL executions/request. All 312 stopped outcome-read spans reported zero rows. The amended contract permits reuse only after independently proving those empty histories complete and consistent. No particular reduction count or latency is guaranteed; distinct reference-time cuts must be measured. Started reconstruction tags may inherit the publication cut before local tags are set; use stopped-span exact-cut tags. Nested durations must not be added.
 
-Baseline from the attached four requests: median `reporting.query` 27.17044165 s; median ASP.NET request duration 27.17585265 s. Root reconstruction count 195/request; reference-time validation count 78/request; contribution SQL execution count 20/request. Stages overlap. Started reconstruction tags may inherit the outer publication cut before local tags are assigned; use stopped-span exact-cut tags.
+## Added/adapted validation
 
-## Validation preparation
+- Calculated and unavailable OEE roots retain canonical equivalence with paired Performance/OEE authority reuse; forged envelopes reject after warming.
+- Different requested periods share only cut evidence. A populated period, a no-source period and a repeated populated period each derive independent bindings/durations.
+- Different complete source cuts and historical revisions remain separate; repeated numerical positions cannot grant cross-source authority.
+- Empty, missing-identity, missing-standard and ambiguous canonical histories reuse validated evidence but independently return null duration. Canonical Performance/OEE envelopes remain equivalent for empty/unresolved evidence.
+- Incomplete/pending empty histories, missing publication cuts, missing outcomes and missing standard history reject rather than become cached empty evidence; unrelated warm entries grant no authority.
+- Corruption, failure and cancellation after loading do not populate entries. Wrong-cut proof admission and overlapping loads reject.
+- Cancelled hits, foreign owner, committed/rolled-back/disposed transactions and stale scopes reject.
+- An actual five-metric reporting verifier fixture asserts five roots, one evidence validation, one hit and two independent period evaluations.
 
-No .NET SDK or Windows LocalDB is available in the editing environment. `dotnet --version` fails with command not found. Compilation, tests and real-data performance are pending. Whitespace checking alone is not correctness acceptance.
+These tests are written, NOT claimed passed. The editing environment has no dotnet executable or Windows LocalDB. The attempted `dotnet build FactoryConnect.sln -c Release` failed before compilation with exit 127 (command not found). Whitespace checks pass.
 
-On the developer machine use an isolated checkout, SDK 10.0.402, and record actual commit/build/configuration. Run:
+## Developer validation commands
+
+Use SDK 10.0.402 and an isolated checkout of this PR branch. Record actual commit, clean status, configuration and executable paths. Do not use stale binaries.
 
 ```powershell
 dotnet build FactoryConnect.sln -c Release
@@ -48,12 +62,14 @@ dotnet test tests/FactoryConnect.Edge.Tests -c Release --no-build --logger 'trx;
 if ($LASTEXITCODE) { throw 'Edge regressions failed' }
 ```
 
-The selected SQL fixtures create/drop uniquely named disposable databases. Use only the developer SQL instance; never a production connection.
+The selected SQL fixtures create/drop uniquely named disposable databases. Use only the developer SQL instance. Existing reporting and acquisition/publication regression suites remain gates.
 
-New SQL coverage exercises paired Performance/OEE with calculated/unavailable roots and byte equivalence, forged canonical envelopes after warming, different periods/sources/revisions, missing/ambiguous/empty reference-time results, corruption/failure/post-load cancellation admission, cancelled hits, foreign owner rejection and committed/rolled-back/disposed owner rejection. An actual reporting verifier test checks five roots, one authority validation and one hit on a resolved five-metric fixture. Existing acquisition/publication regressions remain necessary.
+## Controlled clone benchmark, still pending
 
-For the real-data comparison follow the target/schema/payload guards in `gg003-multi-shift-reporting.md`: confirmed disposable developer restores only, current migration ledger/checksums through 022, exact executable and effective SQL target, same verified 16 October request, complete parsed JSON comparison. Never use Gajra, a protected reference database, or `GG003_ACQ_A2_20261026`.
+Follow target/schema/payload guards in `gg003-multi-shift-reporting.md`: confirmed disposable developer restores only, actual current migration ledger/checksums through 022, exact executable and effective SQL target, same verified 16 October request and complete parsed JSON comparison. Never use Gajra, a protected reference database or `GG003_ACQ_A2_20261026`. This editing session cannot access or validate the developer clone; do not assume the historical PERF clone is suitable.
 
-Use the same four-request protocol for base and candidate, preserving warm-up labels and each raw server duration. Enable `ReportingDiagnostics:Enabled=true` with Information timing logs. Report roots, actual authority validation executions, hits, verification/transaction/query/ASP.NET durations and response equality separately. Capture errors and cancellation; do not increase timeouts. Concurrent acquisition/reporting validation is a separate disposable-clone phase and remains pending.
+Use the same four-request protocol for PR #161 main and this candidate, preserving warm-up labels and every raw server duration. Enable `ReportingDiagnostics:Enabled=true` with Information timing logs. Record root reconstructions, actual evidence validations, cache hits, period evaluations, distinct complete cuts, evidence-contract version, verification/transaction/query/ASP.NET durations, complete response equivalence and peak process memory. Do not use contribution SQL count as a substitute for distinct reference-time cuts. Capture failures/retries/cancellation without changing timeout values.
 
-Keep draft. No improvement is accepted without measured lower median and semantic equivalence; zero eligible reuse in GG-003 requires a revised design review, not weakened admission. Do not merge, deploy, or poll CI.
+Expect necessary root reconstruction and independent period evaluation to remain. Evidence validation may decline when complete cuts repeat. Acceptance requires measured lower median and semantic equivalence; no improvement is claimed here. Concurrent acquisition/reporting blocking and completion are a separate disposable-clone validation phase and remain pending.
+
+Keep PR draft until compilation, SQL regressions, semantic equivalence and controlled measurements are reviewed. Do not merge, deploy or poll CI.

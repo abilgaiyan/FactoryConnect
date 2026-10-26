@@ -34,6 +34,9 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
         Assert.Equal(5, Assert.IsType<int>(verification.GetTagItem("RootReconstructionInvocations")));
         Assert.Equal(1, Assert.IsType<int>(verification.GetTagItem("ReferenceTimeAuthorityValidationExecutions")));
         Assert.Equal(1, Assert.IsType<int>(verification.GetTagItem("ReferenceTimeAuthorityCacheHits")));
+        Assert.Equal(2, Assert.IsType<int>(verification.GetTagItem("ReferenceTimePeriodEvaluations")));
+        Assert.Equal(SqlContainmentReferenceTimeAuthorityValidator.EvidenceContract,
+            Assert.IsType<string>(verification.GetTagItem("ReferenceTimeEvidenceContract")));
     }
 
     [Fact]

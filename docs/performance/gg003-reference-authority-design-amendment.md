@@ -1,6 +1,6 @@
 # PR #162 design amendment: validated cut evidence, independent period results
 
-Status: PROPOSED FOR REVIEW. This amendment changes documentation only. It does not authorize or implement the new cache contract. Current implementation remains the period-result reuse at `bda2de39ba01715d4b405a1f34693425c2a7e0d0`, pending compilation/SQL regressions and performance acceptance. PR #162 stays draft. No merge, deployment, acquisition changes, schema changes, lock changes or timeout changes.
+Status: DESIGN ACCEPTED; Phase A/Phase B implementation added on the existing PR #162 branch. Runtime correctness and performance acceptance remain pending. This document records the accepted boundary; see `gg003-reference-authority-reuse.md` for current implementation, counters and validation commands. The earlier period-duration cache at `bda2de39` is replaced. PR #162 stays draft. No merge, deployment, acquisition changes, schema changes, lock changes or timeout changes.
 
 ## Problem and corrected target
 

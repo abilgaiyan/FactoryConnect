@@ -10,6 +10,8 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
 {
     internal sealed record VerifiedReferenceTime(ContainmentHistoricalAuthority Binding, MetricAggregateValue? Aggregate);
 
+    internal const string EvidenceContract = "reference-time-cut-evidence-v1";
+
     internal static async Task<VerifiedReferenceTime> ReadAsync(SqlConnection connection, SqlTransaction transaction,
         MetricAggregationCheckpoint cut, OperationalMetricPeriodId period,
         CancellationToken cancellationToken, SqlContainmentHistoricalReadScope? historicalReads = null)
@@ -17,135 +19,208 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
         historicalReads.RequireOwner(connection, transaction);
+        ValidatedCutEvidence evidence;
         if (historicalReads.ReportingReferenceTime is { } reporting)
-            return await reporting.ReadAsync(connection, transaction, cut, period, cancellationToken,
-                token => ReadValidatedAsync(connection, transaction, cut, period, token, historicalReads));
-        return await ReadValidatedAsync(connection, transaction, cut, period, cancellationToken, historicalReads);
-    }
-
-    private static async Task<VerifiedReferenceTime> ReadValidatedAsync(SqlConnection connection,
-        SqlTransaction transaction, MetricAggregationCheckpoint cut, OperationalMetricPeriodId period,
-        CancellationToken cancellationToken, SqlContainmentHistoricalReadScope historicalReads)
-    {
+            evidence = await reporting.ReadAsync(connection, transaction, cut,
+                token => ValidatedCutEvidence.LoadAsync(connection, transaction, cut, historicalReads, token), cancellationToken);
+        else
+            evidence = await ValidatedCutEvidence.LoadAsync(connection, transaction, cut, historicalReads, cancellationToken);
         historicalReads.RequireOwner(connection, transaction);
         cancellationToken.ThrowIfCancellationRequested();
-        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.validate");
-        timing?.SetTag("processor.id", cut.ProcessorId.Value);
-        timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
-        try
-        {
-            var verified = await ReadCoreAsync(connection, transaction, cut, period, inputs, cancellationToken);
-            timing?.SetTag("stage.completed", true);
-            return verified;
-        }
-        catch (Exception error) when (error is ArgumentException or InvalidDataException or FormatException or OverflowException)
-        { throw new ContainmentHistoricalIntegrityException("Malformed historical reference-time authority.", error); }
+        historicalReads.ReportingReferenceTime?.RecordPeriodEvaluation(connection, transaction);
+        return evidence.EvaluatePeriod(connection, transaction, period, cancellationToken);
     }
 
-    private static async Task<VerifiedReferenceTime> ReadCoreAsync(SqlConnection connection, SqlTransaction transaction,
-        MetricAggregationCheckpoint cut, OperationalMetricPeriodId period, IReadOnlyList<PositionedMetricInputFact> inputs,
-        CancellationToken cancellationToken)
+    // Only the full phase-A loader can construct this proof. It accepts NO requested period.
+    // Collections remain private and own all nested collection membership.
+    internal sealed class ValidatedCutEvidence
     {
-        var processor = await SqlServerProductionReferenceTimePublicationTransitionStore.ReadProcessorRowIdAsync(
-            connection, transaction, cut.ProcessorId, cancellationToken);
-        var quantities = inputs.Where(i => i.Fact.Key is MetricInputFactKeys.PartCountIncrement
-            or MetricInputFactKeys.GoodQuantity or MetricInputFactKeys.RejectedQuantity).ToArray();
-        if (quantities.Any(i => i.Fact.Unit != MetricInputFactUnits.Count ||
-                (i.Fact.Key == MetricInputFactKeys.PartCountIncrement && i.Fact.SourceQuantityEvidenceId is null)))
-            throw new ContainmentHistoricalIntegrityException("Produced quantity lacks canonical units or source identity.");
-        ProductionQuantitySourceEntry[] sources;
-        try
-        {
-            sources = quantities.Where(i => i.Fact.SourceQuantityEvidenceId is not null)
-                .GroupBy(i => i.Fact.SourceQuantityEvidenceId!.Value)
-                .Select(g => SqlServerMetricAggregationStore.ReconstructSource(g.Key, g.OrderBy(i => i.Position).ToArray()))
-                .Where(s => s is not null).Select(s => s!).ToArray();
-        }
-        catch (InvalidOperationException error)
-        { throw new ContainmentHistoricalIntegrityException("Conflicting produced-source membership.", error); }
+        private readonly SqlConnection _connection;
+        private readonly SqlTransaction _transaction;
+        private readonly long _reference;
+        private readonly IReadOnlyList<ProductionQuantitySourceEntry> _sources;
+        private readonly IReadOnlyList<ProductionReferenceTimeResolution> _outcomes;
 
-        var transitions = await ReadTransitionChainAsync(connection, transaction, cut, processor, cancellationToken);
-        var reference = transitions[^1].CompletedReferenceTimeRevision!.Value.Value;
-        using var outcomesTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.outcomes.read");
-        var outcomes = new List<PublishedProductionReferenceTimeOutcome>();
-        await using (var command = Command(connection, transaction,
-            SqlServerProductionReferenceTimeOutcomeStore.OutcomeSelect +
-            " WHERE o.MetricAggregationProcessorRowId = @Processor AND o.ProductionReferenceTimeRevision <= @R ORDER BY o.ProductionReferenceTimeRevision;", processor))
+        private ValidatedCutEvidence(SqlConnection connection, SqlTransaction transaction,
+            MetricAggregationCheckpoint cut, long reference, IEnumerable<ProductionQuantitySourceEntry> sources,
+            IEnumerable<PublishedProductionReferenceTimeOutcome> outcomes)
         {
-            command.Parameters.Add(SqlServerUInt64.CreateParameter("@R", checked((ulong)reference)));
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken)) outcomes.Add(SqlServerProductionReferenceTimeOutcomeStore.Materialize(reader));
-        }
-        outcomesTiming?.SetTag("input.count", outcomes.Count);
-        outcomesTiming?.SetTag("stage.completed", true);
-        outcomesTiming?.Dispose();
-        using var semanticTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.semantic.validate");
-        if (outcomes.Select(o => o.SourceQuantityEvidenceId).Distinct().Count() != outcomes.Count)
-            throw new ContainmentHistoricalIntegrityException("Duplicate historical source outcomes.");
-        // Admission publishes one R per outcome. No phantom or missing R can certify a completed cut.
-        long expectedR = 1;
-        foreach (var outcome in outcomes)
-        {
-            if (outcome.PublicationRevision.Value != expectedR++)
-                throw new MissingContainmentHistoricalAuthorityException("The historical outcome revision chain is incomplete.");
-        }
-        if (outcomes.Count != reference)
-            throw new MissingContainmentHistoricalAuthorityException("The terminal R lacks its complete outcome history.");
-        var sourcesById = sources.ToDictionary(s => s.Evidence.Id);
-        var standards = new Dictionary<long, ProductionStandardAuthorityCut>();
-        foreach (var transition in transitions)
-        {
-            var deltaSources = inputs.Where(i => i.Fact.Key == MetricInputFactKeys.PartCountIncrement &&
-                    (transition.ExpectedPreviousAggregationPosition is null || i.Position > transition.ExpectedPreviousAggregationPosition) &&
-                    i.Position <= transition.TargetAggregationPosition)
-                .Select(i => i.Fact.SourceQuantityEvidenceId!.Value).ToHashSet();
-            var admitted = outcomes.Where(o => o.PublicationRevision.Value > transition.StartingReferenceTimeRevision.Value &&
-                o.PublicationRevision.Value <= transition.CompletedReferenceTimeRevision!.Value.Value).ToArray();
-            if (admitted.Any(o => !deltaSources.Contains(o.SourceQuantityEvidenceId)))
-                throw new ContainmentHistoricalIntegrityException("An outcome is outside its exact aggregation delta.");
-            if (!deltaSources.SetEquals(admitted.Select(o => o.SourceQuantityEvidenceId)))
-                throw new MissingContainmentHistoricalAuthorityException("Completed transition lacks a required produced-source outcome.");
-            if (deltaSources.Count == 0)
+            _connection = connection;
+            _transaction = transaction;
+            Cut = cut;
+            _reference = reference;
+            _sources = Array.AsReadOnly(sources.Select(source => source with
             {
-                if (transition.ProductionStandardAuthorityRevision is not null ||
-                    transition.StartingReferenceTimeRevision != transition.CompletedReferenceTimeRevision)
-                    throw new ContainmentHistoricalIntegrityException("Empty transition changed reference-time authority.");
-                continue;
+                ContributingPositions = Array.AsReadOnly(source.ContributingPositions.ToArray()),
+            }).ToArray());
+            _outcomes = Array.AsReadOnly(outcomes.Select(published => published.Resolution with
+            {
+                ConflictingStandardVersionIds = Array.AsReadOnly(published.Resolution.ConflictingStandardVersionIds.ToArray()),
+            }).ToArray());
+        }
+
+        internal MetricAggregationCheckpoint Cut { get; }
+
+        internal void RequireOwner(SqlConnection connection, SqlTransaction transaction, MetricAggregationCheckpoint cut)
+        {
+            if (!ReferenceEquals(connection, _connection) || !ReferenceEquals(transaction, _transaction) || Cut != cut)
+                throw new InvalidOperationException("Validated reference-time evidence cannot cross owner or exact-cut boundaries.");
+            SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        }
+
+        internal static async Task<ValidatedCutEvidence> LoadAsync(SqlConnection connection, SqlTransaction transaction,
+            MetricAggregationCheckpoint cut, SqlContainmentHistoricalReadScope historicalReads, CancellationToken cancellationToken)
+        {
+            historicalReads.RequireOwner(connection, transaction);
+            cancellationToken.ThrowIfCancellationRequested();
+            using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.evidence.validate");
+            timing?.SetTag("processor.id", cut.ProcessorId.Value);
+            timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            timing?.SetTag("ReferenceTimeEvidenceContract", EvidenceContract);
+            var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
+            try
+            {
+                var evidence = await LoadCoreAsync(connection, transaction, cut, inputs, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                historicalReads.RequireOwner(connection, transaction);
+                timing?.SetTag("stage.completed", true);
+                return evidence;
             }
-            if (transition.ProductionStandardAuthorityRevision is not long standard)
-                throw new MissingContainmentHistoricalAuthorityException("A nonempty transition has no standard authority cut.");
-            if (!standards.TryGetValue(standard, out var standardCut))
-                standards.Add(standard, standardCut = await ReadStandardCutAsync(connection, transaction, standard, cancellationToken));
-            foreach (var published in admitted)
+            catch (Exception error) when (error is ArgumentException or InvalidDataException or FormatException or OverflowException)
+            { throw new ContainmentHistoricalIntegrityException("Malformed historical reference-time authority.", error); }
+        }
+
+        private static async Task<ValidatedCutEvidence> LoadCoreAsync(SqlConnection connection, SqlTransaction transaction,
+            MetricAggregationCheckpoint cut, IReadOnlyList<PositionedMetricInputFact> inputs, CancellationToken cancellationToken)
+        {
+            var processor = await SqlServerProductionReferenceTimePublicationTransitionStore.ReadProcessorRowIdAsync(
+                connection, transaction, cut.ProcessorId, cancellationToken);
+            var quantities = inputs.Where(i => i.Fact.Key is MetricInputFactKeys.PartCountIncrement
+                or MetricInputFactKeys.GoodQuantity or MetricInputFactKeys.RejectedQuantity).ToArray();
+            if (quantities.Any(i => i.Fact.Unit != MetricInputFactUnits.Count ||
+                    (i.Fact.Key == MetricInputFactKeys.PartCountIncrement && i.Fact.SourceQuantityEvidenceId is null)))
+                throw new ContainmentHistoricalIntegrityException("Produced quantity lacks canonical units or source identity.");
+            ProductionQuantitySourceEntry[] sources;
+            try
             {
-                var outcome = published.Resolution;
-                if (outcome.AuthorityRevision != standard || !sourcesById.TryGetValue(outcome.SourceQuantityEvidenceId, out var source))
-                    throw new ContainmentHistoricalIntegrityException("Outcome contradicts its transition S or source membership.");
-                var referenced = outcome.SelectedStandardVersionId is { } selected
-                    ? new[] { selected } : outcome.ConflictingStandardVersionIds;
-                if (referenced.Any(id => !standardCut.Versions.Any(v => v.VersionId == id)))
-                    throw new MissingContainmentHistoricalAuthorityException("A referenced historical standard version is absent.");
-                try
+                sources = quantities.Where(i => i.Fact.SourceQuantityEvidenceId is not null)
+                    .GroupBy(i => i.Fact.SourceQuantityEvidenceId!.Value)
+                    .Select(g => SqlServerMetricAggregationStore.ReconstructSource(g.Key, g.OrderBy(i => i.Position).ToArray()))
+                    .Where(s => s is not null).Select(s => s!).ToArray();
+            }
+            catch (InvalidOperationException error)
+            { throw new ContainmentHistoricalIntegrityException("Conflicting produced-source membership.", error); }
+
+            var transitions = await ReadTransitionChainAsync(connection, transaction, cut, processor, cancellationToken);
+            var reference = transitions[^1].CompletedReferenceTimeRevision!.Value.Value;
+            using var outcomesTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.outcomes.read");
+            var outcomes = new List<PublishedProductionReferenceTimeOutcome>();
+            await using (var command = Command(connection, transaction,
+                SqlServerProductionReferenceTimeOutcomeStore.OutcomeSelect +
+                " WHERE o.MetricAggregationProcessorRowId = @Processor AND o.ProductionReferenceTimeRevision <= @R ORDER BY o.ProductionReferenceTimeRevision;", processor))
+            {
+                command.Parameters.Add(SqlServerUInt64.CreateParameter("@R", checked((ulong)reference)));
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken)) outcomes.Add(SqlServerProductionReferenceTimeOutcomeStore.Materialize(reader));
+            }
+            outcomesTiming?.SetTag("input.count", outcomes.Count);
+            outcomesTiming?.SetTag("stage.completed", true);
+            outcomesTiming?.Dispose();
+            using var semanticTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.semantic.validate");
+            if (outcomes.Select(o => o.SourceQuantityEvidenceId).Distinct().Count() != outcomes.Count)
+                throw new ContainmentHistoricalIntegrityException("Duplicate historical source outcomes.");
+            // Admission publishes one R per outcome. No phantom or missing R can certify a completed cut.
+            long expectedR = 1;
+            foreach (var outcome in outcomes)
+            {
+                if (outcome.PublicationRevision.Value != expectedR++)
+                    throw new MissingContainmentHistoricalAuthorityException("The historical outcome revision chain is incomplete.");
+            }
+            if (outcomes.Count != reference)
+                throw new MissingContainmentHistoricalAuthorityException("The terminal R lacks its complete outcome history.");
+            var sourcesById = sources.ToDictionary(s => s.Evidence.Id);
+            var standards = new Dictionary<long, ProductionStandardAuthorityCut>();
+            foreach (var transition in transitions)
+            {
+                var deltaSources = inputs.Where(i => i.Fact.Key == MetricInputFactKeys.PartCountIncrement &&
+                        (transition.ExpectedPreviousAggregationPosition is null || i.Position > transition.ExpectedPreviousAggregationPosition) &&
+                        i.Position <= transition.TargetAggregationPosition)
+                    .Select(i => i.Fact.SourceQuantityEvidenceId!.Value).ToHashSet();
+                var admitted = outcomes.Where(o => o.PublicationRevision.Value > transition.StartingReferenceTimeRevision.Value &&
+                    o.PublicationRevision.Value <= transition.CompletedReferenceTimeRevision!.Value.Value).ToArray();
+                if (admitted.Any(o => !deltaSources.Contains(o.SourceQuantityEvidenceId)))
+                    throw new ContainmentHistoricalIntegrityException("An outcome is outside its exact aggregation delta.");
+                if (!deltaSources.SetEquals(admitted.Select(o => o.SourceQuantityEvidenceId)))
+                    throw new MissingContainmentHistoricalAuthorityException("Completed transition lacks a required produced-source outcome.");
+                if (deltaSources.Count == 0)
                 {
-                    ProductionStandardResolver.ValidateCanonicalOutcome(source.Evidence, source.ShiftOccurrenceId,
-                        source.ProductionDayId, standardCut, outcome);
+                    if (transition.ProductionStandardAuthorityRevision is not null ||
+                        transition.StartingReferenceTimeRevision != transition.CompletedReferenceTimeRevision)
+                        throw new ContainmentHistoricalIntegrityException("Empty transition changed reference-time authority.");
+                    continue;
                 }
-                catch (InvalidOperationException error)
-                { throw new ContainmentHistoricalIntegrityException("Outcome contradicts its independently resolved historical source/standard.", error); }
+                if (transition.ProductionStandardAuthorityRevision is not long standard)
+                    throw new MissingContainmentHistoricalAuthorityException("A nonempty transition has no standard authority cut.");
+                if (!standards.TryGetValue(standard, out var standardCut))
+                    standards.Add(standard, standardCut = await ReadStandardCutAsync(connection, transaction, standard, cancellationToken));
+                foreach (var published in admitted)
+                {
+                    var outcome = published.Resolution;
+                    if (outcome.AuthorityRevision != standard || !sourcesById.TryGetValue(outcome.SourceQuantityEvidenceId, out var source))
+                        throw new ContainmentHistoricalIntegrityException("Outcome contradicts its transition S or source membership.");
+                    var referenced = outcome.SelectedStandardVersionId is { } selected
+                        ? new[] { selected } : outcome.ConflictingStandardVersionIds;
+                    if (referenced.Any(id => !standardCut.Versions.Any(v => v.VersionId == id)))
+                        throw new MissingContainmentHistoricalAuthorityException("A referenced historical standard version is absent.");
+                    try
+                    {
+                        ProductionStandardResolver.ValidateCanonicalOutcome(source.Evidence, source.ShiftOccurrenceId,
+                            source.ProductionDayId, standardCut, outcome);
+                    }
+                    catch (InvalidOperationException error)
+                    { throw new ContainmentHistoricalIntegrityException("Outcome contradicts its independently resolved historical source/standard.", error); }
+                }
             }
+            semanticTiming?.SetTag("stage.completed", true);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new ValidatedCutEvidence(connection, transaction, cut, reference, sources, outcomes);
         }
-        var relevant = sources.Where(s => Belongs(s, period)).ToArray();
-        var relevantIds = relevant.Select(s => s.Evidence.Id).ToHashSet();
-        var resolutions = outcomes.Where(o => relevantIds.Contains(o.SourceQuantityEvidenceId)).Select(o => o.Resolution).ToArray();
-        var binding = new ContainmentHistoricalAuthority(reference,
-            relevantIds.Select(id => id.Value).Order(StringComparer.Ordinal), resolutions.Select(o => o.AuthorityRevision).Distinct().Order());
-        var duration = ProductionReferenceTimeCompleteness.SumIdealDurationSeconds(relevant.Select(s => s.Evidence.Id).ToArray(),
-            resolutions, cut.StreamId.MachineId, (period as OperationalMetricPeriodId.Shift)?.ShiftOccurrenceId,
-            (period as OperationalMetricPeriodId.ProductionDay)?.ProductionDayId);
-        semanticTiming?.SetTag("stage.completed", true);
-        return new(binding, duration is null ? null : new MetricAggregateValue(duration.Value, MetricInputFactUnits.Seconds,
-            resolutions.LongLength, resolutions.Min(o => o.OccurredAtUtc), resolutions.Max(o => o.OccurredAtUtc)));
+
+        internal VerifiedReferenceTime EvaluatePeriod(SqlConnection connection, SqlTransaction transaction,
+            OperationalMetricPeriodId period, CancellationToken cancellationToken)
+        {
+            RequireOwner(connection, transaction, Cut);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (period is not (OperationalMetricPeriodId.Shift or OperationalMetricPeriodId.ProductionDay))
+                throw new ContainmentHistoricalIntegrityException("Unsupported historical period.");
+            using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.period.evaluate");
+            timing?.SetTag("processor.id", Cut.ProcessorId.Value);
+            timing?.SetTag("revision.position", Cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            try
+            {
+                var result = EvaluatePeriodCore(period);
+                cancellationToken.ThrowIfCancellationRequested();
+                RequireOwner(connection, transaction, Cut);
+                timing?.SetTag("stage.completed", true);
+                return result;
+            }
+            catch (Exception error) when (error is ArgumentException or InvalidDataException or FormatException or OverflowException)
+            { throw new ContainmentHistoricalIntegrityException("Malformed historical reference-time authority.", error); }
+        }
+
+        private VerifiedReferenceTime EvaluatePeriodCore(OperationalMetricPeriodId period)
+        {
+            var relevant = _sources.Where(s => Belongs(s, period)).ToArray();
+            var relevantIds = relevant.Select(s => s.Evidence.Id).ToHashSet();
+            var resolutions = _outcomes.Where(o => relevantIds.Contains(o.SourceQuantityEvidenceId)).ToArray();
+            var binding = new ContainmentHistoricalAuthority(_reference,
+                relevantIds.Select(id => id.Value).Order(StringComparer.Ordinal), resolutions.Select(o => o.AuthorityRevision).Distinct().Order());
+            var duration = ProductionReferenceTimeCompleteness.SumIdealDurationSeconds(relevant.Select(s => s.Evidence.Id).ToArray(),
+                resolutions, Cut.StreamId.MachineId, (period as OperationalMetricPeriodId.Shift)?.ShiftOccurrenceId,
+                (period as OperationalMetricPeriodId.ProductionDay)?.ProductionDayId);
+            return new(binding, duration is null ? null : new MetricAggregateValue(duration.Value, MetricInputFactUnits.Seconds,
+                resolutions.LongLength, resolutions.Min(o => o.OccurredAtUtc), resolutions.Max(o => o.OccurredAtUtc)));
+        }
     }
 
     // One set-based read replaces the previous revision-list + 2 SQL calls per revision.

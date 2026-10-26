@@ -66,7 +66,9 @@ internal static partial class ReportingTimingInstrumentation
                 activity.Duration.TotalMilliseconds, processor, revision, inputCount, completed,
                 activity.GetTagItem("RootReconstructionInvocations"),
                 activity.GetTagItem("ReferenceTimeAuthorityValidationExecutions"),
-                activity.GetTagItem("ReferenceTimeAuthorityCacheHits"));
+                activity.GetTagItem("ReferenceTimeAuthorityCacheHits"),
+                activity.GetTagItem("ReferenceTimePeriodEvaluations"),
+                activity.GetTagItem("ReferenceTimeEvidenceContract"));
         }
     }
 
@@ -82,11 +84,12 @@ internal static partial class ReportingTimingInstrumentation
     private static partial void PipelineEnded(ILogger logger, int status, bool aborted, double elapsedMs);
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Information, SkipEnabledCheck = true,
-        Message = "Reporting stage={Stage} Phase={Phase} TraceId={TraceId} SpanId={SpanId} ParentSpanId={ParentSpanId} ElapsedMs={ElapsedMs} Processor={Processor} Revision={Revision} InputCount={InputCount} Completed={Completed} RootReconstructionInvocations={RootReconstructionInvocations} ReferenceTimeAuthorityValidationExecutions={ReferenceTimeAuthorityValidationExecutions} ReferenceTimeAuthorityCacheHits={ReferenceTimeAuthorityCacheHits}")]
+        Message = "Reporting stage={Stage} Phase={Phase} TraceId={TraceId} SpanId={SpanId} ParentSpanId={ParentSpanId} ElapsedMs={ElapsedMs} Processor={Processor} Revision={Revision} InputCount={InputCount} Completed={Completed} RootReconstructionInvocations={RootReconstructionInvocations} ReferenceTimeAuthorityValidationExecutions={ReferenceTimeAuthorityValidationExecutions} ReferenceTimeAuthorityCacheHits={ReferenceTimeAuthorityCacheHits} ReferenceTimePeriodEvaluations={ReferenceTimePeriodEvaluations} ReferenceTimeEvidenceContract={ReferenceTimeEvidenceContract}")]
     private static partial void StageTiming(ILogger logger, string stage, string phase, string traceId,
         string spanId, string parentSpanId, double elapsedMs, object? processor, object? revision,
         object? inputCount, object? completed, object? rootReconstructionInvocations,
-        object? referenceTimeAuthorityValidationExecutions, object? referenceTimeAuthorityCacheHits);
+        object? referenceTimeAuthorityValidationExecutions, object? referenceTimeAuthorityCacheHits,
+        object? referenceTimePeriodEvaluations, object? referenceTimeEvidenceContract);
 
     private static object? FindTag(Activity? activity, string key)
     {
