@@ -86,16 +86,24 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
         {
             await RollbackIfActiveAsync(t);
             output.WriteLine("protected interval after lookup disposal until rollback: {0:F3} ms (bracket, not exact lock acquisition time)", interval.Elapsed.TotalMilliseconds);
-            try { Assert.Equal(1, await writer.WaitAsync(TimeSpan.FromSeconds(30))); }
-            catch (SqlException error) when (error.Number == 1205)
-            {
-                await DeadlockEvidenceAsync(f.Connection, a.ServerProcessId, b.ServerProcessId, started);
-                throw;
-            }
+            await CompleteMutationWriterAsync(writer, f.Connection, a.ServerProcessId, b.ServerProcessId, started);
         }
         output.WriteLine("writer completion latency including execution/coordination: {0:F3} ms", writerClock.Elapsed.TotalMilliseconds);
         Assert.Equal(AcquisitionEvidenceReadStatus.Corrupt, (await new SqlServerObservationIngestionStore(f.Connection)
             .ReadExactAsync(f.Stream, Identity(f.Last))).Status);
+    }
+
+    private async Task CompleteMutationWriterAsync(Task<int> writer, string connection, int holderSession, int writerSession, DateTimeOffset started)
+    {
+        try
+        {
+            Assert.Equal(1, await writer.WaitAsync(TimeSpan.FromSeconds(30)));
+        }
+        catch (SqlException error) when (error.Number == 1205)
+        {
+            await DeadlockEvidenceAsync(connection, holderSession, writerSession, started);
+            throw;
+        }
     }
 
     [ProtectedTheory]
