@@ -29,7 +29,9 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
         var reports = await fixture.Reader.ReadAsync(query, default);
         Assert.Equal(4, reports.Count);
         Assert.Equal(new[] { fixture.Source.ProcessorId, otherSource.ProcessorId }, fixture.MetricReader.BatchProcessors);
-        Assert.Equal(new[] { 3, 1 }, fixture.MetricReader.BatchSizes);
+        Assert.Collection(fixture.MetricReader.BatchSizes,
+            size => Assert.Equal(3, size),
+            size => Assert.Equal(1, size));
     }
 
     [Fact]
