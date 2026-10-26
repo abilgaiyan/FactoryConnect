@@ -8,6 +8,7 @@ using Xunit.Abstractions;
 namespace FactoryConnect.Integration.Tests;
 
 [Trait("Category", "SqlServerIntegration")]
+[Collection(B1ConcurrencyAcceptanceDefinition.CollectionName)]
 public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
 {
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -312,4 +313,13 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
     { Assert.Equal(1, state[0]); Assert.Equal(1, state[1]); Assert.Equal(1, state[2]); Assert.Equal(1, state[3]); Assert.Equal(1, state[4]); Assert.Equal(2, state[5]); Assert.Equal(expectedPosition, state[6]); }
     private static void AssertUnpublished(object[] state)
     { Assert.Equal(0, state[0]); Assert.Equal(0, state[1]); Assert.Equal(0, state[2]); Assert.Equal(0, state[3]); Assert.Equal(0, state[4]); Assert.Equal(0, state[5]); Assert.Equal(1m, state[6]); }
+}
+
+// These schedules capture server-wide lock/request DMVs and Extended Events.
+// Run without unrelated fixture database creation/teardown; each test still
+// controls its own concurrent publishers, readers and source writers.
+[CollectionDefinition(CollectionName, DisableParallelization = true)]
+public sealed class B1ConcurrencyAcceptanceDefinition
+{
+    public const string CollectionName = "B1 SQL concurrency acceptance";
 }

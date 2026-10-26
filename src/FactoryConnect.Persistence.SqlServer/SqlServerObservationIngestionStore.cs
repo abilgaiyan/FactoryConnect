@@ -297,6 +297,8 @@ internal sealed partial class SqlServerObservationIngestionStore :
         ArgumentNullException.ThrowIfNull(batch);
         cancellationToken.ThrowIfCancellationRequested();
 
+        using var acquisitionTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.commit", batch.Checkpoint.StreamId);
+        acquisitionTiming?.SetTag("observation.count", batch.Observations.Count);
         var staged = StageObservations(batch);
         var payload = AcquisitionEvidenceCodec.Encode(batch);
         var evidenceIdentity = AcquisitionEvidenceCodec.Identity(batch, payload);
@@ -306,11 +308,18 @@ internal sealed partial class SqlServerObservationIngestionStore :
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync(cancellationToken);
 
-        await using var transaction =
-            (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        using var transactionTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.transaction.lifetime", streamId);
+        SqlTransaction transaction;
+        using (var opening = AcquisitionPersistenceDiagnostics.Start("acquisition.transaction.open", streamId))
+        {
+            transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            opening?.SetTag("stage.completed", true);
+        }
+        await using var ownedTransaction = transaction;
 
         try
         {
+            using var reconcileTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.reconcile", streamId);
             var current = await ReadCheckpointForUpdateAsync(
                 connection,
                 transaction,
@@ -330,7 +339,15 @@ internal sealed partial class SqlServerObservationIngestionStore :
                     SameInstant(currentAuthority.SuccessfulContactTime, batch.SuccessfulContactTime))) &&
                 await ValidateEvidenceReplayAsync(connection, transaction, streamId, evidenceIdentity, payload, cancellationToken))
             {
-                await transaction.CommitAsync(cancellationToken);
+                reconcileTiming?.SetTag("stage.completed", true);
+                reconcileTiming?.Dispose();
+                using (var committing = AcquisitionPersistenceDiagnostics.Start("acquisition.transaction.commit", streamId))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    committing?.SetTag("stage.completed", true);
+                }
+                transactionTiming?.SetTag("stage.completed", true);
+                acquisitionTiming?.SetTag("stage.completed", true);
                 return;
             }
 
@@ -361,7 +378,15 @@ internal sealed partial class SqlServerObservationIngestionStore :
                     currentRawAcceptedThrough,
                     cancellationToken);
 
-                await transaction.CommitAsync(cancellationToken);
+                reconcileTiming?.SetTag("stage.completed", true);
+                reconcileTiming?.Dispose();
+                using (var committing = AcquisitionPersistenceDiagnostics.Start("acquisition.transaction.commit", streamId))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    committing?.SetTag("stage.completed", true);
+                }
+                transactionTiming?.SetTag("stage.completed", true);
+                acquisitionTiming?.SetTag("stage.completed", true);
                 return;
             }
 
@@ -395,6 +420,12 @@ internal sealed partial class SqlServerObservationIngestionStore :
                 resultingRawAcceptedThrough,
                 currentAuthority);
 
+            reconcileTiming?.SetTag("stage.completed", true);
+            reconcileTiming?.Dispose();
+            using var writesTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.raw-state.write", streamId);
+            writesTiming?.SetTag("observation.count", positioned.Length);
+            writesTiming?.SetTag("expected.sql.command.count", positioned.LongLength +
+                (current != batch.Checkpoint ? 1L : 0L) + (currentAuthority != candidateAuthority ? 1L : 0L));
             if (current != batch.Checkpoint)
             {
                 await PersistCheckpointAsync(
@@ -428,14 +459,26 @@ internal sealed partial class SqlServerObservationIngestionStore :
                     cancellationToken);
             }
 
+            writesTiming?.SetTag("sql.command.count", positioned.LongLength +
+                (current != batch.Checkpoint ? 1L : 0L) + (currentAuthority != candidateAuthority ? 1L : 0L));
+            writesTiming?.SetTag("stage.completed", true);
+            writesTiming?.Dispose();
             await AppendEvidenceAsync(connection, transaction, batch, evidenceIdentity, payload,
                 currentRawAcceptedThrough, resultingRawAcceptedThrough, cancellationToken);
 
-            await transaction.CommitAsync(cancellationToken);
+            using (var committing = AcquisitionPersistenceDiagnostics.Start("acquisition.transaction.commit", streamId))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                committing?.SetTag("stage.completed", true);
+            }
+            transactionTiming?.SetTag("stage.completed", true);
+            acquisitionTiming?.SetTag("stage.completed", true);
         }
         catch
         {
+            using var rollbackTiming = AcquisitionPersistenceDiagnostics.Start("acquisition.transaction.rollback", streamId);
             await transaction.RollbackAsync(CancellationToken.None);
+            rollbackTiming?.SetTag("stage.completed", true);
             throw;
         }
     }
