@@ -70,7 +70,8 @@ internal static class SqlContainmentVerifiedRead
         var latestRetainedIds = retained.Where(r => manifest.Contains((long)r["OperationalMetricProjectionRowId"]!)).Select(r => r["ContainmentResultId"] is byte[] bytes ? Convert.ToHexString(bytes) : throw Integrity("Retained result binding is absent.")).Order(StringComparer.Ordinal);
         if (!latestArchiveIds.SequenceEqual(latestRetainedIds) || inventory.Any(r => (decimal)r["SourceRevisionPosition"]! > (decimal)source.Position.Value))
             throw Integrity("Archive inventory contradicts the reporting checkpoint.");
-        var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction);
+        var referenceTimeReads = new SqlContainmentReportingReferenceTimeScope(connection, transaction);
+        var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction, referenceTimeReads);
         var projections = new List<OperationalMetricProjection>(); var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
         foreach (var row in retained)
         {
@@ -108,6 +109,9 @@ internal static class SqlContainmentVerifiedRead
                 core.AvailabilityScopeConflictEvidence, core.EvaluationPolicyId, metadata));
             if (manifest.Contains(rowId)) latestKeys.Add(verified.Projection.Key);
         }
+        verificationTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations);
+        verificationTiming?.SetTag("ReferenceTimeAuthorityValidationExecutions", referenceTimeReads.ReferenceTimeAuthorityValidationExecutions);
+        verificationTiming?.SetTag("ReferenceTimeAuthorityCacheHits", referenceTimeReads.CacheHits);
         verificationTiming?.SetTag("retained.result.count", retained.Count);
         verificationTiming?.SetTag("verification.completed", true);
         return new Publication(projections.AsReadOnly(), latestKeys);

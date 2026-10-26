@@ -8,7 +8,7 @@ namespace FactoryConnect.Persistence.SqlServer;
 /// Reuses validated source inputs and their validated aggregate contribution set within one
 /// caller-owned Serializable transaction and exact aggregation revision.
 /// Callers must not write source facts, contribution membership or aggregation revisions in this scope.
-/// Result evaluation and reference-time authority decisions are deliberately not cached.
+/// Result evaluation is not cached. Reference-time reuse requires an explicit reporting-only scope.
 /// </summary>
 internal sealed class SqlContainmentHistoricalReadScope
 {
@@ -16,13 +16,24 @@ internal sealed class SqlContainmentHistoricalReadScope
     private readonly SqlTransaction _transaction;
     private readonly EvidenceCache _inputs;
 
-    internal SqlContainmentHistoricalReadScope(SqlConnection connection, SqlTransaction transaction)
+    internal SqlContainmentHistoricalReadScope(SqlConnection connection, SqlTransaction transaction,
+        SqlContainmentReportingReferenceTimeScope? reportingReferenceTime = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        ReportingReferenceTime = reportingReferenceTime;
         _connection = connection;
         _transaction = transaction;
         _inputs = new EvidenceCache((cut, token) =>
             SqlContainmentHistoricalContributionReader.ReadValidatedAsync(connection, transaction, cut, token));
+    }
+
+    internal SqlContainmentReportingReferenceTimeScope? ReportingReferenceTime { get; }
+    internal int RootReconstructionInvocations { get; private set; }
+
+    internal void RecordRootReconstruction()
+    {
+        RequireOwner(_connection, _transaction);
+        RootReconstructionInvocations++;
     }
 
     internal void RequireOwner(SqlConnection connection, SqlTransaction transaction)

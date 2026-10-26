@@ -15,12 +15,23 @@ internal static class SqlContainmentReferenceTimeAuthorityValidator
         CancellationToken cancellationToken, SqlContainmentHistoricalReadScope? historicalReads = null)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
+        historicalReads.RequireOwner(connection, transaction);
+        if (historicalReads.ReportingReferenceTime is { } reporting)
+            return await reporting.ReadAsync(connection, transaction, cut, period, cancellationToken,
+                token => ReadValidatedAsync(connection, transaction, cut, period, token, historicalReads));
+        return await ReadValidatedAsync(connection, transaction, cut, period, cancellationToken, historicalReads);
+    }
+
+    private static async Task<VerifiedReferenceTime> ReadValidatedAsync(SqlConnection connection,
+        SqlTransaction transaction, MetricAggregationCheckpoint cut, OperationalMetricPeriodId period,
+        CancellationToken cancellationToken, SqlContainmentHistoricalReadScope historicalReads)
+    {
+        historicalReads.RequireOwner(connection, transaction);
+        cancellationToken.ThrowIfCancellationRequested();
         using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.reference-time.validate");
         timing?.SetTag("processor.id", cut.ProcessorId.Value);
         timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        // Obtain independently validated membership from this transaction; never from an envelope.
-        historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
-        historicalReads.RequireOwner(connection, transaction);
         var inputs = await historicalReads.ReadAsync(cut, cancellationToken);
         try
         {

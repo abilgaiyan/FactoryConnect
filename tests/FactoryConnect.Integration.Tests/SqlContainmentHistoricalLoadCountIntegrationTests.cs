@@ -9,6 +9,34 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
     : IClassFixture<SqlContainmentAuthorityDatabaseFixture>
 {
     [Fact]
+    public async Task ActualReportingVerifierKeepsAllRootsAndReportsAuthorityExecutionsAndHits()
+    {
+        var envelopes = await new SqlContainmentHistoricalResultIntegrationTests(fixture).CreateVerifiedReadEvidenceAsync(false);
+        var batch = ContainmentArchiveBatch.Preflight(envelopes);
+        await new SqlContainmentPublicationTransaction(fixture.ConnectionString).PublishAsync(envelopes, null, default);
+        System.Diagnostics.Activity? verification = null;
+        using var listener = new System.Diagnostics.ActivityListener
+        {
+            ShouldListenTo = source => source.Name == OperationalMetricReportingDiagnostics.Source.Name,
+            Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) => System.Diagnostics.ActivitySamplingResult.AllData,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "containment.publication.verify" &&
+                    Equals(activity.GetTagItem("processor.id"), batch.Processor.Value)) verification = activity;
+            },
+        };
+        System.Diagnostics.ActivitySource.AddActivityListener(listener);
+        var key = batch.Results[0].Document.Key;
+        var summaries = await new SqlServerOperationalMetricProjectionQueryReader(fixture.ConnectionString)
+            .ReadPeriodsSummariesAsync(batch.Processor, key.MachineId, [key.PeriodId], key.ContextKey, default);
+        Assert.Equal(5, summaries.Count);
+        Assert.NotNull(verification);
+        Assert.Equal(5, Assert.IsType<int>(verification.GetTagItem("RootReconstructionInvocations")));
+        Assert.Equal(1, Assert.IsType<int>(verification.GetTagItem("ReferenceTimeAuthorityValidationExecutions")));
+        Assert.Equal(1, Assert.IsType<int>(verification.GetTagItem("ReferenceTimeAuthorityCacheHits")));
+    }
+
+    [Fact]
     public async Task ThreeShiftSelectionVerifiesPublicationOnceAndReloadsEachExactCutOnce()
     {
         var (first, next) = await new SqlContainmentHistoricalResultIntegrationTests(fixture).CreatePublicationAdvanceEvidenceAsync();
