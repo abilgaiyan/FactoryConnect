@@ -1,7 +1,9 @@
 # D1-A1 protected historical-read feasibility: frozen experiment contract
 
-Status: design baseline only. Diagnostic harness implementation and execution are
-pending explicit approval. D1-A2 production optimization remains blocked.
+Status: frozen design baseline. Diagnostic implementation is authorized and a test-only
+harness is now provided in Gg003ProtectedReadFeasibilityTests.cs. Compilation and SQL
+execution remain pending. See gg003-d1a1-execution.md for exact coverage and gaps.
+D1-A2 production optimization remains blocked.
 
 ## Git and evidence boundary
 
@@ -24,7 +26,7 @@ No production ingestion changes, schema changes, migrations, lock hints, forced
 indexes or deployment are included.
 
 An explicit Serializable transaction is permitted only as the proposed test
-candidate, after diagnostic implementation is approved. Production transaction
+candidate. Production transaction
 settings remain unchanged.
 
 ## Candidate lookup requirements
@@ -100,6 +102,6 @@ fresh restore and equivalent workload.
 - Synthetic contention and performance measurements.
 - Explicit coverage gaps and an enforceable consistency argument.
 
-No implementation or SQL execution results are claimed by this initial document.
+Implementation alone supplies no SQL execution results.
 Do not close D1-A1 merely because individual writers block. D1-A2 requires a
 separate production design review and authorization after these results.
