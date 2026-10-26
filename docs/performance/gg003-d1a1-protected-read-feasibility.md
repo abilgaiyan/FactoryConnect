@@ -116,3 +116,14 @@ starting a mutator; success there must not be presented as proof for partial win
 Session lock-timeout setup now uses parameter-free commands and verifies the effective
 value; expected SQL error 1222 is unchanged. See the execution runbook for original
 evidence, hypotheses, lock/graph capture and individual rerun commands.
+
+
+## Command-level diagnostic follow-up
+
+The revised timeout case remains unresolved after reportedly passing its effective
+lock-timeout setup checks. The actual verifier now exposes passive invocation-local
+command/reader phase records, consumed only by the diagnostic test. A writer-side
+sampler observes the verifier session without querying its active-reader connection.
+Expected SQL 1222, verifier command timeouts and all integrity behavior are unchanged.
+See the execution runbook for the single-test command and StdOut extraction. No new
+SQL result or deadlock resolution is claimed by instrumentation alone.

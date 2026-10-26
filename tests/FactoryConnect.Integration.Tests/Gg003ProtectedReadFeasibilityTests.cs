@@ -177,20 +177,22 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
         var f = await SeedAsync();
         await using var a = await OpenAsync(f.Connection);
         await using var b = await OpenAsync(f.Connection);
+        var originalLockTimeout = await ReadSessionLockTimeoutAsync(a, null);
         foreach (var isolation in new[] { IsolationLevel.ReadCommitted, IsolationLevel.Serializable })
         {
             await using var t = (SqlTransaction)await a.BeginTransactionAsync(isolation);
+            using var trace = new AcquisitionVerifierCommandTrace(output, a, t, originalLockTimeout);
             using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => VerifyAsync(a, t, f, cancelled.Token));
+            var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => VerifyAsync(a, t, f, cancelled.Token));
+            trace.ReportException(error);
+            Assert.True(trace.AllCommandsOwned);
             await t.RollbackAsync();
         }
-        var originalLockTimeout = await ReadSessionLockTimeoutAsync(a, null);
         await using var writerTransaction = (SqlTransaction)await b.BeginTransactionAsync();
         await ExecuteAsync(b, writerTransaction, f.Stream,
             "UPDATE dbo.MachineObservation SET ObservationValue=N'A1-uncommitted' WHERE MachineId=@M AND StreamKeyBinary=@K AND Position=1;");
         try
         {
-            // Use a parameter-free session batch, not the parameterized stream helper.
             foreach (var isolation in new[] { IsolationLevel.ReadCommitted, IsolationLevel.Serializable })
             {
                 await using var t = (SqlTransaction)await a.BeginTransactionAsync(isolation);
@@ -198,8 +200,32 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
                 var effectiveTimeout = await ReadSessionLockTimeoutAsync(a, t);
                 Assert.Equal(0, effectiveTimeout);
                 output.WriteLine("session={0}; isolation={1}; @@LOCK_TIMEOUT={2}; verifier command timeout remains unchanged", a.ServerProcessId, isolation, effectiveTimeout);
-                var error = await Assert.ThrowsAsync<SqlException>(() => VerifyAsync(a, t, f));
+                using var trace = new AcquisitionVerifierCommandTrace(output, a, t, effectiveTimeout);
+                using var sampling = new CancellationTokenSource();
+                // B has no active reader; its source UPDATE completed before this task.
+                // The sampler never issues SQL on verifier connection A.
+                var samples = SampleVerifierRequestAsync(b, writerTransaction, a.ServerProcessId, sampling.Token);
+                SqlException error;
+                bool samplingHealthy;
+                try
+                {
+                    error = await Assert.ThrowsAsync<SqlException>(() => VerifyAsync(a, t, f));
+                    trace.ReportException(error); // Emit original SQL stack before the number assertion.
+                }
+                catch (Exception wrapperError)
+                {
+                    trace.ReportException(wrapperError, "test-wrapper");
+                    throw;
+                }
+                finally
+                {
+                    sampling.Cancel();
+                    samplingHealthy = await samples;
+                }
+                Assert.True(trace.CommandsStarted > 0, "Verifier command trace must be active in the executing binary.");
+                Assert.True(trace.AllCommandsOwned);
                 Assert.Equal(1222, error.Number);
+                Assert.True(samplingHealthy, "Writer-side request sampling failed; inspect VERIFIER_SAMPLE_ERROR.");
                 output.WriteLine("{0}: actual verifier SQL lock error {1}; no corruption translation", isolation, error.Number);
                 await t.RollbackAsync();
             }
@@ -210,6 +236,48 @@ public sealed class Gg003ProtectedReadFeasibilityTests(ITestOutputHelper output)
             await SetSessionLockTimeoutAsync(a, null, originalLockTimeout);
             Assert.Equal(originalLockTimeout, await ReadSessionLockTimeoutAsync(a, null));
         }
+    }
+
+    private async Task<bool> SampleVerifierRequestAsync(SqlConnection observer, SqlTransaction transaction, int verifierSession, CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        var count = 0;
+        var activeRequests = 0;
+        var observerSession = observer.ServerProcessId;
+        string? previous = null;
+        try
+        {
+            do
+            {
+                await using var command = observer.CreateCommand(); command.Transaction = transaction; command.CommandTimeout = 3;
+                command.CommandText = """
+                    SELECT s.session_id,s.lock_timeout,s.transaction_isolation_level,r.blocking_session_id,r.status,r.command,r.wait_type,r.wait_time,
+                        r.wait_resource,r.total_elapsed_time,r.cpu_time,r.reads,r.logical_reads,r.granted_query_memory,r.transaction_id
+                    FROM sys.dm_exec_sessions s LEFT JOIN sys.dm_exec_requests r ON r.session_id=s.session_id WHERE s.session_id=@Verifier;
+                    """;
+                command.Parameters.Add("@Verifier", SqlDbType.Int).Value = verifierSession;
+                await using (var reader = await command.ExecuteReaderAsync(token))
+                {
+                    if (await reader.ReadAsync(token))
+                    {
+                        var row = new Dictionary<string, object?>();
+                        for (var index = 0; index < reader.FieldCount; index++) row.Add(reader.GetName(index), reader.IsDBNull(index) ? null : reader.GetValue(index));
+                        var state = JsonSerializer.Serialize(row); count++;
+                        if (row["command"] is not null) activeRequests++;
+                        if (state != previous) output.WriteLine("VERIFIER_REQUEST_SAMPLE {0:O} observerSession={1} {2}", DateTimeOffset.UtcNow, observerSession, state);
+                        previous = state;
+                    }
+                }
+            } while (await timer.WaitForNextTickAsync(token));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (SqlException error)
+        {
+            output.WriteLine("VERIFIER_SAMPLE_ERROR sqlNumber={0} {1}", error.Number, error.ToString());
+            return false;
+        }
+        finally { output.WriteLine("VERIFIER_SAMPLES_END sessionSamples={0} activeRequestSamples={1}; missing request samples do not establish absence of an instantaneous lock conflict", count, activeRequests); }
+        return true;
     }
 
     [ProtectedTheory]

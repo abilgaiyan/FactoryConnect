@@ -192,3 +192,80 @@ Confirm each filter actually executes one test, not zero. Preserve the original
 No local SDK/SQL runtime is available here; none of these reruns has been performed.
 
 Original gg003-D1A1.trx SHA-256: d65394f121901716479029ad5de4cf308abe9103d89b665668f51304dcc84ab3.
+
+
+## Verifier command trace for the revised timeout failure
+
+The revised 27aa093 timeout test was subsequently reported to still return -2 after
+its @@LOCK_TIMEOUT=0 assertions. Source inspection confirms this test invokes private
+ReadEvidenceAsync with the supplied connection/transaction throughout. The public
+ReadExactAsync method's separately opened connection is not on this test path. No
+root cause is claimed for this second failure from source inspection alone.
+
+Passive internal hooks now wrap the actual prefix, boundary and source SQL executions
+and reader consumption. They are disabled without an invocation-local test subscription.
+They do not change SQL text/parameters, connection/transaction ownership, timeouts,
+lock hints, isolation, retries or result validation. Hook records are queued in memory;
+the test drains them into StdOut on exception and disposal, so output/logging callbacks
+cannot execute diagnostic SQL during an active reader. Recorded timestamps are captured
+at the boundary, not at the later output drain.
+
+Each VERIFIER_COMMAND contains command ID, stage, phase, outcome, captured timestamp,
+client elapsed/execute-return duration, row count, SPID, client connection GUID,
+effective command timeout, boundary position or source batch size, cached pre-call
+lock timeout and reference-identity checks for the owning connection and transaction.
+Phases distinguish execute, result-consumption and reader-dispose. The test reports
+all SQL error numbers and the original exception stack before asserting 1222, plus
+the most recent fully completed command. A deliberate early validation return is
+marked early-exit, not full consumption. Boundary ExecuteScalar failures are recorded
+inside that operation; there is no separately exposed reader for it.
+
+ExecuteMilliseconds measures client-observed time until ExecuteReader/ExecuteScalar
+returns, not pure SQL Server CPU time. Total elapsed additionally includes result
+consumption and disposal. No observation values, SQL text or connection strings are
+included in command records. The test is synthetic and separately guarded.
+
+Before invocation the test captures session/connection identity and @@LOCK_TIMEOUT.
+It never issues diagnostic SQL on verifier connection A while a reader may be active.
+A 100-ms periodic sampler uses writer connection B only after its UPDATE has fully
+returned; its diagnostic readers are serially consumed/disposed on B and sampling
+stops before B rolls back. This interval is observation sampling, not a synchronization
+barrier or a sleep that determines pass/fail.
+
+VERIFIER_REQUEST_SAMPLE records A's server-side session lock_timeout and isolation,
+plus any request's status, blocker, wait type/resource, wait duration, server elapsed
+and CPU/read/memory counters. Session settings are sampled independently of the
+cached pre-call value. A sampled LCK_M wait blocked by B supports reaching that conflict;
+a resource/worker/other wait suggests a different investigation. A missing transient
+wait sample proves neither absence of blocking nor a cause. DMV permissions and
+sampling faults are explicit; the verifier's original exception is still reported.
+These observations do not by themselves explain a -2 if the crucial wait is missed.
+
+### One individual rerun, after compilation
+
+No SQL test was run during this instrumentation change. With the already documented
+D1-A1 disposable-clone acknowledgement variables configured, rebuild and run only:
+
+```powershell
+dotnet build tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj --configuration Release --no-restore
+dotnet test tests/FactoryConnect.Integration.Tests/FactoryConnect.Integration.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~ActualVerifierPropagatesCancellationAndSqlLockErrorsInBothScopes' --logger 'console;verbosity=detailed' --logger 'trx;LogFileName=gg003-D1A1-timeout-command-trace.trx' --results-directory artifacts/TestResults/GG003-D1A1
+```
+
+Do not continue after a failed build. Preserve both Output/ErrorInfo and Output/StdOut;
+extracting only the assertion message discards the command and sampler evidence:
+
+```powershell
+[xml]$report = Get-Content -LiteralPath 'artifacts/TestResults/GG003-D1A1/gg003-D1A1-timeout-command-trace.trx' -Raw
+foreach ($result in $report.SelectNodes("//*[local-name()='UnitTestResult']")) {
+    if ($result.testName -like '*ActualVerifierPropagatesCancellationAndSqlLockErrorsInBothScopes*') {
+        $result.testName
+        $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='ErrorInfo']").InnerText
+        $result.SelectSingleNode("./*[local-name()='Output']/*[local-name()='StdOut']").InnerText
+    }
+}
+```
+
+Acceptance still requires identifying the -2 command and phase, whether it reached
+the intended conflict and an evidence-supported explanation for the missing 1222.
+Neither a full suite rerun nor a broader error assertion substitutes for that evidence.
+The original deadlock remains unresolved and D1-A2 remains blocked.
