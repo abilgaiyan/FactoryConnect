@@ -1,8 +1,9 @@
 # D1-C acquisition consistency experiments
 
-Status: implemented as opt-in diagnostic tests; compilation and SQL execution are
-pending. No measured D1-C results are recorded yet. PR #159 remains draft. This is
-not a production retrieval implementation and does not close D1.
+Status: D1-C execution reported PASS on 26 October 2026: 8 passed, 0 failed,
+12.58 seconds. Results below are transcribed from the operator's supplied summary;
+the raw D1-C TRX was not independently inspected in this documentation update.
+PR #159 remains draft. D1 production optimization remains unimplemented and unapproved.
 
 ## Preserved reference
 
@@ -105,10 +106,47 @@ The experiments require DMV permissions on the disposable instance.
 
 ## Evidence still required
 
-All eight new SQL cases are unexecuted in this implementation session. Preserve the
-TRX and review effective options and observed resources before accepting their results.
-Unexpected incidental blocking (FK, page/table escalation, different access plans)
-must be investigated rather than interpreted as general immutability.
+The operator reports all eight cases passed. Preserve the D1-C TRX with the actual
+build revision, SQL version, database options and session/transaction evidence.
+Unexpected incidental blocking must not be interpreted as general immutability.
+
+## Reported D1-C outcome
+
+| Scenario | Reported result | Interpretation |
+| --- | --- | --- |
+| Actual Serializable reader: update/delete | 2/2 PASS; LCK_M_X | Mutations wait for the existing exact-reader transaction to finish |
+| Default transaction: update/delete | 2/2 PASS; modification commits before reread | Earlier retained values are not generally stable; actual subsequent exact read is Corrupt, replay throws InvalidOperationException and append throws InvalidDataException; checkpoint unchanged |
+| Conflicting identity/position insert | 2/2 PASS; SQL 2627 | Existing unique constraints reject conflicts |
+| Referenced boundary deletion | 1/1 PASS; SQL 547 | Existing foreign key protects the referenced endpoint |
+| Same-stream ingestion | 1/1 PASS; LCK_M_U | Contender waits, then rejects stale checkpoint; winning publication reads successfully |
+
+These are controlled synthetic streams on the restored clone, not concurrent mutations
+of the full GG-003 historical chain. No optimized retrieval path was executed.
+
+## Proposed implementation boundary after D1-C
+
+Option A can be narrowly scoped to the existing exact-reader Serializable transaction.
+Retain the same owning connection and transaction until every covered occurrence has
+been validated; discard lookup buffers at window completion, and never export verified
+authority to another invocation. Keep 128-key source/boundary queries, 128-publication
+windows and the existing oversized-publication validation state. This is a proposal,
+not implementation authorization or a measured performance result.
+
+Acquisition append and replay must retain the established per-publication source and
+boundary retrieval under their existing transaction behavior. Do not enable shared
+cross-publication lookup buffers there merely because the transaction owns checkpoint
+or head locks. Boundary deduplication has the same visibility qualification and is not
+silently included as an independent safe optimization.
+
+Optimizing exact reads alone will not resolve the measured 81.31-second append
+transaction. To optimize append/replay, a separately reviewed consistency protection
+or a demonstrated equivalent retrieval design remains necessary. No isolation, lock
+hint or immutability change is authorized by D1-C.
+
+Before a restricted exact-reader implementation is accepted, run the same concurrency
+schedules against that implementation, verify absence/duplicate/enum classifications,
+per-occurrence comparisons and oversized-window state, then compare command counts,
+workspace bounds and timings. Separately measure real-history concurrent reporting.
 
 D1 also needs the enforceable consistency decision. These tests do not establish
 safety for all interleavings, cross-publication reuse, mid-verification mutations in
