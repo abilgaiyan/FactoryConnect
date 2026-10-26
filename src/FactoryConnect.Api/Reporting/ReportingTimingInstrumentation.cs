@@ -62,13 +62,15 @@ internal static partial class ReportingTimingInstrumentation
             var revision = FindTag(activity, "revision.position");
             var inputCount = activity.GetTagItem("input.count");
             var completed = activity.GetTagItem("stage.completed");
+            var rootReconstructionInvocations = activity.GetTagItem("RootReconstructionInvocations");
+            var referenceTimeAuthorityValidationExecutions = activity.GetTagItem("ReferenceTimeAuthorityValidationExecutions");
+            var referenceTimeAuthorityCacheHits = activity.GetTagItem("ReferenceTimeAuthorityCacheHits");
+            var referenceTimePeriodEvaluations = activity.GetTagItem("ReferenceTimePeriodEvaluations");
+            var referenceTimeEvidenceContract = activity.GetTagItem("ReferenceTimeEvidenceContract");
             StageTiming(logger, activity.OperationName, phase, traceId, spanId, parentSpanId,
                 activity.Duration.TotalMilliseconds, processor, revision, inputCount, completed,
-                activity.GetTagItem("RootReconstructionInvocations"),
-                activity.GetTagItem("ReferenceTimeAuthorityValidationExecutions"),
-                activity.GetTagItem("ReferenceTimeAuthorityCacheHits"),
-                activity.GetTagItem("ReferenceTimePeriodEvaluations"),
-                activity.GetTagItem("ReferenceTimeEvidenceContract"));
+                rootReconstructionInvocations, referenceTimeAuthorityValidationExecutions,
+                referenceTimeAuthorityCacheHits, referenceTimePeriodEvaluations, referenceTimeEvidenceContract);
         }
     }
 
