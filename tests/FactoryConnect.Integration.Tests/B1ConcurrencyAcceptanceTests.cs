@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 namespace FactoryConnect.Integration.Tests;
 
 [Trait("Category", "SqlServerIntegration")]
-[Collection(B1ConcurrencyAcceptanceCollection.CollectionName)]
+[Collection(B1ConcurrencyAcceptanceDefinition.CollectionName)]
 public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
 {
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -319,7 +319,7 @@ public sealed class B1ConcurrencyAcceptanceTests(ITestOutputHelper output)
 // Run without unrelated fixture database creation/teardown; each test still
 // controls its own concurrent publishers, readers and source writers.
 [CollectionDefinition(CollectionName, DisableParallelization = true)]
-public sealed class B1ConcurrencyAcceptanceCollection
+public sealed class B1ConcurrencyAcceptanceDefinition
 {
     public const string CollectionName = "B1 SQL concurrency acceptance";
 }
