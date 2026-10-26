@@ -258,6 +258,25 @@ public sealed record ProductionDayOperationalMetricReport : OperationalMetricPer
 
 public interface IOperationalMetricProjectionQueryReader
 {
+    /// <summary>Reads multiple periods. Providers may override to bind one publication snapshot.</summary>
+    async ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodsSummariesAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        MachineId machineId,
+        IReadOnlyList<OperationalMetricPeriodId> periodIds,
+        OperationalMetricEvaluationContextKey contextKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(periodIds);
+        var results = new List<OperationalMetricProjectionSummary>();
+        foreach (var period in periodIds.Distinct())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            results.AddRange(await ReadPeriodSummariesAsync(
+                processorId, machineId, period, contextKey, cancellationToken).ConfigureAwait(false));
+        }
+        return results.ToArray();
+    }
+
     ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,
@@ -273,6 +292,25 @@ public interface IOperationalMetricProjectionQueryReader
 
 public interface IOperationalMetricReportReader
 {
+    /// <summary>Returns one entry per requested shift, in request order, including missing reports.</summary>
+    async ValueTask<IReadOnlyList<ShiftOperationalMetricReport?>> ReadShiftsAsync(
+        OperationalMetricProjectionProcessorId processorId,
+        MachineId machineId,
+        IReadOnlyList<ShiftOccurrenceId> shiftOccurrenceIds,
+        OperationalMetricEvaluationContextKey contextKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(shiftOccurrenceIds);
+        var reports = new List<ShiftOperationalMetricReport?>();
+        foreach (var shift in shiftOccurrenceIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            reports.Add(await ReadShiftAsync(
+                processorId, machineId, shift, contextKey, cancellationToken).ConfigureAwait(false));
+        }
+        return reports.ToArray();
+    }
+
     ValueTask<ShiftOperationalMetricReport?> ReadShiftAsync(
         OperationalMetricProjectionProcessorId processorId,
         MachineId machineId,

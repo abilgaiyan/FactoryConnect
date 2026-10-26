@@ -7,6 +7,55 @@ namespace FactoryConnect.Core.Tests;
 public sealed class ProductionDayShiftOperationalMetricReaderTests
 {
     [Fact]
+    public async Task ThreeShiftsUseOneSourceBatchAndDifferentSourcesRemainSeparate()
+    {
+        var fixture = CreateFixture();
+        var second = new ShiftOccurrenceId(fixture.SiteId, fixture.Occurrence.ShiftScheduleAssignmentId,
+            new ShiftId("SHIFT-B"), fixture.Occurrence.EndsAtUtc, fixture.Occurrence.EndsAtUtc.AddHours(8));
+        var third = new ShiftOccurrenceId(fixture.SiteId, fixture.Occurrence.ShiftScheduleAssignmentId,
+            new ShiftId("SHIFT-C"), second.EndsAtUtc, second.EndsAtUtc.AddHours(8));
+        await fixture.PublishRosterAsync([third, fixture.Occurrence, second]);
+        var otherMachine = MachineId.New();
+        var otherSource = new OperationalMetricReportingSource(otherMachine,
+            new OperationalMetricProjectionProcessorId("other-processor"));
+        await fixture.RosterStore.CommitAsync(new MachineShiftOccurrenceRosterCommit(null,
+            new MachineShiftOccurrenceRoster(otherMachine, fixture.LineId, fixture.Day,
+                new MachineShiftOccurrenceRosterRevision(1),
+                [new MachineShiftOccurrenceOwnership(otherMachine, fixture.LineId, second, fixture.Day)])), default);
+        var query = new ProductionDayShiftOperationalMetricQuery(
+            [new ProductionDayShiftReportingSource(fixture.Source, fixture.Day),
+             new ProductionDayShiftReportingSource(otherSource, fixture.Day)],
+            OperationalMetricEvaluationContextKey.Unpartitioned);
+        var reports = await fixture.Reader.ReadAsync(query, default);
+        Assert.Equal(4, reports.Count);
+        Assert.Equal(new[] { fixture.Source.ProcessorId, otherSource.ProcessorId }, fixture.MetricReader.BatchProcessors);
+        Assert.Equal(new[] { 3, 1 }, fixture.MetricReader.BatchSizes);
+    }
+
+    [Fact]
+    public async Task MultipleDaysOfSameSourceUseOneBatch()
+    {
+        var fixture = CreateFixture();
+        await fixture.PublishRosterAsync([fixture.Occurrence]);
+        var tomorrow = new ProductionDayId(fixture.SiteId, fixture.Day.BusinessDate.AddDays(1));
+        var shift = new ShiftOccurrenceId(fixture.SiteId, fixture.Occurrence.ShiftScheduleAssignmentId,
+            fixture.Occurrence.ShiftId, fixture.Occurrence.StartsAtUtc.AddDays(1), fixture.Occurrence.EndsAtUtc.AddDays(1));
+        await fixture.RosterStore.CommitAsync(new MachineShiftOccurrenceRosterCommit(null,
+            new MachineShiftOccurrenceRoster(fixture.MachineId, fixture.LineId, tomorrow,
+                new MachineShiftOccurrenceRosterRevision(1),
+                [new MachineShiftOccurrenceOwnership(fixture.MachineId, fixture.LineId, shift, tomorrow)])), default);
+        var reports = await fixture.Reader.ReadAsync(new ProductionDayShiftOperationalMetricQuery(
+            [new ProductionDayShiftReportingSource(fixture.Source, tomorrow),
+             new ProductionDayShiftReportingSource(fixture.Source, fixture.Day)],
+            OperationalMetricEvaluationContextKey.Unpartitioned), default);
+        Assert.Equal(2, reports.Count);
+        Assert.Equal(fixture.Day, reports[0].ProductionDayId);
+        Assert.Equal(tomorrow, reports[1].ProductionDayId);
+        Assert.Single(fixture.MetricReader.BatchProcessors);
+        Assert.Equal(2, Assert.Single(fixture.MetricReader.BatchSizes));
+    }
+
+    [Fact]
     public async Task MissingRosterCoverageFailsInsteadOfReportingEmptyDay()
     {
         var fixture = CreateFixture();
@@ -251,6 +300,22 @@ public sealed class ProductionDayShiftOperationalMetricReaderTests
 
     private sealed class StubMetricReader : IOperationalMetricReportReader
     {
+        public List<OperationalMetricProjectionProcessorId> BatchProcessors { get; } = [];
+        public List<int> BatchSizes { get; } = [];
+
+        public async ValueTask<IReadOnlyList<ShiftOperationalMetricReport?>> ReadShiftsAsync(
+            OperationalMetricProjectionProcessorId processorId, MachineId machineId,
+            IReadOnlyList<ShiftOccurrenceId> shifts, OperationalMetricEvaluationContextKey contextKey,
+            CancellationToken cancellationToken)
+        {
+            BatchProcessors.Add(processorId);
+            BatchSizes.Add(shifts.Count);
+            var reports = new List<ShiftOperationalMetricReport?>();
+            foreach (var shift in shifts)
+                reports.Add(await ReadShiftAsync(processorId, machineId, shift, contextKey, cancellationToken));
+            return reports;
+        }
+
         public int ShiftReadCount { get; private set; }
 
         public ShiftOperationalMetricReport? ShiftReport { get; set; }

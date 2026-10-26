@@ -9,6 +9,47 @@ public sealed class SqlContainmentHistoricalLoadCountIntegrationTests(SqlContain
     : IClassFixture<SqlContainmentAuthorityDatabaseFixture>
 {
     [Fact]
+    public async Task ThreeShiftSelectionVerifiesPublicationOnceAndReloadsEachExactCutOnce()
+    {
+        var (first, next) = await new SqlContainmentHistoricalResultIntegrationTests(fixture).CreatePublicationAdvanceEvidenceAsync();
+        var prior = ContainmentArchiveBatch.Preflight(first);
+        var incoming = ContainmentArchiveBatch.Preflight(next);
+        await new SqlContainmentPublicationTransaction(fixture.ConnectionString).PublishAsync(first, null, default);
+        await new SqlContainmentPublicationTransaction(fixture.ConnectionString).PublishAsync(next, Checkpoint(prior), default);
+        var key = incoming.Results[0].Document.Key;
+        var shift = Assert.IsType<OperationalMetricPeriodId.Shift>(key.PeriodId).ShiftOccurrenceId;
+        var second = new ShiftOccurrenceId(shift.SiteId, shift.ShiftScheduleAssignmentId,
+            new ShiftId("batch-second"), shift.EndsAtUtc, shift.EndsAtUtc.AddHours(8));
+        var third = new ShiftOccurrenceId(shift.SiteId, shift.ShiftScheduleAssignmentId,
+            new ShiftId("batch-third"), second.EndsAtUtc, second.EndsAtUtc.AddHours(8));
+        using var counter = new ContainmentHistoricalSqlCounter(fixture.ConnectionString);
+        var verifiedCount = 0;
+        using var listener = new System.Diagnostics.ActivityListener
+        {
+            ShouldListenTo = source => source.Name == OperationalMetricReportingDiagnostics.Source.Name,
+            Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) => System.Diagnostics.ActivitySamplingResult.AllData,
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "containment.publication.verify" &&
+                    Equals(activity.GetTagItem("processor.id"), incoming.Processor.Value))
+                    Interlocked.Increment(ref verifiedCount);
+            },
+        };
+        System.Diagnostics.ActivitySource.AddActivityListener(listener);
+        var reader = new SqlServerOperationalMetricProjectionQueryReader(counter.ConnectionString);
+        var actual = await reader.ReadPeriodsSummariesAsync(incoming.Processor, key.MachineId,
+            [key.PeriodId, new OperationalMetricPeriodId.Shift(second), new OperationalMetricPeriodId.Shift(third)],
+            key.ContextKey, default);
+        Assert.Equal(1, verifiedCount);
+        AssertTwoCuts(counter, counter.Executions, prior.Cut, incoming.Cut);
+        Assert.Single(counter.Executions.Select(e => e.Transaction).Distinct());
+        var expected = await new SqlServerOperationalMetricProjectionQueryReader(fixture.ConnectionString)
+            .ReadPeriodSummariesAsync(incoming.Processor, key.MachineId, key.PeriodId, key.ContextKey, default);
+        Assert.Equal(expected.Select(s => (s.ProcessorId, s.Key, s.Status, s.Value, s.Unit, s.ReasonCode, s.ReasonOperandName, s.SourceRevision, s.PublicationMetadata)),
+            actual.Select(s => (s.ProcessorId, s.Key, s.Status, s.Value, s.Unit, s.ReasonCode, s.ReasonOperandName, s.SourceRevision, s.PublicationMetadata)));
+    }
+
+    [Fact]
     public async Task MultiResultPublisherAndReplayEachReloadOnceInPreparationAndOnceInPublication()
     {
         var envelopes = await new SqlContainmentHistoricalResultIntegrationTests(fixture).CreateVerifiedReadEvidenceAsync(false);

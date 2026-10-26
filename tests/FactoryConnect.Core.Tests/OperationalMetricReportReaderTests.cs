@@ -6,6 +6,92 @@ namespace FactoryConnect.Core.Tests;
 public sealed class OperationalMetricReportReaderTests
 {
     [Fact]
+    public async Task MultiShiftUsesOneBatchAndPreservesHistoricalRevisionsAndMissingReports()
+    {
+        var fixture = CreateFixture();
+        var first = Shift(fixture.SiteId);
+        var second = new ShiftOccurrenceId(first.SiteId, first.ShiftScheduleAssignmentId,
+            new ShiftId("shift-b"), first.EndsAtUtc, first.EndsAtUtc.AddHours(8));
+        var third = new ShiftOccurrenceId(first.SiteId, first.ShiftScheduleAssignmentId,
+            new ShiftId("shift-c"), second.EndsAtUtc, second.EndsAtUtc.AddHours(8));
+        var later = new MetricAggregationCheckpoint(fixture.Revision.ProcessorId,
+            fixture.Revision.StreamId, new MetricInputPosition(20));
+        var summaries = new[]
+        {
+            new OperationalMetricProjectionSummary(Projection(fixture, new OperationalMetricPeriodId.Shift(first),
+                BuiltInOperationalMetricDefinitions.UtilizationId, 0.17m)),
+            new OperationalMetricProjectionSummary(Projection(fixture, new OperationalMetricPeriodId.Shift(second),
+                BuiltInOperationalMetricDefinitions.PerformanceId, OperationalMetricEvaluationStatus.InsufficientEvidence,
+                null, OperationalMetricEvaluationReasonCode.MissingReferenceTime, "IdealProductionDuration", later)),
+        };
+        var provider = new BatchOnlyQueryReader(summaries);
+        var reader = new OperationalMetricReportReader(provider);
+        var reports = await reader.ReadShiftsAsync(fixture.ProjectionProcessorId, fixture.MachineId,
+            [first, second, third], OperationalMetricEvaluationContextKey.Unpartitioned, default);
+        Assert.Equal(1, provider.BatchCount);
+        Assert.Equal(3, reports.Count);
+        Assert.Equal(fixture.Revision, reports[0]!.SourceRevision);
+        Assert.Equal(later, reports[1]!.SourceRevision);
+        Assert.Equal(0.17m, Assert.Single(reports[0]!.Metrics).Value);
+        Assert.Equal(OperationalMetricEvaluationReasonCode.MissingReferenceTime,
+            Assert.Single(reports[1]!.Metrics).ReasonCode);
+        Assert.Null(reports[2]);
+    }
+
+    [Fact]
+    public async Task MultiShiftRejectsForeignAuthorityAndDuplicateDefinitions()
+    {
+        var fixture = CreateFixture();
+        var shift = Shift(fixture.SiteId);
+        var summary = new OperationalMetricProjectionSummary(Projection(fixture,
+            new OperationalMetricPeriodId.Shift(shift), BuiltInOperationalMetricDefinitions.UtilizationId, 0.17m));
+        var reader = new OperationalMetricReportReader(new BatchOnlyQueryReader([summary, summary]));
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadShiftsAsync(
+            fixture.ProjectionProcessorId, fixture.MachineId, [shift],
+            OperationalMetricEvaluationContextKey.Unpartitioned, default).AsTask());
+        reader = new OperationalMetricReportReader(new BatchOnlyQueryReader([summary]));
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadShiftsAsync(
+            new OperationalMetricProjectionProcessorId("other-source"), fixture.MachineId, [shift],
+            OperationalMetricEvaluationContextKey.Unpartitioned, default).AsTask());
+    }
+
+    [Fact]
+    public async Task MultiShiftCancellationDoesNotReturnPartialResults()
+    {
+        var fixture = CreateFixture();
+        using var cancellation = new CancellationTokenSource();
+        var provider = new BatchOnlyQueryReader([], cancellation);
+        var reader = new OperationalMetricReportReader(provider);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ReadShiftsAsync(
+            fixture.ProjectionProcessorId, fixture.MachineId, [Shift(fixture.SiteId)],
+            OperationalMetricEvaluationContextKey.Unpartitioned, cancellation.Token).AsTask());
+        Assert.Equal(1, provider.BatchCount);
+    }
+
+    private sealed class BatchOnlyQueryReader(
+        IReadOnlyList<OperationalMetricProjectionSummary> summaries,
+        CancellationTokenSource? cancellation = null) : IOperationalMetricProjectionQueryReader
+    {
+        public int BatchCount { get; private set; }
+        public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodsSummariesAsync(
+            OperationalMetricProjectionProcessorId processorId, MachineId machineId,
+            IReadOnlyList<OperationalMetricPeriodId> periodIds,
+            OperationalMetricEvaluationContextKey contextKey, CancellationToken cancellationToken)
+        {
+            BatchCount++;
+            cancellation?.Cancel();
+            return ValueTask.FromResult(summaries);
+        }
+        public ValueTask<IReadOnlyList<OperationalMetricProjectionSummary>> ReadPeriodSummariesAsync(
+            OperationalMetricProjectionProcessorId processorId, MachineId machineId,
+            OperationalMetricPeriodId periodId, OperationalMetricEvaluationContextKey contextKey,
+            CancellationToken cancellationToken) => throw new InvalidOperationException("Per-shift read is forbidden.");
+        public ValueTask<OperationalMetricProjection?> ReadDetailAsync(
+            OperationalMetricProjectionProcessorId processorId, OperationalMetricEvaluationKey key,
+            CancellationToken cancellationToken) => throw new InvalidOperationException("Detail read is forbidden.");
+    }
+
+    [Fact]
     public async Task ShiftSummaryReturnsCanonicalMetricsAtOneReportRevision()
     {
         var fixture = CreateFixture();

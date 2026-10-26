@@ -81,8 +81,10 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
         Assert.Equal(1m, summaries.Single(s => s.Key.DefinitionId == BuiltInOperationalMetricDefinitions.QualityId).Value);
     }
 
-    [Fact]
-    public async Task ActualDetailReaderWaitsForAtomicPublicationAndCancellationDoesNotExposePartialRows()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualDetailReaderWaitsForAtomicPublicationAndCancellationDoesNotExposePartialRows(bool multiPeriod)
     {
         var (envelopes, _) = await new SqlContainmentHistoricalResultIntegrationTests(fixture).CreateArchiveTestEvidenceAsync();
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
@@ -93,7 +95,10 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
         { if (stage == ContainmentPublicationStage.ProjectionsWritten) { reached.SetResult(); await release.Task.WaitAsync(ct); } });
         await reached.Task.WaitAsync(timeout.Token);
         using var cancelRead = new CancellationTokenSource();
-        var reading = Reader.ReadDetailAsync(batch.Processor, batch.Results[0].Document.Key, cancelRead.Token).AsTask();
+        var key = batch.Results[0].Document.Key;
+        Task reading = multiPeriod
+            ? Reader.ReadPeriodsSummariesAsync(batch.Processor, key.MachineId, [key.PeriodId], key.ContextKey, cancelRead.Token).AsTask()
+            : Reader.ReadDetailAsync(batch.Processor, key, cancelRead.Token).AsTask();
         try
         {
             await using var monitor = fixture.CreateConnection(); await monitor.OpenAsync(timeout.Token);
@@ -202,6 +207,8 @@ public sealed class SqlContainmentVerifiedReadIntegrationTests(SqlContainmentAut
         var damaged = await SqlContainmentPublicationIntegrationTests.Snapshot(c, null);
         await Assert.ThrowsAsync<ContainmentHistoricalIntegrityException>(() => Reader.ReadDetailAsync(batch.Processor, first.Key, default).AsTask());
         await Assert.ThrowsAsync<ContainmentHistoricalIntegrityException>(() => Reader.ReadPeriodSummariesAsync(batch.Processor, first.Key.MachineId, first.Key.PeriodId, first.Key.ContextKey, default).AsTask());
+        await Assert.ThrowsAsync<ContainmentHistoricalIntegrityException>(() => Reader.ReadPeriodsSummariesAsync(
+            batch.Processor, first.Key.MachineId, [first.Key.PeriodId], first.Key.ContextKey, default).AsTask());
         await Assert.ThrowsAsync<ContainmentHistoricalIntegrityException>(() => new SqlServerOperationalMetricProjectionStore(fixture.ConnectionString).ReadCheckpointAsync(batch.Processor, batch.Cut.StreamId, default).AsTask());
         Assert.Equal(damaged, await SqlContainmentPublicationIntegrationTests.Snapshot(c, null));
     }
