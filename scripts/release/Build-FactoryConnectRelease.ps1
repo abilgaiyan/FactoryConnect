@@ -154,6 +154,7 @@ $systemStartupScriptPath = Join-Path $repoRoot 'scripts/deployment/Start-Factory
 $systemStartupInstallerPath = Join-Path $repoRoot 'scripts/deployment/Install-FactoryConnectSystemStartup.ps1'
 $sqlReadinessScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
 $processTerminationScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect.ProcessTermination.ps1'
+$moxaMaintenanceScriptPath = Join-Path $repoRoot 'scripts/deployment/FactoryConnect.MoxaMaintenance.ps1'
 $edgeRestartScriptPath = Join-Path $repoRoot 'scripts/deployment/Restart-FactoryConnectEdge.ps1'
 $edgeRestartAssessmentScriptPath = Join-Path $repoRoot 'scripts/deployment/Get-FactoryConnectEdgeRestartAssessment.ps1'
 $dashboardRestartScriptPath = Join-Path $repoRoot 'scripts/deployment/Restart-FactoryConnectDashboard.ps1'
@@ -313,6 +314,7 @@ try {
     [System.IO.File]::Copy($sqlReadinessScriptPath, (Join-Path $stagingRoot 'FactoryConnect.SqlReadiness.ps1'), $false)
     [System.IO.File]::Copy($processTerminationScriptPath, (Join-Path $stagingRoot 'FactoryConnect.ProcessTermination.ps1'), $false)
 
+    [System.IO.File]::Copy($moxaMaintenanceScriptPath, (Join-Path $stagingRoot 'FactoryConnect.MoxaMaintenance.ps1'), $false)
     [System.IO.File]::Copy($edgeRestartScriptPath, (Join-Path $stagingRoot 'Restart-FactoryConnectEdge.ps1'), $false)
     [System.IO.File]::Copy($edgeRestartAssessmentScriptPath, (Join-Path $stagingRoot 'Get-FactoryConnectEdgeRestartAssessment.ps1'), $false)
 

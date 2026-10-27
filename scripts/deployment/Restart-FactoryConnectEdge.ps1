@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
     [Parameter()][ValidateRange(1,300)][int]$EdgeStabilizationSeconds = 5,
     [Parameter()][ValidateRange(1,300)][int]$HealthTimeoutSeconds = 60,
-    [Parameter()][ValidateRange(1,600)][int]$ShutdownTimeoutSeconds
+    [Parameter()][ValidateRange(1,600)][int]$ShutdownTimeoutSeconds,
+    [Parameter()][string]$MoxaRecoveryPlan
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -205,6 +206,12 @@ try {
     if (Test-Path -LiteralPath $intentPath) {
         throw 'Unresolved runtime-start intent requires explicit reconciliation before Edge restart.'
     }
+    if (Test-Path -LiteralPath (Join-Path $deployment 'moxa-maintenance.intent.json')) { throw 'Unresolved MOXA maintenance blocks restart.' }
+    $moxaPlan = $null
+    if ($MoxaRecoveryPlan) {
+        . (Join-Path $PSScriptRoot 'FactoryConnect.MoxaMaintenance.ps1')
+        $moxaPlan = Read-JsonFile $MoxaRecoveryPlan
+    }
     $oldRuntime = Read-JsonFile $runtimePath
     if ([string]$oldRuntime.deploymentStatus -cne 'Succeeded') {
         throw 'Edge restart requires a successfully published runtime; interrupted/failed operations require explicit reconciliation.'
@@ -267,6 +274,7 @@ try {
     }
     $attemptLog = Join-Path $deployment "logs/$attempt"
     New-Item -ItemType Directory -Path $attemptLog -Force | Out-Null
+    if ($null -ne $moxaPlan) { Initialize-MoxaMaintenance $moxaPlan $root $releaseId $oldRuntime $attemptLog }
     $edgeRecord = $oldRuntime.edge
     # A transition is an interruption marker, not a running/absence claim.
     $edgeState = 'Unproven'
@@ -279,6 +287,12 @@ try {
     $edgeState = 'Absent'
     $phase = 'AbsencePublication'
     Write-JsonFileAtomic $runtimePath (New-EdgeRestartRuntime 'EdgeRestarting' $phase)
+
+    if ($null -ne $moxaPlan) {
+        $phase = 'MoxaRecovery'
+        Invoke-MoxaMaintenanceCorrection $moxaPlan
+        $edgeEnvironment = Get-ConfigurationEnvironment $paths.edge
+    }
 
     $phase = 'LaunchIntent'
     $intent = [ordered]@{
@@ -330,6 +344,11 @@ try {
         throw 'Replacement Edge ownership changed before completion.'
     }
     Write-JsonFileAtomic $runtimePath (New-EdgeRestartRuntime 'Succeeded' 'Complete')
+    if ($null -ne $moxaPlan) {
+        $script:MoxaEvidence.phase = 'RestartedAcceptancePending'
+        Write-JsonFileAtomic $script:MoxaEvidencePath $script:MoxaEvidence
+        Remove-Item -LiteralPath $script:MoxaMarkerPath -Force
+    }
     [pscustomobject]@{Status='Succeeded';Operation='EdgeRestart';AttemptId=$attempt;SourceCommit=$releaseId;InstallRoot=$root;EdgePid=$edgeRecord.pid}
 } catch {
     # Never stop API/Dashboard, never launch a second replacement, and never

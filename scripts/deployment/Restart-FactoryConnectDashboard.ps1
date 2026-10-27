@@ -207,6 +207,7 @@ $replacement=$null;$configurationHash=$null;$phase='Preflight'
 try {
     try { $lock=[IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None) }
     catch { throw "Another FactoryConnect operation holds the deployment lock, or it is unavailable: $lockPath" }
+    if (Test-Path -LiteralPath (Join-Path $deployment 'moxa-maintenance.intent.json')) { throw 'Unresolved MOXA maintenance blocks this operation.' }
     if (Test-Path -LiteralPath $intentPath) { throw 'Unresolved runtime-start intent requires explicit reconciliation before Dashboard restart.' }
     $oldRuntime=Read-JsonFile $runtimePath
     if ([string]$oldRuntime.deploymentStatus -cne 'Succeeded') { throw 'Dashboard restart requires a successfully published runtime; reconcile interrupted operations first.' }

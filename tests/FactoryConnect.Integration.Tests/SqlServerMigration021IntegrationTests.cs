@@ -19,7 +19,7 @@ public sealed class SqlServerMigration021IntegrationTests
         await AssertCurrent(connection);
         if (upgrade) Assert.Equal(previous, await Prefix(connection));
         var history = await Scalar(connection, "SELECT STRING_AGG(CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127)),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;");
-        Assert.Equal(22, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory;"))!);
+        Assert.Equal(23, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory;"))!);
         Assert.Equal(0, (int)(await Scalar(connection, "SELECT (SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive)+(SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive)+(SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference);"))!);
         await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
         Assert.Equal(history, await Scalar(connection, "SELECT STRING_AGG(CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127)),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;"));

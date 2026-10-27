@@ -4,6 +4,7 @@
     <AssemblyName>FactoryConnect.Persistence.SqlServer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Sql\023_ProductionAdmissionRecoveryAudit.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.023_ProductionAdmissionRecoveryAudit.sql" />
     <EmbeddedResource Include="Sql\022_ProductionAdmissionBoundary.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.022_ProductionAdmissionBoundary.sql" />
     <EmbeddedResource Include="Sql\021_DurableOperationalMetricContainment.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.021_DurableOperationalMetricContainment.sql" />
     <EmbeddedResource Include="Sql\020_DurableAcquisitionEvidence.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.020_DurableAcquisitionEvidence.sql" />

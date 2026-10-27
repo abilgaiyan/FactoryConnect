@@ -1,0 +1,25 @@
+name: MOXA audited recovery validation
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  maintenance:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - name: Build recovery tool first
+        run: dotnet build tools/FactoryConnect.MoxaRecovery/FactoryConnect.MoxaRecovery.csproj -c Release
+      - name: Validate maintenance failures and persistent barriers
+        run: powershell -NoProfile -File tests/deployment/Invoke-MoxaMaintenanceConformance.ps1
+      - name: Existing Edge restart regression checks
+        run: powershell -NoProfile -File tests/deployment/Invoke-EdgeRestartConformance.ps1
+      - name: Publish review artifact
+        run: dotnet publish tools/FactoryConnect.MoxaRecovery/FactoryConnect.MoxaRecovery.csproj -c Release -r win-x64 --self-contained true -o artifacts/moxa-recovery
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moxa-recovery-review-only
+          path: artifacts/moxa-recovery

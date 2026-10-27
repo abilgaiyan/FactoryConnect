@@ -185,6 +185,7 @@ $intentOwnedByThisAttempt=$false;
 $intentProcessRecord=$null
 try{
  try{$lock=[System.IO.File]::Open($lockPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None)}catch{throw "Another FactoryConnect deployment/runtime-start operation holds '$lockPath'."}
+    if (Test-Path -LiteralPath (Join-Path $deployment 'moxa-maintenance.intent.json')) { throw 'Unresolved MOXA maintenance blocks this operation.' }
  $oldRuntime=if(Test-Path -LiteralPath $runtimePath){Read-JsonFile $runtimePath}else{$null};
 $runtimeLoaded=$true
  if(Test-Path -LiteralPath $intentPath){$intent=Read-JsonFile $intentPath;
