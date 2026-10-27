@@ -12,6 +12,7 @@ try {
     # This operation only publishes the stable orchestration entry point.
     # It does not create a task, start acquisition/runtime, or change current.
     $lock = [IO.File]::Open((Join-Path $deployment 'deployment.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    if (Test-Path -LiteralPath (Join-Path $deployment 'moxa-maintenance.intent.json')) { throw 'Unresolved MOXA maintenance blocks this operation.' }
     if (Test-Path -LiteralPath (Join-Path $deployment 'runtime-start.intent.json')) { throw 'Unresolved runtime startup intent blocks system-entry installation.' }
     $item = Get-Item -LiteralPath (Join-Path $root 'current') -Force
     $targets = @($item.Target)

@@ -256,6 +256,7 @@ $lockPath=Join-Path $deployment 'deployment.lock'; $lockStream=$null; $lockAcqui
 try {
     try { $lockStream=[System.IO.File]::Open($lockPath,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::None); $lockAcquired=$true } catch { throw "Another FactoryConnect deployment holds '$lockPath'." }
 
+    if (Test-Path -LiteralPath (Join-Path $deployment 'moxa-maintenance.intent.json')) { throw 'Unresolved MOXA maintenance blocks this operation.' }
     # Shared authority: deployment must not bypass unresolved startup ownership.
     # Do not parse, repair, or remove the intent; startup owns reconciliation.
     if (Test-Path -LiteralPath (Join-Path $deployment 'runtime-start.intent.json')) {

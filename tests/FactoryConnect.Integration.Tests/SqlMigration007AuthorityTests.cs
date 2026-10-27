@@ -22,7 +22,7 @@ public sealed class SqlMigration007AuthorityTests
             migration.ResourceName);
         Assert.Equal(SqlMigrationTransactionPolicy.EngineOwned, migration.TransactionPolicy);
         Assert.Equal(Migration007Checksum, migration.Sha256Checksum);
-        Assert.Equal(Enumerable.Range(1, 22), catalog.Migrations.Select(static value => value.MigrationId));
+        Assert.Equal(Enumerable.Range(1, 23), catalog.Migrations.Select(static value => value.MigrationId));
     }
 
     [Fact]

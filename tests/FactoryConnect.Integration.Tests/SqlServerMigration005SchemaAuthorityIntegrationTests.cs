@@ -7,14 +7,17 @@ namespace FactoryConnect.Integration.Tests;
 public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
 {
     [Fact]
-    public void RepositoryAuthoritySeparatesHistoricalPost005FromCurrentPost014()
+    public void RepositoryAuthoritySeparatesHistoricalSchemasFromCurrentPost023()
     {
         Assert.Equal(13, SqlRepositorySchemaDescriptors.LegacyPost004.Tables.Length);
         Assert.Equal(20, SqlRepositorySchemaDescriptors.Post005.Tables.Length);
         Assert.Equal(21, SqlRepositorySchemaDescriptors.Post007.Tables.Length);
         Assert.Equal(34, SqlRepositorySchemaDescriptors.Post012.Tables.Length);
         Assert.Equal(36, SqlRepositorySchemaDescriptors.Post013.Tables.Length);
-        Assert.Equal(51, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(51, SqlRepositorySchemaDescriptors.Post022.Tables.Length);
+        Assert.Equal(52, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post022.Tables,
+            static table => table.Name.ObjectName == "ProductionAdmissionRecoveryAudit");
 
         var legacyNames = SqlRepositorySchemaDescriptors.LegacyPost004.Tables
             .Select(static table => table.Name.ObjectName)
@@ -35,6 +38,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Contains("MachineShiftOccurrenceRoster", post005Names);
         Assert.Contains("MachineShiftOccurrenceRosterOccurrence", post005Names);
         Assert.DoesNotContain("AcquisitionContactAuthority", post005Names);
+        Assert.Contains("ProductionAdmissionRecoveryAudit", currentNames);
         Assert.Contains("AcquisitionContactAuthority", currentNames);
         Assert.Contains("ObservationProcessingCheckpoint", currentNames);
         Assert.Contains("MappingCoverageAuthority", currentNames);

@@ -32,7 +32,7 @@ public sealed class SqlMigration022AuthorityTests
             Assert.Equal(table.PrimaryKey, updated.PrimaryKey);
             Assert.Equal(table.ForeignKeys, updated.ForeignKeys);
         }
-        var migration = SqlMigrationCatalog.Load().Migrations[^1];
+        var migration = SqlMigrationCatalog.Load().Migrations.Single(migration => migration.MigrationId == 22);
         Assert.Equal(22, migration.MigrationId);
         Assert.Equal(SqlMigrationTransactionPolicy.EngineOwned, migration.TransactionPolicy);
         Assert.Single(SqlMigrationExecutionBatches.For(migration));
