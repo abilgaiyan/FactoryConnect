@@ -1,4 +1,5 @@
 export type ApplicationRoute =
+  | { kind: "overview"; search: string }
   | { kind: "fleet" }
   | { kind: "dateRange" }
   | { kind: "productionDayOverview" }
@@ -12,7 +13,8 @@ export type ApplicationRoute =
 
 export const applicationBasePath = "/";
 
-export function parseApplicationRoute(pathname: string): ApplicationRoute {
+export function parseApplicationRoute(pathname: string, search = ""): ApplicationRoute {
+  if (pathname === "/overview") return { kind: "overview", search };
   if (pathname === "/fleet") return { kind: "fleet" };
   if (pathname === "/reports/range") return { kind: "dateRange" };
   if (pathname === "/") {
@@ -81,6 +83,7 @@ export function parseApplicationRoute(pathname: string): ApplicationRoute {
 
 export function routePath(route: Exclude<ApplicationRoute, { kind: "notFound" }>): string {
   switch (route.kind) {
+    case "overview": return `/overview${route.search}`;
     case "fleet": return "/fleet";
     case "dateRange": return "/reports/range";
     case "productionDayOverview":

@@ -64,22 +64,27 @@ export class FleetRefresh {
             return [m.machineId, { request: 'loading', ...(retained ? { retained } : {}) }];
         }));
         this.publish({ ...this.attempts });
-        await Promise.all(this.machines.map(async (machine) => {
-            let result: FleetAttempt;
-            const retained = this.attempts[machine.machineId]?.retained;
-            try {
-                const current = await this.client.read(machine.machineId, { signal: controller.signal });
-                if (current.machineId.toLowerCase() !== machine.machineId)
-                    throw new Error('Response machine identity mismatch');
-                result = { request: 'success', current };
+        const pending = [...this.machines];
+        const worker = async () => {
+            while (pending.length && generation === this.generation && !controller.signal.aborted) {
+                const machine = pending.shift()!;
+                let result: FleetAttempt;
+                const retained = this.attempts[machine.machineId]?.retained;
+                try {
+                    const current = await this.client.read(machine.machineId, { signal: controller.signal });
+                    if (current.machineId.toLowerCase() !== machine.machineId)
+                        throw new Error('Response machine identity mismatch');
+                    result = { request: 'success', current };
+                }
+                catch (error) {
+                    result = { request: 'failure', error: error instanceof Error ? error.message : 'Request failed', ...(retained ? { retained } : {}) };
+                }
+                if (generation !== this.generation || controller.signal.aborted)
+                    return;
+                this.attempts = { ...this.attempts, [machine.machineId]: result };
+                this.publish(this.attempts);
             }
-            catch (error) {
-                result = { request: 'failure', error: error instanceof Error ? error.message : 'Request failed', ...(retained ? { retained } : {}) };
-            }
-            if (generation !== this.generation || controller.signal.aborted)
-                return;
-            this.attempts = { ...this.attempts, [machine.machineId]: result };
-            this.publish(this.attempts);
-        }));
+        };
+        await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
     }
 }

@@ -11,9 +11,10 @@ export function DateRangePage({ runtime }: {
         const now = new Date();
         return `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     });
-    const [from, setFrom] = useState(defaultDate);
-    const [through, setThrough] = useState(defaultDate);
-    const [machines, setMachines] = useState<string[]>([...new Set(runtime.configuration.sources.map(s => s.machineId.toLowerCase()))]);
+    const initialQuery = new URLSearchParams(window.location.search);
+    const [from, setFrom] = useState(initialQuery.get('from') ?? defaultDate);
+    const [through, setThrough] = useState(initialQuery.get('through') ?? defaultDate);
+    const [machines, setMachines] = useState<string[]>(initialQuery.has('machine') ? [initialQuery.get('machine')!.toLowerCase()] : [...new Set(runtime.configuration.sources.map(s => s.machineId.toLowerCase()))]);
     const [state, setState] = useState<{
         kind: 'idle' | 'loading' | 'success' | 'failure';
         rows?: RangeRow[];

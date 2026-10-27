@@ -92,6 +92,8 @@ public sealed class DashboardOptionsValidator(IHostEnvironment environment)
             }
         }
 
+        DashboardMachineProfileAdapter.Validate(options, failures);
+
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);

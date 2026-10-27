@@ -58,7 +58,9 @@ app.MapGet("/dashboard/config", (IOptions<DashboardOptions> options) =>
     return Results.Ok(new DashboardRuntimeConfiguration(
         "/",
         checked((int)dashboard.RequestTimeout.TotalMilliseconds),
-        sources));
+        sources,
+        1,
+        DashboardMachineProfileAdapter.Project(dashboard)));
 });
 
 app.MapPost('/' + shiftReportingPath, (HttpContext context, ReportingGateway gateway) =>
