@@ -8,6 +8,8 @@ public sealed class DashboardOptions
 
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
+    public List<DashboardMachineProfileOptions> MachineProfiles { get; init; } = [];
+
     public List<DashboardSourceOptions> Sources { get; init; } = [];
 }
 

@@ -118,7 +118,7 @@ test("browser routing uses pathname only and normalizes query and fragment away 
   assert.deepEqual(browser.pushes, ["/production-days/2026-08-30/shifts"]);
 });
 
-test("same-route navigation is deterministic and does not create duplicate history entries", () => {
+test("search changes create history entries and exact repeated selections do not", () => {
   const browser = createFakeBrowser("https://factory.example/machines/M-1?first=true");
   const router = createBrowserRouter(browser.port);
 
@@ -126,7 +126,9 @@ test("same-route navigation is deterministic and does not create duplicate histo
     kind: "machineDetail",
     machineId: "M-1",
   });
-  assert.deepEqual(browser.pushes, []);
+  assert.deepEqual(browser.pushes, ["/machines/M-1"]);
+  router.navigate("/machines/M-1?second=true");
+  assert.deepEqual(browser.pushes, ["/machines/M-1"]);
 });
 
 test("popstate subscription reacts and cleanup removes the exact listener", () => {

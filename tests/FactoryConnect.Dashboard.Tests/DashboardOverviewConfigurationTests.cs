@@ -72,6 +72,35 @@ public sealed class DashboardOverviewConfigurationTests
         Assert.NotEqual(sources[1].GetProperty("groupName").GetString(), sources[1].GetProperty("productionLineId").GetString());
     }
 
+    [Fact]
+    public async Task RuntimeProfileProjectionIsVersionedAdditiveAndDoesNotExposeUpstreamSecrets()
+    {
+        var values = CreateSources(1);
+        const string prefix = "Dashboard:MachineProfiles:0:";
+        values[prefix + "MachineId"] = GuidFromIndex(1).ToString();
+        values[prefix + "ProfileId"] = "digital";
+        values[prefix + "ProfileVersion"] = "1";
+        values[prefix + "IntegrationCategoryId"] = "digital";
+        values[prefix + "ApprovalReference"] = "factory-signal-confirmation";
+        values[prefix + "EffectiveFrom"] = "2026-10-01T00:00:00Z";
+        values[prefix + "StoppedLabel"] = "Machine OFF";
+        values[prefix + "FaultLabel"] = "Alarm";
+        values[prefix + "Capabilities:0:Key"] = "operational-state";
+        values[prefix + "Capabilities:0:Support"] = "supported";
+        values[prefix + "Capabilities:0:Qualification"] = "qualified";
+        values["ConnectionStrings:Factory"] = "Password=must-not-project";
+        await using var factory = CreateFactory(values);
+        using var client = factory.CreateClient();
+        var json = await client.GetStringAsync("/dashboard/config");
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(1, document.RootElement.GetProperty("machineProfileSchemaVersion").GetInt32());
+        var profile = Assert.Single(document.RootElement.GetProperty("machineProfiles").EnumerateArray());
+        Assert.Equal("Machine OFF", profile.GetProperty("stoppedLabel").GetString());
+        Assert.Equal("Alarm", profile.GetProperty("faultLabel").GetString());
+        Assert.DoesNotContain("must-not-project", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("factory-server", json, StringComparison.Ordinal);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(Dictionary<string, string?> values) =>
         new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>

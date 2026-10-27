@@ -1,3 +1,4 @@
+import { validProfiles, type MachineProfile } from "./machine-capabilities.ts";
 export interface DashboardRuntimeSource {
   readonly machineId: string;
   readonly processorId: string;
@@ -9,6 +10,8 @@ export interface DashboardRuntimeSource {
 }
 
 export interface DashboardRuntimeConfiguration {
+  readonly machineProfileSchemaVersion?: 1;
+  readonly machineProfiles?: readonly MachineProfile[];
   readonly reportingBasePath: string;
   readonly requestTimeoutMilliseconds: number;
   readonly sources: readonly DashboardRuntimeSource[];
@@ -45,7 +48,8 @@ function isRuntimeConfiguration(value: unknown): value is DashboardRuntimeConfig
     Number.isInteger(value.requestTimeoutMilliseconds) &&
     value.requestTimeoutMilliseconds > 0 &&
     Array.isArray(value.sources) &&
-    value.sources.every(isRuntimeSource)
+    value.sources.every(isRuntimeSource) &&
+    validProfiles(value.machineProfileSchemaVersion, value.machineProfiles, value.sources.filter(isRuntimeSource).map(s => s.machineId.toLowerCase()))
   );
 }
 

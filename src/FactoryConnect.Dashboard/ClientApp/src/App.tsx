@@ -1,3 +1,5 @@
+import { overviewReturn } from "./routing/overview-return.ts";
+import { ManagementOverviewPage } from "./presentation/ManagementOverviewPage.tsx";
 import { MachineCounterReportPage } from "./presentation/MachineCounterReportPage.tsx";
 import { MachineActivityReportPage } from "./presentation/MachineActivityReportPage.tsx";
 import { formatReportDate } from "./presentation/date-formatting.ts";
@@ -36,6 +38,7 @@ export interface AppProps {
 
 export function App({ runtime }: AppProps) {
   const { route, navigate } = useApplicationRouter();
+  const returnToOverview = overviewReturn(window.location.search, runtime.configuration.sources);
 
   return (
     <div className="dashboard-shell">
@@ -48,6 +51,7 @@ export function App({ runtime }: AppProps) {
           ))].map(label => <span key={label}>{label}</span>)}
         </div>
         <nav aria-label="Dashboard">
+          <ApplicationLink href="/overview" navigate={navigate} current={route.kind === "overview"}>Overview</ApplicationLink>{" "}
           <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
           <ApplicationLink href="/reports/range" navigate={navigate} current={route.kind === "dateRange"}>Date-range report</ApplicationLink>{" "}
           <ApplicationLink href="/" navigate={navigate} current={route.kind === "productionDayOverview"}>
@@ -56,6 +60,7 @@ export function App({ runtime }: AppProps) {
         </nav>
       </header>
       <main id="main-content">
+        {returnToOverview && <ApplicationLink href={returnToOverview} navigate={navigate}>Back to selected overview</ApplicationLink>}
         <RouteView route={route} navigate={navigate} runtime={runtime} />
       </main>
     </div>
@@ -94,8 +99,9 @@ interface RouteViewProps {
 
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
+    case "overview": return <ManagementOverviewPage runtime={runtime} search={route.search} navigate={navigate} />;
     case "fleet": return <FleetStatusPage runtime={runtime} />;
-    case "dateRange": return <DateRangePage runtime={runtime} />;
+    case "dateRange": return <DateRangePage key={window.location.search} runtime={runtime} />;
     case "productionDayOverview":
       return <ProductionDaySelection navigate={navigate} sourceCount={runtime.configuration.sources.length} />;
     case "productionDayDetail":
@@ -241,6 +247,9 @@ function MachineDetail({ machineId, navigate, runtime, view = "status" }: Machin
     candidate => candidate.machineId.toLowerCase() === machineId.toLowerCase(),
   );
 
+  const overviewContext = new URLSearchParams(window.location.search).get("overview");
+  const contextSearch = overviewContext !== null && overviewReturn(window.location.search, runtime.configuration.sources)
+    ? `?${new URLSearchParams({ overview: overviewContext })}` : "";
   const title = view === "activity" ? "Machine activity history" : view === "counter" ? "Raw counter inspection" : "Machine";
   return (
     <section aria-labelledby="route-title">
@@ -250,9 +259,9 @@ function MachineDetail({ machineId, navigate, runtime, view = "status" }: Machin
         ? <p role="alert">This machine is not configured for the dashboard.</p>
         : <>
           <nav aria-label="Machine views">
-            <ApplicationLink href={routePath({ kind: "machineDetail", machineId: source.machineId })} current={view === "status"} navigate={navigate}>Machine status</ApplicationLink>{" "}
-            <ApplicationLink href={routePath({ kind: "machineActivity", machineId: source.machineId })} current={view === "activity"} navigate={navigate}>Activity history</ApplicationLink>{" "}
-            <ApplicationLink href={routePath({ kind: "machineCounter", machineId: source.machineId })} current={view === "counter"} navigate={navigate}>Counter inspection</ApplicationLink>
+            <ApplicationLink href={routePath({ kind: "machineDetail", machineId: source.machineId }) + contextSearch} current={view === "status"} navigate={navigate}>Machine status</ApplicationLink>{" "}
+            <ApplicationLink href={routePath({ kind: "machineActivity", machineId: source.machineId }) + contextSearch} current={view === "activity"} navigate={navigate}>Activity history</ApplicationLink>{" "}
+            <ApplicationLink href={routePath({ kind: "machineCounter", machineId: source.machineId }) + contextSearch} current={view === "counter"} navigate={navigate}>Counter inspection</ApplicationLink>
           </nav>
           {view === "status" ? <ConfiguredMachineDetail source={source} runtime={runtime} />
             : <>
