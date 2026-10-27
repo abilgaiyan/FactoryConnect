@@ -53,6 +53,7 @@ internal static class SqlContainmentHistoricalResultValidator
         timing?.SetTag("revision.position", cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
         historicalReads.RequireOwner(connection, transaction);
+        historicalReads.RecordRootReconstruction();
         var reader = new TransactionSnapshotReader(connection, transaction, cut, historicalReads);
         var catalog = new OperationalMetricDefinitionCatalog(BuiltInOperationalMetricDefinitions.All);
         try

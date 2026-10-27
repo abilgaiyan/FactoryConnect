@@ -62,8 +62,15 @@ internal static partial class ReportingTimingInstrumentation
             var revision = FindTag(activity, "revision.position");
             var inputCount = activity.GetTagItem("input.count");
             var completed = activity.GetTagItem("stage.completed");
+            var rootReconstructionInvocations = activity.GetTagItem("RootReconstructionInvocations");
+            var referenceTimeAuthorityValidationExecutions = activity.GetTagItem("ReferenceTimeAuthorityValidationExecutions");
+            var referenceTimeAuthorityCacheHits = activity.GetTagItem("ReferenceTimeAuthorityCacheHits");
+            var referenceTimePeriodEvaluations = activity.GetTagItem("ReferenceTimePeriodEvaluations");
+            var referenceTimeEvidenceContract = activity.GetTagItem("ReferenceTimeEvidenceContract");
             StageTiming(logger, activity.OperationName, phase, traceId, spanId, parentSpanId,
-                activity.Duration.TotalMilliseconds, processor, revision, inputCount, completed);
+                activity.Duration.TotalMilliseconds, processor, revision, inputCount, completed,
+                rootReconstructionInvocations, referenceTimeAuthorityValidationExecutions,
+                referenceTimeAuthorityCacheHits, referenceTimePeriodEvaluations, referenceTimeEvidenceContract);
         }
     }
 
@@ -79,10 +86,12 @@ internal static partial class ReportingTimingInstrumentation
     private static partial void PipelineEnded(ILogger logger, int status, bool aborted, double elapsedMs);
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Information, SkipEnabledCheck = true,
-        Message = "Reporting stage={Stage} Phase={Phase} TraceId={TraceId} SpanId={SpanId} ParentSpanId={ParentSpanId} ElapsedMs={ElapsedMs} Processor={Processor} Revision={Revision} InputCount={InputCount} Completed={Completed}")]
+        Message = "Reporting stage={Stage} Phase={Phase} TraceId={TraceId} SpanId={SpanId} ParentSpanId={ParentSpanId} ElapsedMs={ElapsedMs} Processor={Processor} Revision={Revision} InputCount={InputCount} Completed={Completed} RootReconstructionInvocations={RootReconstructionInvocations} ReferenceTimeAuthorityValidationExecutions={ReferenceTimeAuthorityValidationExecutions} ReferenceTimeAuthorityCacheHits={ReferenceTimeAuthorityCacheHits} ReferenceTimePeriodEvaluations={ReferenceTimePeriodEvaluations} ReferenceTimeEvidenceContract={ReferenceTimeEvidenceContract}")]
     private static partial void StageTiming(ILogger logger, string stage, string phase, string traceId,
         string spanId, string parentSpanId, double elapsedMs, object? processor, object? revision,
-        object? inputCount, object? completed);
+        object? inputCount, object? completed, object? rootReconstructionInvocations,
+        object? referenceTimeAuthorityValidationExecutions, object? referenceTimeAuthorityCacheHits,
+        object? referenceTimePeriodEvaluations, object? referenceTimeEvidenceContract);
 
     private static object? FindTag(Activity? activity, string key)
     {
