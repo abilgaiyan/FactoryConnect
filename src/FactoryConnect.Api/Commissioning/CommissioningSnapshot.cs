@@ -122,6 +122,7 @@ public sealed class CommissioningSnapshotReader(IConfiguration configuration) : 
         }
         else
         {
+            if (!Paths.Contains(NormalizePath(path))) throw new JsonException("Configuration shape is unsupported.");
             var value = node.ValueKind == JsonValueKind.Null ? null : node.ToString();
             fields.Add(new CommissioningField(path, PublicValue(value)));
         }
@@ -129,9 +130,12 @@ public sealed class CommissioningSnapshotReader(IConfiguration configuration) : 
 
     private static bool AllowedPath(string path)
     {
-        var normalized = string.Join(':', path.Split(':').Where(static part => !int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out _)));
+        var normalized = NormalizePath(path);
         return Paths.Contains(normalized) || Paths.Any(candidate => candidate.StartsWith(normalized + ":", StringComparison.Ordinal));
     }
+
+    private static string NormalizePath(string path) =>
+        string.Join(':', path.Split(':').Where(static part => !int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out _)));
 
     private static readonly HashSet<string> Paths = BuildPaths();
     private static HashSet<string> BuildPaths()

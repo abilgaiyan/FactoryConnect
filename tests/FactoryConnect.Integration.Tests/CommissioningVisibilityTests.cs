@@ -53,6 +53,7 @@ public sealed class CommissioningVisibilityTests
 
     [Theory]
     [InlineData("[]")]
+    [InlineData("{\"MTConnect\":\"unexpected-secret\"}")]
     [InlineData("{\"MTConnect\":{},\"mtconnect\":{}}")]
     public void AmbiguousCaptureFailsClosed(string json)
     {
