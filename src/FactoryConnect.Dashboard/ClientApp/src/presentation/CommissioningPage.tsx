@@ -67,7 +67,7 @@ export function CommissioningPage() {
     return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [revision]);
   const snapshot = state.snapshot;
-  return <section aria-labelledby="commissioning-title">
+  return <section className="commissioning-page" aria-labelledby="commissioning-title">
     <h1 id="commissioning-title">Commissioning — read only</h1>
     <p>Captured configuration and durable progress are separate evidence. No runtime activation acknowledgement is available. Checkpoints do not prove historical correctness or live transport health.</p>
     <button type="button" disabled={state.status === "loading"} onClick={() => setRevision(value => value + 1)}>Refresh snapshot</button>
@@ -78,18 +78,21 @@ export function CommissioningPage() {
       <h2>Configuration capture</h2>
       <p>{snapshot.configuration.status} · Source: {snapshot.configuration.authority}</p>
       <p>File modified: {snapshot.configuration.fileModifiedAt ?? "unknown"}. This is file metadata, not runtime capture or activation time.</p>
-      <p>Captured file SHA256: <code>{snapshot.configuration.sha256 ?? "unknown"}</code>. Configuration revision: unknown. Runtime applied: {snapshot.runtimeActivation}.</p>
+      <p>Captured file SHA256: <code className="commissioning-hash">{snapshot.configuration.sha256 ?? "unknown"}</code>. Configuration revision: unknown. Runtime applied: {snapshot.runtimeActivation}.</p>
       <p>Adapter endpoints and raw configuration are withheld. Empty sections mean unavailable or unconfigured; schedule coverage is not inferred.</p>
-      <table><caption>Configured inventory, mappings, schedules and admission (paths preserve assignment scope)</caption>
+      <div className="commissioning-table-scroll" role="region" aria-labelledby="commissioning-config-caption" tabIndex={0}>
+      <table className="commissioning-config-table"><caption id="commissioning-config-caption">Configured inventory, mappings, schedules and admission (paths preserve assignment scope)</caption>
         <thead><tr><th>Configuration path</th><th>Configured value</th></tr></thead>
         <tbody>{snapshot.configuration.fields.map(field => <tr key={field.path}><td>{field.path}</td><td>{field.value ?? "null (explicit)"}</td></tr>)}</tbody>
       </table>
+      </div>
       <h2>Durable processor heads</h2>
       <p>{snapshot.durable.status} · Source: {snapshot.durable.authority}. Read completed: {snapshot.durable.readCompletedAt ?? "unknown"}.</p>
       <p>Only production-context/quantity processor heads are included. Acquisition, mapping, activity and metric processor checkpoints are unavailable on this surface.</p>
       <p>Checkpoint freshness: {snapshot.checkpointFreshness}. Transport: {snapshot.transportHealth}.</p>
       {snapshot.durable.status === "read" && snapshot.durable.processors.length === 0 && <p>No production processor bindings were returned; progress is not established.</p>}
-      <table><caption>Exact durable ownership; independent of the captured file</caption>
+      <div className="commissioning-table-scroll" role="region" aria-labelledby="commissioning-processors-caption" tabIndex={0}>
+      <table className="commissioning-processors-table"><caption id="commissioning-processors-caption">Exact durable ownership; independent of the captured file</caption>
         <thead><tr><th>Machine / row</th><th>Processor / stream</th><th>Checkpoint</th><th>Durable admission</th><th>Configuration comparison</th></tr></thead>
         <tbody>{snapshot.durable.processors.map(row => <tr key={row.rowId}>
           <td>{row.machineId}<br />Row {row.rowId}</td><td>{row.processorId}<br />{row.streamKey}</td>
@@ -98,6 +101,7 @@ export function CommissioningPage() {
           <td>{snapshot.configuration.status === "captured-file-only" ? admissionComparison(snapshot.configuration.fields, row) : "Unknown: configuration unavailable"}</td>
         </tr>)}</tbody>
       </table>
+      </div>
     </>}
   </section>;
 }
