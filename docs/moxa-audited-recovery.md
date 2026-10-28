@@ -1,9 +1,42 @@
-# MOXA-001 audited pre-checkpoint recovery — review only
+# MOXA-001 audited pre-checkpoint recovery
 
-Production HOLD. This PR authorizes no factory execution. A production-derived
-clone rehearsal, CI review, exact release/artifact hashes and a separate approved
-maintenance window are required. GG-003 acquisition and processing pause because
-GG-003 and MOXA share Edge; API/Dashboard remain owned and health checked.
+## Operational acceptance — 28 October 2026
+
+**Recovery complete; no rerun required.**
+
+Operational MOXA recovery is accepted on the basis of the operator's supplied recovery report, as confirmed in the project conversation. This closes the operational recovery decision only. Historical metric semantics, sustained stabilization and full pilot acceptance remain separate.
+
+| Evidence | Recorded status / provenance |
+| --- | --- |
+| Implementation | PR #165 merged; GitHub independently verified |
+| Deployed runtime identity | `aa73c52104194423a30364498f17670abebea135` — deployment reported by operator; GitHub merge identity verified |
+| Admission scope | MOXA activity processor row 2; boundary `2026-10-25T02:00:00Z` |
+| Checkpoint convergence | **3,808** — operator-reported production result; exact capture time and processor-by-processor snapshot not supplied here |
+| Quantity processor row 4 | Required unchanged by acceptance scope; attach the actual before/after result before marking evidence independently verified |
+| Screenshot | Preserve original screenshot with capture time and artifact reference; attachment/reference not supplied in this record |
+| Recovery operation / SQL audit | Preserve exact OperationId and audit export; identifiers/export not supplied in this record |
+| Migration / backup | Preserve migration 023 ledger result, backup identity/path and available checksums; production artifacts not supplied in this record |
+
+The production artifacts above have **not** been independently inspected for this documentation update. Missing references are evidence-archive follow-up, not grounds to rerun the recovery. Do not invent an OperationId or substitute CI artifacts for production evidence. Keep backups/configuration exports containing secrets in restricted storage; link redacted evidence or controlled references.
+
+### Remaining stabilization acceptance
+
+- [ ] Before/crossing/after-boundary MOXA interval evidence, including exclusion before `2026-10-25T02:00:00Z`.
+- [ ] Representative GG-003 and MOXA production-day/shift reports, calculations and unavailable/insufficient-evidence reasons.
+- [ ] Reporting latency, sustained checkpoint progression and restart continuity.
+- [ ] GG-003 break correction tracked separately with approved effective dates.
+- [ ] Complete the production evidence references above.
+
+Open diagnostic PRs #151, #159 and #160 are not closed or superseded by operational recovery acceptance. Configuration approval, runtime activation and historical evidence recovery remain separate operations. No production action or rerun is authorized by this record.
+
+## Historical preparation and recovery design
+
+The sections below preserve the pre-execution design and safeguards. Their
+preparation requirements are not a statement that the completed operational
+recovery remains pending. They do not authorize a second execution. No clone
+rehearsal or failure-reconciliation proof is inferred from the reported production
+success. Code/deployed baseline remains `aa73c52104194423a30364498f17670abebea135`;
+this acceptance update changes documentation only.
 
 ## Fixed scope and schema
 
