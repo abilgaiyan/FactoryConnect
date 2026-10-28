@@ -1,3 +1,4 @@
+import { CommissioningPage } from "./presentation/CommissioningPage.tsx";
 import { overviewReturn } from "./routing/overview-return.ts";
 import { ManagementOverviewPage } from "./presentation/ManagementOverviewPage.tsx";
 import { MachineCounterReportPage } from "./presentation/MachineCounterReportPage.tsx";
@@ -51,6 +52,7 @@ export function App({ runtime }: AppProps) {
           ))].map(label => <span key={label}>{label}</span>)}
         </div>
         <nav aria-label="Dashboard">
+          <ApplicationLink href="/commissioning" navigate={navigate} current={route.kind === "commissioning"}>Commissioning</ApplicationLink>{" "}
           <ApplicationLink href="/overview" navigate={navigate} current={route.kind === "overview"}>Overview</ApplicationLink>{" "}
           <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
           <ApplicationLink href="/reports/range" navigate={navigate} current={route.kind === "dateRange"}>Date-range report</ApplicationLink>{" "}
@@ -99,6 +101,7 @@ interface RouteViewProps {
 
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
+    case "commissioning": return <CommissioningPage />;
     case "overview": return <ManagementOverviewPage runtime={runtime} search={route.search} navigate={navigate} />;
     case "fleet": return <FleetStatusPage runtime={runtime} />;
     case "dateRange": return <DateRangePage key={window.location.search} runtime={runtime} />;
@@ -353,3 +356,4 @@ interface RouteContextProps {
 function RouteContext({ current, navigate }: RouteContextProps) {
   return <nav aria-label="Breadcrumb"><ApplicationLink href="/" navigate={navigate}>Production days</ApplicationLink><span aria-current="page">{current}</span></nav>;
 }
+

@@ -30,9 +30,9 @@ jobs:
         working-directory: src/FactoryConnect.Dashboard/ClientApp
         run: npm ci
 
-      - name: Test dashboard client
+      - name: Build, typecheck and test dashboard client
         working-directory: src/FactoryConnect.Dashboard/ClientApp
-        run: npm test
+        run: npm run build && npm run typecheck && npm test
 
       - name: Check dashboard reporting contract
         working-directory: src/FactoryConnect.Dashboard/ClientApp
@@ -270,3 +270,4 @@ jobs:
           --configuration Release
           --no-build
           --filter "Category=SqlServerIntegration"
+

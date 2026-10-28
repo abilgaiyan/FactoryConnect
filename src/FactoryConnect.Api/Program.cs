@@ -1,3 +1,4 @@
+using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Api;
 using FactoryConnect.Api.Machines;
@@ -43,7 +44,10 @@ builder.Services.AddFactoryConnectCurrentMachineState(
     builder.Configuration,
     currentStateInventory);
 
+builder.Services.AddSingleton<CommissioningSnapshotReader>();
+
 var app = builder.Build();
+app.MapCommissioning();
 
 app.UseReportingTimings();
 app.UseExceptionHandler();
@@ -65,3 +69,4 @@ await ApiPersistenceStartup.RunAsync(
     () => app.RunAsync());
 
 public partial class Program;
+

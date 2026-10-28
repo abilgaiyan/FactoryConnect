@@ -22,6 +22,18 @@ var app = builder.Build();
 
 app.UseStaticFiles();
 
+app.MapGet("/api/commissioning/v1/snapshot", async (
+    HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
+{
+    context.Response.Headers.CacheControl = "no-store";
+    if (!CommissioningDashboardAccess.Allows(context, configuration))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+    await gateway.ForwardAsync(context, "api/commissioning/v1/snapshot", HttpMethod.Get).ConfigureAwait(false);
+});
+
 app.MapGet("/health/live", () => Results.Ok(new
 {
     status = "ok",
@@ -157,3 +169,4 @@ static bool IsReservedPath(PathString path) =>
     path.StartsWithSegments("/configuration", StringComparison.OrdinalIgnoreCase);
 
 public partial class Program;
+
