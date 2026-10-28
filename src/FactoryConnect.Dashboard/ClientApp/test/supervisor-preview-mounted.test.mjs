@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
+import React, { act } from "react";
+import { createServer } from "vite";
+import { mountInDom } from "./dom-test-harness.mjs";
+const vite = await createServer({ root: fileURLToPath(new URL("../", import.meta.url)), server: { middlewareMode: true }, appType: "custom", logLevel: "silent" });
+const { default: SupervisorDeskPreview } = await vite.ssrLoadModule("/src/presentation/SupervisorDeskPreview.tsx");
+after(() => vite.close());
+function button(h, text) { return [...h.document.querySelectorAll("button")].find(b => b.textContent === text); }
+function select(h, text) { return [...h.document.querySelectorAll("label")].find(l => l.textContent.startsWith(text)).querySelector("select"); }
+async function choose(h, text, value) { await act(async () => { const element = select(h, text); element.value = value; element.dispatchEvent(new h.window.Event("change", { bubbles: true })); }); }
+test("four views use sample data only and no network or browser storage", async t => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw Error("Preview must not fetch"); };
+  t.after(() => { globalThis.fetch = original; });
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  assert.match(h.document.body.textContent, /Sample data only/);
+  assert.match(h.document.body.textContent, /No authentication, server writes/);
+  await h.click(button(h, "Event explanations"));
+  await h.click(button(h, "Inspect event 1"));
+  assert.match(h.document.body.textContent, /Original publication revision/);
+  assert.match(h.document.body.textContent, /9007199254740993/);
+  await h.click(button(h, "Create independent preview thread"));
+  await h.click(button(h, "Save preview revision"));
+  await h.click(button(h, "Shift summary"));
+  assert.match(h.document.body.textContent, /Events and explanations are separate counts/);
+  await h.click(button(h, "Reviewer queue"));
+  assert.equal(button(h, "Simulate explanation acceptance").disabled, true);
+  assert.equal(calls, 0);
+  assert.equal(h.window.localStorage.length, 0);
+});
+test("unsaved note cannot silently attach to another event or shift and discard retains saved content", async t => {
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  await h.click(button(h, "Event explanations")); await h.click(button(h, "Inspect event 1"));
+  await h.click(button(h, "Create independent preview thread"));
+  const note = h.document.querySelector("textarea"); await act(async () => {
+    Object.getOwnPropertyDescriptor(h.window.HTMLTextAreaElement.prototype, "value").set.call(note, "Observed vibration; no cause established");
+    note.dispatchEvent(new h.window.Event("input", { bubbles: true }));
+  });
+  assert.equal(button(h, "Inspect event 2").disabled, true);
+  assert.equal(select(h, "Shift occurrence").matches(":disabled"), true);
+  assert.equal(button(h, "Reviewer queue").disabled, true);
+  assert.equal(button(h, "Simulate submission of saved draft").disabled, true);
+  await h.click(button(h, "Discard unsaved input"));
+  assert.equal(h.document.querySelector("textarea").value, "");
+  assert.equal(button(h, "Inspect event 2").disabled, false);
+});
+test("unavailable evidence blocks creation and displays retained evidence honestly", async t => {
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  await h.click(button(h, "Event explanations")); await h.click(button(h, "Inspect event 1"));
+  await choose(h, "Simulate evidence read", "unavailable");
+  assert.match(h.document.body.textContent, /retained sample evidence, not a fresh resolved result/);
+  assert.equal(button(h, "Create independent preview thread").disabled, true);
+});
+test("review persona accepts only a submitted independent explanation and input remains creator-only", async t => {
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  await choose(h, "Preview persona", "sample-reviewer"); await h.click(button(h, "Reviewer queue"));
+  await h.click(button(h, "Inspect evidence and revision"));
+  assert.equal(h.document.querySelector("textarea").matches(":disabled"), true);
+  await h.click(button(h, "Reviewer queue")); await h.click(button(h, "Simulate explanation acceptance"));
+  assert.match(h.document.body.textContent, /No submitted sample revisions/);
+  await h.click(button(h, "Shift summary"));
+  assert.match(h.document.body.textContent, /1 Explanation accepted/);
+});
