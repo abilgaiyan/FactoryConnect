@@ -119,3 +119,51 @@ test('production form is separate, temporary and machine-specific; history conti
   assert.match(h.document.body.textContent, /No temporary entries/);
   assert.equal(h.window.localStorage.length, 0);
 });
+
+test('shift targets preserve draft revisions, scope and missing actual without invented achievement', async t => {
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  await h.click(button(h, 'Shift Targets'));
+  assert.match(h.document.body.textContent, /Select one machine/);
+  await choose(h, 'Machine scope', '11111111-1111-1111-1111-111111111111');
+  assert.equal(button(h, 'Save temporary target revision').matches(':disabled'), true);
+  await choose(h, 'Preview persona', 'sample-reviewer');
+  assert.match(h.document.body.textContent, /Target not provided/);
+  async function enter(label, value, tag = 'input') {
+    const el = [...h.document.querySelectorAll('label')].find(l => l.textContent.startsWith(label)).querySelector(tag);
+    await act(async () => {
+      const prototype = tag === 'textarea' ? h.window.HTMLTextAreaElement.prototype : h.window.HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(el, value);
+      el.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+    });
+  }
+  await enter('Target quantity', '-1');
+  await h.click(button(h, 'Save temporary target revision'));
+  assert.match(h.document.body.textContent, /nonnegative target/);
+  assert.equal(select(h, 'Shift occurrence').matches(':disabled'), true);
+  await enter('Target quantity', '400');
+  await enter('Quantity unit', '');
+  await h.click(button(h, 'Save temporary target revision'));
+  assert.match(h.document.body.textContent, /explicit quantity unit/);
+  await enter('Quantity unit', 'pieces');
+  await h.click(button(h, 'Save temporary target revision'));
+  assert.match(h.document.body.textContent, /Original entered target/);
+  assert.match(h.document.body.textContent, /400 pieces/);
+  await enter('Target quantity', '0');
+  await h.click(button(h, 'Save temporary target revision'));
+  assert.match(h.document.body.textContent, /Explain the target revision/);
+  await enter('Reason / note', 'Revised plan', 'textarea');
+  await h.click(button(h, 'Save temporary target revision'));
+  assert.match(h.document.body.textContent, /Revised whole-shift goal/);
+  assert.match(h.document.body.textContent, /400 pieces/);
+  assert.match(h.document.body.textContent, /ZeroTarget/);
+  assert.match(h.document.body.textContent, /Actual not established/);
+  assert.match(h.document.body.textContent, /Variance: — · Achievement: —/);
+  assert.doesNotMatch(h.document.body.textContent, /100%/);
+  await choose(h, 'Shift occurrence', 'sample-s2');
+  assert.match(h.document.body.textContent, /Target not provided/);
+  await choose(h, 'Shift occurrence', 'sample-s1');
+  assert.match(h.document.body.textContent, /2 revision\(s\)/);
+  await choose(h, 'Machine scope', '22222222-2222-2222-2222-222222222222');
+  assert.match(h.document.body.textContent, /Target not provided/);
+  assert.equal(h.window.localStorage.length, 0);
+});

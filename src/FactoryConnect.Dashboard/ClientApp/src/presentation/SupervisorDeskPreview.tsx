@@ -2,10 +2,11 @@ import { useCallback, useMemo, useState } from "react";
 import { applyPreviewCommand, head, initialPreviewThreads, overlap, previewActors, previewEvents, previewShifts, summary,
   type ExplanationContent, type PreviewCommand, type PreviewEvidenceState, type PreviewThread } from "../application/supervisor-preview.ts";
 import "./supervisor-preview.css";
+import ShiftTargetsPreview, { type TemporaryShiftTarget } from "./ShiftTargetsPreview.tsx";
 import ProductionDetailsPreview from "./ProductionDetailsPreview.tsx";
 import type { ProductionDetailsEntry } from "../application/production-details-preview.ts";
 
-type View = "Production Details" | "Shift start" | "Event explanations" | "Shift summary" | "Reviewer queue";
+type View = "Shift Targets" | "Production Details" | "Shift start" | "Event explanations" | "Shift summary" | "Reviewer queue";
 const views: readonly View[] = ["Shift start", "Event explanations", "Shift summary", "Reviewer queue"];
 const format = (value: string) => new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 const statusLabel = (value: string) => value === "Approved" ? "Explanation accepted" : value;
@@ -18,6 +19,7 @@ export default function SupervisorDeskPreview() {
   const [evidence, setEvidence] = useState<PreviewEvidenceState>("resolved");
   const [threads, setThreads] = useState(initialPreviewThreads);
   const [productionEntries, setProductionEntries] = useState<readonly ProductionDetailsEntry[]>([]);
+  const [targets, setTargets] = useState<readonly TemporaryShiftTarget[]>([]);
   const [eventId, setEventId] = useState("sample-event-1");
   const [threadId, setThreadId] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -57,9 +59,10 @@ export default function SupervisorDeskPreview() {
       <label>Simulate evidence read<select value={evidence} onChange={e => setEvidence(e.target.value as PreviewEvidenceState)}><option value="resolved">Resolved sample</option><option value="unavailable">Unavailable</option><option value="conflict">Integrity conflict</option></select></label>
     </fieldset>
     <p className="supervisor-scope">Business date <strong>{shift.businessDate}</strong> · {format(shift.start)} – {format(shift.end)} · Asia/Kolkata<br />Sample occurrence: {shift.id}. Machine access does not assign operator responsibility. These are not the commissioned factory calendars.</p>
-    <nav className="supervisor-views" aria-label="Supervisor views">{views.map(item => <button type="button" key={item} aria-current={view === item ? "page" : undefined} disabled={dirty} onClick={() => { setView(item); setMessage(""); setError(""); }}>{item}</button>)}<button type="button" disabled={dirty} aria-current={view === "Production Details" ? "page" : undefined} onClick={() => setView("Production Details")}>Production Details</button></nav>
+    <nav className="supervisor-views" aria-label="Supervisor views">{views.map(item => <button type="button" key={item} aria-current={view === item ? "page" : undefined} disabled={dirty} onClick={() => { setView(item); setMessage(""); setError(""); }}>{item}</button>)}<button type="button" disabled={dirty} aria-current={view === "Production Details" ? "page" : undefined} onClick={() => setView("Production Details")}>Production Details</button><button type="button" disabled={dirty} aria-current={view === "Shift Targets" ? "page" : undefined} onClick={() => setView("Shift Targets")}>Shift Targets</button></nav>
     {dirty && <p role="status">Unsaved preview input. Save or discard your preview input before switching event, machine, persona, view or shift.</p>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
+    {view === "Shift Targets" && <ShiftTargetsPreview key={`${machine}:${actorId}:${shiftId}`} machineId={machine} machineName={machines.find(([id]) => id === machine)?.[1] ?? ""} shift={shift} actorId={actorId} entries={productionEntries} targets={targets} onSave={setTargets} onDirty={onDirty} />}
     {view === "Production Details" && <ProductionDetailsPreview key={`${machine}:${actorId}`} machineId={machine} machineName={machines.find(([id]) => id === machine)?.[1] ?? ""} actorId={actorId} at={shift.start} entries={productionEntries} onSave={setProductionEntries} onDirty={onDirty} />}
     {view === "Shift start" && <>
       <h2>Start with the recorded picture</h2><p>Inspect current activity and closed events. No shift-start declaration or general handover note is created here.</p>
