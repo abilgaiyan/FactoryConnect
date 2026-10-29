@@ -82,7 +82,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         var contexts = configurations
             .SelectMany(static item => item.Contexts)
             .ToArray();
-        var planned = configurations.Select(static item => item.Planned)
+        var planned = configurations.SelectMany(static item => item.Planned)
             .GroupBy(static assignment => assignment.Id)
             .Select(static group =>
             {
@@ -105,6 +105,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                 return first;
             })
             .ToArray();
+        ValidatePlannedAssignmentScopes(planned);
         var demoCanonicalInputs = bool.TryParse(
             configuration["DemoCanonicalInputs:Enabled"], out var demoEnabled) && demoEnabled;
         if (demoCanonicalInputs &&
@@ -153,6 +154,28 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                     provider.GetRequiredService<MachineShiftOccurrenceRosterMaterializer>()));
         }
         services.AddSingleton<PlannedProductionIntervalResolver>();
+        services.AddSingleton(new LoadedPlannedProductionConfiguration(
+            System.Text.Json.JsonSerializer.Serialize(configurations
+                .OrderBy(static item => item.Scope.MachineId.ToString(), StringComparer.Ordinal)
+                .Select(item => new
+                {
+                    MachineId = item.Scope.MachineId.ToString(),
+                    Assignments = item.Planned.Select(assignment => new
+                    {
+                        AssignmentId = assignment.Id.Value,
+                        CompanyId = assignment.CompanyId.Value,
+                        SiteId = assignment.SiteId.Value,
+                        ProductionLineId = assignment.ProductionLineId?.Value,
+                        TimeZoneId = assignment.TimeZoneId.Value,
+                        assignment.EffectiveFrom,
+                        assignment.EffectiveTo,
+                        ActiveDays = assignment.ActiveDays.Order().Select(static day => day.ToString()),
+                        assignment.PlannedWindows,
+                        assignment.BreakWindows,
+                    }),
+                }))));
+        services.AddHostedService<PlannedProductionConfigurationLog>();
+
 
         var activityReaderDescriptor =
             ServiceDescriptor.Singleton<IProductionContextActivityReader>(
@@ -360,7 +383,65 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                 machineId))
             .ToArray();
 
-        var plannedSection = section.GetRequiredSection("PlannedProduction");
+        var plannedAssignments = ReadPlannedAssignments(section, companyId, siteId, lineId);
+
+        var quantityStreamId = new ObservationStreamId(
+            machineId,
+            section["QuantityStreamKey"] ?? "production-quantity");
+
+        return new MachineProductionConfiguration(
+            scope,
+            quantityStreamId,
+            contexts,
+            plannedAssignments);
+    }
+
+    private static PlannedProductionScheduleAssignment[] ReadPlannedAssignments(
+        IConfigurationSection section, CompanyId companyId, SiteId siteId, ProductionLineId lineId)
+    {
+        var legacy = section.GetSection("PlannedProduction");
+        var collection = section.GetSection("PlannedProductionAssignments");
+        if (legacy.Exists() && collection.Exists())
+        {
+            throw new InvalidOperationException("Use exactly one of PlannedProduction or PlannedProductionAssignments; remove the legacy object when adopting retained assignments.");
+        }
+
+        if (!collection.Exists())
+        {
+            return [ReadPlannedAssignment(section.GetRequiredSection("PlannedProduction"), companyId, siteId, lineId)];
+        }
+
+        var children = collection.GetChildren().ToArray();
+        if (collection.Value is not null || children.Length == 0 ||
+            children.Where((child, index) => child.Key != index.ToString(CultureInfo.InvariantCulture)).Any())
+        {
+            throw new InvalidOperationException("PlannedProductionAssignments must be a nonempty, contiguous indexed array.");
+        }
+
+        var assignments = children.Select(child => ReadPlannedAssignment(child, companyId, siteId, lineId))
+            .OrderBy(static assignment => assignment.EffectiveFrom)
+            .ThenBy(static assignment => assignment.Id.Value, StringComparer.Ordinal).ToArray();
+        if (assignments.Select(static assignment => assignment.Id).Distinct().Count() != assignments.Length)
+        {
+            throw new InvalidOperationException("Retained planned production assignment IDs must be unique per machine.");
+        }
+
+        for (var index = 1; index < assignments.Length; index++)
+        {
+            var previous = assignments[index - 1];
+            var current = assignments[index];
+            if (previous.EffectiveTo != current.EffectiveFrom || previous.TimeZoneId != current.TimeZoneId)
+            {
+                throw new InvalidOperationException("Retained planned production assignments must have adjacent exclusive business-date boundaries and one timezone; gaps and overlaps are not replacement chains.");
+            }
+        }
+
+        return assignments;
+    }
+
+    private static PlannedProductionScheduleAssignment ReadPlannedAssignment(
+        IConfigurationSection plannedSection, CompanyId companyId, SiteId siteId, ProductionLineId lineId)
+    {
         var breakWindowsSection = plannedSection.GetSection("BreakWindows");
         if (breakWindowsSection.Value is not null)
         {
@@ -368,7 +449,7 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
                 $"Configuration '{breakWindowsSection.Path}' must be an array of break windows, not a scalar value.");
         }
 
-        var plannedAssignment = new PlannedProductionScheduleAssignment
+        var assignment = new PlannedProductionScheduleAssignment
         {
             Id = new PlannedProductionScheduleAssignmentId(
                 Required(plannedSection, "AssignmentId")),
@@ -386,18 +467,45 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
             PlannedWindows = ReadPlannedWindows(plannedSection),
         };
 
-        plannedAssignment.Validate();
-        ValidateConfiguredBreakWindows(plannedAssignment);
+        assignment.Validate();
+        ValidateConfiguredBreakWindows(assignment);
 
-        var quantityStreamId = new ObservationStreamId(
-            machineId,
-            section["QuantityStreamKey"] ?? "production-quantity");
+        _ = TimeZoneInfo.FindSystemTimeZoneById(assignment.TimeZoneId.Value);
+        return assignment;
+    }
 
-        return new MachineProductionConfiguration(
-            scope,
-            quantityStreamId,
-            contexts,
-            plannedAssignment);
+    private static void ValidatePlannedAssignmentScopes(PlannedProductionScheduleAssignment[] assignments)
+    {
+        foreach (var scope in assignments.GroupBy(static assignment => (assignment.SiteId, assignment.ProductionLineId)))
+        {
+            var ordered = scope.OrderBy(static assignment => assignment.EffectiveFrom).ToArray();
+            for (var index = 1; index < ordered.Length; index++)
+            {
+                if (ordered[index - 1].CompanyId != ordered[index].CompanyId ||
+                    ordered[index - 1].EffectiveTo is not { } end || end > ordered[index].EffectiveFrom)
+                {
+                    throw new InvalidOperationException("Conflicting planned production assignments share a site/line scope.");
+                }
+            }
+        }
+
+        // Resolve around every activation/termination boundary, including a full weekday cycle
+        // and physical lookaround. This also rejects cross-business-date window collisions.
+        var resolver = new PlannedProductionIntervalResolver(new InMemoryPlannedProductionScheduleReader(assignments));
+        foreach (var assignment in assignments)
+        {
+            ValidateBoundary(assignment.EffectiveFrom);
+            if (assignment.EffectiveTo is { } end) ValidateBoundary(end);
+
+            void ValidateBoundary(DateOnly boundary)
+            {
+                var from = DateOnly.FromDayNumber(Math.Max(DateOnly.MinValue.DayNumber, boundary.DayNumber - 7));
+                var to = DateOnly.FromDayNumber(Math.Min(DateOnly.MaxValue.DayNumber, boundary.DayNumber + 8));
+                // The startup reader is in-memory; no SQL/network work or async lock is involved.
+                _ = resolver.ResolveAsync(assignment.SiteId, assignment.ProductionLineId!.Value,
+                    from, to, CancellationToken.None).GetAwaiter().GetResult();
+            }
+        }
     }
 
     private static void ValidateConfiguredBreakWindows(PlannedProductionScheduleAssignment assignment)
@@ -611,5 +719,5 @@ public static class EdgeProductionMetricInputServiceCollectionExtensions
         ProductionContextProcessingScope Scope,
         ObservationStreamId QuantityStreamId,
         IReadOnlyList<ProductionContextAssignment> Contexts,
-        PlannedProductionScheduleAssignment Planned);
+        IReadOnlyList<PlannedProductionScheduleAssignment> Planned);
 }

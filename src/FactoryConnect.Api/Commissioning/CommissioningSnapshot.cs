@@ -156,9 +156,12 @@ public sealed class CommissioningSnapshotReader(IConfiguration configuration) : 
         {
             Add(paths, prefix, "MachineId", "CompanyId", "SiteId", "ProductionLineId", "ActivityStreamKey", "QuantityStreamKey", "ProductionStartsAt");
             Add(paths, prefix + ":Contexts", "AssignmentId", "EffectiveFrom", "EffectiveTo");
-            Add(paths, prefix + ":PlannedProduction", "AssignmentId", "TimeZoneId", "EffectiveFrom", "EffectiveTo", "ActiveDays", "StartsAtLocal", "EndsAtLocal");
-            foreach (var windows in new[] { "PlannedWindows", "BreakWindows" })
-                Add(paths, prefix + ":PlannedProduction:" + windows, "StartsAtLocal", "EndsAtLocal", "StartDayOffset");
+            foreach (var planned in new[] { "PlannedProduction", "PlannedProductionAssignments" })
+            {
+                Add(paths, prefix + ":" + planned, "AssignmentId", "TimeZoneId", "EffectiveFrom", "EffectiveTo", "ActiveDays", "StartsAtLocal", "EndsAtLocal");
+                foreach (var windows in new[] { "PlannedWindows", "BreakWindows" })
+                    Add(paths, prefix + ":" + planned + ":" + windows, "StartsAtLocal", "EndsAtLocal", "StartDayOffset");
+            }
         }
         Add(paths, "ProductionProcessing:ShiftSchedules", "AssignmentId", "CompanyId", "SiteId", "ProductionLineId", "TimeZoneId", "ShiftId", "Name", "StartsAtLocal", "EndsAtLocal", "StartDayOffset", "ActiveDays", "EffectiveFrom", "EffectiveTo");
         return paths;
