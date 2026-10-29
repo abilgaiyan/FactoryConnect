@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { CommissioningPage } from "./presentation/CommissioningPage.tsx";
 import { overviewReturn } from "./routing/overview-return.ts";
 import { ManagementOverviewPage } from "./presentation/ManagementOverviewPage.tsx";
@@ -33,6 +34,10 @@ import { routePath, type ApplicationRoute } from "./routing/application-route.ts
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
 
+const SupervisorDeskPreview = import.meta.env?.DEV
+  ? lazy(() => import("./presentation/SupervisorDeskPreview.tsx"))
+  : null;
+
 export interface AppProps {
   readonly runtime: DashboardApplicationRuntime;
 }
@@ -52,6 +57,7 @@ export function App({ runtime }: AppProps) {
           ))].map(label => <span key={label}>{label}</span>)}
         </div>
         <nav aria-label="Dashboard">
+          {SupervisorDeskPreview && <ApplicationLink href="/supervisor-preview" navigate={navigate} current={route.kind === "supervisorPreview"}>Supervisor desk preview</ApplicationLink>}
           <ApplicationLink href="/commissioning" navigate={navigate} current={route.kind === "commissioning"}>Commissioning</ApplicationLink>{" "}
           <ApplicationLink href="/overview" navigate={navigate} current={route.kind === "overview"}>Overview</ApplicationLink>{" "}
           <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
@@ -101,6 +107,9 @@ interface RouteViewProps {
 
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
+    case "supervisorPreview": return SupervisorDeskPreview
+      ? <Suspense fallback={<p role="status">Loading screen review…</p>}><SupervisorDeskPreview /></Suspense>
+      : <section><h1>Supervisor workspace not enabled</h1><p>The screen-review preview is available only in development builds. No production data-entry service is connected.</p></section>;
     case "commissioning": return <CommissioningPage />;
     case "overview": return <ManagementOverviewPage runtime={runtime} search={route.search} navigate={navigate} />;
     case "fleet": return <FleetStatusPage runtime={runtime} />;
@@ -356,4 +365,3 @@ interface RouteContextProps {
 function RouteContext({ current, navigate }: RouteContextProps) {
   return <nav aria-label="Breadcrumb"><ApplicationLink href="/" navigate={navigate}>Production days</ApplicationLink><span aria-current="page">{current}</span></nav>;
 }
-
