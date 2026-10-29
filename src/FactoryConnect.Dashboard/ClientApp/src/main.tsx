@@ -13,9 +13,9 @@ if (rootElement === null) {
 }
 
 if (import.meta.env.DEV && window.location.pathname === "/supervisor-preview") {
-  const { default: SupervisorDeskPreview } = await import("./presentation/SupervisorDeskPreview.tsx");
+  const { default: SupervisorWorkspace } = await import("./presentation/SupervisorWorkspace.tsx");
   createRoot(rootElement).render(
-    <div className="dashboard-shell"><header><p>FactoryConnect</p><nav aria-label="Screen review"><a href="/">Return to dashboard</a></nav></header><main id="main-content"><SupervisorDeskPreview /></main></div>,
+    <div className="dashboard-shell"><header><p>FactoryConnect</p><nav aria-label="Screen review"><a href="/">Return to dashboard</a></nav></header><main id="main-content"><SupervisorWorkspace /></main></div>,
   );
 } else {
   const runtime = await createDashboardApplicationRuntime(window.location.origin);
