@@ -74,3 +74,15 @@ the authority for the complete current-main .NET/client/SQL validation.
 
 Next approval gate: review the screens and finish the pending backend technical contract
 before authorizing persistence, authenticated writes or production configuration changes.
+
+## Preview correction review
+
+Revision-saved, submitted and explanation-accepted timestamps are separate values.
+Submission preserves the revision-saved time; acceptance preserves both earlier
+times. A successor draft starts without submission/acceptance timestamps while
+its predecessor retains them. All times are explicitly preview/browser-generated,
+not authoritative server timestamps or durable audit evidence.
+
+The note is optional. No minimum-content business rule is introduced by this
+preview. Request changes remains visibly deferred; screen sign-off does not
+approve the complete review workflow, backend contract or production use.

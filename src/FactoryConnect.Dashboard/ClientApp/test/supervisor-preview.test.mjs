@@ -61,3 +61,29 @@ test("submission and acceptance require resolved evidence", () => {
   assert.match(applyPreviewCommand(threads, { kind: "submit", threadId: "sample-thread-1", expectedRevision: "1" }, operator, "unavailable", now).error, /resolve/);
   assert.match(applyPreviewCommand(threads, { kind: "approve", threadId: "sample-thread-2", expectedRevision: "1", note: "review" }, reviewer, "conflict", now).error, /resolve/);
 });
+
+test("optional note submits; saved, submitted and accepted times stay revision-specific", () => {
+  const savedAt = "2026-10-29T02:00:00Z";
+  const submittedAt = "2026-10-29T02:05:00Z";
+  const acceptedAt = "2026-10-29T02:10:00Z";
+  let result = applyPreviewCommand(initialPreviewThreads(), { kind: "create", id: "optional-note", eventId: "sample-event-1" }, operator, "resolved", savedAt);
+  result = applyPreviewCommand(result.threads, { kind: "submit", threadId: "optional-note", expectedRevision: "1" }, operator, "resolved", submittedAt);
+  assert.equal(result.error, undefined);
+  let revision = head(result.threads.find(t => t.id === "optional-note"));
+  assert.equal(revision.content.note, "");
+  assert.equal(revision.changedAt, savedAt);
+  assert.equal(revision.submittedAt, submittedAt);
+  assert.equal(revision.acceptedAt, undefined);
+  result = applyPreviewCommand(result.threads, { kind: "approve", threadId: "optional-note", expectedRevision: "1", note: "sample decision" }, reviewer, "resolved", acceptedAt);
+  assert.equal(result.error, undefined);
+  revision = head(result.threads.find(t => t.id === "optional-note"));
+  assert.equal(revision.changedAt, savedAt);
+  assert.equal(revision.submittedAt, submittedAt);
+  assert.equal(revision.acceptedAt, acceptedAt);
+  result = applyPreviewCommand(result.threads, { kind: "save", threadId: "optional-note", expectedRevision: "1", content: revision.content }, operator, "unavailable", "2026-10-29T02:15:00Z");
+  const thread = result.threads.find(t => t.id === "optional-note");
+  assert.equal(thread.revisions[0].acceptedAt, acceptedAt);
+  assert.equal(head(thread).submittedAt, undefined);
+  assert.equal(head(thread).acceptedAt, undefined);
+  assert.equal(head(thread).status, "Draft");
+});

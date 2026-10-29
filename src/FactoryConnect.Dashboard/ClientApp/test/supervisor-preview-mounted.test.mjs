@@ -64,3 +64,24 @@ test("review persona accepts only a submitted independent explanation and input 
   await h.click(button(h, "Shift summary"));
   assert.match(h.document.body.textContent, /1 Explanation accepted/);
 });
+
+test("history labels distinguish saved, submission and acceptance times; note is optional", async t => {
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  await h.click(button(h, "Event explanations")); await h.click(button(h, "Inspect event 1"));
+  await h.click(button(h, "Create independent preview thread"));
+  assert.match(h.document.body.textContent, /Note \(optional\)/);
+  assert.equal(h.document.querySelector("textarea").value, "");
+  await h.click(button(h, "Simulate submission of saved draft"));
+  assert.match(h.document.body.textContent, /Submitted \(preview\):/);
+  await choose(h, "Preview persona", "sample-reviewer");
+  await h.click(button(h, "Reviewer queue"));
+  const accept = [...h.document.querySelectorAll("article")].find(a => a.textContent.includes("preview-thread-4"))
+    .querySelectorAll("button")[1];
+  await h.click(accept);
+  await h.click(button(h, "Event explanations"));
+  await h.click([...h.document.querySelectorAll("button")].find(b => b.textContent.startsWith("preview-thread-4 ·")));
+  assert.match(h.document.body.textContent, /Revision saved \(preview\):/);
+  assert.match(h.document.body.textContent, /Submitted \(preview\):/);
+  assert.match(h.document.body.textContent, /Explanation accepted \(preview\):/);
+  assert.match(h.document.body.textContent, /Browser memory is not durable history/);
+});

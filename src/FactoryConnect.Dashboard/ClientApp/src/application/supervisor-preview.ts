@@ -13,7 +13,8 @@ export interface ExplanationContent { readonly category: string; readonly detail
 export interface PreviewRevision {
   readonly revision: string; readonly author: string; readonly changedAt: string;
   readonly content: ExplanationContent; readonly status: PreviewStatus;
-  readonly submitter?: string; readonly reviewer?: string; readonly decisionNote?: string;
+  readonly submitter?: string; readonly submittedAt?: string;
+  readonly reviewer?: string; readonly acceptedAt?: string; readonly decisionNote?: string;
 }
 export interface PreviewThread { readonly id: string; readonly eventId: string; readonly creator: string; readonly revisions: readonly PreviewRevision[] }
 export type PreviewCommand =
@@ -50,7 +51,7 @@ export const emptyExplanation: ExplanationContent = { category: "Cause not estab
 export function initialPreviewThreads(): readonly PreviewThread[] {
   return [
     { id: "sample-thread-1", eventId: "sample-event-2", creator: "sample-operator", revisions: [{ revision: "1", author: "sample-operator", changedAt: "2026-10-28T06:30:00Z", status: "Draft", content: { category: "Tool change", detail: "Insert replacement", team: "Production", note: "Observed wear. Action taken: replaced insert and checked first component." } }] },
-    { id: "sample-thread-2", eventId: "sample-event-3", creator: "sample-operator", revisions: [{ revision: "1", author: "sample-operator", submitter: "sample-operator", changedAt: "2026-10-28T08:20:00Z", status: "Submitted", content: { category: "Investigation", detail: "Alarm observed", team: "Maintenance", note: "Cause not established. Maintenance inspection requested." } }] },
+    { id: "sample-thread-2", eventId: "sample-event-3", creator: "sample-operator", revisions: [{ revision: "1", author: "sample-operator", submitter: "sample-operator", submittedAt: "2026-10-28T08:20:00Z", changedAt: "2026-10-28T08:15:00Z", status: "Submitted", content: { category: "Investigation", detail: "Alarm observed", team: "Maintenance", note: "Cause not established. Maintenance inspection requested." } }] },
     { id: "sample-thread-3", eventId: "sample-event-2", creator: "sample-reviewer", revisions: [{ revision: "1", author: "sample-reviewer", changedAt: "2026-10-28T06:35:00Z", status: "Draft", content: { ...emptyExplanation, note: "Independent observation awaiting clarification." } }] },
   ];
 }
@@ -92,16 +93,15 @@ export function applyPreviewCommand(threads: readonly PreviewThread[], command: 
   } else if (command.kind === "submit") {
     if (thread.creator !== actor.id) return fail("Only this thread's creator can edit or submit it.");
     if (current.status !== "Draft") return fail("Only the current draft can be submitted.");
-    if (!current.content.note.trim()) return fail("Add an honest observation or action in the note before submission.");
     if (evidence !== "resolved") return fail("Exact evidence must resolve without conflict before submission.");
-    revisions = [...thread.revisions.slice(0, -1), { ...current, status: "Submitted", submitter: actor.id }];
+    revisions = [...thread.revisions.slice(0, -1), { ...current, status: "Submitted", submitter: actor.id, submittedAt: now }];
   } else {
     if (!actor.reviewer) return fail("This preview persona has no review permission.");
     if (thread.revisions.some(revision => revision.author === actor.id) || current.submitter === actor.id)
       return fail("Self-approval is prohibited for anyone who authored this thread or submitted this revision.");
     if (current.status !== "Submitted") return fail("Only the current submitted revision can be reviewed.");
     if (evidence !== "resolved") return fail("Exact evidence must resolve without conflict before explanation acceptance.");
-    revisions = [...thread.revisions.slice(0, -1), { ...current, status: "Approved", reviewer: actor.id, decisionNote: command.note }];
+    revisions = [...thread.revisions.slice(0, -1), { ...current, status: "Approved", reviewer: actor.id, acceptedAt: now, decisionNote: command.note }];
   }
   return { threads: threads.map(item => item.id === thread.id ? { ...thread, revisions } : item) };
 }
