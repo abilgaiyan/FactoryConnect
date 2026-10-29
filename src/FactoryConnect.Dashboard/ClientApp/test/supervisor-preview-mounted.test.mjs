@@ -85,3 +85,37 @@ test("history labels distinguish saved, submission and acceptance times; note is
   assert.match(h.document.body.textContent, /Explanation accepted \(preview\):/);
   assert.match(h.document.body.textContent, /Browser memory is not durable history/);
 });
+
+test('production form is separate, temporary and machine-specific; history continues across shifts', async t => {
+  const h = await mountInDom(React.createElement(SupervisorDeskPreview)); t.after(() => h.dispose());
+  await h.click(button(h, 'Production Details'));
+  assert.match(h.document.body.textContent, /Select one machine/);
+  await choose(h, 'Machine scope', '11111111-1111-1111-1111-111111111111');
+  assert.match(h.document.body.textContent, /not verified against master data/);
+  assert.match(h.document.body.textContent, /Not provided/);
+  const machineInput = [...h.document.querySelectorAll('label')].find(l => l.textContent === 'Machine').querySelector('input');
+  assert.equal(machineInput.readOnly, true);
+  async function enter(label, value) {
+    const el = [...h.document.querySelectorAll('label')].find(l => l.textContent.startsWith(label)).querySelector('input');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(h.window.HTMLInputElement.prototype, 'value').set.call(el, value);
+      el.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+    });
+  }
+  await enter('Production order / job number', 'JOB-01');
+  await enter('Effective from', '2026-10-28T07:30');
+  assert.equal(select(h, 'Machine scope').matches(':disabled'), true);
+  await h.click(button(h, 'Save temporary production details'));
+  assert.match(h.document.body.textContent, /Backdated declaration/);
+  await h.click(h.document.querySelector('input[type=checkbox]'));
+  await h.click(button(h, 'Save temporary production details'));
+  assert.match(h.document.body.textContent, /saved in browser memory only/);
+  await choose(h, 'Shift occurrence', 'sample-s2');
+  assert.match(h.document.body.textContent, /JOB-01/);
+  assert.match(h.document.body.textContent, /Declaration history · 1 entries/);
+  await choose(h, 'Preview persona', 'sample-reviewer');
+  assert.match(h.document.body.textContent, /Declaration history · 1 entries/);
+  await choose(h, 'Machine scope', '22222222-2222-2222-2222-222222222222');
+  assert.match(h.document.body.textContent, /No temporary entries/);
+  assert.equal(h.window.localStorage.length, 0);
+});

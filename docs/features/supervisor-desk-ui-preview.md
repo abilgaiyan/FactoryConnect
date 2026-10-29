@@ -86,3 +86,12 @@ not authoritative server timestamps or durable audit evidence.
 The note is optional. No minimum-content business rule is introduced by this
 preview. Request changes remains visibly deferred; screen sign-off does not
 approve the complete review workflow, backend contract or production use.
+
+
+## Production Details extension (development preview only)
+
+Open **Production Details** alongside the four explanation views and select one sample machine. Both sample personas can enter order/job, part and operation as free text, declared effective date/time with an explicit fixed UTC offset (India: +05:30), and an optional note. Blank text displays as Not provided. All declarations are labelled User-declared production details — not verified against master data.
+
+Entries are append-only in page memory and survive internal shift/persona/view changes until reload or leaving the page. History retains author, browser-recorded time and original declared local time/offset and UTC equivalent. The context card explicitly shows the declaration at selected shift start, not a claimed live assignment. Future declarations remain in history until applicable. A later declared job change explicitly ends the previous context without modifying its stored entry. Same-time or earlier starts are blocked pending a separate correction workflow; a past start requires acknowledgement and never rewrites evidence attribution. These are preview rules for review, not a durable activation contract.
+
+No authentication or actual machine-scope enforcement is implemented. No master records, approved assignments, production configuration, quantities, targets, counter qualification or OEE are changed. Entries disappear on reload. Production builds exclude this preview. Durable persistence, authorization and activation require separate approval.

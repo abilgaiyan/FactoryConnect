@@ -26,3 +26,7 @@
 .supervisor-editor details article { padding-block: .5rem; border-bottom: 1px solid #d9e2ec; }
 .supervisor-preview small { color: #526579; }
 .supervisor-review-item button { margin: .4rem .5rem .4rem 0; }
+
+.supervisor-preview .production-backdate { display: flex; align-items: flex-start; gap: .6rem; }
+.supervisor-preview .production-backdate input { width: 1.3rem; min-height: 1.3rem; flex: 0 0 1.3rem; }
+.supervisor-detail { overflow-wrap: anywhere; }
