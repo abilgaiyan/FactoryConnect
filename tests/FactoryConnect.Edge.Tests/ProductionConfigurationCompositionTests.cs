@@ -314,6 +314,180 @@ public sealed class ProductionConfigurationCompositionTests
         Assert.Throws<InvalidOperationException>(() => Compose(values));
     }
 
+    [Fact]
+    public async Task RetainedSchedulesPreserveHistoryAcrossBoundaryAndRestart()
+    {
+        var values = RetainedPlannedValues();
+        for (var restart = 0; restart < 2; restart++)
+        {
+            using var provider = Compose(values);
+            var reader = provider.GetRequiredService<IPlannedProductionScheduleReader>();
+            var assignments = await reader.ReadAssignmentsAsync(new SiteId("SITE-1"),
+                new DateOnly(2026, 10, 22), new DateOnly(2026, 11, 2), CancellationToken.None);
+            Assert.Equal(2, assignments.Count);
+            Assert.Equal("OLD", assignments[0].Id.Value);
+            Assert.Equal("NEW", assignments[1].Id.Value);
+            Assert.Empty(assignments[0].BreakWindows);
+            Assert.Equal(3, assignments[1].BreakWindows.Count);
+            var resolver = provider.GetRequiredService<PlannedProductionIntervalResolver>();
+            var days = await resolver.ResolveAsync(new SiteId("SITE-1"), new ProductionLineId("LINE-1"),
+                new DateOnly(2026, 10, 29), new DateOnly(2026, 10, 31), CancellationToken.None);
+            var oldDay = days.Where(static item => item.FactoryDate == new DateOnly(2026, 10, 29)).ToArray();
+            var newDay = days.Where(static item => item.FactoryDate == new DateOnly(2026, 10, 30)).ToArray();
+            Assert.All(oldDay, item => Assert.Equal("OLD", item.SourceAssignmentId.Value));
+            Assert.All(newDay, item => Assert.Equal("NEW", item.SourceAssignmentId.Value));
+            Assert.Equal(1440d, oldDay.Sum(static item => (item.EndsAtUtc - item.StartsAtUtc).TotalMinutes));
+            Assert.Equal(1350d, newDay.Sum(static item => (item.EndsAtUtc - item.StartsAtUtc).TotalMinutes));
+            Assert.Equal(oldDay.Max(static item => item.EndsAtUtc), newDay.Min(static item => item.StartsAtUtc));
+            Assert.Equal(2, oldDay.Length);
+            Assert.Equal(DateTimeOffset.Parse("2026-10-29T02:00:00Z", System.Globalization.CultureInfo.InvariantCulture), oldDay[0].StartsAtUtc);
+            var shiftBounds = new[] { ("2026-10-30T02:00:00Z", "2026-10-30T10:30:00Z", 480d),
+                ("2026-10-30T10:30:00Z", "2026-10-30T18:30:00Z", 450d),
+                ("2026-10-30T18:30:00Z", "2026-10-31T02:00:00Z", 420d) };
+            foreach (var (start, end, expected) in shiftBounds)
+            {
+                var from = DateTimeOffset.Parse(start, System.Globalization.CultureInfo.InvariantCulture);
+                var to = DateTimeOffset.Parse(end, System.Globalization.CultureInfo.InvariantCulture);
+                var minutes = newDay.Sum(item => Math.Max(0, (Math.Min(to.UtcTicks, item.EndsAtUtc.UtcTicks)
+                    - Math.Max(from.UtcTicks, item.StartsAtUtc.UtcTicks)) / (double)TimeSpan.TicksPerMinute));
+                Assert.Equal(expected, minutes);
+            }
+
+            Assert.DoesNotContain(newDay, item => item.StartsAtUtc < DateTimeOffset.Parse("2026-10-30T06:30:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                && item.EndsAtUtc > DateTimeOffset.Parse("2026-10-30T06:00:00Z", System.Globalization.CultureInfo.InvariantCulture));
+            // The third break is physically on the following calendar date.
+            Assert.DoesNotContain(newDay, item => item.StartsAtUtc < DateTimeOffset.Parse("2026-10-30T22:30:00Z", System.Globalization.CultureInfo.InvariantCulture)
+                && item.EndsAtUtc > DateTimeOffset.Parse("2026-10-30T22:00:00Z", System.Globalization.CultureInfo.InvariantCulture));
+            var next = await resolver.ResolveAsync(new SiteId("SITE-1"), new ProductionLineId("LINE-1"),
+                new DateOnly(2026, 10, 31), new DateOnly(2026, 11, 1), CancellationToken.None);
+            Assert.Equal(newDay.Max(static item => item.EndsAtUtc), next.Min(static item => item.StartsAtUtc));
+        }
+    }
+
+    [Theory]
+    [InlineData("2026-10-29")]
+    [InlineData("2026-10-31")]
+    [InlineData(null)]
+    public void RetainedReplacementGapOrOverlapFailsAtComposition(string? end)
+    {
+        var values = RetainedPlannedValues();
+        values["ProductionProcessing:PlannedProductionAssignments:1:EffectiveTo"] = end;
+        Assert.Throws<InvalidOperationException>(() => Compose(values));
+    }
+
+    [Fact]
+    public void RetainedSchedulesRejectDualShapesDuplicateIdsAndPhysicalCollision()
+    {
+        var both = RetainedPlannedValues();
+        both["ProductionProcessing:PlannedProduction:AssignmentId"] = "LEGACY";
+        Assert.Throws<InvalidOperationException>(() => Compose(both));
+        var duplicate = RetainedPlannedValues();
+        duplicate["ProductionProcessing:PlannedProductionAssignments:0:AssignmentId"] = "OLD";
+        Assert.Throws<InvalidOperationException>(() => Compose(duplicate));
+        var collision = RetainedPlannedValues();
+        collision["ProductionProcessing:PlannedProductionAssignments:1:PlannedWindows:1:EndsAtLocal"] = "08:00:00";
+        Assert.Throws<InvalidOperationException>(() => Compose(collision));
+        var ambiguous = RetainedPlannedValues();
+        ambiguous["ProductionProcessing:PlannedProductionAssignments:0:BreakWindows:2:StartDayOffset"] = "0";
+        Assert.Throws<InvalidOperationException>(() => Compose(ambiguous));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("\"scalar\"")]
+    [InlineData("{\"named\":{}}")]
+    public void InvalidRetainedCollectionShapeFails(string shape)
+    {
+        var values = BaseValues();
+        foreach (var key in values.Keys.Where(static key => key.StartsWith("ProductionProcessing:PlannedProduction:", StringComparison.Ordinal)).ToArray()) values.Remove(key);
+        Assert.Throws<InvalidOperationException>(() => Compose(values,
+            "{\"ProductionProcessing\":{\"PlannedProductionAssignments\":" + shape + "}}"));
+    }
+
+    [Fact]
+    public async Task MultiMachineCollectionLeavesOtherLineAndAdmissionUntouched()
+    {
+        var values = RetainedPlannedValues();
+        var cnc = new MachineId(Guid.Parse("677b030b-1ede-4a67-82ae-6a494791357f"));
+        var moxa = new MachineId(Guid.Parse("bfa0dc97-9a68-45ed-b189-1dacb7d863f0"));
+        var root = "ProductionProcessing:";
+        var machineValues = values.Where(pair => !pair.Key.StartsWith(root + "ShiftSchedules:", StringComparison.Ordinal)
+            && pair.Key != root + "BatchSize" && pair.Key != root + "PollingInterval").ToArray();
+        foreach (var (key, value) in machineValues)
+        {
+            values.Remove(key);
+            values[root + "Machines:0:" + key[root.Length..]] = value;
+        }
+        values[root + "Machines:0:MachineId"] = cnc.ToString();
+        values[root + "Machines:0:ActivityStreamKey"] = "cnc";
+        values[root + "Machines:0:ProductionStartsAt"] = "2026-10-22T02:00:00Z";
+        foreach (var (key, value) in BaseValues().Where(pair => !pair.Key.StartsWith(root + "ShiftSchedules:", StringComparison.Ordinal)
+            && pair.Key != root + "BatchSize" && pair.Key != root + "PollingInterval"))
+        {
+            values[root + "Machines:1:" + key[root.Length..]] = value;
+        }
+        values[root + "Machines:1:MachineId"] = moxa.ToString();
+        values[root + "Machines:1:ActivityStreamKey"] = "moxa";
+        values[root + "Machines:1:ProductionLineId"] = "LINE-2";
+        values[root + "Machines:1:Contexts:0:AssignmentId"] = "MOXA-CTX";
+        values[root + "Machines:1:PlannedProduction:AssignmentId"] = "MOXA-PLANNED";
+        values[root + "Machines:1:ProductionStartsAt"] = "2026-10-25T02:00:00Z";
+        // A site-wide shift serves both distinct line scopes.
+        values.Remove(root + "ShiftSchedules:0:ProductionLineId");
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddFactoryConnectProductionMetricInputs(configuration,
+            [new ObservationStreamId(cnc, "cnc"), new ObservationStreamId(moxa, "moxa")]);
+        await using var provider = services.BuildServiceProvider();
+        var planned = await provider.GetRequiredService<IPlannedProductionScheduleReader>().ReadAssignmentsAsync(
+            new SiteId("SITE-1"), new DateOnly(2026, 10, 29), new DateOnly(2026, 10, 31), CancellationToken.None);
+        var untouched = Assert.Single(planned, static assignment => assignment.ProductionLineId == new ProductionLineId("LINE-2"));
+        Assert.Equal("MOXA-PLANNED", untouched.Id.Value);
+        Assert.Empty(untouched.BreakWindows);
+        Assert.Equal("2026-10-22T02:00:00Z", configuration[root + "Machines:0:ProductionStartsAt"]);
+        Assert.Equal("2026-10-25T02:00:00Z", configuration[root + "Machines:1:ProductionStartsAt"]);
+        values[root + "Machines:1:ProductionLineId"] = "LINE-1";
+        var conflictingServices = new ServiceCollection();
+        Assert.Throws<InvalidOperationException>(() => conflictingServices.AddFactoryConnectProductionMetricInputs(
+            new ConfigurationBuilder().AddInMemoryCollection(values).Build(),
+            [new ObservationStreamId(cnc, "cnc"), new ObservationStreamId(moxa, "moxa")]));
+        values[root + "Machines:1:MachineId"] = cnc.ToString();
+        Assert.Throws<InvalidOperationException>(() => conflictingServices.AddFactoryConnectProductionMetricInputs(
+            new ConfigurationBuilder().AddInMemoryCollection(values).Build(),
+            [new ObservationStreamId(cnc, "cnc"), new ObservationStreamId(moxa, "moxa")]));
+    }
+
+    private static Dictionary<string, string?> RetainedPlannedValues()
+    {
+        var values = BaseValues();
+        foreach (var key in values.Keys.Where(static key => key.StartsWith("ProductionProcessing:PlannedProduction:", StringComparison.Ordinal)).ToArray()) values.Remove(key);
+        // Reversed input proves effective-date ordering is independent of array order.
+        foreach (var index in new[] { 0, 1 })
+        {
+            var prefix = $"ProductionProcessing:PlannedProductionAssignments:{index}";
+            values[$"{prefix}:AssignmentId"] = index == 1 ? "OLD" : "NEW";
+            values[$"{prefix}:TimeZoneId"] = "India Standard Time";
+            values[$"{prefix}:EffectiveFrom"] = index == 1 ? "2026-10-22" : "2026-10-30";
+            if (index == 1) values[$"{prefix}:EffectiveTo"] = "2026-10-30";
+            values[$"{prefix}:PlannedWindows:0:StartsAtLocal"] = "07:30:00";
+            values[$"{prefix}:PlannedWindows:0:EndsAtLocal"] = "00:00:00";
+            values[$"{prefix}:PlannedWindows:0:StartDayOffset"] = "0";
+            values[$"{prefix}:PlannedWindows:1:StartsAtLocal"] = "00:00:00";
+            values[$"{prefix}:PlannedWindows:1:EndsAtLocal"] = "07:30:00";
+            values[$"{prefix}:PlannedWindows:1:StartDayOffset"] = "1";
+        }
+        var breaks = new[] { ("11:30:00", "12:00:00", "0"), ("20:00:00", "20:30:00", "0"), ("03:30:00", "04:00:00", "1") };
+        for (var index = 0; index < breaks.Length; index++)
+        {
+            var prefix = $"ProductionProcessing:PlannedProductionAssignments:0:BreakWindows:{index}";
+            values[$"{prefix}:StartsAtLocal"] = breaks[index].Item1;
+            values[$"{prefix}:EndsAtLocal"] = breaks[index].Item2;
+            values[$"{prefix}:StartDayOffset"] = breaks[index].Item3;
+        }
+        return values;
+    }
+
     private static ServiceProvider Compose(Dictionary<string, string?> values, string? json = null)
     {
         var builder = new ConfigurationBuilder().AddInMemoryCollection(values);

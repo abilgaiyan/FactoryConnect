@@ -44,6 +44,20 @@ public sealed class CommissioningVisibilityTests
         Assert.DoesNotContain(fields, field => field.Path == "ProductionProcessing:Machines:0:ProductionStartsAt");
     }
 
+    [Fact]
+    public void RetainedPlannedAssignmentsAreVisibleWithoutExpandingSecretProjection()
+    {
+        using var document = JsonDocument.Parse("""
+            {"ProductionProcessing":{"Machines":[{"MachineId":"GG003","PlannedProductionAssignments":[
+                {"AssignmentId":"OLD","EffectiveTo":"2030-01-01"},
+                {"AssignmentId":"NEW","EffectiveFrom":"2030-01-01","Secret":"SECRET","BreakWindows":[{"StartsAtLocal":"03:30:00","EndsAtLocal":"04:00:00","StartDayOffset":1}]}]}]}}
+            """);
+        var fields = CommissioningSnapshotReader.Project(document.RootElement);
+        Assert.Contains(fields, field => field.Path == "ProductionProcessing:Machines:0:PlannedProductionAssignments:1:AssignmentId" && field.Value == "NEW");
+        Assert.Contains(fields, field => field.Path.EndsWith("BreakWindows:0:StartDayOffset", StringComparison.Ordinal) && field.Value == "1");
+        Assert.DoesNotContain("SECRET", JsonSerializer.Serialize(fields), StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("Server=db;Password=p")]
     [InlineData("https://user:password@host")]
