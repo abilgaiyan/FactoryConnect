@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FactoryConnect.Persistence.SqlServer/FactoryConnect.Persistence.SqlServer.csproj" />
+    <ProjectReference Include="../../src/FactoryConnect.Core/FactoryConnect.Core.csproj" />
+    <Compile Include="../../tests/FactoryConnect.Integration.Tests/ReferenceTimeTraversalFixture.cs" Link="ReferenceTimeTraversalFixture.cs" />
+    <Compile Include="../../tests/FactoryConnect.Integration.Tests/ReferenceTimeSemanticOracle.cs" Link="ReferenceTimeSemanticOracle.cs" />
+  </ItemGroup>
+</Project>
