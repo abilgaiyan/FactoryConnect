@@ -1,3 +1,4 @@
+using FactoryConnect.Security;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Api;
@@ -9,6 +10,7 @@ using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSupervisorSecurity(builder.Configuration);
 
 builder.Services.AddOpenApi(options =>
 {
@@ -17,6 +19,7 @@ builder.Services.AddOpenApi(options =>
 });
 builder.Services.AddOpenApi("activity-v1");
 builder.Services.AddOpenApi("counter-v1");
+builder.Services.AddOpenApi("security-v1");
 builder.Services.AddSingleton<IApiStartupCancellationRegistrationFactory,
     ApiStartupCancellationRegistrationFactory>();
 builder.Services.AddFactoryConnectPersistenceProviders(builder.Configuration);
@@ -47,6 +50,7 @@ builder.Services.AddFactoryConnectCurrentMachineState(
 builder.Services.AddSingleton<CommissioningSnapshotReader>();
 
 var app = builder.Build();
+app.MapSupervisorSecurity();
 app.MapCommissioning();
 
 app.UseReportingTimings();

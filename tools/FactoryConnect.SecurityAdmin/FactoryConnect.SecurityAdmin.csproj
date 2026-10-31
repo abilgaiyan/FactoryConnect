@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/FactoryConnect.Security/FactoryConnect.Security.csproj" /></ItemGroup>
+</Project>
