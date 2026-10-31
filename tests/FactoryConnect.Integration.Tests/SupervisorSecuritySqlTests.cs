@@ -83,13 +83,14 @@ public sealed class SupervisorSecuritySqlTests
         await using var db = await SqlStartupIsolatedDatabase.CreateAsync(); var authority = await Setup(db.ConnectionString);
         var secret = await LoginAndChange(authority, db.ConnectionString);
         await Execute(db.ConnectionString, "CREATE TABLE dbo.SyntheticConsumer(Value int NOT NULL);");
+        var denialsBefore = await Scalar<int>(db.ConnectionString, "SELECT COUNT(*) FROM dbo.FactoryConnectSecurityAudit WHERE Outcome='Denied';");
         await Assert.ThrowsAnyAsync<UnauthorizedAccessException>(() => authority.ExecuteAuthorizedAsync<bool>(secret, SecurityActions.ManageUsers, null, async (c,t,_,ct) =>
         {
             await using var command = new SqlCommand("INSERT dbo.SyntheticConsumer VALUES(1);", c, t); await command.ExecuteNonQueryAsync(ct);
             throw new UnauthorizedAccessException();
         }, default));
         Assert.Equal(0, await Scalar<int>(db.ConnectionString, "SELECT COUNT(*) FROM dbo.SyntheticConsumer;"));
-        Assert.Equal(1, await Scalar<int>(db.ConnectionString, "SELECT COUNT(*) FROM dbo.FactoryConnectSecurityAudit WHERE Outcome='Denied';"));
+        Assert.Equal(denialsBefore + 1, await Scalar<int>(db.ConnectionString, "SELECT COUNT(*) FROM dbo.FactoryConnectSecurityAudit WHERE Outcome='Denied';"));
     }
     [Fact]
     public async Task SharedOperationCompletesBeforeExclusiveRevocationAndLaterReadsDeny()

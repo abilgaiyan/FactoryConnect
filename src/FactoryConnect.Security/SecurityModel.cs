@@ -29,7 +29,7 @@ public sealed class SecurityState
     public Dictionary<string, LoginWindow> LoginWindows { get; set; } = new(StringComparer.Ordinal);
 }
 public sealed record LoginWindow(DateTimeOffset StartedAt, int Attempts);
-public sealed record SecurityResult(string Outcome, Guid? Id = null, [property: JsonNumberHandling(JsonNumberHandling.WriteAsString)] long? Revision = null, bool Historical = false);
+public sealed record SecurityResult(string Outcome, Guid? Id = null, [property: JsonConverter(typeof(CanonicalSecurityRevisionConverter))] long? Revision = null, bool Historical = false);
 public sealed record SecurityCommand(Guid OperationId, [property: JsonConverter(typeof(CanonicalSecurityRevisionConverter))] long ExpectedRevision, string Action, Guid? Target,
     Guid? MachineId, string? Name, string? Password, AccessGrant[]? Grants, Guid[]? Roles, bool? Disabled);
 public sealed record AuthenticatedSession(Guid SubjectId, Guid SessionId, bool MustChangePassword);

@@ -64,6 +64,33 @@ public sealed class SupervisorSecurityContractTests
         foreach (var value in new[] { "7", "\"07\"", "\"+7\"", "\" 7\"", "\"9223372036854775808\"" })
             Assert.Throws<System.Text.Json.JsonException>(() => System.Text.Json.JsonSerializer.Deserialize<SecurityCommand>(json.Replace("\"9007199254740993\"", value, StringComparison.Ordinal)));
     }
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0L)]
+    [InlineData(7L)]
+    [InlineData(9007199254740993L)]
+    [InlineData(long.MaxValue)]
+    public void RecordedResultsRoundTripThroughTheDurableJsonCodec(long? revision)
+    {
+        var original = new SecurityResult("Created", Guid.NewGuid(), revision);
+        var json = System.Text.Json.JsonSerializer.Serialize(original);
+        var restored = System.Text.Json.JsonSerializer.Deserialize<SecurityResult>(json);
+        Assert.Equal(original, restored);
+        var expected = revision is null ? "null" : "\"" + revision.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\"";
+        Assert.Contains("\"Revision\":" + expected, json, StringComparison.Ordinal);
+        Assert.Equal(original with { Historical = true }, restored! with { Historical = true });
+    }
+    [Theory]
+    [InlineData("7")]
+    [InlineData("\"07\"")]
+    [InlineData("\"+7\"")]
+    [InlineData("\" 7\"")]
+    [InlineData("\"9223372036854775808\"")]
+    public void RecordedResultsRejectNoncanonicalRevisions(string value)
+    {
+        var json = "{\"Outcome\":\"Created\",\"Revision\":" + value + "}";
+        Assert.Throws<System.Text.Json.JsonException>(() => System.Text.Json.JsonSerializer.Deserialize<SecurityResult>(json));
+    }
     [Fact]
     public void DelegationCannotOutliveItsAuthorityOrExpandScope()
     {
