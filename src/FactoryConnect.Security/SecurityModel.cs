@@ -11,6 +11,7 @@ namespace FactoryConnect.Security;
 public sealed class LocalAccount : IdentityUser<Guid>
 {
     public bool Disabled { get; set; }
+    public long AuthenticationGeneration { get; set; }
     public bool MustChangePassword { get; set; }
     public DateTimeOffset? TemporaryCredentialExpiresAt { get; set; }
     public List<Guid> Roles { get; set; } = [];
@@ -19,15 +20,19 @@ public sealed record AccessGrant(string Action, Guid? MachineId, bool Delegable,
 public sealed record SecurityRole(Guid Id, string Name, List<AccessGrant> Grants);
 public sealed record LocalSession(Guid Id, Guid SubjectId, string TokenHash, DateTimeOffset CreatedAt,
     DateTimeOffset LastInteractiveAt, bool Revoked);
-public sealed record PasswordReset(Guid SubjectId, string TokenHash, DateTimeOffset ExpiresAt, bool Used, Guid OperationId = default, string? ProtectedToken = null, string? Email = null);
+public sealed record PasswordReset(Guid SubjectId, string TokenHash, DateTimeOffset ExpiresAt, bool Used, Guid OperationId = default, string? ProtectedToken = null, string? Email = null, bool Invalidated = false);
 public sealed class SecurityState
 {
+    public long AdministrationRevision { get; set; }
+    public List<LoginAttempt> LoginAttempts { get; set; } = [];
     public List<LocalAccount> Accounts { get; set; } = [];
     public List<SecurityRole> Roles { get; set; } = [];
     public List<LocalSession> Sessions { get; set; } = [];
     public List<PasswordReset> Resets { get; set; } = [];
     public Dictionary<string, LoginWindow> LoginWindows { get; set; } = new(StringComparer.Ordinal);
 }
+public sealed record LoginAttempt(Guid Id, Guid? SubjectId, DateTimeOffset ExpiresAt, bool Completed);
+public sealed record HistoricalSecurityResult(string Status, SecurityResult? Result = null);
 public sealed record LoginWindow(DateTimeOffset StartedAt, int Attempts);
 public sealed record SecurityResult(string Outcome, Guid? Id = null, [property: JsonConverter(typeof(CanonicalSecurityRevisionConverter))] long? Revision = null, bool Historical = false);
 public sealed record SecurityCommand(Guid OperationId, [property: JsonConverter(typeof(CanonicalSecurityRevisionConverter))] long ExpectedRevision, string Action, Guid? Target,
@@ -40,8 +45,9 @@ public static class SecurityActions
     public const string ManageRoles = "security.roles.manage";
     public const string GrantAccess = "security.access.grant";
     public const string ViewAudit = "security.audit.view";
+    public const string RetrieveResetResult = "security.password-reset.result.view";
     public static IReadOnlySet<string> Catalogue { get; } = new HashSet<string>(StringComparer.Ordinal)
-        { ViewReports, ManageUsers, ManageRoles, GrantAccess, ViewAudit };
+        { ViewReports, ManageUsers, ManageRoles, GrantAccess, ViewAudit, RetrieveResetResult };
 }
 public static class SecurityRules
 {

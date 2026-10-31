@@ -270,4 +270,14 @@ jobs:
           --configuration Release
           --no-build
           --filter "Category=SqlServerIntegration"
+          --logger "trx;LogFileName=sql-server-integration.trx"
+          --results-directory TestResults/SqlIntegration
+
+      - name: Retain SQL regression and security characterization evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-integration-regression-evidence
+          path: TestResults/SqlIntegration
+          if-no-files-found: warn
 

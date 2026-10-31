@@ -61,6 +61,7 @@ public static class SecurityWeb
                 catch (AntiforgeryValidationException) { return Results.StatusCode(403); }
             }
             try { return await next(ctx); }
+            catch (SecurityDenialAuditException) { return Results.Json(new { reason = "AuthorizationDeniedAuditUnavailable", diagnosticId = http.TraceIdentifier }, statusCode: 503); }
             catch (AuthorizationDeniedException) { return Results.StatusCode(403); }
             catch (UnauthorizedAccessException) { return Results.Unauthorized(); }
             catch (ArgumentException) { return Results.BadRequest(new { reason = "InvalidSecurityRequest" }); }
@@ -84,6 +85,8 @@ public static class SecurityWeb
         });
         group.MapGet("/audit", async (HttpContext http, long? after, SqlSecurityAuthority authority) =>
             Results.Ok(await authority.ReadAuditAsync(Secret(http), after ?? 0, http.RequestAborted)));
+        group.MapGet("/password-reset-results/{operationId:guid}", async (HttpContext http, Guid operationId, SqlSecurityAuthority authority) =>
+            Results.Ok(await authority.ReadPasswordResetResultAsync(Secret(http), operationId, http.RequestAborted)));
         group.MapGet("/administration", async (HttpContext http, SqlSecurityAuthority authority) =>
             Results.Ok(await authority.ReadAdministrationAsync(Secret(http), http.RequestAborted)));
         group.MapPost("/commands", async (HttpContext http, SecurityCommand command, SqlSecurityAuthority authority) =>

@@ -3,6 +3,13 @@
 31 October 2026; base `85f56f32880dd1b47be1a605c85da2a86d4fc304`; roadmap #171/#164.
 Draft implementation for review, not production acceptance or deployment instructions.
 
+## Hardening continuation
+
+See [SUP-1B P0 hardening](sup-1b-p0-hardening.md) for the current reset-invalidation,
+login exchange, revision separation, result-retrieval and fault-regression contracts.
+The sections below retain the initial candidate evidence; superseded limitations are identified
+in that continuation. No production acceptance is implied.
+
 ## Delivered boundary
 
 A separate `FactoryConnect.Security` library owns SQL-backed local accounts, role grants,

@@ -7,7 +7,7 @@ using Xunit;
 namespace FactoryConnect.Integration.Tests;
 
 [Trait("Category", "SqlServerIntegration")]
-public sealed class SupervisorSecuritySqlTests
+public sealed partial class SupervisorSecuritySqlTests
 {
     private const string Password = "initial-synthetic-password";
     private const string Changed = "changed-synthetic-password";
@@ -140,7 +140,7 @@ public sealed class SupervisorSecuritySqlTests
         Assert.Null(await authority.AuthenticateAsync(login.Token, default));
         return (await authority.LoginAsync("admin", Changed, default)).Token!;
     }
-    private static async Task<long> Revision(string connection) => await Scalar<long>(connection, "SELECT Revision FROM dbo.FactoryConnectSecurityState WHERE Id=1;");
+    private static async Task<long> Revision(string connection) => await Scalar<long>(connection, "SELECT COALESCE(CAST(JSON_VALUE(Payload,'$.AdministrationRevision') AS bigint),0) FROM dbo.FactoryConnectSecurityState WHERE Id=1;");
     private static async Task<SecurityState> State(string connection) => JsonSerializer.Deserialize<SecurityState>(await Scalar<string>(connection, "SELECT Payload FROM dbo.FactoryConnectSecurityState WHERE Id=1;"))!;
     private static async Task SaveFixture(string connection, SecurityState state)
     {

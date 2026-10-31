@@ -9,6 +9,7 @@ namespace FactoryConnect.Security;
 // protected work takes Shared. No upgrades. Row ownership never leaves this transaction.
 public sealed partial class SqlSecurityAuthority(string connectionString, byte[] requestKey, TimeProvider clock)
 {
+    internal SecurityTestHooks? TestHooks { get; init; }
     private readonly PasswordHasher<LocalAccount> _hasher = new();
     private readonly string _dummyHash = new PasswordHasher<LocalAccount>().HashPassword(new LocalAccount(), SecurityRules.NewToken());
     private readonly byte[] _requestKey = requestKey.Length >= 32 ? requestKey.ToArray() : throw new ArgumentException("A persistent request key of at least 32 bytes is required.", nameof(requestKey));
@@ -78,51 +79,12 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
                     account.PasswordHash = _hasher.HashPassword(account, password);
                     account.SecurityStamp = Guid.NewGuid().ToString("N");
                     account.Disabled = false; account.MustChangePassword = true; account.TemporaryCredentialExpiresAt = clock.GetUtcNow() + SecurityRules.ResetLifetime; account.AccessFailedCount = 0; account.LockoutEnd = null;
-                    Revoke(ctx.State, account.Id);
+                    CredentialChanged(ctx.State, account);
                     result = new("Recovered", account.Id, ctx.Revision + 1);
                 }
             }
             await CompleteAsync(ctx, Guid.Empty, null, operation, action, result, token);
             return result;
-        }, token);
-    }
-
-    public async Task<(string? Token, string Outcome)> LoginAsync(string username, string password, CancellationToken token)
-    {
-        if (username.Length > 128 || password.Length > 256) return (null, "InvalidCredentials");
-        var normalized = username.ToUpperInvariant();
-        return await TransactionAsync("Exclusive", async ctx =>
-        {
-            var now = clock.GetUtcNow();
-            // Bounded global rate limit includes unknown names; no unbounded attacker-controlled rows.
-            var window = ctx.State.LoginWindows.GetValueOrDefault("login");
-            if (window is null || now >= window.StartedAt.AddMinutes(1)) window = new(now, 0);
-            if (window.Attempts >= 30)
-            {
-                await ctx.AuditAsync(null, null, null, "login", "TryLater", token);
-                return ((string?)null, "TryLater");
-            }
-            ctx.State.LoginWindows["login"] = window with { Attempts = window.Attempts + 1 };
-            var account = ctx.State.Accounts.SingleOrDefault(a => a.NormalizedUserName == normalized);
-            var permitted = account is not null && !account.Disabled && (!account.MustChangePassword || account.TemporaryCredentialExpiresAt is { } expiry && now < expiry) && (account.LockoutEnd is null || now >= account.LockoutEnd);
-            var check = _hasher.VerifyHashedPassword(account ?? new LocalAccount(), permitted ? account!.PasswordHash! : _dummyHash, password);
-            if (!permitted) check = PasswordVerificationResult.Failed;
-            if (check == PasswordVerificationResult.Failed)
-            {
-                if (permitted)
-                {
-                    account!.AccessFailedCount++;
-                    if (account.AccessFailedCount >= 5) { account.LockoutEnd = now.AddMinutes(15); account.AccessFailedCount = 0; }
-                }
-                await ctx.AuditAsync(account?.Id, null, null, "login", "InvalidCredentials", token);
-                return ((string?)null, "InvalidCredentials");
-            }
-            if (check == PasswordVerificationResult.SuccessRehashNeeded) account!.PasswordHash = _hasher.HashPassword(account, password);
-            account!.AccessFailedCount = 0; account.LockoutEnd = null;
-            var secret = SecurityRules.NewToken();
-            ctx.State.Sessions.Add(new(Guid.NewGuid(), account.Id, SecurityRules.TokenHash(secret), now, now, false));
-            await ctx.AuditAsync(account.Id, ctx.State.Sessions[^1].Id, null, "login", "Succeeded", token);
-            return ((string?)secret, "Succeeded");
         }, token);
     }
 
@@ -153,7 +115,7 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             var identity = RequireCommand(ctx.State, secret, command, permission);
             await RegisterAsync(ctx, identity.SubjectId, command.OperationId, bytes, token);
             return identity.SubjectId;
-        }, token, save: false);
+        }, token, save: false, phase: "registration");
         return await TransactionAsync("Exclusive", async ctx =>
         {
             var identity = RequireCommand(ctx.State, secret, command, permission);
@@ -170,7 +132,7 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             }
             await CompleteAsync(ctx, subject, identity.SessionId, command.OperationId, command.Action, result, token);
             return result;
-        }, token);
+        }, token, phase: "command");
     }
 
     public Task<SecurityResult> SessionActionAsync(string secret, string action, Guid operation, CancellationToken token) =>
@@ -188,7 +150,7 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             var result = new SecurityResult("Succeeded", identity.SessionId);
             await CompleteAsync(ctx, identity.SubjectId, identity.SessionId, operation, action, result, token);
             return result;
-        }, token);
+        }, token, administration: false, phase: "session");
 
     public Task<object> ReadSessionAsync(string secret, CancellationToken token) =>
         TransactionAsync("Shared", ctx =>
@@ -255,7 +217,7 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             case "password.change":
                 SecurityRules.ValidatePassword(command.Password ?? "");
                 actor.PasswordHash = _hasher.HashPassword(actor, command.Password!); actor.MustChangePassword = false; actor.TemporaryCredentialExpiresAt = null;
-                actor.SecurityStamp = Guid.NewGuid().ToString("N"); Revoke(state, actor.Id);
+                actor.SecurityStamp = Guid.NewGuid().ToString("N"); CredentialChanged(state, actor);
                 return new("ChangedAndSessionsRevoked", actor.Id, next);
             case "users.create":
                 var name = command.Name ?? ""; var normalized = SecurityRules.NormalizeName(name);
@@ -266,10 +228,10 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             case "users.disable":
                 if (target is null || command.Disabled is null) return new("InvalidTarget");
                 if (target.Id == actor.Id) return new("SelfAdministrationDenied");
-                target.Disabled = command.Disabled.Value; Revoke(state, target.Id);
+                target.Disabled = command.Disabled.Value; CredentialChanged(state, target);
                 return new("Updated", target.Id, next);
             case "sessions.revoke":
-                if (target is null) return new("InvalidTarget"); Revoke(state, target.Id); return new("Revoked", target.Id, next);
+                if (target is null) return new("InvalidTarget"); target.AuthenticationGeneration++; Revoke(state, target.Id); return new("Revoked", target.Id, next);
             case "roles.save":
                 if (command.Target is null || command.Target == Guid.Empty || string.IsNullOrWhiteSpace(command.Name) || command.Name.Length > 128 || command.Grants is null) return new("InvalidRequest");
                 if (actor.Roles.Contains(command.Target.Value)) return new("SelfAdministrationDenied");
@@ -278,13 +240,14 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
                 var role = new SecurityRole(command.Target.Value, command.Name, command.Grants.ToList());
                 var index = state.Roles.FindIndex(r => r.Id == role.Id);
                 if (index < 0) state.Roles.Add(role); else state.Roles[index] = role;
+                foreach (var member in state.Accounts.Where(a => a.Roles.Contains(role.Id))) member.AuthenticationGeneration++;
                 return new("Updated", role.Id, next);
             case "membership.set":
                 if (target is null || command.Roles is null || command.Roles.Any(id => !state.Roles.Any(r => r.Id == id))) return new("InvalidTarget");
                 if (target.Id == actor.Id) return new("SelfAdministrationDenied");
                 if (state.Roles.Where(r => command.Roles.Contains(r.Id) || target.Roles.Contains(r.Id)).SelectMany(r => r.Grants)
                     .Any(g => !SecurityRules.CanDelegate(state, actor, g, clock.GetUtcNow()))) return new("DelegationDenied");
-                target.Roles = command.Roles.Distinct().ToList(); Revoke(state, target.Id); return new("Updated", target.Id, next);
+                target.Roles = command.Roles.Distinct().ToList(); target.AuthenticationGeneration++; Revoke(state, target.Id); return new("Updated", target.Id, next);
             default: return new("InvalidRequest");
         }
     }
@@ -299,17 +262,27 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             SecurityStamp = Guid.NewGuid().ToString("N"), MustChangePassword = true, TemporaryCredentialExpiresAt = clock.GetUtcNow() + SecurityRules.ResetLifetime, LockoutEnabled = true };
         user.PasswordHash = _hasher.HashPassword(user, password); return user;
     }
+    private static void CredentialChanged(SecurityState state, LocalAccount account, Guid? consumingReset = null)
+    {
+        account.AuthenticationGeneration++;
+        Revoke(state, account.Id);
+        for (var i = 0; i < state.Resets.Count; i++)
+            if (state.Resets[i].SubjectId == account.Id) state.Resets[i] = state.Resets[i] with { Used = true, Invalidated = consumingReset is null || state.Resets[i].OperationId != consumingReset };
+    }
+
     private static void Revoke(SecurityState state, Guid subject)
     {
         for (var i = 0; i < state.Sessions.Count; i++)
             if (state.Sessions[i].SubjectId == subject) state.Sessions[i] = state.Sessions[i] with { Revoked = true };
     }
 
-    private async Task<T> TransactionAsync<T>(string mode, Func<Context, Task<T>> work, CancellationToken token, bool save = true)
+    private async Task<T> TransactionAsync<T>(string mode, Func<Context, Task<T>> work, CancellationToken token, bool save = true, bool administration = true, string phase = "operation")
     {
         await using var connection = new SqlConnection(connectionString); await connection.OpenAsync(token);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, token);
+        if (TestHooks?.BeforeGate is { } beforeGate) await beforeGate(connection, transaction, phase, token);
         await LockAsync(connection, transaction, Gate, mode, token);
+        if (TestHooks?.AfterGate is { } afterGate) await afterGate(connection, transaction, phase, token);
         // UPDLOCK for state mutations avoids shared->exclusive row lock conversion races.
         await using var read = new SqlCommand("SELECT Version, Revision, Payload FROM dbo.FactoryConnectSecurityState" + (save ? " WITH (UPDLOCK,HOLDLOCK)" : "") + " WHERE Id=1;", connection, transaction);
         SecurityState state; long revision; string originalPayload;
@@ -318,30 +291,43 @@ public sealed partial class SqlSecurityAuthority(string connectionString, byte[]
             if (!await rows.ReadAsync(token) || rows.GetInt32(0) != 1) throw new InvalidDataException("Security authority unavailable.");
             revision = rows.GetInt64(1); originalPayload = rows.GetString(2); state = JsonSerializer.Deserialize<SecurityState>(originalPayload) ?? throw new InvalidDataException("Security authority invalid.");
         }
-        var context = new Context(connection, transaction, state, revision, clock);
+        var context = new Context(connection, transaction, state, state.AdministrationRevision, clock);
         T result;
         try { result = await work(context); }
         catch (UnauthorizedAccessException error)
         {
             // Never commit consumer writes on denial. Audit uses a separate short transaction.
             await transaction.RollbackAsync(CancellationToken.None);
+            try
+            {
+            if (TestHooks?.BeforeDenialAudit is { } auditHook) await auditHook(token);
             await using var auditConnection = new SqlConnection(connectionString);
             await auditConnection.OpenAsync(token);
             await using var auditTransaction = (SqlTransaction)await auditConnection.BeginTransactionAsync(token);
-            await new Context(auditConnection, auditTransaction, new(), revision, clock)
+            await new Context(auditConnection, auditTransaction, new(), context.Revision, clock)
                 .AuditAsync((error as AuthorizationDeniedException)?.SubjectId, (error as AuthorizationDeniedException)?.SessionId, null,
                     (error as AuthorizationDeniedException)?.Action ?? "authorization", "Denied", token, (error as AuthorizationDeniedException)?.MachineId);
             await auditTransaction.CommitAsync(token);
+            }
+            catch (Exception auditFailure) when (auditFailure is not SecurityDenialAuditException)
+            { throw new SecurityDenialAuditException(error, auditFailure); }
             throw;
         }
         if (save && JsonSerializer.Serialize(state) != originalPayload)
         {
+            if (administration) state.AdministrationRevision = checked(state.AdministrationRevision + 1);
             await using var update = new SqlCommand("UPDATE dbo.FactoryConnectSecurityState SET Revision=Revision+1,Payload=@Payload WHERE Id=1 AND Version=1 AND Revision=@Revision;", connection, transaction);
             update.Parameters.AddWithValue("@Payload", JsonSerializer.Serialize(state)); update.Parameters.AddWithValue("@Revision", revision);
             if (await update.ExecuteNonQueryAsync(token) != 1) throw new InvalidDataException("Security revision conflict.");
         }
-        try { await transaction.CommitAsync(token); }
-        catch (Exception error) when (error is SqlException or OperationCanceledException or InvalidOperationException)
+        if (TestHooks?.BeforeCommit is { } beforeCommit) await beforeCommit(connection, transaction, phase, token);
+        token.ThrowIfCancellationRequested();
+        try
+        {
+            await transaction.CommitAsync(token);
+            if (TestHooks?.AfterCommit is { } afterCommit) await afterCommit(phase, token);
+        }
+        catch (Exception error) when (error is SqlException or OperationCanceledException or InvalidOperationException or IOException)
         { throw new SecurityCommitOutcomeUnknownException(error); }
         return result;
     }

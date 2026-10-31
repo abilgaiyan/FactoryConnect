@@ -38,7 +38,7 @@ public sealed partial class SqlSecurityAuthority
                 ctx.State.Resets.Add(reset);
                 await CompleteAsync(ctx, identity.SubjectId, identity.SessionId, operation, request.Action, new("Registered", target), token);
             }
-            if (reset.Used || clock.GetUtcNow() >= reset.ExpiresAt) throw new InvalidOperationException("Reset no longer eligible for delivery.");
+            if (reset.Invalidated || reset.Used || clock.GetUtcNow() >= reset.ExpiresAt) throw new InvalidOperationException("Reset no longer eligible for delivery.");
             return reset;
         }, token);
         // Durable outbox first; retries resend the SAME link, never create a replacement token.
@@ -60,13 +60,13 @@ public sealed partial class SqlSecurityAuthority
             if (index < 0) throw new UnauthorizedAccessException();
             var reset = ctx.State.Resets[index];
             var account = ctx.State.Accounts.SingleOrDefault(a => a.Id == reset.SubjectId);
-            if (account is null || account.Disabled || clock.GetUtcNow() >= reset.ExpiresAt) throw new UnauthorizedAccessException();
+            if (account is null || account.Disabled || reset.Invalidated || clock.GetUtcNow() >= reset.ExpiresAt) throw new UnauthorizedAccessException();
             var old = await ResultAsync(ctx, account.Id, operation, bytes, token);
             if (old is not null) return old with { Historical = true };
             if (reset.Used) throw new UnauthorizedAccessException();
             account.PasswordHash = _hasher.HashPassword(account, password); account.SecurityStamp = Guid.NewGuid().ToString("N");
             account.MustChangePassword = false; account.TemporaryCredentialExpiresAt = null; account.AccessFailedCount = 0; account.LockoutEnd = null;
-            Revoke(ctx.State, account.Id);
+            CredentialChanged(ctx.State, account, reset.OperationId);
             for (var i = 0; i < ctx.State.Resets.Count; i++)
                 if (ctx.State.Resets[i].SubjectId == account.Id) ctx.State.Resets[i] = ctx.State.Resets[i] with { Used = true };
             var result = new SecurityResult("ChangedAndSessionsRevoked", account.Id, ctx.Revision + 1);
