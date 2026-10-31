@@ -30,3 +30,7 @@
 .supervisor-preview .production-backdate { display: flex; align-items: flex-start; gap: .6rem; }
 .supervisor-preview .production-backdate input { width: 1.3rem; min-height: 1.3rem; flex: 0 0 1.3rem; }
 .supervisor-detail { overflow-wrap: anywhere; }
+.supervisor-preview { min-width: 0; overflow-wrap: anywhere; }
+.supervisor-preview code { white-space: normal; overflow-wrap: anywhere; }
+.supervisor-preview .activity-table-scroll { max-width: 100%; }
+.supervisor-preview nav[aria-label="Workspace operating mode"] button[aria-pressed="true"] { outline: 3px solid #12334e; outline-offset: 2px; }

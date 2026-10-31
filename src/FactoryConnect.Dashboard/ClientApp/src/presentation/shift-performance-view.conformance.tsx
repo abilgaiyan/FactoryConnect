@@ -4,7 +4,7 @@ import { ShiftPerformanceOverviewView } from "./ShiftPerformanceOverviewView.tsx
 import type { ShiftPerformanceOverview } from "./shift-performance-model.ts";
 
 type ViewProps = ComponentProps<typeof ShiftPerformanceOverviewView>;
-type ExpectedProps = { readonly overview: ShiftPerformanceOverview };
+type ExpectedProps = { readonly overview: ShiftPerformanceOverview; readonly showFilters?: boolean };
 
 type Assert<T extends true> = T;
 type Equal<A, B> =
@@ -15,4 +15,4 @@ type Equal<A, B> =
       : false
     : false;
 
-export type ShiftPerformanceViewAcceptsOnlyOverview = Assert<Equal<ViewProps, ExpectedProps>>;
+export type ShiftPerformanceViewAcceptsOverviewAndOptionalFilterVisibility = Assert<Equal<ViewProps, ExpectedProps>>;
