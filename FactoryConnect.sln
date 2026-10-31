@@ -53,6 +53,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.Configuratio
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.MoxaRecovery", "tools\FactoryConnect.MoxaRecovery\FactoryConnect.MoxaRecovery.csproj", "{27795B93-6812-487C-B695-E1CC19F84834}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FactoryConnect.ReferenceTimeBenchmark", "tools\FactoryConnect.ReferenceTimeBenchmark\FactoryConnect.ReferenceTimeBenchmark.csproj", "{629C98F2-2409-4C90-8CD0-11E4913E3B09}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -327,6 +329,18 @@ Global
 		{27795B93-6812-487C-B695-E1CC19F84834}.Release|x64.Build.0 = Release|Any CPU
 		{27795B93-6812-487C-B695-E1CC19F84834}.Release|x86.ActiveCfg = Release|Any CPU
 		{27795B93-6812-487C-B695-E1CC19F84834}.Release|x86.Build.0 = Release|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Debug|x64.Build.0 = Debug|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Debug|x86.Build.0 = Debug|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Release|Any CPU.Build.0 = Release|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Release|x64.ActiveCfg = Release|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Release|x64.Build.0 = Release|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Release|x86.ActiveCfg = Release|Any CPU
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -340,5 +354,6 @@ Global
 		{1EC93E6D-55AE-49D9-862A-EE3DCDB5FD41} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{BE8C2C21-435C-4881-BC32-DF8AEB73DC68} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{27795B93-6812-487C-B695-E1CC19F84834} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{629C98F2-2409-4C90-8CD0-11E4913E3B09} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal
