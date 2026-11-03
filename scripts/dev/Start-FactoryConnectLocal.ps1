@@ -58,16 +58,16 @@ if ($ConnectionStringEnvironmentVariable) {
     $connectionString = [Environment]::GetEnvironmentVariable($ConnectionStringEnvironmentVariable,'Process')
     if ([string]::IsNullOrWhiteSpace($connectionString)) { throw 'Named connection-string environment variable is missing.' }
     $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($connectionString)
-    if ($builder.DataSource -cne $SqlInstance -or $builder.InitialCatalog -cne $Database) {
+    if ($builder['Data Source'] -cne $SqlInstance -or $builder['Initial Catalog'] -cne $Database) {
         throw 'Connection string target differs from supplied SqlInstance/Database.'
     }
 } else {
     $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new()
-    $builder.DataSource = $SqlInstance
-    $builder.InitialCatalog = $Database
-    $builder.IntegratedSecurity = $true
-    $builder.Encrypt = $true
-    $builder.TrustServerCertificate = $true
+    $builder['Data Source'] = $SqlInstance
+    $builder['Initial Catalog'] = $Database
+    $builder['Integrated Security'] = $true
+    $builder['Encrypt'] = $true
+    $builder['Trust Server Certificate'] = $true
 }
 $connectionString = $builder.ConnectionString
 $connection = [System.Data.SqlClient.SqlConnection]::new($connectionString)
