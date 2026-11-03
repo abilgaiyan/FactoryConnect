@@ -99,7 +99,7 @@ internal sealed class SqlContainmentHistoricalReadScope
                 _cuts.Add(cut, frozen);
                 return frozen;
             }
-            catch (Exception error) { diagnostic.Fail(error); throw; }
+            catch (Exception error) { diagnostic.Fail(error, cancellationToken); throw; }
             finally { Volatile.Write(ref _reading, 0); }
         }
     }
