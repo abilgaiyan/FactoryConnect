@@ -114,11 +114,12 @@ internal static class ContainmentRetainedState
             parameter.Value = field.Value ?? DBNull.Value;
         }
     }
-    internal static async Task<List<Dictionary<string, object?>>> Read(SqlCommand command, CancellationToken token)
+    internal static async Task<List<Dictionary<string, object?>>> Read(SqlCommand command, CancellationToken token, string operation = "retained.read")
     {
         var rows = new List<Dictionary<string, object?>>();
-        await using var reader = await command.ExecuteReaderAsync(token);
-        while (await reader.ReadAsync(token))
+        await using var readerDiagnostics1 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, operation, token);
+        var reader = readerDiagnostics1.Reader;
+        while (await OperationalMetricReportingDiagnostics.ReadAsync(reader, token))
         {
             var row = new Dictionary<string, object?>(StringComparer.Ordinal);
             for (var i = 0; i < reader.FieldCount; i++) row.Add(reader.GetName(i), reader.IsDBNull(i) ? null : reader.GetValue(i));

@@ -49,8 +49,9 @@ internal static class SqlContainmentHistoricalContributionReader
                 WHERE p.ProcessorKeyBinary = @Key;
                 """;
             exact.Parameters.Add("@Key", SqlDbType.VarBinary, 512).Value = OrdinalStringKeyCodec.Encode(cut.ProcessorId.Value);
-            await using var reader = await exact.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
+            await using var readerDiagnostics2 = await OperationalMetricReportingDiagnostics.ReaderAsync(exact, "SqlContainmentHistoricalContributionReader.reader.2", cancellationToken);
+        var reader = readerDiagnostics2.Reader;
+            if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
                 throw new MissingContainmentHistoricalAuthorityException("The aggregation processor is absent.");
             processorRowId = reader.GetInt64(0);
             streamRowId = reader.GetInt64(1);
@@ -63,7 +64,7 @@ internal static class SqlContainmentHistoricalContributionReader
             exact.Transaction = transaction;
             exact.CommandText = "SELECT COUNT_BIG(*) FROM dbo.MetricAggregationRevision WHERE MetricAggregationProcessorRowId = @ProcessorRowId AND Position = @ThroughPosition;";
             Bind(exact, processorRowId, streamRowId, cut);
-            if ((long)(await exact.ExecuteScalarAsync(cancellationToken))! != 1L)
+            if ((long)(await OperationalMetricReportingDiagnostics.ScalarAsync(exact, "SqlContainmentHistoricalContributionReader.scalar.1", cancellationToken))! != 1L)
                 throw new MissingContainmentHistoricalAuthorityException("The exact aggregation revision is absent.");
         }
         identityTiming?.SetTag("stage.completed", true);
@@ -93,11 +94,12 @@ internal static class SqlContainmentHistoricalContributionReader
         Bind(command, processorRowId, streamRowId, cut);
         var inputs = new List<PositionedMetricInputFact>();
         using var sqlTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.sql.execute");
-        await using var rows = await command.ExecuteReaderAsync(cancellationToken);
+        await using var rowsDiagnostics3 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentHistoricalContributionReader.reader.3", cancellationToken);
+        var rows = rowsDiagnostics3.Reader;
         sqlTiming?.SetTag("stage.completed", true);
         sqlTiming?.Dispose();
         using var rowsTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.rows.read-materialize-validate");
-        while (await rows.ReadAsync(cancellationToken))
+        while (await OperationalMetricReportingDiagnostics.ReadAsync(rows, cancellationToken))
         {
             try
             {

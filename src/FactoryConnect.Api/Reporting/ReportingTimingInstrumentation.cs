@@ -9,12 +9,25 @@ internal static partial class ReportingTimingInstrumentation
     {
         if (!app.Configuration.GetValue<bool>("ReportingDiagnostics:Enabled")) return;
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FactoryConnect.Reporting.Timing");
+        var includeIdentities = app.Configuration.GetValue<bool>("ReportingDiagnostics:IncludeCanonicalIdentities");
         var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "FactoryConnect.Reporting",
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStarted = activity => Write(activity, "started"),
-            ActivityStopped = activity => Write(activity, "stopped")
+            ActivityStarted = activity =>
+            {
+                try
+                {
+                    if (includeIdentities) activity.SetTag("diagnostic.capture.identity", true);
+                    Write(activity, "started");
+                }
+                catch { /* Diagnostics cannot change authoritative request execution. */ }
+            },
+            ActivityStopped = activity =>
+            {
+                try { Write(activity, "stopped"); }
+                catch { /* Diagnostics cannot mask verification/cancellation failures. */ }
+            }
         };
         ActivitySource.AddActivityListener(listener);
         app.Lifetime.ApplicationStopped.Register(listener.Dispose);
@@ -55,6 +68,17 @@ internal static partial class ReportingTimingInstrumentation
         void Write(Activity activity, string phase)
         {
             if (!logger.IsEnabled(LogLevel.Information)) return;
+            if (phase == "stopped")
+            {
+                var metadata = string.Join(";", activity.TagObjects
+                    .Where(static tag => tag.Key.StartsWith("diagnostic.", StringComparison.Ordinal))
+                    .Select(static tag => $"{tag.Key}={Convert.ToString(tag.Value, System.Globalization.CultureInfo.InvariantCulture)}"));
+                if (includeIdentities && activity.GetTagItem("restricted.identity.canonical") is string canonical)
+                    RestrictedIdentity(logger, activity.TraceId.ToString(), activity.SpanId.ToString(), canonical);
+                DiagnosticMetadata(logger, activity.OperationName, activity.TraceId.ToString(),
+                    activity.SpanId.ToString(), activity.ParentSpanId.ToString(), metadata,
+                    FindTag(activity, "diagnostic.capture.truncated"));
+            }
             var traceId = activity.TraceId.ToString();
             var spanId = activity.SpanId.ToString();
             var parentSpanId = activity.ParentSpanId.ToString();
@@ -92,6 +116,15 @@ internal static partial class ReportingTimingInstrumentation
         object? inputCount, object? completed, object? rootReconstructionInvocations,
         object? referenceTimeAuthorityValidationExecutions, object? referenceTimeAuthorityCacheHits,
         object? referenceTimePeriodEvaluations, object? referenceTimeEvidenceContract);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Information, SkipEnabledCheck = true,
+        Message = "Reporting diagnostic Stage={Stage} TraceId={TraceId} SpanId={SpanId} ParentSpanId={ParentSpanId} Metadata={Metadata} CaptureTruncated={CaptureTruncated}")]
+    private static partial void DiagnosticMetadata(ILogger logger, string stage, string traceId,
+        string spanId, string parentSpanId, string metadata, object? captureTruncated);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Information, SkipEnabledCheck = true,
+        Message = "Reporting restricted identity TraceId={TraceId} SpanId={SpanId} Canonical={Canonical}")]
+    private static partial void RestrictedIdentity(ILogger logger, string traceId, string spanId, string canonical);
 
     private static object? FindTag(Activity? activity, string key)
     {

@@ -41,7 +41,7 @@ internal static class SqlServerOperationalMetricProjectionProcessorGate
         using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity("processor.gate.acquire");
         timing?.SetTag("processor.id", processorId.Value);
         timing?.SetTag("gate.mode", mode.ToString());
-        var result = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken),
+        var result = Convert.ToInt32(await OperationalMetricReportingDiagnostics.ScalarAsync(command, "SqlServerOperationalMetricProjectionProcessorGate.scalar.1", cancellationToken),
             System.Globalization.CultureInfo.InvariantCulture);
         timing?.SetTag("gate.result", result);
         if (result == -2) throw new OperationCanceledException("Processor gate acquisition cancelled.", cancellationToken);

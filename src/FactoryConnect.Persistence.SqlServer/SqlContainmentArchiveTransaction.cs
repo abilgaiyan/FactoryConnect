@@ -46,6 +46,9 @@ internal static class SqlContainmentArchiveTransaction
         Func<ContainmentArchiveStage, CancellationToken, Task>? failureInjection, bool verifyOnly,
         SqlContainmentHistoricalReadScope? historicalReads, bool captureProjections, CancellationToken cancellationToken)
     {
+        using var diagnostic = OperationalMetricReportingDiagnostics.Start("containment.archive.verify");
+        try
+        {
         if (verifyOnly && !requireExisting) throw new ArgumentException("Read-only verification requires all archives to exist.", nameof(requireExisting));
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
@@ -79,8 +82,9 @@ internal static class SqlContainmentArchiveTransaction
                 WHERE WitnessId=@Id;
                 """);
             Bytes(command, "@Id", witness.Id, 32);
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            witnessRows.Add(Convert.ToHexString(witness.Id), await reader.ReadAsync(cancellationToken)
+            await using var readerDiagnostics2 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentArchiveTransaction.reader.2", cancellationToken);
+        var reader = readerDiagnostics2.Reader;
+            witnessRows.Add(Convert.ToHexString(witness.Id), await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken)
                 ? new(reader.GetInt16(0), (byte[])reader[1], reader.GetInt64(2), reader.GetInt64(3),
                     SqlServerUInt64.Materialize(reader.GetDecimal(4)), reader.GetInt64(5), SqlServerUInt64.Materialize(reader.GetDecimal(6))) : null);
         }
@@ -98,8 +102,9 @@ internal static class SqlContainmentArchiveTransaction
                 "SELECT NodePath,WitnessId FROM dbo.OperationalMetricResultWitnessReference WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id ORDER BY NodePath;");
             Bytes(command, "@Id", result.Id, 32);
             var references = new List<ContainmentArchiveBatch.Reference>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken)) references.Add(new((byte[])reader[0], (byte[])reader[1]));
+            await using var readerDiagnostics3 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentArchiveTransaction.reader.3", cancellationToken);
+        var reader = readerDiagnostics3.Reader;
+            while (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken)) references.Add(new((byte[])reader[0], (byte[])reader[1]));
             if (existing[Convert.ToHexString(result.Id)])
             {
                 if (references.Count != result.References.Count || references.Where((r, i) =>
@@ -136,9 +141,10 @@ internal static class SqlContainmentArchiveTransaction
             fact.Parameters.Add(SqlServerUInt64.CreateParameter("@Position", witness.Document.Contribution.Position.Value));
             Bytes(fact, "@FactKey", OrdinalStringKeyCodec.Encode(witness.Document.Contribution.Fact.Id.Value), 512);
             long factRow;
-            await using (var reader = await fact.ExecuteReaderAsync(cancellationToken))
+            await using (var readerDiagnostics1 = await OperationalMetricReportingDiagnostics.ReaderAsync(fact, "SqlContainmentArchiveTransaction.reader.1", cancellationToken))
             {
-                if (!await reader.ReadAsync(cancellationToken) || reader.GetString(1) != witness.Document.Contribution.Fact.Id.Value)
+                var reader = readerDiagnostics1.Reader;
+                if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken) || reader.GetString(1) != witness.Document.Contribution.Fact.Id.Value)
                     throw Integrity("Verified witness contribution is absent from the exact source ledger.");
                 factRow = reader.GetInt64(0);
             }
@@ -216,6 +222,8 @@ internal static class SqlContainmentArchiveTransaction
             // Identical replay executes no DML and does not traverse mutation failure hooks.
             if (failureInjection is not null && existing.Values.Any(v => !v)) await failureInjection(stage, cancellationToken);
         }
+        }
+        catch (Exception diagnosticError) { diagnostic.Fail(diagnosticError, cancellationToken); throw; }
     }
 
     internal sealed class VerifiedProjectionHandoff
@@ -265,8 +273,9 @@ internal static class SqlContainmentArchiveTransaction
             WHERE p.ProcessorKeyBinary=@Key;
             """, verifyOnly);
         Bytes(command, "@Key", StringOrderKeyV2Codec.Encode(batch.Processor.Value), StringOrderKeyV2Codec.MaximumEncodedLength);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken)) throw Integrity("Containment archive requires a registered format-2 processor.");
+        await using var readerDiagnostics4 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentArchiveTransaction.reader.4", cancellationToken);
+        var reader = readerDiagnostics4.Reader;
+        if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken)) throw Integrity("Containment archive requires a registered format-2 processor.");
         if (reader.GetString(3) != batch.Processor.Value || reader.GetInt16(4) != 2 || reader.IsDBNull(5) || reader.GetString(5) != AvailabilityContainmentV1.PolicyId ||
             reader.GetString(6) != batch.Cut.ProcessorId.Value || !((byte[])reader[7]).AsSpan().SequenceEqual(OrdinalStringKeyCodec.Encode(batch.Cut.ProcessorId.Value)) ||
             reader.GetInt64(8) != reader.GetInt64(2) || reader.GetGuid(9) != batch.Cut.StreamId.MachineId.Value ||
@@ -283,8 +292,9 @@ internal static class SqlContainmentArchiveTransaction
         """;
     private static async Task<ResultRow?> ReadResult(SqlCommand command, CancellationToken token)
     {
-        await using var reader = await command.ExecuteReaderAsync(token);
-        return await reader.ReadAsync(token) ? new((byte[])reader[0], reader.GetInt64(1), reader.GetInt16(2), reader.GetInt64(3),
+        await using var readerDiagnostics5 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentArchiveTransaction.reader.5", token);
+        var reader = readerDiagnostics5.Reader;
+        return await OperationalMetricReportingDiagnostics.ReadAsync(reader, token) ? new((byte[])reader[0], reader.GetInt64(1), reader.GetInt16(2), reader.GetInt64(3),
             reader.GetInt64(4), SqlServerUInt64.Materialize(reader.GetDecimal(5)), (byte[])reader[6], (byte[])reader[7],
             reader.GetString(8), reader.GetInt16(9), (byte[])reader[10], reader.GetByte(11), reader.IsDBNull(12) ? null : reader.GetByte(12),
             reader.IsDBNull(13) ? null : (byte[])reader[13]) : null;
