@@ -25,3 +25,15 @@ The launcher checks the database identity and READ_ONLY mode, builds the selecte
 Report the canonical query directly against `http://127.0.0.1:5080/api/reporting/v1/operational-metrics/production-day-shifts/query`. A 30-second Dashboard timeout is a separate known P0 performance issue, not a startup failure.
 
 This convenience script is **not** a general permission-isolation solution. READ_ONLY is enforced at the database level, but the authenticated SQL identity may be privileged. Use only local investigation restores; never aim it at live production.
+
+## Local current-state machine inventory
+
+The launcher supplies two API-side MTConnect inventory entries, GG-003 (`677b030b-1ede-4a67-82ae-6a494791357f`) and MOXA-001 (`bfa0dc97-9a68-45ed-b189-1dacb7d863f0`). This is **owner registration only**; neither Edge nor an MTConnect poller is started. BaseUri is a syntactically valid local placeholder, not a proxy connection.
+
+The GG-003 device key defaults to `DEWAS-SR-GG-003` (known activity stream `mtconnect:DEWAS-SR-GG-003`). MOXA-001 defaults to `MOXA-001` as a convenience placeholder **not verified against the restored database's authoritative stream key**. Override the keys if the database uses different device identities:
+
+```powershell
+.\scripts\dev\Start-FactoryConnectLocal.ps1 -Gg003DeviceKey 'DEWAS-SR-GG-003' -MoxaDeviceKey '<actual-moxa-device-key>'
+```
+
+After startup, query `/api/machines/v1/{machineId}/current-state` for each machine. A `503` can still indicate an unavailable stable authority cut or a policy mismatch. A `200` with stale/no evidence is not a live machine state. The launcher does not synthesize current-state evidence or change the SQL database.
