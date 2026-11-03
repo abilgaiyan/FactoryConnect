@@ -3,6 +3,7 @@ param(
     [string]$SqlInstance = 'DESKTOP-1PJK2OB\FCINVENTORY',
     [string]$Database = 'FactoryConnect_Gajra_Investigation_20261102',
     [switch]$Dashboard,
+    [switch]$ApiOnly,
     [ValidateRange(1024,65535)][int]$ApiPort = 5080,
     [ValidateRange(1024,65535)][int]$DashboardPort = 5090,
     [string]$ConnectionStringEnvironmentVariable
@@ -52,7 +53,9 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
 }
-if ($Dashboard -and $ApiPort -eq $DashboardPort) { throw 'API and Dashboard ports must differ.' }
+if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
+$startDashboard = -not $ApiOnly
+if ($startDashboard -and $ApiPort -eq $DashboardPort) { throw 'API and Dashboard ports must differ.' }
 
 Add-Type -AssemblyName System.Data
 if ($ConnectionStringEnvironmentVariable) {
@@ -89,13 +92,14 @@ try {
 } finally { $connection.Dispose() }
 
 Assert-PortAvailable $ApiPort
-if ($Dashboard) { Assert-PortAvailable $DashboardPort }
+if ($startDashboard) { Assert-PortAvailable $DashboardPort }
 Write-Host "Target: $actualServer / $actualDb ($updateability)"
 Write-Host 'Building local reporting API...'
 & dotnet build $apiProject --nologo
 if ($LASTEXITCODE -ne 0) { throw 'API build failed.' }
-if ($Dashboard) {
-    & dotnet build $dashboardProject --nologo '-p:BuildDashboardClient=false'
+if ($startDashboard) {
+    Write-Host 'Building Dashboard and React UI (npm ci + npm run build)...'
+    & dotnet build $dashboardProject --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Dashboard build failed.' }
 }
 $apiUrl = "http://127.0.0.1:$ApiPort"
@@ -107,14 +111,14 @@ try {
     } $false
     Wait-Health "$apiUrl/health" $apiProcess 60
     Write-Host "API ready: $apiUrl"
-    if ($Dashboard) {
+    if ($startDashboard) {
         $dashboardProcess = Start-Service $dashboardProject $dashUrl @{
             'Dashboard__ReportingApiBaseAddress' = "$apiUrl/"
             'Dashboard__RequestTimeout' = '00:00:30'
         } $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
         Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
-        Write-Host 'Dashboard UI requires prebuilt static assets; Vite is not launched.'
+        Write-Host "React UI: $dashUrl/ (built and served by Dashboard; Vite not required)"
     }
     Write-Host 'Ctrl+C stops the processes started by this launcher.'
     while ($true) {
