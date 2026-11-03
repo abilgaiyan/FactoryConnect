@@ -144,6 +144,7 @@ try {
             $info.FileName = 'cmd.exe'
             $info.WorkingDirectory = $clientDirectory
             $info.UseShellExecute = $false
+            $info.EnvironmentVariables['FACTORYCONNECT_DASHBOARD_DEV_PROXY'] = $dashUrl
             $info.Arguments = "/d /s /c `"npm.cmd run dev -- --host 127.0.0.1 --port $UiPort --strictPort`""
             $vite = [System.Diagnostics.Process]::Start($info)
             if ($null -eq $vite) { throw 'Could not start Vite.' }
