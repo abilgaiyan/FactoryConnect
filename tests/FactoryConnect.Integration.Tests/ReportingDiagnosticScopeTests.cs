@@ -48,12 +48,12 @@ public sealed class ReportingDiagnosticScopeTests
         };
         ActivitySource.AddActivityListener(listener);
         var authoritative = new InvalidDataException("verification failed");
-        var observed = Assert.Throws<InvalidDataException>(() =>
+        var observed = Assert.Throws<InvalidDataException>((Action)(() =>
         {
             using var scope = OperationalMetricReportingDiagnostics.Start("test.failure");
             try { throw authoritative; }
             catch (InvalidDataException error) { scope.Fail(error); throw; }
-        });
+        }));
         Assert.Same(authoritative, observed);
     }
     [Fact]
