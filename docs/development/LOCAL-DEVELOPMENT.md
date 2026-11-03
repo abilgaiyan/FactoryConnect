@@ -16,7 +16,7 @@ Override the target only when needed:
 
 Add `-Dashboard` to run the Dashboard gateway on port 5090, with its 30-second reporting timeout preserved. The API binds to 127.0.0.1:5080. An existing Dashboard client bundle is needed for browser UI; otherwise call the reporting API directly.
 
-**Requirements:** Windows PowerShell 7+, .NET 10 SDK, a restored compatible database in SQL Server READ_ONLY mode, and Windows integrated SQL authentication. For another SQL identity, set a connection string in your shell's environment and pass `-ConnectionStringEnvironmentVariable 'MY_LOCAL_SQL_CONNECTION'`; never paste credentials into the script invocation.
+**Requirements:** Windows PowerShell 5.1 or PowerShell 7+, .NET 10 SDK, a restored compatible database in SQL Server READ_ONLY mode, and Windows integrated SQL authentication. For another SQL identity, set a connection string in your shell's environment and pass `-ConnectionStringEnvironmentVariable 'MY_LOCAL_SQL_CONNECTION'`; never paste credentials into the script invocation.
 
 The launcher checks the database identity and READ_ONLY mode, builds the selected project(s), starts only the selected local processes, and waits for basic health. `/health` is a startup signal, **not** proof that report evidence is complete. Ctrl+C ends the session. If the API fails at schema compatibility or the SQL shared migration lock, review console diagnostics; do not bypass the check or write to the database.
 
