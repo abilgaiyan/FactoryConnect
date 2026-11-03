@@ -37,3 +37,13 @@ The GG-003 device key defaults to `DEWAS-SR-GG-003` (known activity stream `mtco
 ```
 
 After startup, query `/api/machines/v1/{machineId}/current-state` for each machine. A `503` can still indicate an unavailable stable authority cut or a policy mismatch. A `200` with stale/no evidence is not a live machine state. The launcher does not synthesize current-state evidence or change the SQL database.
+
+## Development-only Supervisor Desk UI
+
+To launch the API, Dashboard gateway, and Vite development UI together against the restored database:
+
+```powershell
+.\scripts\dev\Start-FactoryConnectLocal.ps1 -Database 'FactoryConnect_Gajra_Demo_20261030' -DevUi
+```
+
+Open `http://127.0.0.1:5173/supervisor-preview`. The `-DevUi` switch starts a separate Vite process on loopback and proxies `/api`, `/dashboard`, and `/health` to the selected local Dashboard gateway. Use `-UiPort` to override Vite's port. `-ApiOnly` and `-DevUi` cannot be combined. The production-mode React bundle served on port 5090 still excludes the sample supervisor preview. Vite's sample workflows are not authenticated or durable and must not be used for factory operations. Ctrl+C stops the processes owned by the launcher.
