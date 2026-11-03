@@ -4,6 +4,8 @@ param(
     [string]$Database = 'FactoryConnect_Gajra_Investigation_20261102',
     [switch]$Dashboard,
     [switch]$ApiOnly,
+    [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
+    [string]$MoxaDeviceKey = 'MOXA-001',
     [ValidateRange(1024,65535)][int]$ApiPort = 5080,
     [ValidateRange(1024,65535)][int]$DashboardPort = 5090,
     [string]$ConnectionStringEnvironmentVariable
@@ -94,6 +96,7 @@ try {
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
 Write-Host "Target: $actualServer / $actualDb ($updateability)"
+Write-Host "Current-state inventory: GG-003 ($Gg003DeviceKey), MOXA-001 ($MoxaDeviceKey); no polling enabled."
 Write-Host 'Building local reporting API...'
 & dotnet build $apiProject --nologo
 if ($LASTEXITCODE -ne 0) { throw 'API build failed.' }
@@ -108,6 +111,16 @@ try {
     $apiProcess = Start-Service $apiProject $apiUrl @{
         'Persistence__Provider' = 'SqlServer'
         'PersistenceProviders__SqlServer__ConnectionString' = $connectionString
+        'MTConnect__Machines__0__MachineId' = '677b030b-1ede-4a67-82ae-6a494791357f'
+        'MTConnect__Machines__0__DeviceKey' = $Gg003DeviceKey
+        'MTConnect__Machines__0__BaseUri' = 'http://127.0.0.1:5000'
+        'MTConnect__Machines__0__FromSequence' = '1'
+        'MTConnect__Machines__0__PollingInterval' = '00:00:01'
+        'MTConnect__Machines__1__MachineId' = 'bfa0dc97-9a68-45ed-b189-1dacb7d863f0'
+        'MTConnect__Machines__1__DeviceKey' = $MoxaDeviceKey
+        'MTConnect__Machines__1__BaseUri' = 'http://127.0.0.1:5000'
+        'MTConnect__Machines__1__FromSequence' = '1'
+        'MTConnect__Machines__1__PollingInterval' = '00:00:01'
     } $false
     Wait-Health "$apiUrl/health" $apiProcess 60
     Write-Host "API ready: $apiUrl"
