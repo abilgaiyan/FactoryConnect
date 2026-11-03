@@ -65,6 +65,7 @@ export interface CalculatedMetricDisplay {
   readonly value: MetricValue;
   readonly unit: string;
   readonly sourceRevision: MetricSourceRevision;
+  readonly reportItem?: OperationalMetricItem;
 }
 
 export interface UnavailableMetricDisplay {
@@ -74,6 +75,7 @@ export interface UnavailableMetricDisplay {
   readonly reasonCode: string | null;
   readonly reasonOperandName: string | null;
   readonly sourceRevision: MetricSourceRevision;
+  readonly reportItem?: OperationalMetricItem;
 }
 
 export interface InsufficientEvidenceMetricDisplay {
@@ -83,6 +85,7 @@ export interface InsufficientEvidenceMetricDisplay {
   readonly reasonCode: string | null;
   readonly reasonOperandName: string | null;
   readonly sourceRevision: MetricSourceRevision;
+  readonly reportItem?: OperationalMetricItem;
 }
 
 export interface MissingMetricDisplay {
@@ -272,6 +275,7 @@ function mapAuthoritativeMetric(
         value: item.value,
         unit: item.unit,
         sourceRevision: item.sourceRevision,
+        reportItem: item,
       };
 
     case "unavailable":
@@ -286,6 +290,7 @@ function mapAuthoritativeMetric(
         reasonCode: item.reasonCode,
         reasonOperandName: item.reasonOperandName,
         sourceRevision: item.sourceRevision,
+        reportItem: item,
       };
 
     case "insufficient-evidence":
@@ -300,6 +305,7 @@ function mapAuthoritativeMetric(
         reasonCode: item.reasonCode,
         reasonOperandName: item.reasonOperandName,
         sourceRevision: item.sourceRevision,
+        reportItem: item,
       };
 
     default:

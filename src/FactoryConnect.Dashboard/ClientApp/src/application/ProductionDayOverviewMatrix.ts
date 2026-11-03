@@ -1,5 +1,6 @@
 import { createElement, type ReactElement } from "react";
 
+import { OeeExplanation } from "./OeeExplanation.ts";
 import { formatCalculatedMetric } from "./production-day-metric-formatting.ts";
 import type {
   ProductionDayMetricDisplay,
@@ -36,16 +37,24 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
         createElement(
           "tbody",
           null,
-          ...group.machines.map((machine) => createElement(
-            "tr",
-            { key: JSON.stringify([machine.processorId, machine.machineId]) },
-            createElement("th", { scope: "row" }, machine.displayName),
-            metricCell(machine.metrics.availability),
-            metricCell(machine.metrics.utilization),
-            metricCell(machine.metrics.performance),
-            metricCell(machine.metrics.quality),
-            metricCell(machine.metrics.oee),
-          )),
+          ...group.machines.flatMap((machine) => {
+            const key = JSON.stringify([machine.processorId, machine.machineId]);
+            return [
+              createElement(
+                "tr",
+                { key },
+                createElement("th", { scope: "row" }, machine.displayName),
+                metricCell(machine.metrics.availability),
+                metricCell(machine.metrics.utilization),
+                metricCell(machine.metrics.performance),
+                metricCell(machine.metrics.quality),
+                metricCell(machine.metrics.oee),
+              ),
+              createElement("tr", { key: `${key}:details`, className: "oee-explanation-row" },
+                createElement("td", { colSpan: 6, style: { padding: "0.75rem 1rem" } },
+                  createElement(OeeExplanation, { machine, productionDay: model.productionDay }))),
+            ];
+          }),
         ),
       ),
     )),

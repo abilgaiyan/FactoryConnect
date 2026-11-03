@@ -160,6 +160,7 @@ test("production-day overview modules use only the exact approved dependency set
     "src/application/production-day-navigation.ts",
     "src/application/ProductionDayOverviewSurface.ts",
     "src/application/ProductionDayOverviewMatrix.ts",
+    "src/application/OeeExplanation.ts",
   ];
 
   const allowedDependencies = new Set([
@@ -178,6 +179,7 @@ test("production-day overview modules use only the exact approved dependency set
     "./use-production-day-overview.ts",
     "./production-day-metric-formatting.ts",
     "./ProductionDayOverviewMatrix.ts",
+    "./OeeExplanation.ts",
   ]);
 
   for (const modulePath of modules) {

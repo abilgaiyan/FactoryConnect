@@ -200,6 +200,7 @@ test("unavailable and insufficient-evidence preserve reason evidence and source 
     reasonCode: "planned-time-missing",
     reasonOperandName: "PlannedOperatingTime",
     sourceRevision: unavailableRevision,
+    reportItem: results[0],
   });
   assert.deepEqual(overview.metrics.quality, {
     kind: "insufficient-evidence",
@@ -208,6 +209,7 @@ test("unavailable and insufficient-evidence preserve reason evidence and source 
     reasonCode: "part-count-missing",
     reasonOperandName: "GoodParts",
     sourceRevision: insufficientRevision,
+    reportItem: results[1],
   });
 });
 
