@@ -68,20 +68,20 @@ internal static partial class ReportingTimingInstrumentation
         void Write(Activity activity, string phase)
         {
             if (!logger.IsEnabled(LogLevel.Information)) return;
+            var traceId = activity.TraceId.ToString();
+            var spanId = activity.SpanId.ToString();
+            var parentSpanId = activity.ParentSpanId.ToString();
             if (phase == "stopped")
             {
                 var metadata = string.Join(";", activity.TagObjects
                     .Where(static tag => tag.Key.StartsWith("diagnostic.", StringComparison.Ordinal))
                     .Select(static tag => $"{tag.Key}={Convert.ToString(tag.Value, System.Globalization.CultureInfo.InvariantCulture)}"));
                 if (includeIdentities && activity.GetTagItem("restricted.identity.canonical") is string canonical)
-                    RestrictedIdentity(logger, activity.TraceId.ToString(), activity.SpanId.ToString(), canonical);
-                DiagnosticMetadata(logger, activity.OperationName, activity.TraceId.ToString(),
-                    activity.SpanId.ToString(), activity.ParentSpanId.ToString(), metadata,
-                    FindTag(activity, "diagnostic.capture.truncated"));
+                    RestrictedIdentity(logger, traceId, spanId, canonical);
+                var captureTruncated = FindTag(activity, "diagnostic.capture.truncated");
+                DiagnosticMetadata(logger, activity.OperationName, traceId,
+                    spanId, parentSpanId, metadata, captureTruncated);
             }
-            var traceId = activity.TraceId.ToString();
-            var spanId = activity.SpanId.ToString();
-            var parentSpanId = activity.ParentSpanId.ToString();
             var processor = FindTag(activity, "processor.id");
             var revision = FindTag(activity, "revision.position");
             var inputCount = activity.GetTagItem("input.count");
