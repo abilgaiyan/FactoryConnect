@@ -22,7 +22,7 @@ export function OeeExplanation({ machine, productionDay }: {
       h("p", null, "Context: unpartitioned. These details belong to the displayed report, including while it is refreshing."),
       ...(["availability", "performance", "quality", "oee"] as const).map(key =>
         metricExplanation(key, machine.metrics[key])),
-      h("p", null, "Operand values and underlying evidence references are not supplied by this reporting response. Calculation agreement has not been checked."),
+      h("p", null, "Substituted operand values, underlying evidence references and independent formula-evaluation evidence are not supplied by this reporting response. Calculation agreement has not been checked."),
       h("strong", null, "Evidence verification not established"),
       h("p", null, "A calculated status does not establish historical completeness. Missing values are not zero. OEE requires supported Availability, Performance and Quality results."),
     ));
@@ -37,8 +37,10 @@ function metricExplanation(key: keyof typeof formulas, metric: ProductionDayMetr
     : position === undefined ? "Not supplied" : String(position);
   return h("section", { key },
     h("h4", null, key === "oee" ? "OEE" : key[0]!.toUpperCase() + key.slice(1)),
-    h("p", null, `Formula (definition ${metric.version}): ${formulas[key]}`),
-    h("p", null, `Reported status: ${metric.kind}`),
+    h("p", null, `Built-in formula reference (definition ${metric.version}): ${formulas[key]}`),
+    h("p", null, metric.kind === "missing"
+      ? "Metric not present in the displayed report."
+      : `Reported status: ${metric.kind}`),
     h("p", null, `Reported value: ${metric.kind === "calculated" ? `${String(metric.value)} ${metric.unit}` : "—"}`),
     metric.kind === "unavailable" || metric.kind === "insufficient-evidence"
       ? h("p", null, `Reported reason: ${metric.reasonCode ?? "Not supplied"}; operand: ${metric.reasonOperandName ?? "Not supplied"}`) : null,

@@ -19,9 +19,12 @@ test('explanation preserves zero, exact UInt64 checkpoint and missing reasons wi
   assert.match(html, /Reported value: 0 ratio/);
   assert.match(html, /MissingReferenceTime/);
   assert.match(html, /ProductionReferenceTime/);
-  assert.match(html, /Reported status: missing/);
+  assert.match(html, /Metric not present in the displayed report/);
+  assert.doesNotMatch(html, /Reported status: missing/);
+  assert.match(html, /Reported status: insufficient-evidence/);
+  assert.match(html, /Built-in formula reference \(definition 1.0\)/);
   assert.match(html, /Evidence verification not established/);
-  assert.match(html, /Operand values and underlying evidence references are not supplied/);
+  assert.match(html, /independent formula-evaluation evidence are not supplied/);
   assert.match(html, /2026-11-02/);
   assert.doesNotMatch(html, /80%|360|450/);
 });
