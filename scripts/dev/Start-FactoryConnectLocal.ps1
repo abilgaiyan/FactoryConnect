@@ -67,7 +67,7 @@ if ($ConnectionStringEnvironmentVariable) {
     $builder['Initial Catalog'] = $Database
     $builder['Integrated Security'] = $true
     $builder['Encrypt'] = $true
-    $builder['Trust Server Certificate'] = $true
+    $builder['TrustServerCertificate'] = $true
 }
 $connectionString = $builder.ConnectionString
 $connection = [System.Data.SqlClient.SqlConnection]::new($connectionString)
