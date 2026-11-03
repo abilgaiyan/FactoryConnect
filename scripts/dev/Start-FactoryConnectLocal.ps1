@@ -4,6 +4,8 @@ param(
     [string]$Database = 'FactoryConnect_Gajra_Investigation_20261102',
     [switch]$Dashboard,
     [switch]$ApiOnly,
+    [switch]$DevUi,
+    [ValidateRange(1024,65535)][int]$UiPort = 5173,
     [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
     [string]$MoxaDeviceKey = 'MOXA-001',
     [ValidateRange(1024,65535)][int]$ApiPort = 5080,
@@ -55,8 +57,10 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
 }
+if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
 $startDashboard = -not $ApiOnly
+if ($DevUi -and ($UiPort -eq $ApiPort -or $UiPort -eq $DashboardPort)) { throw 'Vite, API and Dashboard ports must differ.' }
 if ($startDashboard -and $ApiPort -eq $DashboardPort) { throw 'API and Dashboard ports must differ.' }
 
 Add-Type -AssemblyName System.Data
@@ -95,6 +99,7 @@ try {
 
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
+if ($DevUi) { Assert-PortAvailable $UiPort }
 Write-Host "Target: $actualServer / $actualDb ($updateability)"
 Write-Host "Current-state inventory: GG-003 ($Gg003DeviceKey), MOXA-001 ($MoxaDeviceKey); no polling enabled."
 Write-Host 'Building local reporting API...'
@@ -107,6 +112,7 @@ if ($startDashboard) {
 }
 $apiUrl = "http://127.0.0.1:$ApiPort"
 $dashUrl = "http://127.0.0.1:$DashboardPort"
+$uiUrl = "http://127.0.0.1:$UiPort"
 try {
     $apiProcess = Start-Service $apiProject $apiUrl @{
         'Persistence__Provider' = 'SqlServer'
@@ -131,7 +137,21 @@ try {
         } $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
         Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
-        Write-Host "React UI: $dashUrl/ (built and served by Dashboard; Vite not required)"
+        Write-Host "React UI (built): $dashUrl/"
+        if ($DevUi) {
+            $clientDirectory = Join-Path $root 'src/FactoryConnect.Dashboard/ClientApp'
+            $info = [System.Diagnostics.ProcessStartInfo]::new()
+            $info.FileName = 'cmd.exe'
+            $info.WorkingDirectory = $clientDirectory
+            $info.UseShellExecute = $false
+            $info.Arguments = "/d /s /c `"npm.cmd run dev -- --host 127.0.0.1 --port $UiPort --strictPort`""
+            $vite = [System.Diagnostics.Process]::Start($info)
+            if ($null -eq $vite) { throw 'Could not start Vite.' }
+            $owned.Add($vite)
+            Wait-Health "$uiUrl/" $vite 45
+            Write-Host "Development UI (Supervisor Desk preview): $uiUrl/supervisor-preview"
+            Write-Host 'Vite is development-only. The built Dashboard UI remains separate on port 5090.'
+        }
     }
     Write-Host 'Ctrl+C stops the processes started by this launcher.'
     while ($true) {
