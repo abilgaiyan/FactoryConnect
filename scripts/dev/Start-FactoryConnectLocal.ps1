@@ -35,14 +35,15 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
     $info.FileName = 'dotnet'
     $info.WorkingDirectory = $root
     $info.UseShellExecute = $false
-    foreach ($argument in @('run','--no-build','--no-launch-profile','--project',$project)) {
-        [void]$info.ArgumentList.Add($argument)
-    }
-    if ($skipClientBuild) { [void]$info.ArgumentList.Add('-p:BuildDashboardClient=false') }
-    foreach ($argument in @('--','--urls',$url)) { [void]$info.ArgumentList.Add($argument) }
-    $info.Environment['ASPNETCORE_ENVIRONMENT'] = 'Development'
-    $info.Environment['DOTNET_ENVIRONMENT'] = 'Development'
-    foreach ($name in $envOverrides.Keys) { $info.Environment[$name] = [string]$envOverrides[$name] }
+    # ProcessStartInfo.ArgumentList and .Environment are unavailable in Windows PowerShell 5.1.
+    # Only trusted repository paths and locally constructed URLs are placed in arguments.
+    $quotedProject = '"' + $project.Replace('"', '\\"') + '"'
+    $info.Arguments = "run --no-build --no-launch-profile --project $quotedProject"
+    if ($skipClientBuild) { $info.Arguments += ' -p:BuildDashboardClient=false' }
+    $info.Arguments += " -- --urls $url"
+    $info.EnvironmentVariables['ASPNETCORE_ENVIRONMENT'] = 'Development'
+    $info.EnvironmentVariables['DOTNET_ENVIRONMENT'] = 'Development'
+    foreach ($name in $envOverrides.Keys) { $info.EnvironmentVariables[$name] = [string]$envOverrides[$name] }
     $process = [System.Diagnostics.Process]::Start($info)
     if ($null -eq $process) { throw "Could not start $project" }
     $owned.Add($process)
@@ -125,7 +126,11 @@ try {
 } finally {
     foreach ($process in $owned) {
         try {
-            if (-not $process.HasExited) { $process.Kill($true); [void]$process.WaitForExit(5000) }
+            if (-not $process.HasExited) {
+                # taskkill /T terminates only the process tree rooted at the PID we started.
+                & taskkill.exe /PID $process.Id /T /F | Out-Null
+                [void]$process.WaitForExit(5000)
+            }
         } catch { Write-Warning "Cleanup failed for owned process PID $($process.Id)." }
         $process.Dispose()
     }
