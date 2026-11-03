@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { after, test } from 'node:test';
+import { after, beforeEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import React, { act } from 'react';
 import { createServer } from 'vite';
@@ -7,6 +7,9 @@ import { mountInDom } from './dom-test-harness.mjs';
 const vite = await createServer({root: fileURLToPath(new URL('../', import.meta.url)), server: {middlewareMode:true}, appType:'custom', logLevel:'silent'});
 const { MachineCounterReportPage } = await vite.ssrLoadModule('/src/presentation/MachineCounterReportPage.tsx');
 after(() => vite.close());
+// Keep the page's initial IST date within the fixed October fixture intervals.
+// Mock Date only so discovery cancellation and request timeouts still use real timers.
+beforeEach(t => t.mock.timers.enable({apis:['Date'], now:Date.parse('2026-10-11T00:00:00Z')}));
 const machineId = 'de2fd552-9bc5-45ed-9a7c-0c4a2cd3e9ed';
 function fixture(selection, count = 121) {
   return {machineId, streamKey:'mtconnect:M01', throughPosition:'200', acquisitionRevision:'2', ...selection,
