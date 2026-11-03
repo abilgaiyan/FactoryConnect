@@ -36,12 +36,6 @@ export function OeeExplanation({ machine, productionDay }: {
 }
 
 function metricExplanation(key: keyof typeof formulas, metric: ProductionDayMetricDisplay): ReactElement {
-  const item = metric.kind === "missing" ? undefined : metric.reportItem;
-  const revision = metric.kind === "missing" ? undefined : metric.sourceRevision;
-  const position = revision?.position;
-  const exactPosition = typeof position === "number" && !Number.isSafeInteger(position)
-    ? "Exact identity unavailable (unsafe numeric position)"
-    : position === undefined ? "Not supplied" : String(position);
   return h("section", { key },
     h("h4", null, key === "oee" ? "OEE" : key[0]!.toUpperCase() + key.slice(1)),
     h("p", null, `Built-in formula reference (definition ${metric.version}): ${formulas[key]}`),
