@@ -15,11 +15,16 @@ internal static class OperationalMetricReportingDiagnostics
     internal sealed class Scope : IDisposable
     {
         private Activity? _activity;
+        private readonly ReportingDiagnosticSession.Attempt.Operation? _operation;
+        private readonly ReportingDiagnosticSession.Attempt? _attempt;
+        private int _disposed;
         private string _outcome = "Completed";
-        internal Scope(Activity? activity) => _activity = activity;
+        internal Scope(Activity? activity, ReportingDiagnosticSession.Attempt.Operation? operation = null,
+            ReportingDiagnosticSession.Attempt? attempt = null)
+        { _activity = activity; _operation = operation; _attempt = attempt; }
         internal void Tag(string key, object? value)
         {
-            try { _activity?.SetTag(key, value); } catch { /* Diagnostics cannot change verification. */ }
+            try { _attempt?.Tag(key, value); _activity?.SetTag(key, value); } catch { /* Diagnostics cannot change verification. */ }
         }
         internal bool IncludeIdentity
         {
@@ -39,6 +44,9 @@ internal static class OperationalMetricReportingDiagnostics
                 ? "Cancelled" : "Failed";
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            try { _operation?.Finish(_outcome); }
+            catch { _attempt?.Degrade(); }
             try { _activity?.SetTag("diagnostic.outcome", _outcome); _activity?.Dispose(); }
             catch { /* Preserve authoritative result/exception. */ }
             finally { _activity = null; }
@@ -47,8 +55,26 @@ internal static class OperationalMetricReportingDiagnostics
 
     internal static Scope Start(string operation)
     {
+        var attempt = ReportingDiagnosticSession.CurrentAttempt;
+        ReportingDiagnosticSession.Attempt.Operation? accounting = null;
         try
         {
+            accounting = attempt?.Start(operation);
+            var session = ReportingDiagnosticSession.Current;
+            if (session is not null)
+            {
+                var admitted = session.Admit(attempt?.Processor);
+                attempt?.Detail(admitted);
+                if (!admitted)
+                {
+                    var captureRoot = Activity.Current;
+                    while (captureRoot?.Parent is { } captureParent) captureRoot = captureParent;
+                    captureRoot?.SetTag("diagnostic.capture.truncated", true);
+                    return new(null, accounting, attempt);
+                }
+                // Admission is consumed even if sampling declines Activity creation.
+                return new(Source.StartActivity(operation), accounting, attempt);
+            }
             if (!Source.HasListeners()) return new(null);
             var root = Activity.Current;
             while (root?.Parent is { } parent) root = parent;
@@ -59,7 +85,7 @@ internal static class OperationalMetricReportingDiagnostics
             }
             return new(Source.StartActivity(operation));
         }
-        catch { return new(null); }
+        catch { attempt?.Degrade(); return new(null, accounting, attempt); }
     }
 
     internal static async Task OpenAsync(SqlConnection connection, CancellationToken token)
@@ -133,6 +159,7 @@ internal static class OperationalMetricReportingDiagnostics
     {
         try
         {
+            ReportingDiagnosticSession.CurrentAttempt?.Checkpoint(cut);
             if (!Source.HasListeners()) return;
             using var bytes = new MemoryStream();
             using (var writer = new BinaryWriter(bytes, System.Text.Encoding.UTF8, leaveOpen: true))

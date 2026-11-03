@@ -22,6 +22,9 @@ internal static class SqlServerOperationalMetricProjectionProcessorGate
         OperationalMetricProjectionProcessorId processorId, OperationalMetricProjectionProcessorGateMode mode,
         CancellationToken cancellationToken, int timeoutMilliseconds = DefaultTimeoutMilliseconds)
     {
+        using var diagnostic = OperationalMetricReportingDiagnostics.Start("reporting.gate.wait");
+        try
+        {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(transaction);
         ArgumentOutOfRangeException.ThrowIfNegative(timeoutMilliseconds);
@@ -47,5 +50,7 @@ internal static class SqlServerOperationalMetricProjectionProcessorGate
         if (result == -2) throw new OperationCanceledException("Processor gate acquisition cancelled.", cancellationToken);
         if (result == -1) throw new TimeoutException("Processor gate acquisition timed out.");
         if (result < 0) throw new InvalidOperationException($"Processor gate acquisition failed with return code {result}.");
+        }
+        catch (Exception error) { diagnostic.Fail(error, cancellationToken); throw; }
     }
 }

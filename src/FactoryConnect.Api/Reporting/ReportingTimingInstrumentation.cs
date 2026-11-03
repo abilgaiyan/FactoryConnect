@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FactoryConnect.Persistence.SqlServer;
 
 namespace FactoryConnect.Api.Reporting;
 
@@ -9,6 +10,8 @@ internal static partial class ReportingTimingInstrumentation
     {
         if (!app.Configuration.GetValue<bool>("ReportingDiagnostics:Enabled")) return;
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FactoryConnect.Reporting.Timing");
+        var summaryLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FactoryConnect.Reporting.Summary");
+        var failureLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FactoryConnect.Reporting.SummaryFailure");
         var includeIdentities = app.Configuration.GetValue<bool>("ReportingDiagnostics:IncludeCanonicalIdentities");
         var listener = new ActivityListener
         {
@@ -38,6 +41,21 @@ internal static partial class ReportingTimingInstrumentation
                 await next(context);
                 return;
             }
+            using var capture = new ReportingDiagnosticSession(
+                record =>
+                {
+                    if (!summaryLogger.IsEnabled(LogLevel.Information)) throw new InvalidOperationException("Summary sink disabled.");
+                    VerificationSummary(summaryLogger, record);
+                },
+                record =>
+                {
+                    if (!failureLogger.IsEnabled(LogLevel.Warning)) throw new InvalidOperationException("Fallback sink disabled.");
+                    SummaryFailure(failureLogger, record);
+                },
+                record =>
+                {
+                    if (summaryLogger.IsEnabled(LogLevel.Information)) SummaryAcknowledgement(summaryLogger, record);
+                });
             var started = Stopwatch.GetTimestamp();
             var traceId = Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
             using var scope = logger.BeginScope(new Dictionary<string, object?>
@@ -125,6 +143,18 @@ internal static partial class ReportingTimingInstrumentation
     [LoggerMessage(EventId = 6, Level = LogLevel.Information, SkipEnabledCheck = true,
         Message = "Reporting restricted identity TraceId={TraceId} SpanId={SpanId} Canonical={Canonical}")]
     private static partial void RestrictedIdentity(ILogger logger, string traceId, string spanId, string canonical);
+
+    [LoggerMessage(EventId = 7, Level = LogLevel.Information, SkipEnabledCheck = true,
+        Message = "Reporting verification summary {Record}")]
+    private static partial void VerificationSummary(ILogger logger, string record);
+
+    [LoggerMessage(EventId = 8, Level = LogLevel.Warning, SkipEnabledCheck = true,
+        Message = "Reporting summary failure {Record}")]
+    private static partial void SummaryFailure(ILogger logger, string record);
+
+    [LoggerMessage(EventId = 9, Level = LogLevel.Information, SkipEnabledCheck = true,
+        Message = "Reporting summary acknowledgement {Record}")]
+    private static partial void SummaryAcknowledgement(ILogger logger, string record);
 
     private static object? FindTag(Activity? activity, string key)
     {

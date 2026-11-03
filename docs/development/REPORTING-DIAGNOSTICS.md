@@ -53,3 +53,45 @@ response, code SHA and database identity securely. Cancelled Dashboard traces
 are partial work. Do not add nested durations or call residual elapsed CPU.
 Record logical reads/waits separately through approved SQL Server capture.
 Do not clear caches, restart SQL or mutate application data.
+
+## v0.3 summary amendment
+
+With ReportingDiagnostics enabled, the API owns a ReportingDiagnosticSession.
+Validated source selections reserve details for up to eight distinct processors
+in their existing source order. Each receives 256 start-attempt admissions;
+2048 additional admissions are shared, including non-processor details. Extra
+processors are summary-only. Unknown populations reserve the first eight seen.
+Retries share request-level capacity but have independent attempt IDs/counters.
+No reservation is borrowed; shared admissions follow actual call order. Sampling
+and emission failure do not refund an admission. Existing direct ActivitySource
+spans are outside this ceiling: 4096 is NOT a limit on total log records.
+
+Event 7, category FactoryConnect.Reporting.Summary, emits one terminal record
+per stable-read attempt, independently of detail admission and Activity sampling.
+Event 8, category FactoryConnect.Reporting.SummaryFailure, is the separate bounded
+fallback. These are independently configurable channels but may share underlying
+logging providers; neither promises durable storage. Event 9 acknowledges sink
+acceptance separately from summary content. If all channels fail, delivery cannot
+be established. Logger disablement is not treated as successful sink acceptance.
+No diagnostic failure replaces the reporting result/exception.
+
+Started/Completed/Failed/Cancelled/Active counts are collected for rows, root
+reconstructions, SQL execution, consumption, cleanup, gates and verification.
+RowsInterrupted = Failed + Cancelled + Active. EnumerationCompleted is set only
+after the retained-row loop (or a verified empty publication). SQL coverage stays
+Unknown until positive command-site coverage is independently demonstrated.
+Elapsed category totals overlap; they are not exclusive wall-clock phases.
+Operations still active at finalization produce Degraded integrity; collection
+faults produce Unknown. Known counters remain. Active operation identities are
+bounded to 64; truncation is explicit. Distinct checkpoints are bounded to 4096;
+overflow marks the cardinality truncated and summary integrity Unknown.
+Reference-time validation/load and cache-hit counters update as operations occur.
+Pre-attempt roster/connection activity is not included in processor-attempt SQL
+totals. Summary counters cover instrumented command sites, not all SQL implicitly.
+
+Disabling ReportingDiagnostics disables session creation. No SQL, isolation,
+verification membership or reporting timeout changes are part of the amendment.
+Added database-free tests cover budget exhaustion/fairness, known/unknown ninth
+processor, concurrent admission, retry isolation, active outcomes, cancellation,
+collector failure, primary/fallback failure and no-session behavior. Compilation,
+.NET/SQL integration checks and overhead/equivalence captures remain required.

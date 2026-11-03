@@ -56,13 +56,17 @@ internal static class SqlContainmentVerifiedRead
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         var id = (long)header["OperationalMetricProjectionProcessorRowId"]!;
         var source = await SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(connection, transaction, processor, token);
+        if (source is not null) ReportingDiagnosticSession.CurrentAttempt?.Publication(source.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var retained = await Query("retained.inventory", "SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id);
+        diagnostic.Tag("diagnostic.rows.total", retained.Count);
         var manifest = (await Query("manifest.inventory", "SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
             .Select(r => (long)r["OperationalMetricProjectionRowId"]!).ToArray();
         var inventory = await Query("archive.inventory", "SELECT ResultId,SourceRevisionPosition FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY ResultId;", id);
         if (source is null)
         {
             if (retained.Count != 0 || manifest.Length != 0 || inventory.Count != 0) throw Integrity("Publication state exists without its checkpoint.");
+            diagnostic.Tag("diagnostic.rows.total", 0);
+            ReportingDiagnosticSession.CurrentAttempt?.EnumerationFinished();
             return new Publication([], new HashSet<OperationalMetricEvaluationKey>());
         }
         if (processor != AvailabilityContainmentV1.ProjectionProcessorId(source.StreamId.MachineId)) throw Integrity("Containment identity does not bind the exact source machine.");
@@ -77,6 +81,7 @@ internal static class SqlContainmentVerifiedRead
         var referenceTimeReads = new SqlContainmentReportingReferenceTimeScope(connection, transaction);
         var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction, referenceTimeReads);
         var projections = new List<OperationalMetricProjection>(); var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
+        ReportingDiagnosticSession.CurrentAttempt?.Publication(source.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var visitedRows = 0;
         var completedRows = 0;
         diagnostic.Tag("diagnostic.rows.total", retained.Count);
@@ -131,6 +136,8 @@ internal static class SqlContainmentVerifiedRead
                 diagnostic.Tag("diagnostic.rows.interrupted", visitedRows - completedRows);
             }
         }
+        ReportingDiagnosticSession.CurrentAttempt?.EnumerationFinished();
+        ReportingDiagnosticSession.CurrentAttempt?.ReferenceStats(referenceTimeReads.ReferenceTimeAuthorityValidationExecutions, referenceTimeReads.CacheHits);
         verificationTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations);
         verificationTiming?.SetTag("ReferenceTimeAuthorityValidationExecutions", referenceTimeReads.ReferenceTimeAuthorityValidationExecutions);
         verificationTiming?.SetTag("ReferenceTimeAuthorityCacheHits", referenceTimeReads.CacheHits);
