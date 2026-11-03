@@ -2,7 +2,13 @@
 
 Use this launcher to run the **API** (and optionally Dashboard gateway) against a **physically READ_ONLY** restored SQL Server database. It does not start Edge, MTConnect polling, migrations, fixtures or Vite. It does not modify tracked appsettings files.
 
-From the repository root:
+From the repository root, use the defaults (SQL instance `DESKTOP-1PJK2OB\FCINVENTORY` and database `FactoryConnect_Gajra_Investigation_20261102`):
+
+```powershell
+.\scripts\dev\Start-FactoryConnectLocal.ps1
+```
+
+Override the target only when needed:
 
 ```powershell
 .\scripts\dev\Start-FactoryConnectLocal.ps1 -SqlInstance 'DESKTOP-1PJK2OB\FCINVENTORY' -Database 'FactoryConnect_Gajra_Investigation_20261102'
