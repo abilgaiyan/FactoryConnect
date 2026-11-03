@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$SqlInstance,
-    [Parameter(Mandatory)][string]$Database,
+    [string]$SqlInstance = 'DESKTOP-1PJK2OB\FCINVENTORY',
+    [string]$Database = 'FactoryConnect_Gajra_Investigation_20261102',
     [switch]$Dashboard,
     [ValidateRange(1024,65535)][int]$ApiPort = 5080,
     [ValidateRange(1024,65535)][int]$DashboardPort = 5090,
