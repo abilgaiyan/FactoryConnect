@@ -1,5 +1,6 @@
 import { createElement, type ReactElement } from "react";
 
+import { OeeExplanation } from "./OeeExplanation.ts";
 import { formatCalculatedMetric } from "./production-day-metric-formatting.ts";
 import type {
   ProductionDayMetricDisplay,
@@ -44,7 +45,8 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
             metricCell(machine.metrics.utilization),
             metricCell(machine.metrics.performance),
             metricCell(machine.metrics.quality),
-            metricCell(machine.metrics.oee),
+            createElement("td", { key: "oee" }, metricContent(machine.metrics.oee),
+              createElement(OeeExplanation, { machine, productionDay: model.productionDay })),
           )),
         ),
       ),
