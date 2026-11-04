@@ -17,6 +17,7 @@ internal sealed class SqlContainmentReportingReferenceTimeScope
     internal SqlContainmentReportingReferenceTimeScope(SqlConnection connection, SqlTransaction transaction)
     {
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
+        ReportingDiagnosticSession.CurrentAttempt?.ReferenceStats(0, 0);
         _connection = connection;
         _transaction = transaction;
     }
@@ -57,9 +58,11 @@ internal sealed class SqlContainmentReportingReferenceTimeScope
                 cancellationToken.ThrowIfCancellationRequested();
                 cached.RequireOwner(connection, transaction, cut);
                 CacheHits++;
+                ReportingDiagnosticSession.CurrentAttempt?.ReferenceStats(ReferenceTimeAuthorityValidationExecutions, CacheHits);
                 return cached;
             }
             ReferenceTimeAuthorityValidationExecutions++;
+            ReportingDiagnosticSession.CurrentAttempt?.ReferenceStats(ReferenceTimeAuthorityValidationExecutions, CacheHits);
             var result = await validate(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RequireOwner(connection, transaction);

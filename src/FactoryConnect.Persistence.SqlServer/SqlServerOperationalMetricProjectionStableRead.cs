@@ -22,7 +22,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
         await using var identity = connection.CreateCommand();
         identity.CommandText = "SELECT ProcessorKey FROM dbo.OperationalMetricProjectionProcessor WHERE OperationalMetricProjectionProcessorRowId=@Id";
         identity.Parameters.Add("@Id", SqlDbType.BigInt).Value = projectionProcessorRowId;
-        var key = await identity.ExecuteScalarAsync(cancellationToken) as string
+        var key = await OperationalMetricReportingDiagnostics.ScalarAsync(identity, "SqlServerOperationalMetricProjectionStableRead.scalar.1", cancellationToken) as string
             ?? throw new InvalidOperationException("Projection processor identity is unavailable.");
         return await ExecuteAsync(connection, new OperationalMetricProjectionProcessorId(key),
             async (c, transaction, token) =>
@@ -33,7 +33,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                     var coherent = await IsManifestRevisionCoherentAsync(c, transaction, projectionProcessorRowId, before, token);
                     var result = await readPublication(c, before, token);
                     var after = await ReadCheckpointPositionAsync(c, transaction, projectionProcessorRowId, token);
-                    if (before != after) continue;
+                    if (before != after) { if (ReportingDiagnosticSession.CurrentAttempt is { } retry) retry.Retried = true; continue; }
                     if (!coherent) throw new InvalidOperationException("Persisted projection source revision is corrupt.");
                     return result;
                 }
@@ -61,6 +61,11 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                 processorId, OperationalMetricProjectionProcessorGateMode.Shared, cancellationToken);
             for (var attempt = 0; attempt < MaximumAttempts; attempt++)
             {
+                using var attemptSummary = ReportingDiagnosticSession.BeginAttempt(processorId.Value, attempt + 1);
+                using var attemptDiagnostic = OperationalMetricReportingDiagnostics.Start("reporting.verification.attempt");
+                attemptDiagnostic.Tag("diagnostic.attempt", attempt + 1);
+                try
+                {
                 var before = observeCheckpointChanges
                     ? await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken) : null;
                 lifetimeTiming?.SetTag("revision.position", before?.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -70,18 +75,20 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                 {
                     // Defensive only: a non-participating external writer may change checkpoint while a read waits.
                     var afterFailure = await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken);
-                    if (before != afterFailure) continue;
+                    if (before != afterFailure) { if (attemptSummary is not null) attemptSummary.Retried = true; continue; }
                     throw;
                 }
                 var after = observeCheckpointChanges
                     ? await ReadProcessorPositionAsync(connection, transaction, processorId, cancellationToken) : null;
-                if (before != after) continue;
+                if (before != after) { if (ReportingDiagnosticSession.CurrentAttempt is { } retry) retry.Retried = true; continue; }
                 cancellationToken.ThrowIfCancellationRequested();
                 using var commitTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("reporting.transaction.commit");
                 await transaction.CommitAsync(cancellationToken);
                 commitTiming?.SetTag("stage.completed", true);
                 lifetimeTiming?.SetTag("stage.completed", true);
                 return result;
+                }
+                catch (Exception attemptError) { attemptSummary?.Fail(attemptError, cancellationToken); attemptDiagnostic.Fail(attemptError, cancellationToken); throw; }
             }
             throw new InvalidOperationException("Projection read exceeded the checkpoint retry budget.");
         }
@@ -107,7 +114,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
             "WHERE p.ProcessorKeyBinary=@Key";
         command.Parameters.Add("@Key", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value =
             StringOrderKeyV2Codec.Encode(processorId.Value);
-        var value = await command.ExecuteScalarAsync(cancellationToken);
+        var value = await OperationalMetricReportingDiagnostics.ScalarAsync(command, "SqlServerOperationalMetricProjectionStableRead.scalar.2", cancellationToken);
         return value is null or DBNull ? null : new MetricInputPosition(SqlServerUInt64.Materialize(
             Convert.ToDecimal(value, System.Globalization.CultureInfo.InvariantCulture)));
     }
@@ -134,7 +141,7 @@ internal static class SqlServerOperationalMetricProjectionStableRead
             "WHERE OperationalMetricProjectionProcessorRowId = @ProcessorRowId;";
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = projectionProcessorRowId;
 
-        var value = await command.ExecuteScalarAsync(cancellationToken);
+        var value = await OperationalMetricReportingDiagnostics.ScalarAsync(command, "SqlServerOperationalMetricProjectionStableRead.scalar.3", cancellationToken);
         if (value is null || value is DBNull)
         {
             return null;
@@ -182,10 +189,11 @@ internal static class SqlServerOperationalMetricProjectionStableRead
                     checkpointPosition.Value));
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using var readerDiagnostics4 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerOperationalMetricProjectionStableRead.reader.4", cancellationToken);
+        var reader = readerDiagnostics4.Reader;
         do
         {
-            if (await reader.ReadAsync(cancellationToken) && reader.GetInt64(0) != 0)
+            if (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken) && reader.GetInt64(0) != 0)
             {
                 return false;
             }

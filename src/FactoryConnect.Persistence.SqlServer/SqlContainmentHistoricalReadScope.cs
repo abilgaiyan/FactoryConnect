@@ -76,13 +76,21 @@ internal sealed class SqlContainmentHistoricalReadScope
         {
             ArgumentNullException.ThrowIfNull(cut);
             cancellationToken.ThrowIfCancellationRequested();
+            using var diagnostic = OperationalMetricReportingDiagnostics.Start("containment.evidence-cache.lookup");
+            diagnostic.Tag("diagnostic.cache.lookups", 1);
             // SqlConnection/SqlTransaction are used sequentially. Fail closed instead of permitting
             // overlapping loads or racing a cache hit against a load on the same transaction.
             if (Interlocked.CompareExchange(ref _reading, 1, 0) != 0)
                 throw new InvalidOperationException("Historical read scopes require sequential use.");
             try
             {
-                if (_cuts.TryGetValue(cut, out var cached)) return cached;
+                if (_cuts.TryGetValue(cut, out var cached))
+                {
+                    diagnostic.Tag("diagnostic.cache.hits", 1);
+                    return cached;
+                }
+                diagnostic.Tag("diagnostic.cache.misses", 1);
+                diagnostic.Tag("diagnostic.cache.loads", 1);
                 var validated = await load(cut, cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 // Own input membership; aggregates were built from this exact validated membership.
@@ -91,6 +99,7 @@ internal sealed class SqlContainmentHistoricalReadScope
                 _cuts.Add(cut, frozen);
                 return frozen;
             }
+            catch (Exception error) { diagnostic.Fail(error, cancellationToken); throw; }
             finally { Volatile.Write(ref _reading, 0); }
         }
     }
