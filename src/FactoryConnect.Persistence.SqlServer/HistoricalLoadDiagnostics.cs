@@ -17,11 +17,52 @@ internal sealed class HistoricalLoadDiagnostics(Action<string> sink, Action<stri
     private bool _enumerationCompleted;
     private int _disposed;
 
-    internal long BeginRead() { _readCalls++; return Stopwatch.GetTimestamp(); }
+    internal const int SlowReadSampleLimit = 4;
+    internal const double SlowReadThresholdMs = 100;
+    private readonly List<string> _slowReads = [];
+    private long _slowReadCount, _readMaxOrdinal;
+    private DateTimeOffset _readStartUtc, _readMaxStartUtc, _readMaxEndUtc;
+    private string _readMaxOutcome = "Unavailable";
+    private string _sqlSessionId = "Unavailable";
+
+    // Local provider metadata only: no extra SQL command or connection details.
+    internal void CaptureSqlSession(SqlConnection connection)
+    {
+        try { _sqlSessionId = connection.ServerProcessId.ToString(CultureInfo.InvariantCulture); }
+        catch { _sqlSessionId = "Unavailable"; }
+    }
+    internal long BeginRead()
+    {
+        _readCalls++;
+        _readStartUtc = DateTimeOffset.UtcNow;
+        return Stopwatch.GetTimestamp();
+    }
     internal void EndRead(long started, bool? returned)
     {
         var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-        _readMs += elapsed; _readMaxMs = Math.Max(_readMaxMs, elapsed);
+        _readMs += elapsed;
+        // Diagnostic bookkeeping must not replace an interrupted read's exception.
+        try
+        {
+            var endedUtc = DateTimeOffset.UtcNow;
+            var outcome = returned is null ? "Interrupted" : returned.Value ? "Row" : "EndOfResults";
+            if (_readMaxOrdinal == 0 || elapsed > _readMaxMs)
+            {
+                _readMaxOrdinal = _readCalls;
+                _readMaxStartUtc = _readStartUtc;
+                _readMaxEndUtc = endedUtc;
+                _readMaxOutcome = outcome;
+            }
+            if (elapsed >= SlowReadThresholdMs)
+            {
+                _slowReadCount++;
+                if (_slowReads.Count < SlowReadSampleLimit)
+                    _slowReads.Add(FormattableString.Invariant(
+                        $"{_readCalls},{elapsed},{_readStartUtc:O},{endedUtc:O},{outcome}"));
+            }
+        }
+        catch { /* Keep authoritative reader behavior, including cancellation. */ }
+        _readMaxMs = Math.Max(_readMaxMs, elapsed);
         if (returned is null) _readInterrupted++;
         else
         {
@@ -53,11 +94,20 @@ internal sealed class HistoricalLoadDiagnostics(Action<string> sink, Action<stri
         $"ReadCompleted={_readCompleted}", $"ReadInterrupted={_readInterrupted}",
         $"RowsReturned={_returned}", $"RowsAdded={_added}", $"MaterializationAttempts={_materializations}",
         $"ReadElapsedMs={F(_readMs)}", $"ReadMaxMs={F(_readMaxMs)}",
+        $"SqlSessionId={_sqlSessionId}", $"ReadMaxOrdinal={_readMaxOrdinal}",
+        $"ReadMaxStartUtc={Utc(_readMaxStartUtc)}", $"ReadMaxEndUtc={Utc(_readMaxEndUtc)}",
+        $"ReadMaxOutcome={_readMaxOutcome}", $"SlowReadThresholdMs={F(SlowReadThresholdMs)}",
+        $"SlowReadCount={_slowReadCount}", $"SlowReadSampleLimit={SlowReadSampleLimit}",
+        $"SlowReadSamples={string.Join("|", _slowReads)}",
+        "SlowReadSampleFields=Ordinal,ElapsedMs,StartUtc,EndUtc,Outcome",
+        "ServerWaitEvidence=NotCollected",
         $"MaterializeValidateAddElapsedMs={F(_materializeMs)}", $"MaterializeValidateAddMaxMs={F(_materializeMaxMs)}",
         $"CleanupElapsedMs={F(_cleanupMs)}", $"CleanupOutcome={_cleanupOutcome}",
         $"LoadElapsedMs={F(Stopwatch.GetElapsedTime(_started).TotalMilliseconds)}",
         "TimingSemantics=ElapsedNotCpu;SqlCoverage=Unknown"
     });
+    private static string Utc(DateTimeOffset value) =>
+        value == default ? "Unavailable" : value.ToString("O", CultureInfo.InvariantCulture);
     private static string F(double value) => value.ToString(CultureInfo.InvariantCulture);
     public void Dispose()
     {

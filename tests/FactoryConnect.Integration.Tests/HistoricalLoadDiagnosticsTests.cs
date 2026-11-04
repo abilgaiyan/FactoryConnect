@@ -114,6 +114,45 @@ public sealed class HistoricalLoadDiagnosticsTests
         Assert.Null(ReportingDiagnosticSession.BeginHistoricalLoad(cut));
     }
 
+    [Fact]
+    public void SlowReadSamplesAreCappedButMaximumAndInterruptedOrdinalRemainVisible()
+    {
+        var records = new List<string>();
+        using (var load = Create(records.Add))
+        {
+            for (var i = 0; i < HistoricalLoadDiagnostics.SlowReadSampleLimit + 2; i++)
+            {
+                _ = load.BeginRead();
+                load.EndRead(Stopwatch.GetTimestamp() - Stopwatch.Frequency, true);
+            }
+            _ = load.BeginRead();
+            load.EndRead(Stopwatch.GetTimestamp() - 2 * Stopwatch.Frequency, null);
+        }
+        var record = Assert.Single(records);
+        Assert.Contains("ReadMaxOrdinal=7;", record, StringComparison.Ordinal);
+        Assert.Contains("ReadMaxOutcome=Interrupted;", record, StringComparison.Ordinal);
+        Assert.Contains("SlowReadCount=7;", record, StringComparison.Ordinal);
+        Assert.Contains("SqlSessionId=Unavailable;", record, StringComparison.Ordinal);
+        var sample = record.Split(';').Single(field => field.StartsWith("SlowReadSamples=", StringComparison.Ordinal));
+        Assert.Equal(HistoricalLoadDiagnostics.SlowReadSampleLimit, sample.Split('|').Length);
+        var fields = sample["SlowReadSamples=".Length..].Split('|')[0].Split(',');
+        Assert.Equal("1", fields[0]);
+        var start = DateTimeOffset.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture);
+        var end = DateTimeOffset.Parse(fields[3], System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(TimeSpan.Zero, start.Offset);
+        Assert.True(end >= start);
+    }
+
+    [Fact]
+    public void NoReadsHaveNoInventedOrdinalOrTimestamp()
+    {
+        var records = new List<string>();
+        using (var load = Create(records.Add)) { }
+        var record = Assert.Single(records);
+        Assert.Contains("ReadMaxOrdinal=0;ReadMaxStartUtc=Unavailable;ReadMaxEndUtc=Unavailable", record, StringComparison.Ordinal);
+        Assert.Contains("SlowReadCount=0;", record, StringComparison.Ordinal);
+    }
+
     private static HistoricalLoadDiagnostics Create(Action<string> sink) =>
         new(sink, _ => { }, "trace", "attempt", "aggregation", "6050");
     private static double Number(string record, string key) => double.Parse(

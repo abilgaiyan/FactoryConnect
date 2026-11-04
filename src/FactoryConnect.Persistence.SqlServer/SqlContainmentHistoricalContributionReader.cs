@@ -32,6 +32,7 @@ internal static class SqlContainmentHistoricalContributionReader
         RequireStableTransaction(connection, transaction);
         ArgumentNullException.ThrowIfNull(cut);
         using var loadDiagnostics = ReportingDiagnosticSession.BeginHistoricalLoad(cut);
+        loadDiagnostics?.CaptureSqlSession(connection);
         try
         {
         cancellationToken.ThrowIfCancellationRequested();

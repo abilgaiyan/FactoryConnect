@@ -15,3 +15,11 @@ SQL literals, parameters, hints, isolation, gates, cancellation token forwarding
 Validation required: Release build/analyzers; HistoricalLoadDiagnosticsTests (database-free lifecycle/counter tests); existing SqlContainmentHistoricalReadScopeIntegrationTests, SqlContainmentHistoricalResultIntegrationTests, SqlContainmentVerifiedProjectionHandoffIntegrationTests (real SQL success, cancellation, corruption and ownership); and opt-in/off restored-request equivalence. No SQL or restored-request tests executed during authoring. No performance improvement or full runtime verification claimed.
 
 Rollback: disable the existing diagnostics option, or revert this amendment. No database rollback, migration or timeout change.
+
+## Bounded slow-read correlation
+
+Each optional load summary now retains the slowest ReadAsync call's one-based ordinal (including terminal false and interrupted calls), elapsed time, UTC start/end and outcome. The first four calls taking at least 100ms are retained as a bounded sample; SlowReadCount counts all threshold crossings. A later maximum is retained independently even after the sample fills. Samples use pipe-separated entries with comma-separated Ordinal,ElapsedMs,StartUtc,EndUtc,Outcome. There are still no per-row log events or row contents.
+
+SqlSessionId is obtained once per load from the already-open SqlConnection.ServerProcessId provider property; no SELECT @@SPID, connection opening or SQL statement is added. Unavailable metadata remains Unavailable. Session IDs can be reused and require server/environment, UTC interval and request correlation; they do not prove any SQL wait. ServerWaitEvidence=NotCollected explicitly records that this instrumentation does not collect server waits.
+
+Elapsed measurements remain monotonic Stopwatch durations. UTC timestamps are wall-clock correlation hints and can change with clock adjustments; do not derive elapsed time from their difference. Sampling, thresholds and timestamp collection introduce diagnostic overhead and are active only with the existing optional load collector. Server-side SQL request/wait/blocking capture and another reporting request require separate local-session authorization. Missing server samples do not establish absence of waits.
