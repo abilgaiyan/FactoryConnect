@@ -55,6 +55,11 @@ internal static partial class ReportingTimingInstrumentation
                 record =>
                 {
                     if (summaryLogger.IsEnabled(LogLevel.Information)) SummaryAcknowledgement(summaryLogger, record);
+                },
+                record =>
+                {
+                    if (!summaryLogger.IsEnabled(LogLevel.Information)) throw new InvalidOperationException("Historical load sink disabled.");
+                    HistoricalLoadSummary(summaryLogger, record);
                 });
             var started = Stopwatch.GetTimestamp();
             var traceId = Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
@@ -155,6 +160,10 @@ internal static partial class ReportingTimingInstrumentation
     [LoggerMessage(EventId = 9, Level = LogLevel.Information, SkipEnabledCheck = true,
         Message = "Reporting summary acknowledgement {Record}")]
     private static partial void SummaryAcknowledgement(ILogger logger, string record);
+
+    [LoggerMessage(EventId = 10, Level = LogLevel.Information, SkipEnabledCheck = true,
+        Message = "Reporting historical load {Record}")]
+    private static partial void HistoricalLoadSummary(ILogger logger, string record);
 
     private static object? FindTag(Activity? activity, string key)
     {

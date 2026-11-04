@@ -138,6 +138,8 @@ internal static class OperationalMetricReportingDiagnostics
         internal SqlDataReader Reader { get; }
         internal Scope Consumption { get; }
         internal long Rows;
+        internal HistoricalLoadDiagnostics? HistoricalLoad { get; set; }
+        internal CancellationToken CleanupToken { get; set; }
         internal ReaderLease(SqlDataReader reader, string operation)
         {
             Reader = reader;
@@ -149,9 +151,16 @@ internal static class OperationalMetricReportingDiagnostics
             Consumption.Tag("diagnostic.row.count", Rows);
             Consumption.Dispose();
             using var cleanup = Start("reporting.sql.cleanup");
+            var cleanupStarted = HistoricalLoad is null ? 0 : Stopwatch.GetTimestamp();
+            Exception? cleanupError = null;
             try { await Reader.DisposeAsync().ConfigureAwait(false); }
-            catch (Exception error) { cleanup.Fail(error); throw; }
-            finally { Readers.Remove(Reader); }
+            catch (Exception error) { cleanupError = error; cleanup.Fail(error); throw; }
+            finally
+            {
+                try { HistoricalLoad?.Cleanup(cleanupStarted, cleanupError, CleanupToken); }
+                catch { /* Diagnostics cannot replace disposal failure. */ }
+                Readers.Remove(Reader);
+            }
         }
     }
 

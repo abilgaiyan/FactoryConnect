@@ -13,6 +13,7 @@ public sealed class ReportingDiagnosticSession : IDisposable
     private readonly Action<string> _summarySink;
     private readonly Action<string> _failureSink;
     private readonly Action<string>? _acknowledgementSink;
+    private readonly Action<string> _historicalLoadSink;
     private readonly object _sync = new();
     private readonly Dictionary<string, int> _reservations = new(StringComparer.Ordinal);
     private bool _knownPopulation;
@@ -27,13 +28,14 @@ public sealed class ReportingDiagnosticSession : IDisposable
     internal static Attempt? CurrentAttempt => AmbientAttempt.Value;
 
     public ReportingDiagnosticSession(Action<string> summarySink, Action<string> failureSink,
-        Action<string>? acknowledgementSink = null)
+        Action<string>? acknowledgementSink = null, Action<string>? historicalLoadSink = null)
     {
         ArgumentNullException.ThrowIfNull(summarySink);
         ArgumentNullException.ThrowIfNull(failureSink);
         _summarySink = summarySink;
         _failureSink = failureSink;
         _acknowledgementSink = acknowledgementSink;
+        _historicalLoadSink = historicalLoadSink ?? summarySink;
         _previous = Ambient.Value;
         Ambient.Value = this;
     }
@@ -107,6 +109,18 @@ public sealed class ReportingDiagnosticSession : IDisposable
             if (Current is { } session) session._collectionFailed = true;
             return null;
         }
+    }
+
+    internal static HistoricalLoadDiagnostics? BeginHistoricalLoad(MetricAggregationCheckpoint cut)
+    {
+        try
+        {
+            return Current is { } session ? new HistoricalLoadDiagnostics(session._historicalLoadSink,
+                session._failureSink, Activity.Current?.TraceId.ToString() ?? "unavailable",
+                CurrentAttempt?.Id ?? "unavailable", cut.ProcessorId.Value,
+                cut.Position.Value.ToString(CultureInfo.InvariantCulture)) : null;
+        }
+        catch { CurrentAttempt?.Degrade(); return null; }
     }
 
     public void Dispose()

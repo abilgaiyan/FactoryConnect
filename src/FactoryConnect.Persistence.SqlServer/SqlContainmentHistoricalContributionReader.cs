@@ -31,6 +31,9 @@ internal static class SqlContainmentHistoricalContributionReader
     {
         RequireStableTransaction(connection, transaction);
         ArgumentNullException.ThrowIfNull(cut);
+        using var loadDiagnostics = ReportingDiagnosticSession.BeginHistoricalLoad(cut);
+        try
+        {
         cancellationToken.ThrowIfCancellationRequested();
         using var historicalTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.read.validate");
         historicalTiming?.SetTag("processor.id", cut.ProcessorId.Value);
@@ -95,12 +98,20 @@ internal static class SqlContainmentHistoricalContributionReader
         var inputs = new List<PositionedMetricInputFact>();
         using var sqlTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.sql.execute");
         await using var rowsDiagnostics3 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentHistoricalContributionReader.reader.3", cancellationToken);
+        rowsDiagnostics3.HistoricalLoad = loadDiagnostics;
+        rowsDiagnostics3.CleanupToken = cancellationToken;
         var rows = rowsDiagnostics3.Reader;
         sqlTiming?.SetTag("stage.completed", true);
         sqlTiming?.Dispose();
         using var rowsTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("historical.rows.read-materialize-validate");
-        while (await OperationalMetricReportingDiagnostics.ReadAsync(rows, cancellationToken))
+        while (true)
         {
+            bool? returned = null;
+            var readStarted = loadDiagnostics?.BeginRead() ?? 0;
+            try { returned = await OperationalMetricReportingDiagnostics.ReadAsync(rows, cancellationToken); }
+            finally { loadDiagnostics?.EndRead(readStarted, returned); }
+            if (!returned.GetValueOrDefault()) break;
+            var materializationStarted = loadDiagnostics?.BeginMaterialization() ?? 0;
             try
             {
                 if (rows.IsDBNull(0))
@@ -111,11 +122,13 @@ internal static class SqlContainmentHistoricalContributionReader
                     rows.GetInt64(rows.FieldCount - 1) != streamRowId)
                     throw new ContainmentHistoricalIntegrityException("Contribution contradicts its historical cut.");
                 inputs.Add(input);
+                loadDiagnostics?.RowAdded();
             }
             catch (Exception error) when (error is ArgumentException or InvalidDataException or FormatException or OverflowException)
             {
                 throw new ContainmentHistoricalIntegrityException("Malformed historical contribution.", error);
             }
+            finally { loadDiagnostics?.EndMaterialization(materializationStarted); }
         }
         rowsTiming?.SetTag("input.count", inputs.Count);
         rowsTiming?.SetTag("stage.completed", true);
@@ -129,6 +142,8 @@ internal static class SqlContainmentHistoricalContributionReader
         aggregationTiming?.SetTag("stage.completed", true);
         historicalTiming?.SetTag("stage.completed", true);
         return new(inputs.AsReadOnly(), aggregates);
+        }
+        catch (Exception error) { loadDiagnostics?.Fail(error, cancellationToken); throw; }
     }
 
     private static void Bind(SqlCommand command, long processor, long stream, MetricAggregationCheckpoint cut)
