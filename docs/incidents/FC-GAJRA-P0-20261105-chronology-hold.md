@@ -84,3 +84,62 @@ For Gate C construct a new host process with fresh in-memory state, not merely a
 For Gate D rehearse the candidate package and known pinned production package 85f56f32880dd1b47be1a605c85da2a86d4fc304 only in the local isolated environment. Record package/source identity, configuration identity, startup/shutdown evidence and rollback outcome. The pinned release still contains the known chronology failure; a successful package rollback does not establish healthy GG-003 processing. Do not apply either package to the factory machine during this review.
 
 Current disposition: restored-SQL chronology correctness accepted. Gates A–D remain pending. PR #180 stays Draft; merge, production deployment and GG-003 evidence resolution remain unapproved.
+
+## Gate A measurement design — no runtime correction authorized
+
+This is a design for measurement, not a completed benchmark. Runtime behavior stays at 423e83b; the accepted restored-SQL chronology PASS is unchanged. No caching, concurrency, scheduler, persistence or evidence-resolution change is part of this design.
+
+### A1 — Read-only retained-reader and calculator measurements
+
+Use the exact named incident restore with all writers stopped and retain its identity. Record runtime commit, documentation commit, process start, configured batch size 100, polling interval 1 second, SQL instance/database identity, authority position 513501/revision 4091, mapping checkpoint/frontier and configuration evidence identity. Use the same commissioned replay configuration; never infer equivalence solely from the STOPPED-to-false output.
+
+Construct the SQL raw reader, checkpoint reader and retained-input reader once, then perform one first-process sample followed by at least 10 consecutive steady-state samples in the same process. Do not add an unreported warm-up or flush server caches. The reader must retain its actual per-read mapper construction; do not introduce a measurement cache. Use monotonic elapsed timing and UTC correlation timestamps.
+
+For every sample:
+
+1. Time the complete retained-reader call from request to returned mapped batch. Count every underlying raw page, returned raw row, eligible row at/below the frontier and returned mapped row. Record the pinned canonical-mapping frontier.
+2. Separately time the production calculator over that returned batch and unchanged persisted authority with continuity/preserve 1.0. Require the exact hold at position 513521 and matching timestamps; stop/classify any mismatch rather than continuing a misleading benchmark.
+3. Capture SQL command elapsed time and command count through measurement instrumentation correlated with that sample. Include checkpoint and raw-page commands, and distinguish connection-open, command execution/materialization and mapper time where observable. A wrapper around the whole reader is not a SQL-only timer. If SQL-only timing is unavailable, mark it unmeasured; never report reader time as SQL duration.
+4. Keep before/after protected-state comparisons outside the timed sample interval. They remain required for the measurement run's integrity, but do not belong in replay latency.
+5. Persist raw samples before calculating summaries. Record failures, cancellations and incomplete instrumentation as such; they are not zero-duration samples or successful holds.
+
+A1 performs no PublishAsync and no checkpoint commit. It does not need to rerun the full accepted correctness test or serialize whole SQL tables inside each iteration. A write-rejecting proxy and, where available, a SELECT-only database identity provide additional execution protection. Diagnostic instrumentation must not change mapping, reads, transactions or source evidence.
+
+### A2 — Sequential pipeline-cycle measurement
+
+Use a separate disposable incident restore for any composed pipeline/host run that can advance canonical mapping or MOXA authority. Preserve the original restore. Disconnect factory acquisition. Use the actual stream order, batch size, polling configuration and production service composition.
+
+Measure raw mapping stage, retained-reader stage, calculator/hold stage and total stream duration separately for GG-003 and MOXA. Measure the full pipeline-set iteration, including notification overhead, and record polling delay separately from processing time. Obtain actual SQL MOXA position/revision and the elapsed interval between durable advancements. Do not sum overlapping inclusive timers as if they were exclusive costs.
+
+Capture the first iteration separately, then at least 10 consecutive steady-state iterations with qualifying MOXA input. A1 cannot stand in for A2: a cheap calculator does not establish a cheap retained read, and a cheap retained read does not establish full-host liveness. A run with no eligible MOXA transitions is inconclusive for advancement.
+
+Retain a bounded run/watchdog setting and cancellation outcome in the execution record. No accepted liveness threshold is currently frozen; report the measurements and obtain an explicit interval decision before labeling Gate A/B PASS. Measurement instrumentation is still to be implemented/reviewed; no measurements are claimed by this document.
+
+### Output schema and summaries
+
+One sample row should contain: run ID, process ID, cycle/sample ordinal, first/steady classification, stream, UTC start/end, pinned mapping frontier, authority position/revision before/after, raw pages, raw rows, eligible rows, mapped rows, SQL commands, SQL elapsed milliseconds, connection-open milliseconds if observed, raw-mapping milliseconds, retained-reader milliseconds, calculator milliseconds, stream milliseconds, pipeline-cycle milliseconds, polling-delay milliseconds, outcome and instrumentation gaps. Unavailable fields are null with a reason.
+
+Report first-process results individually. For the 10 or more steady samples report count, median and maximum for each duration, separately by stream, plus whole-cycle duration and MOXA durable-progress interval. For even sample counts compute the median as the mean of the two central sorted values. Keep command/page/row counts per sample so variation can be explained. The 25.27-second correctness-test execution remains excluded as a replay-performance observation.
+
+## Commissioned replay configuration equivalence — evidence review
+
+Evidence reviewed: the supplied November 5 configuration capture, Pasted text(20261105-091600).txt, ObservationProcessing section; acceptance helper GajraChronologyHoldTests.Mapper; and production EdgeObservationProcessingServiceCollectionExtensions at runtime commit 423e83b. This is captured-settings comparison, not independent observation of the effective running host.
+
+| Setting | Captured commissioned GG-003 setting | Acceptance/replay code | Disposition |
+| --- | --- | --- | --- |
+| Machine | 677b030b-1ede-4a67-82ae-6a494791357f | Same GG fixture identity | Match |
+| Stream | mtconnect:DEWAS-SR-GG-003 | Same GG fixture identity | Match |
+| Normalizer | ExecutionNormalization | ExecutionNormalizationProcessor | Match |
+| Normalizer source/address | mtconnect / DEWAS-SR-GG-003_p1_ctl_exec | Same values | Match |
+| Mapping source/address | mtconnect / DEWAS-SR-GG-003_p1_ctl_exec | Same values | Match |
+| Canonical signal/type | state.running / Digital | CanonicalSignalKeys.Running / Digital | Match |
+| Invert | false | Omitted Boolean property defaults to false | Match |
+| Mapping entries for GG | One | One | Match |
+| Batch/polling | 100 / 1 second | Restored runtime options 100 / 1 second | Match |
+| Applied continuity | Restored authority continuity/preserve 1.0 | Checked against canonical Preserve policy in executed acceptance | Match within accepted test |
+
+Production live mapping and retained replay use the same CreateMappingProcessor factory and per-stream mappings/normalizer selections. Retained replay substitutes a private sink and in-memory coverage store; it does not select a different normalizer implementation. Source review establishes this code-path equivalence.
+
+Outstanding configuration evidence: capture the local qualification host's effective ObservationProcessing stream entry, normalizer selection, mapping list, batch/poll settings, continuity policy and DemoCanonicalInputs flag after all configuration providers are applied. Demonstrate that no command-line/environment override changes those values and that demo normalization is disabled. Record a deterministic, redacted projection/hash of those relevant settings and the commissioned capture identity; do not hash or publish credentials. Verify uniqueness and absence of extra state-driving mappings. A raw file hash alone does not prove effective configuration, and identical output for one observation does not prove configuration equivalence.
+
+Configuration disposition: captured GG settings match the acceptance helper; production mapping/replay share the same factory. Effective-host provenance verification remains pending. This qualification does not invalidate the completed restored-SQL correctness acceptance.
