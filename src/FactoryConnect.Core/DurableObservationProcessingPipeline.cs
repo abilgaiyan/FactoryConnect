@@ -1,3 +1,5 @@
+using FactoryConnect.Core.Machines;
+
 namespace FactoryConnect.Core;
 
 public sealed class DurableObservationProcessingPipeline
@@ -26,14 +28,18 @@ public sealed class DurableObservationProcessingPipeline
         _pollingInterval = pollingInterval;
     }
 
+    public MachineStateActivityChronologyHold? ChronologyHold { get; private set; }
+
     public async Task<bool> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
         var raw = await _rawRuntime.RunCycleAsync(cancellationToken);
-        var mapped = await _mappedRuntime.RunCycleAsync(cancellationToken);
+        var mapped = await _mappedRuntime.RunCycleWithOutcomeAsync(cancellationToken);
+        ChronologyHold = mapped.Hold;
 
+        // A held batch is retained work, not progress. Avoid a hot retry loop when caught up.
         return raw.Observations.Count > 0 ||
-            mapped.Observations.Count > 0;
+            (mapped.Hold is null && mapped.Batch.Observations.Count > 0);
     }
 
     public async Task RunAsync(
