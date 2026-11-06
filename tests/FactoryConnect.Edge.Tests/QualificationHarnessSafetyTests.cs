@@ -78,6 +78,25 @@ public sealed class QualificationHarnessSafetyTests
         }
     }
 
+    [Theory]
+    [InlineData("677B030B-1EDE-4A67-82AE-6A494791357F", "677b030b-1ede-4a67-82ae-6a494791357f")]
+    [InlineData("BFA0DC97-9A68-45ED-B189-1DACB7D863F0", "bfa0dc97-9a68-45ed-b189-1dacb7d863f0")]
+    public void SqlFormattedUppercaseMachineIdsMatchCanonicalIds(string sqlId, string canonicalId)
+    {
+        Assert.True(QualificationHarness.MachineIdMatches(sqlId, canonicalId));
+        Assert.True(QualificationHarness.MachineIdMatches(canonicalId, sqlId));
+    }
+
+    [Fact]
+    public void DifferentOrInvalidMachineIdsNeverMatch()
+    {
+        Assert.False(QualificationHarness.MachineIdMatches(
+            "677B030B-1EDE-4A67-82AE-6A494791357F",
+            "bfa0dc97-9a68-45ed-b189-1dacb7d863f0"));
+        Assert.False(QualificationHarness.MachineIdMatches("not-a-guid",
+            "677b030b-1ede-4a67-82ae-6a494791357f"));
+    }
+
     private static ServiceCollection Registrations()
     {
         var services = new ServiceCollection();
