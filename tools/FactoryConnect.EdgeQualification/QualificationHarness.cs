@@ -148,8 +148,8 @@ public static class QualificationHarness
             RequireGgBaseline(after);
             samples.AddRange(after);
             if (holds.IsEmpty) throw new InvalidOperationException("Expected exact GG chronology hold was not observed.");
-            var initialMoxa = before.Single(item => item.MachineId == Moxa);
-            var finalMoxa = after.Single(item => item.MachineId == Moxa);
+            var initialMoxa = before.Single(item => MachineIdMatches(item.MachineId, Moxa));
+            var finalMoxa = after.Single(item => MachineIdMatches(item.MachineId, Moxa));
             var advanced = ulong.Parse(finalMoxa.Position, CultureInfo.InvariantCulture) > ulong.Parse(initialMoxa.Position, CultureInfo.InvariantCulture) &&
                 ulong.Parse(finalMoxa.Revision, CultureInfo.InvariantCulture) > ulong.Parse(initialMoxa.Revision, CultureInfo.InvariantCulture);
             outcome = advanced ? "MOXA_ADVANCED_GG_HELD" : "INCONCLUSIVE_NO_MOXA_ADVANCEMENT";
@@ -179,12 +179,17 @@ public static class QualificationHarness
         return exitCode;
     }
 
+    public static bool MachineIdMatches(string actual, string expected) =>
+        Guid.TryParse(actual, out var actualId) &&
+        Guid.TryParse(expected, out var expectedId) &&
+        actualId == expectedId;
+
     private static void RequireGgBaseline(AuthoritySample[] samples)
     {
-        var gg = samples.Single(item => item.MachineId == Gg);
+        var gg = samples.Single(item => MachineIdMatches(item.MachineId, Gg));
         if (gg.Position != "513501" || gg.Revision != "4091")
             throw new InvalidOperationException("GG activity authority differs from the accepted held baseline.");
-        _ = samples.Single(item => item.MachineId == Moxa);
+        _ = samples.Single(item => MachineIdMatches(item.MachineId, Moxa));
     }
 
     private static async Task<AuthoritySample[]> ReadAuthorityAsync(string connectionString, CancellationToken cancellationToken)
