@@ -50,10 +50,14 @@ try {
     try {
         if (-not $header.Read()) { throw 'Backup header is empty.' }
         $sourceDb = [string]$header['DatabaseName']
-        if ($sourceDb -notin @('FactoryConnect_P0_Qualification_20261106', 'FactoryConnect_P0_20261105')) {
+        if ($sourceDb -cne 'FactoryConnect') {
             throw "Unapproved source database in backup: $sourceDb"
         }
     } finally { $header.Dispose() }
+
+    $cmd.CommandText = 'RESTORE VERIFYONLY FROM DISK = @backup' 
+    $cmd.CommandTimeout = 600
+    $null = $cmd.ExecuteNonQuery()
 
     $cmd.CommandText = 'RESTORE FILELISTONLY FROM DISK = @backup'
     $files = @()
