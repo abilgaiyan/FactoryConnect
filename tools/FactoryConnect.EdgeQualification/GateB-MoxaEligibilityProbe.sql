@@ -7,7 +7,9 @@ IF DB_NAME() <> N'FactoryConnect_P0_GateB_20261109'
     THROW 51001, 'Unexpected disposable Gate B database; abort.', 1;
 
 DECLARE @Machine uniqueidentifier = 'bfa0dc97-9a68-45ed-b189-1dacb7d863f0';
-DECLARE @Stream varbinary(512) = CONVERT(varbinary(512), N'mtconnect:DEWAS-SR-MOXA-001');
+-- Persisted stream keys use big-endian UTF-16 (OrdinalStringKeyCodec), not SQL Server's little-endian nvarchar conversion.
+DECLARE @Stream varbinary(512) =
+  0x006D00740063006F006E006E006500630074003A00440045005700410053002D00530052002D004D004F00580041002D003000300031;
 
 SELECT 'acquisition-checkpoint' AS Evidence, MachineId, InstanceId, NextSequence
 FROM dbo.ObservationStreamCheckpoint
