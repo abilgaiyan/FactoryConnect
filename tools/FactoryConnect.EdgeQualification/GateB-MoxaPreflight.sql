@@ -4,7 +4,7 @@
 SET NOCOUNT ON;
 IF @@SERVERNAME <> N'DESKTOP-1PJK2OB\FCINVENTORY'
     THROW 51000, 'Unexpected SQL instance; abort.', 1;
-IF DB_NAME() <> N'FactoryConnect_P0_Qualification_20261106'
+IF DB_NAME() NOT IN (N'FactoryConnect_P0_Qualification_20261106', N'FactoryConnect_P0_GateB_20261109')
     THROW 51001, 'Unexpected database; abort.', 1;
 
 DECLARE @MachineId uniqueidentifier = 'bfa0dc97-9a68-45ed-b189-1dacb7d863f0';
