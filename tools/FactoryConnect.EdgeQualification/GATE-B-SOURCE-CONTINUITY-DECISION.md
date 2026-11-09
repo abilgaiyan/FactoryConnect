@@ -32,3 +32,19 @@ Status: **BLOCKED for evidence writes**; source trace reviewed 2026-11-10. This 
 ## Disposition
 
 Existing structural evidence supports proceeding with **implementation of the isolated source and verification harness**, but not admitting any new evidence yet. Gate B OPEN. PR #180 draft. Production Edge stopped; deployment HOLD.
+
+## Recovery-path source verification (2026-11-10)
+
+Source inspected:
+- `src/FactoryConnect.Edge/MtConnectContinuityRecoveryPolicy.cs`
+- `src/FactoryConnect.Protocols.MTConnect/MtConnectAcquisitionSession.cs`
+- `src/FactoryConnect.Protocols.MTConnect/MtConnectSampleClient.cs`
+- `src/FactoryConnect.Protocols.MTConnect/MtConnectSampleParser.cs`
+- `src/FactoryConnect.Protocols.MTConnect/MtConnectCurrentClient.cs`
+- `src/FactoryConnect.Edge/MtConnectAcquisitionRuntime.cs`
+
+For an instance change, `MtConnectAcquisitionSession.ValidateInstance` throws before advancing the session. `RecoverInstanceChangeAsync` records `InstanceChanged` with previous/current instance IDs, previous next sequence and response first sequence; it invokes the reporter and creates a fresh session at `exception.FirstSequence`. The runtime retries `PrepareNextAsync`, then commits via `WriteWithEvidenceAsync`; only after a successful write does it advance the in-memory session and checkpoint and clear retained recovery evidence.
+
+`MtConnectSampleClient` issues a real HTTP `GET` to `endpoint.SampleUri(fromSequence)`; `MtConnectSampleParser` reads header `instanceId`, `firstSequence`, `lastSequence`, `nextSequence` and device-scoped observation sequences. Thus a controlled fixture must implement a coherent `/sample` response for both the initial mismatch and the recovery retry. An `OUT_OF_RANGE` response takes a different path, querying `/current` for a recovery first sequence; do not conflate these cases.
+
+**Still unverified:** the concrete continuity reporter implementation/side effects, admission of a new fixture-owned instance against the restored publication head, full cryptographic prefix validation, safe isolated Agent endpoint binding, and executable host acceptance. This review is not permission to write a new source generation. The next implementation increment must first add tests for mismatch -> reporter -> retry -> durable commit and reporter failure, using a controlled HTTP handler; only then enable SQL fixture admission against a newly cloned database.
