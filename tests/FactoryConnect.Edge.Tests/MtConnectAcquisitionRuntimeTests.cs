@@ -68,6 +68,45 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncInstanceChangeCommitsAgainstSeededDurableCheckpoint()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(9000001, 1, 2),
+            SampleResponse(9000001, 1, 2));
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
+        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
+        var store = new InMemoryObservationIngestionStore();
+        await store.CommitAsync(new ObservationIngestionBatch(
+            null,
+            checkpoint,
+            [],
+            new DateTimeOffset(2026, 11, 5, 8, 36, 20, TimeSpan.Zero)));
+        var reporter = new RecordingContinuityReporter();
+        var runtime = CreateRuntime(
+            httpClient,
+            new MtConnectDurableObservationSink(store, streamId),
+            27UL,
+            machineId: machineId,
+            initialCheckpoint: checkpoint,
+            reporter: reporter);
+
+        var result = await runtime.RunCycleAsync();
+
+        Assert.Equal(9000001UL, result.InstanceId);
+        Assert.Equal(
+            ["http://localhost:5000/sample?from=27",
+             "http://localhost:5000/sample?from=1"],
+            handler.RequestUris.Select(uri => uri.AbsoluteUri).ToArray());
+        Assert.Single(reporter.Losses);
+        var committed = await store.ReadCheckpointAsync(streamId);
+        Assert.Equal(9000001UL, committed?.InstanceId);
+        Assert.Equal(2UL, committed?.NextSequence);
+        Assert.Single(store.ReadObservations(streamId));
+    }
+
+    [Fact]
     public async Task RunCycleAsyncReporterFailureDoesNotCommitOrAdvanceCheckpoint()
     {
         var handler = new SequenceHandler(SampleResponse(9000001, 1, 2));
