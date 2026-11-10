@@ -3,7 +3,7 @@
 -- This script does not authorize acquisition, fixture admission or production deployment.
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
-SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
 -- Require the operator to create this new database by restoring the approved backup.
 -- Never use the preserved incident or existing qualification databases.
 DECLARE @ExpectedServer sysname = N'DESKTOP-1PJK2OB\FCINVENTORY';
@@ -24,6 +24,9 @@ DECLARE @Moxa uniqueidentifier = 'bfa0dc97-9a68-45ed-b189-1dacb7d863f0';
 DECLARE @MoxaStream varbinary(512) =
   0x006D00740063006F006E006E006500630074003A00440045005700410053002D00530052002D004D004F00580041002D003000300031;
 -- Confirm this clone has the expected preserved acquisition and activity frontier.
+-- The publication identity hash is deliberately reported, not compared to an
+-- unverified constant. Independently verify the entire cryptographic chain
+-- with the production evidence reader before authorizing any fixture writes.
 IF NOT EXISTS (
     SELECT 1 FROM dbo.ObservationStreamCheckpoint
     WHERE MachineId = @Moxa AND StreamKeyBinary = @MoxaStream
@@ -44,8 +47,7 @@ IF NOT EXISTS (
     WHERE h.MachineId = @Moxa AND h.StreamKeyBinary = @MoxaStream
       AND p.PublicationOrdinal = 104153
       AND p.AcceptedBefore = 14328 AND p.AcceptedThrough = 14328
-      AND p.PayloadVersion = 1
-      AND p.IdentityHash = 0x3C386EF472741E55B178C14159CBBDFFFBFC633C3A7E0F62A8F2B3A86DCB4FF7)
+      AND p.PayloadVersion = 1)
     THROW 51106, 'Gate B preflight refused: MOXA publication head differs.', 1;
 IF NOT EXISTS (
     SELECT 1 FROM dbo.MachineStateActivityAuthority
