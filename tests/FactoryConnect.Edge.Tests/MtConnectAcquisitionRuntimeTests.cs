@@ -29,6 +29,73 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncInstanceChangeRetriesFromNewFirstSequenceAndPublishesRecoveryEvidence()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(9000001, 1, 2),
+            SampleResponse(9000001, 1, 2));
+
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
+        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
+        var store = new InMemoryObservationIngestionStore();
+        var sink = new MtConnectDurableObservationSink(store, streamId);
+        var reporter = new RecordingContinuityReporter();
+        var runtime = CreateRuntime(
+            httpClient,
+            sink,
+            27UL,
+            machineId: machineId,
+            initialCheckpoint: checkpoint,
+            reporter: reporter);
+
+        var result = await runtime.RunCycleAsync();
+
+        Assert.Equal(9000001UL, result.InstanceId);
+        Assert.Equal(
+            ["http://localhost:5000/sample?from=27",
+             "http://localhost:5000/sample?from=1"],
+            handler.RequestUris.Select(uri => uri.AbsoluteUri).ToArray());
+        var loss = Assert.Single(reporter.Losses);
+        Assert.Equal(MtConnectContinuityLossReason.InstanceChanged, loss.Reason);
+        Assert.Equal(1793867780UL, loss.PreviousInstanceId);
+        Assert.Equal(9000001UL, loss.CurrentInstanceId);
+        Assert.Equal(27UL, loss.PreviousSequence);
+        Assert.Equal(1UL, loss.RecoverySequence);
+        var persisted = await store.ReadCheckpointAsync(streamId);
+        Assert.Equal(9000001UL, persisted?.InstanceId);
+        Assert.Equal(2UL, persisted?.NextSequence);
+    }
+
+    [Fact]
+    public async Task RunCycleAsyncReporterFailureDoesNotCommitOrAdvanceCheckpoint()
+    {
+        var handler = new SequenceHandler(SampleResponse(9000001, 1, 2));
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
+        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
+        var store = new InMemoryObservationIngestionStore();
+        var runtime = CreateRuntime(
+            httpClient,
+            new MtConnectDurableObservationSink(store, streamId),
+            27UL,
+            machineId: machineId,
+            initialCheckpoint: checkpoint,
+            reporter: new FailingContinuityReporter());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runtime.RunCycleAsync());
+
+        Assert.Null(await store.ReadCheckpointAsync(streamId));
+        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(
+            "http://localhost:5000/sample?from=27",
+            Assert.Single(handler.RequestUris).AbsoluteUri);
+    }
+
+    [Fact]
     public async Task RunAsyncContinuesFromSessionCursor()
     {
         var handler = new SequenceHandler(
@@ -301,14 +368,16 @@ public sealed class MtConnectAcquisitionRuntimeTests
         TimeSpan? pollingInterval = null,
         int maxAttempts = 1,
         MachineId? machineId = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ObservationCheckpoint? initialCheckpoint = null,
+        IMtConnectContinuityReporter? reporter = null)
     {
         var runtimeMachineId = machineId ?? MachineId.New();
 
         return new MtConnectAcquisitionRuntime(
-            new MtConnectAcquisitionSession(
-                new MtConnectSampleClient(httpClient),
-                fromSequence),
+            initialCheckpoint is null
+                ? new MtConnectAcquisitionSession(new MtConnectSampleClient(httpClient), fromSequence)
+                : new MtConnectAcquisitionSession(new MtConnectSampleClient(httpClient), initialCheckpoint.InstanceId, fromSequence),
             new MtConnectEndpoint(
                 new Uri("http://localhost:5000")),
             runtimeMachineId,
@@ -335,10 +404,11 @@ public sealed class MtConnectAcquisitionRuntimeTests
                     new ImmediateRetryDelay(),
                     new FixedJitterSource(),
                     NullLogger<MtConnectTransientRetryPolicy>.Instance),
-                new IgnoringContinuityReporter()),
+                reporter ?? new IgnoringContinuityReporter()),
             sink,
             timeProvider ?? TimeProvider.System,
-            pollingInterval ?? TimeSpan.FromMilliseconds(1));
+            pollingInterval ?? TimeSpan.FromMilliseconds(1),
+            initialCheckpoint);
     }
 
     private static HttpResponseMessage SampleResponse(
@@ -389,6 +459,28 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class RecordingContinuityReporter : IMtConnectContinuityReporter
+    {
+        public List<MtConnectContinuityLoss> Losses { get; } = [];
+
+        public ValueTask ReportAsync(
+            MtConnectContinuityLoss continuityLoss,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Losses.Add(continuityLoss);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailingContinuityReporter : IMtConnectContinuityReporter
+    {
+        public ValueTask ReportAsync(
+            MtConnectContinuityLoss continuityLoss,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromException(new InvalidOperationException("Reporter failed."));
     }
 
     private sealed class IgnoringContinuityReporter :
