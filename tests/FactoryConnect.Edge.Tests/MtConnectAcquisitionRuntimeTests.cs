@@ -134,6 +134,44 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncInstanceChangeRetriesIdenticalPendingEvidenceAfterDurableWriteFailure()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(9000001, 1, 2),
+            SampleResponse(9000001, 1, 2));
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
+        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
+        var reporter = new RecordingContinuityReporter();
+        var sink = new FailOnceSink();
+        var runtime = CreateRuntime(
+            httpClient,
+            sink,
+            27UL,
+            machineId: machineId,
+            initialCheckpoint: checkpoint,
+            reporter: reporter);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runtime.RunCycleAsync());
+        await runtime.RunCycleAsync();
+
+        Assert.Equal(
+            ["http://localhost:5000/sample?from=27",
+             "http://localhost:5000/sample?from=1"],
+            handler.RequestUris.Select(uri => uri.AbsoluteUri).ToArray());
+        Assert.Single(reporter.Losses);
+        Assert.Equal(2, sink.WriteCount);
+        Assert.Same(sink.Results[0], sink.Results[1]);
+        Assert.Same(sink.Evidence[0], sink.Evidence[1]);
+        Assert.NotEqual(Guid.Empty, sink.Evidence[0].PublicationId);
+        Assert.Equal(checkpoint, sink.ExpectedCheckpoints[0]);
+        Assert.Equal(checkpoint, sink.ExpectedCheckpoints[1]);
+        Assert.Equal(sink.SuccessfulContactTimes[0], sink.SuccessfulContactTimes[1]);
+    }
+
+    [Fact]
     public async Task RunCycleAsyncReporterFailurePreservesSeededMoxaCheckpointOnRepeatedAttempts()
     {
         var handler = new SequenceHandler(
