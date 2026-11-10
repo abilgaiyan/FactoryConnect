@@ -31,3 +31,14 @@ dotnet run --project tools/FactoryConnect.GateBControlledAgent -- --probe --phas
 ```
 
 Stop the agent, then repeat with `--phase second` for both commands. The probe invokes the **production MTConnect sample client/parser**, checks the exact machine, stream observation and expected status, and exits nonzero on a mismatch. It does not start Edge or touch SQL. Passing the probe is not durable-ingestion or Gate B acceptance.
+
+## Read-only SQL admission preflight
+
+After stopping both Edge hosts and confirming the clone is disposable, run:
+
+```powershell
+$env:FC_GATEB_SQL_CONNECTION = 'Server=DESKTOP-1PJK2OB\FCINVENTORY;Database=FactoryConnect_P0_GateB_Fixture_20261110;Integrated Security=True;TrustServerCertificate=True'
+dotnet run --project tools/FactoryConnect.GateBControlledAgent -- --preflight
+```
+
+This command requires the exact local clone, cryptographically verifies the expected MOXA publication prefix through the production reader, rechecks its active head, checks the original MOXA checkpoint and GG held activity authority. It is read-only, exits nonzero on mismatches, and does not authorize a new source generation or write fixture observations. **Do not run acquisition against the clone yet.**
