@@ -15,3 +15,19 @@ The endpoint is `http://127.0.0.1:51027/sample?from=27`. It deliberately returns
 Before wiring a separate, bounded acquisition runner to the disposable clone, independently verify the commissioned configuration and exact database target, recheck the previously verified publication head, ensure no other writer is running, and reject any unexpected baseline. Only the production runtime and `MtConnectDurableObservationSink` may commit fixture observations; never edit SQL checkpoints or raw evidence directly. If admission fails, stop and report BLOCKED.
 
 This executable is not registered by the production Edge host.
+
+## Live protocol smoke check
+
+Start the first-phase agent in one terminal:
+
+```powershell
+dotnet run --project tools/FactoryConnect.GateBControlledAgent -- --serve --phase first
+```
+
+In a second terminal:
+
+```powershell
+dotnet run --project tools/FactoryConnect.GateBControlledAgent -- --probe --phase first
+```
+
+Stop the agent, then repeat with `--phase second` for both commands. The probe invokes the **production MTConnect sample client/parser**, checks the exact machine, stream observation and expected status, and exits nonzero on a mismatch. It does not start Edge or touch SQL. Passing the probe is not durable-ingestion or Gate B acceptance.
