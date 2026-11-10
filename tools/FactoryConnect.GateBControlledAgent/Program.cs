@@ -6,6 +6,9 @@ using System.Net;
 using System.Text;
 
 // An isolated protocol fixture. No SQL access, factory endpoint or production configuration.
+if (args.Length == 1 && args[0] == "--rehearse-generation")
+    return await GateBGenerationRehearsal.RunAsync();
+
 if (args.Length == 1 && args[0] == "--preflight")
     return await GateBAdmissionPreflight.RunAsync();
 
@@ -15,7 +18,7 @@ const string device = "DEWAS-SR-MOXA-001";
 if (args.Length != 3 || (args[0] != "--serve" && args[0] != "--probe") || args[1] != "--phase" ||
     (args[2] != "first" && args[2] != "second"))
 {
-    Console.Error.WriteLine("Usage: GateBControlledAgent --preflight OR --serve|--probe --phase first|second");
+    Console.Error.WriteLine("Usage: GateBControlledAgent --preflight|--rehearse-generation OR --serve|--probe --phase first|second");
     return 2;
 }
 
