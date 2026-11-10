@@ -6,6 +6,9 @@ using System.Net;
 using System.Text;
 
 // An isolated protocol fixture. No SQL access, factory endpoint or production configuration.
+if (args.Length == 1 && args[0] == "--verify-denied-acquisition")
+    return await GateBBoundedAcquisition.RunAsync(verifyDenial: true);
+
 if (args.Length == 1 && args[0] == "--prepare-acquisition")
     return await GateBBoundedAcquisition.RunAsync();
 
