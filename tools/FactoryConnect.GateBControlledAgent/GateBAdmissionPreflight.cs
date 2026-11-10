@@ -17,6 +17,7 @@ internal static class GateBAdmissionPreflight
 
     public static async Task<int> RunAsync()
     {
+        var stage = "configuration";
         try
         {
             var raw = Environment.GetEnvironmentVariable("FC_GATEB_SQL_CONNECTION");
@@ -31,7 +32,11 @@ internal static class GateBAdmissionPreflight
                 throw new InvalidOperationException("Wrong SQL target or authentication.");
 
             await using var connection = new SqlConnection(builder.ConnectionString);
+            stage = "SQL connection";
+            Console.WriteLine($"CHECK: {stage}");
             await connection.OpenAsync();
+            stage = "SQL identity";
+            Console.WriteLine($"CHECK: {stage}");
             await using (var identity = connection.CreateCommand())
             {
                 identity.CommandText = "SELECT CONVERT(nvarchar(128), @@SERVERNAME), DB_NAME()";
@@ -44,6 +49,8 @@ internal static class GateBAdmissionPreflight
 
             var stream = new ObservationStreamId(new MachineId(Moxa), "mtconnect:DEWAS-SR-MOXA-001");
             var evidence = new SqlServerAcquisitionEvidenceReader(builder.ConnectionString);
+            stage = "cryptographic evidence prefix";
+            Console.WriteLine($"CHECK: {stage}");
             var verified = await evidence.ReadExactAsync(stream, HeadIdentity);
             if (verified.Status != AcquisitionEvidenceReadStatus.Found || verified.Record is null ||
                 verified.Record.PublicationOrdinal != 104153 ||
@@ -51,6 +58,8 @@ internal static class GateBAdmissionPreflight
                 !string.Equals(verified.Record.Identity, HeadIdentity, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Production evidence prefix verification failed.");
 
+            stage = "publication head";
+            Console.WriteLine($"CHECK: {stage}");
             await using (var head = connection.CreateCommand())
             {
                 head.CommandText = """
@@ -68,6 +77,8 @@ internal static class GateBAdmissionPreflight
                     throw new InvalidDataException("Active publication head differs from approved baseline.");
             }
 
+            stage = "MOXA acquisition checkpoint";
+            Console.WriteLine($"CHECK: {stage}");
             await using (var checkpoint = connection.CreateCommand())
             {
                 checkpoint.CommandText = """
@@ -85,6 +96,8 @@ internal static class GateBAdmissionPreflight
                     throw new InvalidDataException("MOXA acquisition checkpoint changed.");
             }
 
+            stage = "GG-003 held authority";
+            Console.WriteLine($"CHECK: {stage}");
             await using (var gg = connection.CreateCommand())
             {
                 gg.CommandText = """
@@ -106,7 +119,7 @@ internal static class GateBAdmissionPreflight
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine($"BLOCKED: {error.GetType().Name}: {error.Message}");
+            Console.Error.WriteLine($"BLOCKED at {stage}: {error.GetType().Name}: {error.Message}");
             return 1;
         }
     }
