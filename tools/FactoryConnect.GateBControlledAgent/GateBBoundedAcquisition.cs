@@ -58,7 +58,7 @@ internal static class GateBBoundedAcquisition
         var factory = new MtConnectAcquisitionRuntimeFactory(
             options, new MtConnectStartupCheckpointResolver(store),
             sessionFactory, retry, recovery, sink, TimeProvider.System);
-        var runtime = await factory.CreateAsync();
+        var runtime = (MtConnectAcquisitionRuntime)await factory.CreateAsync();
         if (verifyDenial)
         {
             var denied = false;
