@@ -69,6 +69,36 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncRejectsSecondInstanceMismatchWithoutDurableWrite()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(9000001, 1, 2),
+            SampleResponse(9000002, 1, 2));
+
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
+        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
+        var store = new InMemoryObservationIngestionStore();
+        var reporter = new RecordingContinuityReporter();
+        var runtime = CreateRuntime(
+            httpClient,
+            new MtConnectDurableObservationSink(store, streamId),
+            27UL,
+            machineId: machineId,
+            initialCheckpoint: checkpoint,
+            reporter: reporter);
+
+        await Assert.ThrowsAsync<MtConnectInstanceChangedException>(
+            () => runtime.RunCycleAsync());
+
+        Assert.Equal(2, handler.RequestUris.Count);
+        Assert.Single(reporter.Losses);
+        Assert.Null(await store.ReadCheckpointAsync(streamId));
+        Assert.Empty(store.ReadObservations(streamId));
+    }
+
+    [Fact]
     public async Task RunCycleAsyncReporterFailureDoesNotCommitOrAdvanceCheckpoint()
     {
         var handler = new SequenceHandler(SampleResponse(9000001, 1, 2));
