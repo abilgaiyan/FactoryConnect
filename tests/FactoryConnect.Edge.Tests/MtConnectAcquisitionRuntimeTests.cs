@@ -29,7 +29,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
-    public async Task RunCycleAsyncInstanceChangeRetriesFromNewFirstSequenceAndPublishesRecoveryEvidence()
+    public async Task RunCycleAsyncInstanceChangeRetriesFromNewFirstSequenceAndRetainsRecoveryBoundary()
     {
         var handler = new SequenceHandler(
             SampleResponse(9000001, 1, 2),
@@ -39,8 +39,7 @@ public sealed class MtConnectAcquisitionRuntimeTests
         var machineId = MachineId.New();
         var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
         var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
-        var store = new InMemoryObservationIngestionStore();
-        var sink = new MtConnectDurableObservationSink(store, streamId);
+        var sink = new RecordingEvidenceSink();
         var reporter = new RecordingContinuityReporter();
         var runtime = CreateRuntime(
             httpClient,
@@ -63,39 +62,9 @@ public sealed class MtConnectAcquisitionRuntimeTests
         Assert.Equal(9000001UL, loss.CurrentInstanceId);
         Assert.Equal(27UL, loss.PreviousSequence);
         Assert.Equal(1UL, loss.RecoverySequence);
-        var persisted = await store.ReadCheckpointAsync(streamId);
-        Assert.Equal(9000001UL, persisted?.InstanceId);
-        Assert.Equal(2UL, persisted?.NextSequence);
-    }
-
-    [Fact]
-    public async Task RunCycleAsyncRejectsSecondInstanceMismatchWithoutDurableWrite()
-    {
-        var handler = new SequenceHandler(
-            SampleResponse(9000001, 1, 2),
-            SampleResponse(9000002, 1, 2));
-
-        using var httpClient = new HttpClient(handler);
-        var machineId = MachineId.New();
-        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
-        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
-        var store = new InMemoryObservationIngestionStore();
-        var reporter = new RecordingContinuityReporter();
-        var runtime = CreateRuntime(
-            httpClient,
-            new MtConnectDurableObservationSink(store, streamId),
-            27UL,
-            machineId: machineId,
-            initialCheckpoint: checkpoint,
-            reporter: reporter);
-
-        await Assert.ThrowsAsync<MtConnectInstanceChangedException>(
-            () => runtime.RunCycleAsync());
-
-        Assert.Equal(2, handler.RequestUris.Count);
-        Assert.Single(reporter.Losses);
-        Assert.Null(await store.ReadCheckpointAsync(streamId));
-        Assert.Empty(store.ReadObservations(streamId));
+        Assert.Equal(checkpoint, Assert.Single(sink.ExpectedCheckpoints));
+        Assert.Same(result, Assert.Single(sink.Results));
+        Assert.NotEqual(Guid.Empty, Assert.Single(sink.Evidence).PublicationId);
     }
 
     [Fact]
@@ -489,6 +458,34 @@ public sealed class MtConnectAcquisitionRuntimeTests
 
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class RecordingEvidenceSink : IMtConnectObservationSink
+    {
+        public List<MtConnectSampleResult> Results { get; } = [];
+        public List<ObservationCheckpoint?> ExpectedCheckpoints { get; } = [];
+        public List<AcquisitionResponseEvidence> Evidence { get; } = [];
+
+        public ValueTask WriteWithEvidenceAsync(
+            MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
+            AcquisitionResponseEvidence evidence,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Results.Add(result);
+            ExpectedCheckpoints.Add(expectedCheckpoint);
+            Evidence.Add(evidence);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask WriteAsync(
+            MtConnectSampleResult result,
+            ObservationCheckpoint? expectedCheckpoint,
+            DateTimeOffset successfulContactTime,
+            CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Evidence-aware write required.");
     }
 
     private sealed class RecordingContinuityReporter : IMtConnectContinuityReporter
