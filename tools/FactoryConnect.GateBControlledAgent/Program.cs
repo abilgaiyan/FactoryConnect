@@ -1,3 +1,5 @@
+using FactoryConnect.Abstractions;
+using FactoryConnect.Protocols.MTConnect;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -6,14 +8,48 @@ using System.Text;
 const ulong fixtureInstance = 9000001;
 const int port = 51027;
 const string device = "DEWAS-SR-MOXA-001";
-if (args.Length != 3 || args[0] != "--serve" || args[1] != "--phase" ||
+if (args.Length != 3 || (args[0] != "--serve" && args[0] != "--probe") || args[1] != "--phase" ||
     (args[2] != "first" && args[2] != "second"))
 {
-    Console.Error.WriteLine("Usage: GateBControlledAgent --serve --phase first|second");
+    Console.Error.WriteLine("Usage: GateBControlledAgent --serve|--probe --phase first|second");
     return 2;
 }
 
 var phase = args[2];
+if (args[0] == "--probe")
+{
+    try
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        var client = new MtConnectSampleClient(http);
+        var endpoint = new MtConnectEndpoint(new Uri("http://127.0.0.1:51027/"));
+        var machine = new MachineId(Guid.Parse("bfa0dc97-9a68-45ed-b189-1dacb7d863f0"));
+        const string deviceKey = "DEWAS-SR-MOXA-001";
+        var from = phase == "first" ? 27UL : 2UL;
+        var result = await client.AcquireAsync(endpoint, machine, deviceKey, from);
+        var expectedSequence = phase == "first" ? 1UL : 2UL;
+        var expectedStatus = phase == "first" ? "RUNNING" : "IDLE";
+        var item = result.Observations.Single();
+        if (result.InstanceId != fixtureInstance || result.FirstSequence != 1 ||
+            result.NextSequence != expectedSequence + 1 || item.Sequence != expectedSequence ||
+            item.Observation.MachineId != machine ||
+            item.Observation.Source != "mtconnect" ||
+            item.Observation.Address != "moxa001_status" ||
+            item.Observation.Type != SignalType.Enumeration ||
+            item.Observation.Quality != ObservationQuality.Good ||
+            !string.Equals(item.Observation.Value?.ToString(), expectedStatus, StringComparison.Ordinal))
+            throw new InvalidDataException("Controlled Agent response did not match the expected production parser contract.");
+        Console.WriteLine($"PASS: production MTConnect parser accepted {phase} phase, instance={result.InstanceId}, sequence={item.Sequence}, status={expectedStatus}.");
+        Console.WriteLine("READ ONLY: no SQL writer, processing host, or production endpoint used.");
+        return 0;
+    }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"BLOCKED: {error.GetType().Name}: {error.Message}");
+        return 1;
+    }
+}
+
 using var listener = new HttpListener();
 listener.Prefixes.Add($"http://127.0.0.1:{port}/");
 listener.Start();
