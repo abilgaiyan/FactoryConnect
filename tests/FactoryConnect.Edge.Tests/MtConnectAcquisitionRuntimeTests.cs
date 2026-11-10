@@ -134,6 +134,45 @@ public sealed class MtConnectAcquisitionRuntimeTests
     }
 
     [Fact]
+    public async Task RunCycleAsyncReporterFailurePreservesSeededMoxaCheckpointOnRepeatedAttempts()
+    {
+        var handler = new SequenceHandler(
+            SampleResponse(9000001, 1, 2),
+            SampleResponse(9000001, 1, 2));
+        using var httpClient = new HttpClient(handler);
+        var machineId = MachineId.New();
+        var streamId = MtConnectObservationStreamId.Create(machineId, "CNC-01");
+        var checkpoint = new ObservationCheckpoint(streamId, 1793867780UL, 27UL);
+        var store = new InMemoryObservationIngestionStore();
+        await store.CommitAsync(new ObservationIngestionBatch(
+            null,
+            checkpoint,
+            [],
+            new DateTimeOffset(2026, 11, 5, 8, 36, 20, TimeSpan.Zero)));
+        var runtime = CreateRuntime(
+            httpClient,
+            new MtConnectDurableObservationSink(store, streamId),
+            27UL,
+            machineId: machineId,
+            initialCheckpoint: checkpoint,
+            reporter: new FailingContinuityReporter());
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => runtime.RunCycleAsync());
+
+            Assert.Equal(checkpoint, await store.ReadCheckpointAsync(streamId));
+            Assert.Empty(store.ReadObservations(streamId));
+        }
+
+        Assert.Equal(
+            ["http://localhost:5000/sample?from=27",
+             "http://localhost:5000/sample?from=27"],
+            handler.RequestUris.Select(uri => uri.AbsoluteUri).ToArray());
+    }
+
+    [Fact]
     public async Task RunAsyncContinuesFromSessionCursor()
     {
         var handler = new SequenceHandler(
