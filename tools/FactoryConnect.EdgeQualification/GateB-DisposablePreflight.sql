@@ -55,6 +55,31 @@ IF NOT EXISTS (
       AND Position = 513501 AND ProjectionRevision = 4091)
     THROW 51107, 'Gate B preflight refused: GG chronology hold baseline differs.', 1;
 
+-- Structural checks only. They do not validate the canonical publication payload
+-- or cryptographic identity chain; the production reader must do that separately.
+IF (SELECT COUNT_BIG(*) FROM dbo.AcquisitionEvidenceHead
+    WHERE MachineId = @Moxa AND StreamKeyBinary = @MoxaStream) <> 1
+    THROW 51108, 'Gate B preflight refused: MOXA head missing or ambiguous.', 1;
+IF (SELECT COUNT_BIG(*) FROM dbo.AcquisitionEvidencePublication
+    WHERE MachineId = @Moxa AND StreamKeyBinary = @MoxaStream
+      AND PublicationOrdinal = 104153) <> 1
+    THROW 51109, 'Gate B preflight refused: MOXA tail ordinal missing or ambiguous.', 1;
+IF EXISTS (
+    SELECT 1 FROM dbo.AcquisitionEvidencePublication
+    WHERE MachineId = @Moxa AND StreamKeyBinary = @MoxaStream
+      AND PublicationOrdinal > 104153)
+    THROW 51110, 'Gate B preflight refused: MOXA publication frontier has moved.', 1;
+IF NOT EXISTS (
+    SELECT 1 FROM dbo.MachineObservation
+    WHERE MachineId = @Moxa AND StreamKeyBinary = @MoxaStream
+      AND Position = 14328)
+    THROW 51111, 'Gate B preflight refused: MOXA retained frontier is absent.', 1;
+IF EXISTS (
+    SELECT 1 FROM dbo.MachineObservation
+    WHERE MachineId = @Moxa AND StreamKeyBinary = @MoxaStream
+      AND Position > 14328)
+    THROW 51112, 'Gate B preflight refused: MOXA raw frontier has moved.', 1;
+
 SELECT DB_NAME() AS VerifiedClone, @@SERVERNAME AS VerifiedServer,
        N'READ_ONLY_BASELINE_MATCH; NOT AN ADMISSION AUTHORIZATION' AS Disposition;
 SELECT MachineId, InstanceId, NextSequence
