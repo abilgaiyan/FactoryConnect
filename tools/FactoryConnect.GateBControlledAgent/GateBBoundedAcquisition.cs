@@ -15,7 +15,7 @@ namespace FactoryConnect.GateBControlledAgent;
 /// </summary>
 internal static class GateBBoundedAcquisition
 {
-    public static async Task<int> RunAsync()
+    public static async Task<int> RunAsync(bool verifyDenial = false)
     {
         if (await GateBAdmissionPreflight.RunAsync() != 0)
             return 1;
@@ -58,7 +58,30 @@ internal static class GateBBoundedAcquisition
         var factory = new MtConnectAcquisitionRuntimeFactory(
             options, new MtConnectStartupCheckpointResolver(store),
             sessionFactory, retry, recovery, sink, TimeProvider.System);
-        _ = await factory.CreateAsync();
+        var runtime = await factory.CreateAsync();
+        if (verifyDenial)
+        {
+            var denied = false;
+            try
+            {
+                _ = await runtime.RunCycleAsync();
+            }
+            catch (InvalidOperationException error)
+                when (error.Message == "SQL source-generation admission is not authorized.")
+            {
+                denied = true;
+            }
+
+            if (!denied)
+                throw new InvalidDataException("Expected source-generation denial was not observed.");
+
+            if (await GateBAdmissionPreflight.RunAsync() != 0)
+                throw new InvalidDataException("Fixture baseline changed during denied acquisition.");
+
+            Console.WriteLine("PASS: real bounded acquisition rejected source-generation change before SQL sink; fixture baseline unchanged.");
+            Console.WriteLine("READ ONLY: source-generation admission denied; no durable commit.");
+            return 0;
+        }
 
         Console.WriteLine("PASS: production SQL ingestion store, startup resolver, continuity policy, durable sink and bounded runtime constructed.");
         Console.WriteLine("BLOCKED: source-generation SQL admission not qualified; RunCycleAsync was NOT invoked. No writes performed.");
