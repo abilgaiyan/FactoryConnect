@@ -1,4 +1,3 @@
-using System.Data;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -30,7 +29,9 @@ try
     var builder = new SqlConnectionStringBuilder(rawConnection);
     if (!string.Equals(builder.DataSource, expectedServer, StringComparison.OrdinalIgnoreCase) ||
         !string.Equals(builder.InitialCatalog, expectedDatabase, StringComparison.OrdinalIgnoreCase) ||
-        builder.AttachDBFilename.Length != 0)
+        builder.AttachDBFilename.Length != 0 || !builder.IntegratedSecurity ||
+        builder.UserID.Length != 0 || builder.Password.Length != 0 ||
+        builder.FailoverPartner.Length != 0)
         throw new InvalidOperationException("Unexpected SQL target or attached database file.");
 
     // Validate the actual connected server/database, not only the supplied connection string.
@@ -63,6 +64,30 @@ try
     Console.WriteLine($"PASS: verified production evidence prefix through ordinal {record.PublicationOrdinal}.");
     Console.WriteLine($"Machine={stream.MachineId.Value}; Stream={stream.StreamKey}");
     Console.WriteLine($"Identity={record.Identity}; AcceptedThrough={record.AcceptedThrough.Value}");
+    // Re-check the live head after historical verification. A verified historical
+    // identity alone does not establish that the active frontier stayed fixed.
+    await using (var connection = new SqlConnection(builder.ConnectionString))
+    {
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT p.PublicationOrdinal, p.AcceptedThrough, p.IdentityHash
+            FROM dbo.AcquisitionEvidenceHead h
+            JOIN dbo.AcquisitionEvidencePublication p
+              ON p.MachineId=h.MachineId AND p.StreamKeyBinary=h.StreamKeyBinary
+             AND p.IdentityHash=h.IdentityHash
+            WHERE h.MachineId=@MachineId AND p.IdentityHash=@Identity;
+            """;
+        command.Parameters.Add("@MachineId", System.Data.SqlDbType.UniqueIdentifier).Value = stream.MachineId.Value;
+        command.Parameters.Add("@Identity", System.Data.SqlDbType.Binary, 32).Value = Convert.FromHexString(expectedIdentity);
+        await using var rows = await command.ExecuteReaderAsync();
+        if (!await rows.ReadAsync() || rows.GetInt64(0) != expectedOrdinal ||
+            rows.IsDBNull(1) || Convert.ToUInt64(rows.GetDecimal(1)) != expectedThrough ||
+            !((byte[])rows[2]).AsSpan().SequenceEqual(Convert.FromHexString(expectedIdentity)) ||
+            await rows.ReadAsync())
+            throw new InvalidDataException("Active MOXA publication head moved or no longer matches the verified identity.");
+    }
+    Console.WriteLine("PASS: active publication head still matches verified frontier.");
     Console.WriteLine("READ ONLY; NOT FIXTURE ADMISSION OR DEPLOYMENT AUTHORIZATION.");
     return 0;
 }
