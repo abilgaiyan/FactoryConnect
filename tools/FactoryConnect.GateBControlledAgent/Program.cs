@@ -6,17 +6,19 @@ using System.Text;
 const ulong fixtureInstance = 9000001;
 const int port = 51027;
 const string device = "DEWAS-SR-MOXA-001";
-if (args.Length != 1 || args[0] != "--serve")
+if (args.Length != 3 || args[0] != "--serve" || args[1] != "--phase" ||
+    (args[2] != "first" && args[2] != "second"))
 {
-    Console.Error.WriteLine("Usage: GateBControlledAgent --serve");
+    Console.Error.WriteLine("Usage: GateBControlledAgent --serve --phase first|second");
     return 2;
 }
 
+var phase = args[2];
 using var listener = new HttpListener();
 listener.Prefixes.Add($"http://127.0.0.1:{port}/");
 listener.Start();
 Console.WriteLine($"Gate B controlled MTConnect fixture listening at http://127.0.0.1:{port}/");
-Console.WriteLine("ISOLATED SOURCE ONLY. No SQL writer or Edge worker is started. Ctrl+C to stop.");
+Console.WriteLine($"Phase={phase}. ISOLATED SOURCE ONLY. No SQL writer or Edge worker is started. Ctrl+C to stop.");
 using var shutdown = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); listener.Stop(); };
 try
@@ -33,7 +35,7 @@ try
         var fromText = request.QueryString["from"];
         var validFrom = ulong.TryParse(fromText, NumberStyles.None, CultureInfo.InvariantCulture, out var from);
         var valid = request.HttpMethod == "GET" && path == "/sample" && validFrom &&
-                    (from == 27 || from == 1 || from == 2);
+                    (phase == "first" ? from is 27 or 1 : from == 2);
         context.Response.StatusCode = valid ? 200 : 400;
         context.Response.ContentType = "application/xml; charset=utf-8";
         // The first response intentionally exposes a new instance at a previously
@@ -56,7 +58,7 @@ try
                 </DeviceStream>
               </Streams>
             </MTConnectStreams>
-            """ : "<error>Unsupported request; fixture only accepts /sample?from=27,1,2</error>";
+            """ : "<error>Unsupported request for selected fixture phase</error>";
         var bytes = Encoding.UTF8.GetBytes(xml);
         context.Response.ContentLength64 = bytes.Length;
         await context.Response.OutputStream.WriteAsync(bytes);
