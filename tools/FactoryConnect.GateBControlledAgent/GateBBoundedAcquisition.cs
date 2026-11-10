@@ -27,6 +27,7 @@ internal static class GateBBoundedAcquisition
             {
                 ["Persistence:Provider"] = "SqlServer",
                 ["PersistenceProviders:SqlServer:ConnectionString"] = connectionString,
+                ["ConnectionString"] = connectionString,
             }).Build();
         var services = new ServiceCollection();
         services.AddSqlServerPersistenceProvider(configuration);
