@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Data;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
@@ -63,7 +64,7 @@ internal static class GateBAdmissionPreflight
                     """;
                 head.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = Moxa;
                 head.Parameters.Add("@Identity", SqlDbType.Binary, 32).Value = Convert.FromHexString(HeadIdentity);
-                if (Convert.ToInt64(await head.ExecuteScalarAsync()) != 1)
+                if (Convert.ToInt64(await head.ExecuteScalarAsync(), CultureInfo.InvariantCulture) != 1)
                     throw new InvalidDataException("Active publication head differs from approved baseline.");
             }
 
@@ -94,7 +95,7 @@ internal static class GateBAdmissionPreflight
                 await using var rows = await gg.ExecuteReaderAsync();
                 if (!await rows.ReadAsync() ||
                     Convert.ToUInt64(rows.GetDecimal(0)) != 513501UL ||
-                    Convert.ToInt64(rows.GetValue(1)) != 4091 ||
+                    Convert.ToInt64(rows.GetValue(1), CultureInfo.InvariantCulture) != 4091 ||
                     await rows.ReadAsync())
                     throw new InvalidDataException("GG-003 held authority baseline changed.");
             }
