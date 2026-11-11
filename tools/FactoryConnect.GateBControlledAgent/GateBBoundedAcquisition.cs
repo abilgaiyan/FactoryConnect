@@ -35,7 +35,7 @@ internal static class GateBBoundedAcquisition
         using var provider = services.BuildServiceProvider();
         // Use the fixture-only transaction policy; the continuity reporter still denies
         // generation changes before the sink, so no SQL write is authorized.
-        IObservationIngestionStore store = new SqlServerObservationIngestionStore(
+        IObservationIngestionStore store = SqlServerAdmissionBoundIngestionStoreFactory.Create(
             connectionString, new GateBIngestionTransactionAdmission());
 
         var machine = new MachineId(Guid.Parse("bfa0dc97-9a68-45ed-b189-1dacb7d863f0"));
