@@ -38,7 +38,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 20, "DurableAcquisitionEvidence", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 21, "DurableOperationalMetricContainment", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 22, "ProductionAdmissionBoundary", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 23, "ProductionAdmissionRecoveryAudit", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 23, "ProductionAdmissionRecoveryAudit", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 24, "SupervisorProductionEntry", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]

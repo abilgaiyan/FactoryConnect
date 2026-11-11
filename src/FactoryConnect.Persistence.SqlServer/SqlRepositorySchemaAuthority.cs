@@ -55,7 +55,8 @@ internal static class SqlRepositorySchemaAuthority
         Table("ProductionTimeEligibilityOutput"),
         Table("QualityAssessment"),
         Table("QualityPolicy"),
-        Table("ShiftMetricAggregate")
+        Table("ShiftMetricAggregate"),
+        Table("SupervisorProductionEntry")
     ]);
 
     private static SqlObjectName Table(string tableName) => new("dbo", tableName);

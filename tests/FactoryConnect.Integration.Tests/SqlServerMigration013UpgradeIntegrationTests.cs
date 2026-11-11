@@ -17,8 +17,8 @@ public sealed class SqlServerMigration013UpgradeIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(23, catalog.Migrations.Length);
-        Assert.Equal(23, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(24, catalog.Migrations.Length);
+        Assert.Equal(24, catalog.Migrations[^1].MigrationId);
 
         await CreateExactPost012Async(connection, catalog);
         Assert.Equal(MigrationIdsThrough012, await ReadMigrationIdsAsync(connection));

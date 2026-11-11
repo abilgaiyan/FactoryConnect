@@ -15,7 +15,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Equal(34, SqlRepositorySchemaDescriptors.Post012.Tables.Length);
         Assert.Equal(36, SqlRepositorySchemaDescriptors.Post013.Tables.Length);
         Assert.Equal(51, SqlRepositorySchemaDescriptors.Post022.Tables.Length);
-        Assert.Equal(52, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(53, SqlRepositorySchemaDescriptors.Current.Tables.Length);
         Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post022.Tables,
             static table => table.Name.ObjectName == "ProductionAdmissionRecoveryAudit");
 
