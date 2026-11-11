@@ -16,7 +16,7 @@ internal static class SqlRepositoryPost024SchemaDescriptor
                 N("ProductionOrder", 200),
                 N("PartNumber", 200),
                 N("Operation", 200),
-                N("Note", 2000, nullable: true, binary: false),
+                N("Note", 2000, nullable: true),
                 N("EnteredBy", 200),
                 C("RecordedAtUtc", "datetimeoffset", scale: 7)
             ],
@@ -42,7 +42,7 @@ internal static class SqlRepositoryPost024SchemaDescriptor
 
     private static SqlColumnDescriptor N(string name, int length, bool nullable = false, bool binary = true) =>
         new(name, "nvarchar", SqlLengthDescriptor.Bounded(length), null, null, nullable,
-            binary ? BinaryCollation : "SQL_Latin1_General_CP1_CI_AS", null);
+            binary ? BinaryCollation : null, null);
 
     private static SqlIndexColumnDescriptor K(string name, int ordinal) =>
         new(name, SqlIndexColumnDirection.Ascending, ordinal);
