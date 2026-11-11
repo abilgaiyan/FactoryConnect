@@ -33,7 +33,10 @@ internal static class GateBBoundedAcquisition
         services.AddSqlServerPersistenceProvider(configuration);
         services.AddFactoryConnectPersistence(configuration, PersistenceProviderCapabilities.Core);
         using var provider = services.BuildServiceProvider();
-        // Use the fixture-only transaction policy; the continuity reporter still denies\n        // generation changes before the sink, so no SQL write is authorized.\n        IObservationIngestionStore store = new SqlServerObservationIngestionStore(\n            connectionString, new GateBIngestionTransactionAdmission());
+        // Use the fixture-only transaction policy; the continuity reporter still denies
+        // generation changes before the sink, so no SQL write is authorized.
+        IObservationIngestionStore store = new SqlServerObservationIngestionStore(
+            connectionString, new GateBIngestionTransactionAdmission());
 
         var machine = new MachineId(Guid.Parse("bfa0dc97-9a68-45ed-b189-1dacb7d863f0"));
         const string device = "DEWAS-SR-MOXA-001";
