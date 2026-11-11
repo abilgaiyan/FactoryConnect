@@ -34,3 +34,7 @@
 .supervisor-preview code { white-space: normal; overflow-wrap: anywhere; }
 .supervisor-preview .activity-table-scroll { max-width: 100%; }
 .supervisor-preview nav[aria-label="Workspace operating mode"] button[aria-pressed="true"] { outline: 3px solid #12334e; outline-offset: 2px; }
+
+.supervisor-shift-choices { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
+.supervisor-shift-choices button { padding: .5rem .75rem; text-align: left; }
+.supervisor-shift-choices button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }

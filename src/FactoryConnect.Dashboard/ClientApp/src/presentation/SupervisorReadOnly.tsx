@@ -55,6 +55,16 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
   const occurrences = overview.groups.flatMap(group => group.machines.flatMap(machine => machine.shifts.map(occurrence => ({ machine, occurrence }))));
   const selected = occurrences.find(({ machine, occurrence }) => occurrenceKey(machine, occurrence) === selectedKey);
   return <>
+    <p role="status">{occurrences.length} recorded shift occurrence(s) returned for {overview.productionDay}. Select one to inspect its metrics and activity.</p>
+    {occurrences.length > 0 && <div className="supervisor-shift-choices" aria-label="Available shift occurrences">
+      {occurrences.map(({ machine, occurrence }) => {
+        const key = occurrenceKey(machine, occurrence);
+        return <button type="button" key={key} aria-pressed={selectedKey === key} onClick={() => setSelectedKey(key)}>
+          {occurrence.shift.shiftId} · {occurrence.shift.startsAtUtc}
+          {" · OEE: "}{occurrence.oee.state === "calculated" ? "Calculated" : occurrence.oee.state === "insufficient-evidence" ? "Insufficient evidence" : occurrence.oee.state === "unavailable" ? "Unavailable" : "Missing"}
+        </button>;
+      })}
+    </div>}
     <label>Exact shift occurrence<select value={selectedKey} onChange={event => setSelectedKey(event.target.value)}>
       <option value="">Select an exact occurrence</option>
       {occurrences.map(({ machine, occurrence }) => <option key={occurrenceKey(machine, occurrence)} value={occurrenceKey(machine, occurrence)}>
