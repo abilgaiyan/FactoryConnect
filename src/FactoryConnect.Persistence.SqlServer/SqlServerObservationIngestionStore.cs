@@ -12,10 +12,19 @@ internal sealed partial class SqlServerObservationIngestionStore :
 {
     internal string ConnectionString { get; }
     private readonly int? _observationReadCommandTimeoutSeconds;
+    private readonly IObservationIngestionTransactionAdmission? _transactionAdmission;
 
     public SqlServerObservationIngestionStore(string connectionString)
         : this(connectionString, observationReadCommandTimeoutSeconds: null)
     {
+    }
+
+    public SqlServerObservationIngestionStore(
+        string connectionString,
+        IObservationIngestionTransactionAdmission transactionAdmission)
+        : this(connectionString, observationReadCommandTimeoutSeconds: null)
+    {
+        _transactionAdmission = transactionAdmission ?? throw new ArgumentNullException(nameof(transactionAdmission));
     }
 
     internal SqlServerObservationIngestionStore(
@@ -391,6 +400,12 @@ internal sealed partial class SqlServerObservationIngestionStore :
             }
 
             ValidateCheckpointTransition(batch, current);
+
+            if (_transactionAdmission is not null)
+            {
+                await _transactionAdmission.ValidateAsync(
+                    connection, transaction, batch, current, cancellationToken);
+            }
 
             var pending = await ReconcileObservationsAsync(
                 connection,
