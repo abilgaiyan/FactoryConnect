@@ -15,7 +15,7 @@ internal static class GateBTransactionalAdmissionRehearsal
     private static readonly Guid Machine = Guid.Parse("bfa0dc97-9a68-45ed-b189-1dacb7d863f0");
     private const string Head = "3C386EF472741E55B178C14159CBBDFFFBFC633C3A7E0F62A8F2B3A86DCB4FF7";
 
-    public static async Task<int> RunAsync()
+    public static async Task<int> RunAsync(bool adversarial = false)
     {
         if (await GateBAdmissionPreflight.RunAsync() != 0)
             return 1;
@@ -42,7 +42,7 @@ internal static class GateBTransactionalAdmissionRehearsal
                 await using var reader = await checkpoint.ExecuteReaderAsync();
                 if (!await reader.ReadAsync() ||
                     Convert.ToUInt64(reader.GetDecimal(0), CultureInfo.InvariantCulture) != 1793867780UL ||
-                    Convert.ToUInt64(reader.GetDecimal(1), CultureInfo.InvariantCulture) != 27UL ||
+                    Convert.ToUInt64(reader.GetDecimal(1), CultureInfo.InvariantCulture) != (adversarial ? 28UL : 27UL) ||
                     await reader.ReadAsync())
                     throw new InvalidDataException("Transactional acquisition checkpoint mismatch.");
             }
@@ -63,7 +63,7 @@ internal static class GateBTransactionalAdmissionRehearsal
                 head.Parameters.Add("@Machine", SqlDbType.UniqueIdentifier).Value = Machine;
                 head.Parameters.Add("@Stream", SqlDbType.VarBinary, 512).Value =
                     Encoding.BigEndianUnicode.GetBytes("mtconnect:DEWAS-SR-MOXA-001");
-                head.Parameters.Add("@Identity", SqlDbType.Binary, 32).Value = Convert.FromHexString(Head);
+                head.Parameters.Add("@Identity", SqlDbType.Binary, 32).Value = Convert.FromHexString(adversarial ? new string('0', 64) : Head);
                 if (Convert.ToInt64(await head.ExecuteScalarAsync(), CultureInfo.InvariantCulture) != 1)
                     throw new InvalidDataException("Transactional publication head mismatch.");
             }
