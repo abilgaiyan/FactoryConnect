@@ -3,12 +3,11 @@ using FactoryConnect.Abstractions;
 namespace FactoryConnect.Core.Machines;
 
 /// <summary>
-/// Uncomposed FC-031.2D behavioral processor used to prove joint-authority
-/// result mapping. Production registration and runtime substitution are
-/// intentionally deferred to FC-031.2D.5.
+/// Publishes valid joint state/activity proposals and returns chronology holds
+/// without calling the authority writer.
 /// </summary>
 public sealed class JointAuthorityMachineStateActivityProcessor :
-    IMappedMachineObservationProcessor
+    IMachineStateActivityOutcomeProcessor
 {
     private readonly IMachineStateActivityAuthorityStore _store;
     private readonly CurrentStateContinuityPolicy _policy;
@@ -35,12 +34,24 @@ public sealed class JointAuthorityMachineStateActivityProcessor :
         IReadOnlyList<DurableMappedMachineObservation> observations,
         CancellationToken cancellationToken = default)
     {
+        var result = await ProcessWithOutcomeAsync(observations, cancellationToken);
+        if (result is MachineStateActivityChronologyHold hold)
+        {
+            // Legacy void callers must never interpret a hold as accepted processing.
+            throw new InvalidOperationException(hold.ToDiagnosticString());
+        }
+    }
+
+    public async ValueTask<MachineStateActivityContinuityCalculationResult> ProcessWithOutcomeAsync(
+        IReadOnlyList<DurableMappedMachineObservation> observations,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(observations);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (observations.Count == 0)
         {
-            return;
+            return MachineStateActivityContinuityNoAdvance.Instance;
         }
 
         var first = observations[0] ??
@@ -51,9 +62,9 @@ public sealed class JointAuthorityMachineStateActivityProcessor :
             cancellationToken);
 
         var calculation = _calculator.Calculate(current, observations, _policy);
-        if (calculation is MachineStateActivityContinuityNoAdvance)
+        if (calculation is MachineStateActivityContinuityNoAdvance or MachineStateActivityChronologyHold)
         {
-            return;
+            return calculation;
         }
 
         var proposal = ((MachineStateActivityContinuityPublication)calculation).Publication;
@@ -62,7 +73,7 @@ public sealed class JointAuthorityMachineStateActivityProcessor :
         switch (result)
         {
             case MachineStateActivityAuthorityPublicationAccepted:
-                return;
+                return calculation;
             case MachineStateActivityAuthorityPublicationConflict:
                 throw new InvalidOperationException(
                     "Joint state/activity authority publication conflicted with the current authority.");

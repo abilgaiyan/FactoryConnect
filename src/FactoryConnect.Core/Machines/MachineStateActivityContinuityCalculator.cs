@@ -28,8 +28,8 @@ public sealed record MachineStateActivityContinuityPublication :
 }
 
 /// <summary>
-/// Uncomposed FC-031.2D behavioral calculator. It derives one deterministic
-/// joint-authority proposal without reading or mutating provider state.
+/// Derives a deterministic joint-authority proposal or chronology hold without
+/// reading or mutating provider state.
 /// </summary>
 public sealed class MachineStateActivityContinuityCalculator
 {
@@ -125,6 +125,18 @@ public sealed class MachineStateActivityContinuityCalculator
 
             if (currentState != state)
             {
+                if (activeState is not null && activeStartedAt is not null &&
+                    mapped.Timestamp < activeStartedAt.Value)
+                {
+                    // Reject the entire proposal, including any earlier outputs in this batch.
+                    // Durable order is not evidence that event time is chronological.
+                    return new MachineStateActivityChronologyHold(
+                        ProcessorId, current?.Projection.Position,
+                        current?.EvaluationAuthority.ProjectionRevision,
+                        durable, activeState.Value, activeStartedAt.Value,
+                        currentState, policy.Reference);
+                }
+
                 stateChanges.Add(
                     new DurableMachineStateChangedEvent(
                         ProcessorId,

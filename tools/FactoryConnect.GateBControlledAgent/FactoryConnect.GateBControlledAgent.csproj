@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/FactoryConnect.Protocols.MTConnect/FactoryConnect.Protocols.MTConnect.csproj" />
+    <ProjectReference Include="../../src/FactoryConnect.Persistence.SqlServer/FactoryConnect.Persistence.SqlServer.csproj" />
+    <ProjectReference Include="../../src/FactoryConnect.Edge/FactoryConnect.Edge.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Core.Machines;
 
 namespace FactoryConnect.Core;
 
@@ -49,6 +50,17 @@ public sealed class MappedObservationProcessingRuntime
     public async Task<MappedObservationReadBatch> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
+        var cycle = await RunCycleWithOutcomeAsync(cancellationToken);
+        if (cycle.Hold is not null)
+        {
+            throw new InvalidOperationException(cycle.Hold.ToDiagnosticString());
+        }
+        return cycle.Batch;
+    }
+
+    public async Task<MappedObservationProcessingCycle> RunCycleWithOutcomeAsync(
+        CancellationToken cancellationToken = default)
+    {
         var afterPosition = await _cursorReader.ReadAsync(
             _processor.ProcessorId,
             _streamId,
@@ -62,12 +74,22 @@ public sealed class MappedObservationProcessingRuntime
 
         if (batch.Observations.Count > 0)
         {
-            await _processor.ProcessAsync(
-                batch.Observations,
-                cancellationToken);
+            if (_processor is IMachineStateActivityOutcomeProcessor outcomeProcessor)
+            {
+                var result = await outcomeProcessor.ProcessWithOutcomeAsync(
+                    batch.Observations, cancellationToken);
+                if (result is MachineStateActivityChronologyHold hold)
+                {
+                    return new MappedObservationProcessingCycle(batch, hold);
+                }
+            }
+            else
+            {
+                await _processor.ProcessAsync(batch.Observations, cancellationToken);
+            }
         }
 
-        return batch;
+        return new MappedObservationProcessingCycle(batch, null);
     }
 
     private sealed class ProjectionStoreCursorReader :

@@ -12,10 +12,19 @@ internal sealed partial class SqlServerObservationIngestionStore :
 {
     internal string ConnectionString { get; }
     private readonly int? _observationReadCommandTimeoutSeconds;
+    private readonly IObservationIngestionTransactionAdmission? _transactionAdmission;
 
     public SqlServerObservationIngestionStore(string connectionString)
         : this(connectionString, observationReadCommandTimeoutSeconds: null)
     {
+    }
+
+    public SqlServerObservationIngestionStore(
+        string connectionString,
+        IObservationIngestionTransactionAdmission transactionAdmission)
+        : this(connectionString, observationReadCommandTimeoutSeconds: null)
+    {
+        _transactionAdmission = transactionAdmission ?? throw new ArgumentNullException(nameof(transactionAdmission));
     }
 
     internal SqlServerObservationIngestionStore(
@@ -333,6 +342,14 @@ internal sealed partial class SqlServerObservationIngestionStore :
                 streamId,
                 streamKeyBinary,
                 cancellationToken);
+
+            // An opt-in fail-closed admission policy must run before ALL replay
+            // exits, not only before the new-observation write path.
+            if (_transactionAdmission is not null)
+            {
+                await _transactionAdmission.ValidateAsync(
+                    connection, transaction, batch, current, cancellationToken);
+            }
 
             // Historical replay belongs to the explicit evidence contract. Legacy calls retain current-state replay semantics.
             if ((batch.AcquisitionEvidence is not null || (current == batch.Checkpoint && currentAuthority is not null &&

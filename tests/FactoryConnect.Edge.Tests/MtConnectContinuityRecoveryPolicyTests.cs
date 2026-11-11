@@ -142,6 +142,66 @@ public sealed class MtConnectContinuityRecoveryPolicyTests
         Assert.Equal(500UL, continuityLoss.RecoverySequence);
     }
 
+
+    [Fact]
+    public async Task RecoverInstanceChangeAsyncReporterFailurePreventsReplacementSession()
+    {
+        using var httpClient = new HttpClient(new SequenceHandler());
+        var policy = CreatePolicy(httpClient, new ThrowingReporter());
+        var previousSession = new MtConnectAcquisitionSession(
+            new MtConnectSampleClient(httpClient),
+            42UL,
+            27UL);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => policy.RecoverInstanceChangeAsync(
+                new MtConnectInstanceChangedException(42, 43, 1),
+                previousSession,
+                MachineId.New()));
+
+        Assert.Equal(42UL, previousSession.InstanceId);
+        Assert.Equal(27UL, previousSession.NextSequence);
+    }
+
+    [Fact]
+    public async Task RecoverInstanceChangeAsyncPreservesPreviousCheckpointAndNewGenerationBoundary()
+    {
+        using var httpClient = new HttpClient(new SequenceHandler());
+        var reporter = new RecordingReporter();
+        var policy = CreatePolicy(httpClient, reporter);
+        var previousSession = new MtConnectAcquisitionSession(
+            new MtConnectSampleClient(httpClient),
+            1793867780UL,
+            27UL);
+
+        var replacement = await policy.RecoverInstanceChangeAsync(
+            new MtConnectInstanceChangedException(
+                1793867780UL,
+                9000001UL,
+                1UL),
+            previousSession,
+            MachineId.New());
+
+        Assert.Equal(1793867780UL, previousSession.InstanceId);
+        Assert.Equal(27UL, previousSession.NextSequence);
+        Assert.Null(replacement.InstanceId);
+        Assert.Equal(1UL, replacement.NextSequence);
+        var loss = Assert.Single(reporter.Losses);
+        Assert.Equal(1793867780UL, loss.PreviousInstanceId);
+        Assert.Equal(9000001UL, loss.CurrentInstanceId);
+        Assert.Equal(27UL, loss.PreviousSequence);
+        Assert.Equal(1UL, loss.RecoverySequence);
+    }
+
+    private sealed class ThrowingReporter : IMtConnectContinuityReporter
+    {
+        public ValueTask ReportAsync(
+            MtConnectContinuityLoss continuityLoss,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromException(new InvalidOperationException(
+                "Continuity reporting failed."));
+    }
+
     private static MtConnectContinuityRecoveryPolicy CreatePolicy(
         HttpClient httpClient,
         IMtConnectContinuityReporter reporter,
