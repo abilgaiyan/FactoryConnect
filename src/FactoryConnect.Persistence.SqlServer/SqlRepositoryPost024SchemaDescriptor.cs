@@ -30,7 +30,7 @@ internal static class SqlRepositoryPost024SchemaDescriptor
                 new("CK_SupervisorProductionEntry_RecordedUtc",
                     "(datepart(tzoffset,[RecordedAtUtc])=(0))", true, true, false),
                 new("CK_SupervisorProductionEntry_RequiredText",
-                    "(len(trim([ShiftScheduleAssignmentId]))>(0) AND len(trim([ShiftId]))>(0) AND len(trim([ProductionOrder]))>(0) AND len(trim([PartNumber]))>(0) AND len(trim([Operation]))>(0) AND len(trim([EnteredBy]))>(0))", true, true, false)
+                    "(len(Trim([ShiftScheduleAssignmentId]))>(0) AND len(Trim([ShiftId]))>(0) AND len(Trim([ProductionOrder]))>(0) AND len(Trim([PartNumber]))>(0) AND len(Trim([Operation]))>(0) AND len(Trim([EnteredBy]))>(0))", true, true, false)
             ],
             [
                 new("IX_SupervisorProductionEntry_MachineShift", false, true,
@@ -42,7 +42,7 @@ internal static class SqlRepositoryPost024SchemaDescriptor
 
     private static SqlColumnDescriptor N(string name, int length, bool nullable = false, bool binary = true) =>
         new(name, "nvarchar", SqlLengthDescriptor.Bounded(length), null, null, nullable,
-            binary ? BinaryCollation : null, null);
+            binary ? BinaryCollation : "SQL_Latin1_General_CP1_CI_AS", null);
 
     private static SqlIndexColumnDescriptor K(string name, int ordinal) =>
         new(name, SqlIndexColumnDirection.Ascending, ordinal);
