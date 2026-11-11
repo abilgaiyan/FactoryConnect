@@ -10,6 +10,7 @@ import type {
 import {
   canPrintDailyReportState,
   filterDailyReportModel,
+  summarizeDailyReportOee,
   visibleDailyReportModel,
 } from "./daily-report-page-policy.ts";
 
@@ -143,6 +144,8 @@ function DailyReportDocument({
         <p>Production day: <time dateTime={productionDay}>{formatReportDate(productionDay)}</time></p>
       </header>
 
+      <DailyReportOeeSummary model={model} shiftFiltered={shiftFiltered} />
+
       {model.groups.length === 0
         ? <p>No configured reporting sources.</p>
         : model.groups.map((group, groupIndex) => (
@@ -158,6 +161,23 @@ function DailyReportDocument({
             </section>
           ))}
     </article>
+  );
+}
+
+function DailyReportOeeSummary({ model, shiftFiltered }: { readonly model: DailyReportModel; readonly shiftFiltered: boolean }) {
+  const summary = summarizeDailyReportOee(model, shiftFiltered);
+  return (
+    <section className="daily-report-summary" aria-label="OEE evidence summary">
+      <h3>OEE reporting coverage</h3>
+      <p>{shiftFiltered ? "Selected shift occurrences" : "Production-day machine reports"} · {summary.machines} machines</p>
+      <dl>
+        <div><dt>Calculated</dt><dd>{summary.calculated}</dd></div>
+        <div><dt>Unavailable</dt><dd>{summary.unavailable}</dd></div>
+        <div><dt>Insufficient evidence</dt><dd>{summary.insufficientEvidence}</dd></div>
+        <div><dt>Missing</dt><dd>{summary.missing}</dd></div>
+      </dl>
+      <p>Coverage counts only. No combined or average OEE is inferred from these results.</p>
+    </section>
   );
 }
 

@@ -49,3 +49,27 @@ export function filterDailyReportModel(
       .filter(group => group.machines.length > 0),
   };
 }
+
+/**
+ * Count authoritative OEE cell states for the currently selected scope.
+ * Counts are coverage indicators, not a factory-wide or averaged OEE percentage.
+ */
+export function summarizeDailyReportOee(model: DailyReportModel, shiftFiltered: boolean) {
+  const summary = { machines: 0, calculated: 0, unavailable: 0, insufficientEvidence: 0, missing: 0 };
+  for (const group of model.groups) {
+    for (const machine of group.machines) {
+      summary.machines++;
+      const scopes = shiftFiltered ? machine.shifts.map(shift => shift.cells) : [machine.productionDayCells];
+      for (const cells of scopes) {
+        const oee = cells.find(cell => cell.metricKey === "oee");
+        switch (oee?.state) {
+          case "calculated": summary.calculated++; break;
+          case "unavailable": summary.unavailable++; break;
+          case "insufficient-evidence": summary.insufficientEvidence++; break;
+          default: summary.missing++; break;
+        }
+      }
+    }
+  }
+  return summary;
+}
