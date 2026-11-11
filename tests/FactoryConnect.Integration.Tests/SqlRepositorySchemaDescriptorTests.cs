@@ -62,7 +62,8 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "OperationalMetricConflictWitnessArchive",
                 "OperationalMetricPublicationResultArchive",
                 "OperationalMetricResultWitnessReference",
-                "ProductionAdmissionRecoveryAudit"
+                "ProductionAdmissionRecoveryAudit",
+                "SupervisorProductionEntry"
             ],
             current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }
