@@ -116,3 +116,15 @@ test("line and machine filters preserve authoritative cells and original model",
   assert.equal(input.groups.length, 2);
   assert.deepEqual(filterDailyReportModel(input, "missing", "").groups, []);
 });
+
+test("shift filter selects roster-owned shift evidence without changing source", () => {
+  const original = model();
+  const machine = original.groups[0].machines[0];
+  const first = { shift: { shiftId: "Shift 1" }, cells: [{ metricKey: "oee", state: "unavailable" }] };
+  const second = { shift: { shiftId: "Shift 2" }, cells: [{ metricKey: "oee", state: "calculated", value: 0.7 }] };
+  const input = { ...original, groups: [{ ...original.groups[0], machines: [{ ...machine, shifts: [first, second] }] }] };
+  const selected = filterDailyReportModel(input, "", "", "Shift 2");
+  assert.deepEqual(selected.groups[0].machines[0].shifts, [second]);
+  assert.equal(input.groups[0].machines[0].shifts.length, 2);
+  assert.deepEqual(filterDailyReportModel(input, "", "", "Shift 3").groups, []);
+});
