@@ -10,6 +10,7 @@ public static class SupervisorProductionEntryEndpoints
     {
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/entries", ReadAsync)
             .WithName("ReadSupervisorProductionEntries")
+            .WithGroupName("supervisor-local-v1")
             .Produces<IReadOnlyList<SupervisorProductionEntryRecord>>()
             .ProducesProblem(403)
             .ProducesProblem(503);
