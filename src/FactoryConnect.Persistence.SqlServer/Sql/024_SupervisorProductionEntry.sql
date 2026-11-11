@@ -10,7 +10,7 @@ CREATE TABLE dbo.SupervisorProductionEntry
     ProductionOrder nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
     PartNumber nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
     Operation nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
-    Note nvarchar(2000) NULL,
+    Note nvarchar(2000) COLLATE Latin1_General_100_BIN2 NULL,
     EnteredBy nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
     RecordedAtUtc datetimeoffset(7) NOT NULL,
     CONSTRAINT PK_SupervisorProductionEntry PRIMARY KEY (EntryId),
