@@ -5,6 +5,7 @@ import { dailyReportPath } from "../src/application/daily-report-navigation.ts";
 import {
   canPrintDailyReportState,
   filterDailyReportModel,
+  summarizeDailyReportOee,
   visibleDailyReportModel,
 } from "../src/presentation/daily-report-page-policy.ts";
 
@@ -127,4 +128,24 @@ test("shift filter selects roster-owned shift evidence without changing source",
   assert.deepEqual(selected.groups[0].machines[0].shifts, [second]);
   assert.equal(input.groups[0].machines[0].shifts.length, 2);
   assert.deepEqual(filterDailyReportModel(input, "", "", "Shift 3").groups, []);
+});
+
+test("OEE coverage summary counts statuses without fabricating a factory OEE", () => {
+  const original = model();
+  const machine = original.groups[0].machines[0];
+  const input = { ...original, groups: [{
+    ...original.groups[0],
+    machines: [
+      { ...machine, productionDayCells: [{ metricKey: "oee", state: "calculated", value: "0.8" }] },
+      { ...machine, machineId: "M2", productionDayCells: [{ metricKey: "oee", state: "unavailable" }] },
+      { ...machine, machineId: "M3", productionDayCells: [{ metricKey: "oee", state: "insufficient-evidence" }] },
+      { ...machine, machineId: "M4", productionDayCells: [] },
+    ],
+  }] };
+  assert.deepEqual(summarizeDailyReportOee(input, false), {
+    machines: 4, calculated: 1, unavailable: 1, insufficientEvidence: 1, missing: 1,
+  });
+  assert.deepEqual(summarizeDailyReportOee(input, true), {
+    machines: 4, calculated: 0, unavailable: 0, insufficientEvidence: 0, missing: 0,
+  });
 });
