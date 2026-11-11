@@ -35,6 +35,18 @@ internal sealed class GateBIngestionTransactionAdmission : IObservationIngestion
             batch.AcquisitionEvidence is null)
             throw new InvalidOperationException("Gate B ingestion transition is not the approved first generation cut.");
 
+        // Fail closed even if a caller supplies a different connection string after preflight.
+        await using (var identity = connection.CreateCommand())
+        {
+            identity.Transaction = transaction;
+            identity.CommandText = "SELECT CONVERT(nvarchar(128), SERVERPROPERTY('ServerName')), DB_NAME();";
+            await using var reader = await identity.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken) ||
+                !string.Equals(reader.GetString(0), @"DESKTOP-1PJK2OB\FCINVENTORY", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(reader.GetString(1), "FactoryConnect_P0_GateB_Fixture_20261110", StringComparison.Ordinal))
+                throw new InvalidOperationException("Gate B ingestion attempted outside the approved disposable SQL fixture.");
+        }
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
