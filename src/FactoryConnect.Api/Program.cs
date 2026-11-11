@@ -63,6 +63,7 @@ app.MapOperationalMetricReportingEndpoints();
 app.MapCurrentMachineStateEndpoints();
 app.MapMachineActivityReports();
 app.MapMachineCounterReports();
+app.MapSupervisorProductionEntryEndpoints();
 
 await ApiPersistenceStartup.RunAsync(
     app.Services,
