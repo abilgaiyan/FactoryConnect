@@ -68,3 +68,8 @@
     page-break-inside: avoid;
   }
 }
+
+.daily-report-filters { display: flex; flex-wrap: wrap; gap: 1rem; }
+.daily-report-filters label { display: grid; gap: 0.25rem; }
+.daily-report-filters select { min-width: 12rem; padding: 0.35rem; }
+@media print { .daily-report-filters { display: none !important; } }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { formatReportDate, formatReportTimestamp } from "./date-formatting.ts";
 import type { DailyReportLifecycleState } from "../application/daily-report-lifecycle.ts";
 import type {
@@ -8,6 +9,7 @@ import type {
 } from "./daily-report-model.ts";
 import {
   canPrintDailyReportState,
+  filterDailyReportModel,
   visibleDailyReportModel,
 } from "./daily-report-page-policy.ts";
 
@@ -33,6 +35,14 @@ export function DailyReportPage({
   print = () => window.print(),
 }: DailyReportPageProps) {
   const visibleModel = visibleDailyReportModel(state);
+  const [selectedLine, setSelectedLine] = useState("");
+  const [selectedMachine, setSelectedMachine] = useState("");
+  const allMachines = visibleModel?.groups.flatMap(group => group.machines) ?? [];
+  const lines = [...new Set(allMachines.map(machine => machine.productionLineId))].sort();
+  const line = lines.includes(selectedLine) ? selectedLine : "";
+  const machines = allMachines.filter(machine => line === "" || machine.productionLineId === line);
+  const machine = machines.some(item => item.machineId === selectedMachine) ? selectedMachine : "";
+  const filteredModel = visibleModel === null ? null : filterDailyReportModel(visibleModel, line, machine);
 
   return (
     <div className="daily-report-page">
@@ -53,11 +63,30 @@ export function DailyReportPage({
         </button>
       </div>
 
+      {visibleModel !== null && (
+        <div className="daily-report-filters" aria-label="Daily report filters">
+          <label>
+            Production line
+            <select value={line} onChange={event => { setSelectedLine(event.target.value); setSelectedMachine(""); }}>
+              <option value="">All lines</option>
+              {lines.map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            Machine
+            <select value={machine} onChange={event => setSelectedMachine(event.target.value)}>
+              <option value="">All machines</option>
+              {machines.map(item => <option key={item.processorId + ":" + item.machineId} value={item.machineId}>{item.displayName}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
+
       <DailyReportLifecycleMessage state={state} />
 
-      {visibleModel === null
+      {filteredModel === null
         ? null
-        : <DailyReportDocument model={visibleModel} productionDay={productionDay} />}
+        : <DailyReportDocument model={filteredModel} productionDay={productionDay} />}
     </div>
   );
 }
