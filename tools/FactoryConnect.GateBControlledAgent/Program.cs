@@ -5,7 +5,9 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 
-// An isolated protocol fixture. No SQL access, factory endpoint or production configuration.
+// An isolated protocol fixture with explicit, guarded SQL qualification commands.
+if (args.Length == 1 && args[0] == "--verify-actual-admission-denials")
+    return await GateBActualAdmissionDenials.RunAsync();
 if (args.Length == 1 && args[0] == "--verify-transaction-denials")
     return await GateBTransactionalDenialRehearsal.RunAsync();
 
