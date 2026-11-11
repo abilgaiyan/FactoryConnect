@@ -57,6 +57,8 @@ test('real mode reuses canonical reporting and exact overnight activity; inspect
   assert.equal(r.calls[0].request.metrics.length,5); assert.equal(r.calls[0].request.context.unpartitionedOnly,true);
   assert.equal(requests.length,0);
   assert.equal(control(h,'Exact shift occurrence').options.length,3);
+  assert.match(text(h),/2 recorded shift occurrence\(s\)/);
+  assert.equal(h.document.querySelectorAll('.supervisor-shift-choices button').length,2);
   await selectOccurrence(h);
   assert.equal(requests.length,1);
   assert.match(requests[0].url,new RegExp(source.machineId));
@@ -177,4 +179,17 @@ test('no configured sources does not create synthetic machines or reporting requ
   const h=await mountInDom(React.createElement(Workspace,{runtime:r.value}));t.after(()=>h.dispose());
   assert.match(text(h),/No configured reporting sources/);assert.doesNotMatch(text(h),/Configured CNC|Sample operator/);
   await h.click(button(h,'Load shift occurrences'));assert.equal(r.calls.length,0);
+});
+
+test('quick-select shift preserves exact occurrence and OEE evidence status', async t => {
+  const r=runtime(); const requests=[];
+  mockFetch(t,async (url,options)=>{requests.push(JSON.parse(options.body));return Response.json(activity(JSON.parse(options.body)));});
+  const h=await mountInDom(React.createElement(Workspace,{runtime:r.value}));t.after(()=>h.dispose());
+  await load(h);
+  const buttons=[...h.document.querySelectorAll('.supervisor-shift-choices button')];
+  assert.equal(buttons.length,2);
+  assert.match(buttons[0].textContent,/Insufficient evidence/);
+  await h.click(buttons[1]);
+  assert.equal(buttons[1].getAttribute('aria-pressed'),'true');
+  assert.deepEqual(requests[0],{fromInclusive:second.startsAtUtc,toExclusive:second.endsAtUtc});
 });
