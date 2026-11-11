@@ -20,3 +20,26 @@ export function visibleDailyReportModel(state: DailyReportLifecycleState): Daily
       return null;
   }
 }
+
+/** Select existing authoritative report rows; never recalculate or replace metric evidence. */
+export function filterDailyReportModel(
+  model: DailyReportModel,
+  productionLineId: string,
+  machineId: string,
+): DailyReportModel {
+  if (productionLineId === "" && machineId === "") {
+    return model;
+  }
+
+  return {
+    ...model,
+    groups: model.groups
+      .map(group => ({
+        ...group,
+        machines: group.machines.filter(machine =>
+          (productionLineId === "" || machine.productionLineId === productionLineId) &&
+          (machineId === "" || machine.machineId === machineId)),
+      }))
+      .filter(group => group.machines.length > 0),
+  };
+}
