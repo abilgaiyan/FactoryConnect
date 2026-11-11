@@ -73,3 +73,11 @@
 .daily-report-filters label { display: grid; gap: 0.25rem; }
 .daily-report-filters select { min-width: 12rem; padding: 0.35rem; }
 @media print { .daily-report-filters { display: none !important; } }
+
+.daily-report-summary { border: 1px solid currentColor; border-radius: 0.4rem; padding: 1rem; }
+.daily-report-summary h3 { margin-top: 0; }
+.daily-report-summary dl { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.daily-report-summary dl > div { min-width: 7rem; }
+.daily-report-summary dt { font-weight: 600; }
+.daily-report-summary dd { margin: 0.25rem 0 0; font-size: 1.4rem; }
+@media print { .daily-report-summary { break-inside: avoid; } }
