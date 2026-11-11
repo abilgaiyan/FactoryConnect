@@ -6,6 +6,9 @@ using System.Net;
 using System.Text;
 
 // An isolated protocol fixture. No SQL access, factory endpoint or production configuration.
+if (args.Length == 1 && args[0] == "--verify-transaction-denials")
+    return await GateBTransactionalDenialRehearsal.RunAsync();
+
 if (args.Length == 1 && args[0] == "--verify-transaction-admission")
     return await GateBTransactionalAdmissionRehearsal.RunAsync();
 
@@ -33,7 +36,7 @@ const string device = "DEWAS-SR-MOXA-001";
 if (args.Length != 3 || (args[0] != "--serve" && args[0] != "--probe") || args[1] != "--phase" ||
     (args[2] != "first" && args[2] != "second"))
 {
-    Console.Error.WriteLine("Usage: GateBControlledAgent --preflight|--rehearse-generation|--prepare-acquisition|--verify-denied-acquisition|--qualify-generation|--verify-writer-lease|--verify-transaction-admission OR --serve|--probe --phase first|second");
+    Console.Error.WriteLine("Usage: GateBControlledAgent --preflight|--rehearse-generation|--prepare-acquisition|--verify-denied-acquisition|--qualify-generation|--verify-writer-lease|--verify-transaction-admission|--verify-transaction-denials OR --serve|--probe --phase first|second");
     return 2;
 }
 
