@@ -343,6 +343,14 @@ internal sealed partial class SqlServerObservationIngestionStore :
                 streamKeyBinary,
                 cancellationToken);
 
+            // An opt-in fail-closed admission policy must run before ALL replay
+            // exits, not only before the new-observation write path.
+            if (_transactionAdmission is not null)
+            {
+                await _transactionAdmission.ValidateAsync(
+                    connection, transaction, batch, current, cancellationToken);
+            }
+
             // Historical replay belongs to the explicit evidence contract. Legacy calls retain current-state replay semantics.
             if ((batch.AcquisitionEvidence is not null || (current == batch.Checkpoint && currentAuthority is not null &&
                     SameInstant(currentAuthority.SuccessfulContactTime, batch.SuccessfulContactTime))) &&
@@ -400,12 +408,6 @@ internal sealed partial class SqlServerObservationIngestionStore :
             }
 
             ValidateCheckpointTransition(batch, current);
-
-            if (_transactionAdmission is not null)
-            {
-                await _transactionAdmission.ValidateAsync(
-                    connection, transaction, batch, current, cancellationToken);
-            }
 
             var pending = await ReconcileObservationsAsync(
                 connection,
