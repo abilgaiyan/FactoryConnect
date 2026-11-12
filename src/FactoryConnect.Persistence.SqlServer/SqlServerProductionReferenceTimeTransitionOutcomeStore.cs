@@ -247,7 +247,7 @@ internal sealed class SqlServerProductionReferenceTimeTransitionOutcomeStore
     {
         var conflicts = reader.IsDBNull(19)
             ? []
-            : JsonDocument.Parse(reader.GetString(19)).RootElement.EnumerateArray()
+            : JsonElement.Parse(reader.GetString(19)).EnumerateArray()
                 .Select(static item => item.GetProperty("ConflictingStandardVersionId").GetString()!)
                 .ToArray();
         var site = new SiteId(reader.GetString(3));
