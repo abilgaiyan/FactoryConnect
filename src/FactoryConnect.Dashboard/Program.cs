@@ -1,6 +1,8 @@
 using FactoryConnect.Dashboard;
 using Microsoft.Extensions.Options;
 
+string[] SupervisorEntryMethods = [HttpMethods.Get, HttpMethods.Post];
+
 const string shiftReportingPath = "api/reporting/v1/operational-metrics/shifts/query";
 const string productionDayReportingPath = "api/reporting/v1/operational-metrics/production-days/query";
 const string productionDayShiftReportingPath = "api/reporting/v1/operational-metrics/production-day-shifts/query";
@@ -37,7 +39,7 @@ app.MapGet("/api/commissioning/v1/snapshot", async (
 // Local-only supervisor entry gateway. Never forward factory-network requests
 // through the dashboard to the loopback-only commissioning API.
 app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/entries",
-    new[] { "GET", "POST" }, async (HttpContext context, IConfiguration configuration,
+    SupervisorEntryMethods, async (HttpContext context, IConfiguration configuration,
         ReportingGateway gateway, Guid machineId) =>
 {
     if (!configuration.GetValue<bool>("SupervisorLocalEntry:EnableGateway") ||
