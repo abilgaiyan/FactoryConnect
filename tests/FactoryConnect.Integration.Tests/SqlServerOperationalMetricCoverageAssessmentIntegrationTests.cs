@@ -105,7 +105,9 @@ public sealed class SqlServerOperationalMetricCoverageAssessmentIntegrationTests
         var read = reader.ReadExactAsync(request.Subject, new(1), CancellationToken.None).AsTask();
         try
         {
-            Assert.NotSame(read, await Task.WhenAny(read, Task.Delay(200)));
+            using var delayCancellation = new CancellationTokenSource();
+            try { Assert.NotSame(read, await Task.WhenAny(read, Task.Delay(200, delayCancellation.Token))); }
+            finally { await delayCancellation.CancelAsync(); }
         }
         finally { release.Set(); }
         Assert.Equal(OperationalMetricCoveragePublicationOutcome.Appended, await write);
@@ -218,7 +220,9 @@ public sealed class SqlServerOperationalMetricCoverageAssessmentIntegrationTests
         try
         {
             await reached.Task.WaitAsync(TimeSpan.FromSeconds(20));
-            Assert.NotSame(operation, await Task.WhenAny(operation, Task.Delay(200)));
+            using var delayCancellation = new CancellationTokenSource();
+            try { Assert.NotSame(operation, await Task.WhenAny(operation, Task.Delay(200, delayCancellation.Token))); }
+            finally { await delayCancellation.CancelAsync(); }
             cancellation.Cancel();
             var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 () => operation.WaitAsync(TimeSpan.FromSeconds(20)));
