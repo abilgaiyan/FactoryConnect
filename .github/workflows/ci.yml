@@ -44,6 +44,15 @@ jobs:
       - name: Build
         run: dotnet build FactoryConnect.sln --configuration Release --no-restore
 
+      - name: Ensure Linux timezone data for Windows/IANA conversion tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tzdata
+          test -s /usr/share/zoneinfo/Asia/Kolkata
+          if [ ! -s /usr/share/zoneinfo/Asia/Calcutta ]; then
+            sudo ln -s Kolkata /usr/share/zoneinfo/Asia/Calcutta
+          fi
+
       - name: Test ordinary suite
         run: >-
           dotnet test FactoryConnect.sln
