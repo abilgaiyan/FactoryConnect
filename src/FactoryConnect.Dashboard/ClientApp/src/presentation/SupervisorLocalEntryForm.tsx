@@ -54,9 +54,15 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         })
       });
       if (!response.ok) throw new Error(`Save not confirmed (HTTP ${response.status}). Do not submit a new entry until reconciled.`);
+      // A successful POST is durable even if the subsequent list refresh fails.
+      // Never present a read failure as a failed write or offer a duplicate retry.
       setPendingId(null); setOrder(""); setPart(""); setOperation(""); setNote("");
-      await refresh();
-      setStatus("Entry saved to SQL. It is not published as CNC evidence or OEE.");
+      try {
+        await refresh();
+        setStatus("Entry saved to SQL. It is not published as CNC evidence or OEE.");
+      } catch {
+        setStatus("Entry saved to SQL, but the saved-entry list could not be refreshed. Use Refresh entries to view it.");
+      }
     } catch (error) {
       setStatus(String(error));
     } finally {
