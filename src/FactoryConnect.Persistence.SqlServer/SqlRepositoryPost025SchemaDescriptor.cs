@@ -23,7 +23,7 @@ internal static class SqlRepositoryPost025SchemaDescriptor
                     .. table.CheckConstraints,
                     new SqlCheckConstraintDescriptor(
                         "CK_SupervisorProductionEntry_QuantityPair",
-                        "(([GoodQuantity] IS NULL AND [RejectedQuantity] IS NULL) OR ([GoodQuantity] IS NOT NULL AND [RejectedQuantity] IS NOT NULL AND [GoodQuantity]>=(0) AND [RejectedQuantity]>=(0)))",
+                        "([GoodQuantity] IS NULL AND [RejectedQuantity] IS NULL OR [GoodQuantity] IS NOT NULL AND [RejectedQuantity] IS NOT NULL AND [GoodQuantity]>=(0) AND [RejectedQuantity]>=(0))",
                         true, true, false)
                 ]
             };
