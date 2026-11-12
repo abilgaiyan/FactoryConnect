@@ -7,6 +7,7 @@ import { ShiftPerformancePageStateView } from "./ShiftPerformancePageStateView.t
 import { ShiftPerformanceOverviewView } from "./ShiftPerformanceOverviewView.tsx";
 import type { ShiftPerformanceMachine, ShiftPerformanceOverview, ShiftPerformanceShift } from "./shift-performance-model.ts";
 import { MachineActivityEvidence } from "./MachineActivityEvidence.tsx";
+import { SupervisorLocalEntryForm } from "./SupervisorLocalEntryForm.tsx";
 
 export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift): string {
   return JSON.stringify([machine.machineId, machine.processorId, machine.siteId, machine.productionLineId,
@@ -78,6 +79,11 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
       <p>Metric evidence read time: not returned by this presentation contract. Reporting source revision: <code>{selected.occurrence.sourceRevision === null ? "Not returned" : JSON.stringify(selected.occurrence.sourceRevision)}</code></p>
       <ShiftPerformanceOverviewView key={`metrics:${selectedKey}`} showFilters={false} overview={{ productionDay: overview.productionDay, groups: [{ groupName: null, machines: [{ ...selected.machine, shifts: [selected.occurrence] }] }] }} />
       <p>Metrics and activity use the same machine and UTC occurrence scope, but are independent reads and revision domains. No common atomic snapshot or metric/activity convergence is claimed.</p>
+      <SupervisorLocalEntryForm key={`entries:${selectedKey}`} scope={{ machineId: selected.machine.machineId,
+        shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
+        shiftId: selected.occurrence.shift.shiftId,
+        startsAtUtc: selected.occurrence.shift.startsAtUtc,
+        endsAtUtc: selected.occurrence.shift.endsAtUtc }} />
       <ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} />
     </>}
   </>;
