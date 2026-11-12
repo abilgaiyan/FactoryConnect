@@ -96,6 +96,7 @@ try {
     Wait-LocalHealth "$apiUrl/health" $apiProcess
     $dashboardProcess = Start-LocalProject $dashboard $dashboardUrl @{
         'Dashboard__ReportingApiBaseAddress' = "$apiUrl/"
+        'SupervisorLocalEntry__EnableGateway' = 'true'
     } $false
     Wait-LocalHealth "$dashboardUrl/health/live" $dashboardProcess
     Write-Host "API: $apiUrl"
