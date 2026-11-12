@@ -12,12 +12,5 @@ if (rootElement === null) {
   throw new Error("Dashboard root element was not found.");
 }
 
-if (import.meta.env.DEV && window.location.pathname === "/supervisor-preview") {
-  const { default: SupervisorWorkspace } = await import("./presentation/SupervisorWorkspace.tsx");
-  createRoot(rootElement).render(
-    <div className="dashboard-shell"><header><p>FactoryConnect</p><nav aria-label="Screen review"><a href="/">Return to dashboard</a></nav></header><main id="main-content"><SupervisorWorkspace /></main></div>,
-  );
-} else {
-  const runtime = await createDashboardApplicationRuntime(window.location.origin);
+const runtime = await createDashboardApplicationRuntime(window.location.origin);
   createRoot(rootElement).render(<StrictMode><App runtime={runtime} /></StrictMode>);
-}

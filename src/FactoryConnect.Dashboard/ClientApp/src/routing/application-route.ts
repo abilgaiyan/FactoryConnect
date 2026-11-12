@@ -1,5 +1,5 @@
 export type ApplicationRoute =
-  | { kind: "supervisorPreview" }
+  | { kind: "supervisor" }
   | { kind: "commissioning" }
   | { kind: "overview"; search: string }
   | { kind: "fleet" }
@@ -16,7 +16,7 @@ export type ApplicationRoute =
 export const applicationBasePath = "/";
 
 export function parseApplicationRoute(pathname: string, search = ""): ApplicationRoute {
-  if (pathname === "/supervisor-preview") return { kind: "supervisorPreview" };
+  if (pathname === "/supervisor") return { kind: "supervisor" };
   if (pathname === "/commissioning") return { kind: "commissioning" };
   if (pathname === "/overview") return { kind: "overview", search };
   if (pathname === "/fleet") return { kind: "fleet" };
@@ -87,7 +87,7 @@ export function parseApplicationRoute(pathname: string, search = ""): Applicatio
 
 export function routePath(route: Exclude<ApplicationRoute, { kind: "notFound" }>): string {
   switch (route.kind) {
-    case "supervisorPreview": return "/supervisor-preview";
+    case "supervisor": return "/supervisor";
     case "commissioning": return "/commissioning";
     case "overview": return `/overview${route.search}`;
     case "fleet": return "/fleet";
