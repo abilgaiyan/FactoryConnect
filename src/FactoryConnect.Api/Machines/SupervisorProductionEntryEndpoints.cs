@@ -61,9 +61,11 @@ public static class SupervisorProductionEntryEndpoints
         {
             var inserted = await new SqlServerSupervisorProductionEntryWriter(connectionString)
                 .AppendAsync(entry, cancellationToken);
-            return inserted
-                ? Results.Created($"/api/supervisor/v1/machines/{machineId:D}/entries", entry)
-                : Results.Ok(entry);
+            if (inserted)
+                return Results.Created($"/api/supervisor/v1/machines/{machineId:D}/entries", entry);
+
+            // The original timestamp remains durable in SQL; do not fabricate it.
+            return Results.Ok(new { entryId = request.EntryId, alreadyExists = true });
         }
         catch (ArgumentException)
         {

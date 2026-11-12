@@ -66,7 +66,7 @@ public sealed class SqlServerSupervisorProductionEntryWriter
                       AND ProductionOrder = @ProductionOrder AND PartNumber = @PartNumber
                       AND Operation = @Operation AND
                           ((Note IS NULL AND @Note IS NULL) OR Note = @Note)
-                      AND EnteredBy = @EnteredBy AND RecordedAtUtc = @RecordedAt
+                      AND EnteredBy = @EnteredBy
                 )
                     THROW 51025, 'Entry ID already belongs to a different declaration.', 1;
                 SELECT CAST(0 AS bit);
