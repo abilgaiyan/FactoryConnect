@@ -1,6 +1,8 @@
 using FactoryConnect.Dashboard;
 using Microsoft.Extensions.Options;
 
+string[] SupervisorEntryMethods = [HttpMethods.Get, HttpMethods.Post];
+
 const string shiftReportingPath = "api/reporting/v1/operational-metrics/shifts/query";
 const string productionDayReportingPath = "api/reporting/v1/operational-metrics/production-days/query";
 const string productionDayShiftReportingPath = "api/reporting/v1/operational-metrics/production-day-shifts/query";
@@ -32,6 +34,30 @@ app.MapGet("/api/commissioning/v1/snapshot", async (
         return;
     }
     await gateway.ForwardAsync(context, "api/commissioning/v1/snapshot", HttpMethod.Get).ConfigureAwait(false);
+});
+
+// Local-only supervisor entry gateway. Never forward factory-network requests
+// through the dashboard to the loopback-only commissioning API.
+app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/entries",
+    SupervisorEntryMethods, async (HttpContext context, IConfiguration configuration,
+        ReportingGateway gateway, Guid machineId) =>
+{
+    if (!configuration.GetValue<bool>("SupervisorLocalEntry:EnableGateway") ||
+        context.Connection.RemoteIpAddress is not { } remote ||
+        !System.Net.IPAddress.IsLoopback(remote) ||
+        context.Request.Headers.ContainsKey("Forwarded") ||
+        context.Request.Headers.Keys.Any(static key =>
+            key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+
+    var relativePath = $"api/supervisor/v1/machines/{machineId:D}/entries" +
+        context.Request.QueryString.Value;
+    await gateway.ForwardAsync(context, relativePath,
+        HttpMethods.IsGet(context.Request.Method) ? HttpMethod.Get : HttpMethod.Post)
+        .ConfigureAwait(false);
 });
 
 app.MapGet("/health/live", () => Results.Ok(new
