@@ -44,7 +44,11 @@ function control(h, label, tag = 'select') { return [...h.document.querySelector
 async function choose(h, label, value) { await act(async () => { const el = control(h,label); el.value = value; el.dispatchEvent(new h.window.Event('change',{bubbles:true})); }); }
 async function load(h) { await choose(h,'Machine / reporting processor','0'); await h.changeInput(control(h,'Production business date','input'),day); await h.click(button(h,'Load shift occurrences')); }
 async function selectOccurrence(h, index = 1) { const select = control(h,'Exact shift occurrence'); await choose(h,'Exact shift occurrence',select.options[index].value); }
-function mockFetch(t, fetcher) { const previous = globalThis.fetch; globalThis.fetch = fetcher; t.after(() => { globalThis.fetch = previous; }); }
+function mockFetch(t, fetcher) { const previous = globalThis.fetch; globalThis.fetch = (url, options) => {
+  if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/entries?'))
+    return Promise.resolve(Response.json([]));
+  return fetcher(url, options);
+}; t.after(() => { globalThis.fetch = previous; }); }
 function deferred() { let resolve, reject; const promise = new Promise((r,j) => {resolve=r;reject=j;}); return {promise,resolve,reject}; }
 
 test('real mode reuses canonical reporting and exact overnight activity; inspection retains provenance', async t => {
@@ -69,7 +73,7 @@ test('real mode reuses canonical reporting and exact overnight activity; inspect
   assert.ok([...h.document.querySelectorAll('time')].some(el=>el.dateTime==='2026-10-29T05:00:00Z')); assert.match(text(h),/Unrepresented coverage/);
   assert.match(text(h),/2026-10-28T18:29:00.000Z/);
   assert.match(text(h),/not a replacement exact-event key/);
-  assert.equal(h.document.querySelector('textarea'),null);
+  assert.equal(h.document.querySelectorAll('textarea').length,1);
   assert.equal(button(h,'Production Details'),undefined);
   await selectOccurrence(h,2);
   assert.deepEqual(JSON.parse(requests[1].options.body),{fromInclusive:second.startsAtUtc,toExclusive:second.endsAtUtc});
@@ -126,7 +130,7 @@ test('reporting failure never substitutes samples; sample mode is explicit and r
   await h.click(button(h,'Sample preview'));assert.match(text(h),/Sample operator/);
   await h.click(button(h,'Event explanations'));await h.click(button(h,'Inspect event 1'));await h.click(button(h,'Create independent preview thread'));
   assert.match(text(h),/preview-thread-4/);
-  await h.click(button(h,'Real read-only'));assert.equal(h.document.querySelector('textarea'),null);assert.equal(control(h,'Production business date','input').value,'');
+  await h.click(button(h,'Real read-only'));assert.equal(h.document.querySelectorAll('textarea').length,1);assert.equal(control(h,'Production business date','input').value,'');
   await h.click(button(h,'Sample preview'));assert.doesNotMatch(text(h),/preview-thread-4/);
   assert.equal(h.window.localStorage.length,0);
 });
@@ -164,7 +168,7 @@ test('missing metrics and empty activity retain unavailable coverage without inv
   const kpis=h.document.querySelector('.performance-kpis');assert.equal(kpis.querySelectorAll('article').length,5);
   assert.doesNotMatch(kpis.textContent, /0%|100%/);assert.equal((kpis.textContent.match(/—/g)??[]).length,5);
   assert.match(text(h),/No closed stored intervals returned/);assert.match(text(h),/Unrepresented coverage/);
-  assert.equal(h.document.querySelector('textarea'),null);
+  assert.equal(h.document.querySelectorAll('textarea').length,1);
 });
 
 test('mismatched activity machine never discloses its returned evidence in the selected scope',async t=>{
