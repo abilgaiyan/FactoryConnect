@@ -21,7 +21,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const query = new URLSearchParams({ shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc });
 
   async function refresh(signal?: AbortSignal) {
-    const response = await fetch(`${url}?${query}`, { signal });
+    const response = await fetch(`${url}?${query}`, signal ? { signal } : {});
     if (!response.ok) throw new Error(`Entry read unavailable (HTTP ${response.status})`);
     const body: unknown = await response.json();
     if (!Array.isArray(body)) throw new Error("Unexpected supervisor entry response");
