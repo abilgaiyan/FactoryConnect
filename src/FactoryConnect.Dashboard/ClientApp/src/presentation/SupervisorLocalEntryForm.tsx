@@ -41,7 +41,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   async function save(event: FormEvent) {
     event.preventDefault();
     if (loading) return;
-    if (!/^\\d+$/.test(good) || !/^\\d+$/.test(rejected) ||
+    if (!/^\d+$/.test(good) || !/^\d+$/.test(rejected) ||
         !Number.isSafeInteger(Number(good)) || !Number.isSafeInteger(Number(rejected))) {
       setStatus("Enter nonnegative whole-number good and rejected quantities."); return;
     }
