@@ -61,9 +61,18 @@ public static class SupervisorProductionEntryEndpoints
         {
             var inserted = await new SqlServerSupervisorProductionEntryWriter(connectionString)
                 .AppendAsync(entry, cancellationToken);
-            return inserted
-                ? Results.Created($"/api/supervisor/v1/machines/{machineId:D}/entries", entry)
-                : Results.Ok(entry);
+            if (inserted)
+                return Results.Created($"/api/supervisor/v1/machines/{machineId:D}/entries", entry);
+
+            // On idempotent replay, return the original durable timestamp, not the
+            // newly generated timestamp of this HTTP request.
+            var existing = await new SqlServerSupervisorProductionEntryReader(connectionString)
+                .ListAsync(machineId, request.ShiftStartsAtUtc, request.ShiftEndsAtUtc,
+                    cancellationToken: cancellationToken);
+            var original = existing.FirstOrDefault(item => item.EntryId == request.EntryId);
+            return original is null
+                ? Results.Problem(statusCode: 503, title: "Saved entry could not be read back")
+                : Results.Ok(original);
         }
         catch (ArgumentException)
         {
