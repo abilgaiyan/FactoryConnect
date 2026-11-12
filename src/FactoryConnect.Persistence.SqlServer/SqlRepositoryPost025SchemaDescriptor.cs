@@ -18,9 +18,9 @@ internal static class SqlRepositoryPost025SchemaDescriptor
                     new SqlColumnDescriptor("GoodQuantity", "bigint", null, null, null, true, null, null),
                     new SqlColumnDescriptor("RejectedQuantity", "bigint", null, null, null, true, null, null)
                 ],
-                Checks =
+                CheckConstraints =
                 [
-                    .. table.Checks,
+                    .. table.CheckConstraints,
                     new SqlCheckConstraintDescriptor(
                         "CK_SupervisorProductionEntry_QuantityPair",
                         "(([GoodQuantity] IS NULL AND [RejectedQuantity] IS NULL) OR ([GoodQuantity] IS NOT NULL AND [RejectedQuantity] IS NOT NULL AND [GoodQuantity]>=(0) AND [RejectedQuantity]>=(0)))",
