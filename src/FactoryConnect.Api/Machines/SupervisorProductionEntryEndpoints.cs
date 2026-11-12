@@ -64,15 +64,8 @@ public static class SupervisorProductionEntryEndpoints
             if (inserted)
                 return Results.Created($"/api/supervisor/v1/machines/{machineId:D}/entries", entry);
 
-            // On idempotent replay, return the original durable timestamp, not the
-            // newly generated timestamp of this HTTP request.
-            var existing = await new SqlServerSupervisorProductionEntryReader(connectionString)
-                .ListAsync(machineId, request.ShiftStartsAtUtc, request.ShiftEndsAtUtc,
-                    cancellationToken: cancellationToken);
-            var original = existing.FirstOrDefault(item => item.EntryId == request.EntryId);
-            return original is null
-                ? Results.Problem(statusCode: 503, title: "Saved entry could not be read back")
-                : Results.Ok(original);
+            // The original timestamp remains durable in SQL; do not fabricate it.
+            return Results.Ok(new { entryId = request.EntryId, alreadyExists = true });
         }
         catch (ArgumentException)
         {
