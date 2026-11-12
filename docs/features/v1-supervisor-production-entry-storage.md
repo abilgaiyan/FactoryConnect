@@ -1,24 +1,45 @@
-# V1 Supervisor Production Entry — Storage Foundation
+# V1 Supervisor Production Entry — Local Commissioning
 
-This branch adds Migration 024 only. It is a repository development slice, not an enabled production-entry workflow.
+## Current status (after PR #193)
 
-## Business purpose
+The original storage-foundation note predates the implemented workflow. The following components are now in `main`:
 
-A supervisor can eventually declare the machine, exact shift occurrence, production order, part number, operation and note. The database retains the original declaration with a unique entry ID, entered-by attribution and recorded UTC timestamp. These are supervisor declarations, **not verified machine observations** or approved production quantities.
+- Migration 024: `dbo.SupervisorProductionEntry` (append-oriented supervisor declarations).
+- SQL reader and transactional writer, exact machine-shift roster verification, stable-entry-id idempotency.
+- Local GET/POST API at `/api/supervisor/v1/machines/{machineId}/entries`.
+- React Supervisor Desk real-data mode: select reporting source, business date, exact shift; enter production order, part number, operation and note; save and refresh declarations.
+- The POST returns 201 for an insert, 200 for an identical retry and 409 for roster/identity conflicts.
 
-## Current implementation
+## Scope and safety
 
-- New additive `dbo.SupervisorProductionEntry` table with append-oriented identity and exact shift bounds.
-- Required fields, UTC bounds, ordered shift window and machine/shift retrieval index.
-- Embedded migration resource and migration-count test expectations updated.
+**Local commissioning only. No production deployment or factory-network writes are authorized.**
 
-## Not implemented yet
+The API has no authenticated supervisor session. The existing commissioning gate must allow the request (explicit commissioning enablement, loopback client, no forwarded headers), and writes have a second explicit opt-in. The operator identity is configured on the server, not supplied by the browser. Never expose this endpoint through a public reverse proxy or shared factory workstation. A loopback-only gate is not a substitute for authentication.
 
-- API create/list endpoints and SQL repository, including idempotent retries and transaction semantics.
-- Authentication/actor attribution, machine/shift authorization and roster verification.
-- Dashboard form wired to the real API.
-- SQL integration acceptance, deployment qualification and factory commissioning.
+The SQL declaration does **not** publish production quantity, CNC evidence, Performance, Quality or OEE. Production database migration, machine activation and production use require separate authorization.
 
-Do not expose a write endpoint until the actor identity, machine eligibility and shift occurrence are verified server-side. Do not use client-provided identity as authenticated actor. Never alter CNC raw evidence or OEE from these entries.
+## Developer-local prerequisites
 
-**Production migration/deployment is not authorized by this PR.**
+1. Use a **local development SQL database**, not the preserved incident or production database. Apply the repository's supported SQL migrations through **024** using the existing migration procedure.
+2. Ensure the exact machine/shift roster occurrence exists in the development database; the writer rejects missing rosters.
+3. Start the API and dashboard on the development machine, with the browser/API routing configured so `/api/supervisor/v1/...` reaches the API on loopback.
+4. Configure the API locally (environment variables or developer-only settings, never commit credentials):
+
+   | Setting | Purpose |
+   | --- | --- |
+   | `Commissioning:Enabled=true` | Existing local commissioning access gate |
+   | `Commissioning:ReadOnlyConnectionString` | SQL connection for saved-entry GET |
+   | `SupervisorLocalEntry:EnableWrites=true` | Explicit local write opt-in; default false |
+   | `SupervisorLocalEntry:OperatorId` | Non-empty server-side local operator attribution |
+   | `SupervisorLocalEntry:WriteConnectionString` | Development SQL connection with permission to insert supervisor entries |
+
+5. In Supervisor Desk, choose **Real read-only** (the existing label refers to reporting inspection), load a configured source/date, select the exact occurrence and submit a declaration.
+6. Confirm HTTP 201 on first save and that the saved-entry list shows the declaration. Refresh to confirm durability. Retry the *same entry ID and unchanged fields* to confirm HTTP 200 without a second row. Reusing an ID with different fields must return 409.
+
+## Acceptance limitations
+
+- These instructions do not assert that local factory data, migrations, browser/API proxying or end-to-end commissioning have already been verified.
+- The local operator identity is **not authenticated user attribution**.
+- Browser refresh does not persist an unsaved form draft.
+- The saved-entry list is bounded to 100 entries per exact shift.
+- A separate authenticated authorization model is needed before shared factory-floor supervisor entry.
