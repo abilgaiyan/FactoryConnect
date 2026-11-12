@@ -33,6 +33,9 @@ public sealed class SqlServerSupervisorProductionEntryIntegrationTests : IClassF
         var reader = new SqlServerSupervisorProductionEntryReader(_fixture.ConnectionString);
         Assert.True(await writer.AppendAsync(entry));
         Assert.False(await writer.AppendAsync(entry));
+        // HTTP retries regenerate the server-side timestamp. The same declaration
+        // must remain idempotent without changing its original recorded time.
+        Assert.False(await writer.AppendAsync(entry with { RecordedAtUtc = entry.RecordedAtUtc.AddMinutes(2) }));
         Assert.Contains(entry, await reader.ListAsync(machine.Value, start, end));
 
         var conflict = entry with { ProductionOrder = "ORDER-2" };
