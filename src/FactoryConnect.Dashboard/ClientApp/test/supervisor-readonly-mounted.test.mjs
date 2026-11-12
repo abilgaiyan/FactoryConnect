@@ -130,7 +130,7 @@ test('reporting failure never substitutes samples; sample mode is explicit and r
   await h.click(button(h,'Sample preview'));assert.match(text(h),/Sample operator/);
   await h.click(button(h,'Event explanations'));await h.click(button(h,'Inspect event 1'));await h.click(button(h,'Create independent preview thread'));
   assert.match(text(h),/preview-thread-4/);
-  await h.click(button(h,'Real read-only'));assert.equal(h.document.querySelectorAll('textarea').length,1);assert.equal(control(h,'Production business date','input').value,'');
+  await h.click(button(h,'Real read-only'));assert.equal(h.document.querySelectorAll('textarea').length,0);assert.equal(control(h,'Production business date','input').value,'');
   await h.click(button(h,'Sample preview'));assert.doesNotMatch(text(h),/preview-thread-4/);
   assert.equal(h.window.localStorage.length,0);
 });
