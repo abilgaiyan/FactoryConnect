@@ -23,8 +23,8 @@ public sealed class SqlServerMigration012UpgradeIntegrationTests
         await using var connection = new SqlConnection(database.ConnectionString);
         await connection.OpenAsync();
         var catalog = SqlMigrationCatalog.Load();
-        Assert.Equal(24, catalog.Migrations.Length);
-        Assert.Equal(24, catalog.Migrations[^1].MigrationId);
+        Assert.Equal(SqlMigrationTestExpectations.CurrentMigrationIds.Length, catalog.Migrations.Length);
+        Assert.Equal(SqlMigrationTestExpectations.CurrentMigrationIds[^1], catalog.Migrations[^1].MigrationId);
 
         await CreateExactPrefixAsync(connection, catalog, prefixLength: 11);
 
