@@ -19,6 +19,13 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reviewFilter, setReviewFilter] = useState("");
+  const [reviewOrder, setReviewOrder] = useState("");
+  const filteredEntries = entries.filter(entry =>
+    (!reviewOrder || entry.productionOrder === reviewOrder) &&
+    (!reviewFilter || [entry.partNumber, entry.operation, entry.productionOrder, entry.enteredBy]
+      .some(value => value.toLocaleLowerCase().includes(reviewFilter.toLocaleLowerCase()))));
+  const orders = [...new Set(entries.map(entry => entry.productionOrder))].sort();
   const url = `/api/supervisor/v1/machines/${encodeURIComponent(scope.machineId)}/entries`;
   const query = new URLSearchParams({ shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc });
 
@@ -90,8 +97,15 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
       <button type="button" disabled={loading} onClick={() => { void refresh().then(() => setStatus("Entries refreshed."), error => setStatus(String(error))); }}>Refresh entries</button>
     </form>
     {status && <p role="status">{status}</p>}
-    <h3>Saved entries ({entries.length})</h3>
+    <h3>Saved entries ({filteredEntries.length} of {entries.length})</h3>
+    <p>Review entries for this exact machine and shift. Filters affect only the display, not saved records or OEE.</p>
+    <label>Filter production order<select value={reviewOrder} onChange={event => setReviewOrder(event.target.value)}>
+      <option value="">All production orders</option>
+      {orders.map(value => <option key={value} value={value}>{value}</option>)}
+    </select></label>
+    <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
     {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
-      <ul>{entries.map(entry => <li key={entry.entryId}>{entry.productionOrder} · {entry.partNumber} · {entry.operation} · Good {entry.goodQuantity ?? "Not declared"} · Rejected {entry.rejectedQuantity ?? "Not declared"} · {entry.enteredBy} · {entry.recordedAtUtc}</li>)}</ul>}
+      filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
+      <ul>{filteredEntries.map(entry => <li key={entry.entryId}>{entry.productionOrder} · {entry.partNumber} · {entry.operation} · Good {entry.goodQuantity ?? "Not declared"} · Rejected {entry.rejectedQuantity ?? "Not declared"} · {entry.enteredBy} · {entry.recordedAtUtc}</li>)}</ul>}
   </section>;
 }
