@@ -17,10 +17,10 @@ public sealed class SqlServerSupervisorProductionEntryReviewStore
         _connectionString = connectionString;
     }
 
-    public async Task<bool> DecideAsync(Guid entryId, Guid decisionId, string decision,
+    public async Task<bool> DecideAsync(Guid machineId, Guid entryId, Guid decisionId, string decision,
         string reason, string reviewer, DateTimeOffset reviewedAtUtc, CancellationToken cancellationToken = default)
     {
-        if (entryId == Guid.Empty || decisionId == Guid.Empty ||
+        if (machineId == Guid.Empty || entryId == Guid.Empty || decisionId == Guid.Empty ||
             decision is not ("Approved" or "Rejected") ||
             string.IsNullOrWhiteSpace(reason) || reason.Length > 2000 ||
             string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
@@ -35,7 +35,7 @@ public sealed class SqlServerSupervisorProductionEntryReviewStore
         command.Transaction = transaction;
         command.CommandText = """
             IF NOT EXISTS (SELECT 1 FROM dbo.SupervisorProductionEntry WITH (HOLDLOCK)
-                           WHERE EntryId = @EntryId)
+                           WHERE EntryId = @EntryId AND MachineId = @MachineId)
                 THROW 51026, 'Supervisor declaration not found.', 1;
             IF EXISTS (SELECT 1 FROM dbo.SupervisorProductionEntry
                        WHERE EntryId = @EntryId AND EnteredBy = @Reviewer)
@@ -61,6 +61,7 @@ public sealed class SqlServerSupervisorProductionEntryReviewStore
                 SELECT CAST(1 AS bit);
             END
             """;
+        command.Parameters.Add("@MachineId", SqlDbType.UniqueIdentifier).Value = machineId;
         command.Parameters.Add("@EntryId", SqlDbType.UniqueIdentifier).Value = entryId;
         command.Parameters.Add("@DecisionId", SqlDbType.UniqueIdentifier).Value = decisionId;
         command.Parameters.Add("@Decision", SqlDbType.NVarChar, 20).Value = decision;
