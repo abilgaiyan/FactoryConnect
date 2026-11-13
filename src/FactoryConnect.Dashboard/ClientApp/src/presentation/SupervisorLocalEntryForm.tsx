@@ -55,7 +55,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     // Prefix spreadsheet formulas to prevent execution when a CSV is opened in Excel.
     const cell = (value: string | number | null) => {
       const text = String(value ?? "");
-      const safe = /^[\\s]*[=+@-]/.test(text) ? "'" + text : text;
+      const safe = /^\s*[=+@-]/.test(text) ? "'" + text : text;
       return '"' + safe.replace(/"/g, '""') + '"';
     };
     const columns = [
@@ -73,7 +73,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         entry.enteredBy, entry.recordedAtUtc, entry.note
       ].map(cell).join(","))
     ];
-    const blob = new Blob(["\\uFEFF", lines.join("\\r\\n")], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["\uFEFF", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = href;
