@@ -36,7 +36,7 @@ public sealed class SqlServerSupervisorProductionEntryReader
             SELECT TOP (@Limit)
                 EntryId, MachineId, ShiftScheduleAssignmentId, ShiftId,
                 ShiftStartsAtUtc, ShiftEndsAtUtc, ProductionOrder, PartNumber,
-                Operation, Note, EnteredBy, RecordedAtUtc
+                Operation, Note, EnteredBy, RecordedAtUtc, GoodQuantity, RejectedQuantity
             FROM dbo.SupervisorProductionEntry
             WHERE MachineId = @MachineId
               AND ShiftStartsAtUtc = @ShiftStartsAtUtc
@@ -56,7 +56,9 @@ public sealed class SqlServerSupervisorProductionEntryReader
                 reader.GetFieldValue<DateTimeOffset>(4), reader.GetFieldValue<DateTimeOffset>(5),
                 reader.GetString(6), reader.GetString(7), reader.GetString(8),
                 reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetString(10),
-                reader.GetFieldValue<DateTimeOffset>(11)));
+                reader.GetFieldValue<DateTimeOffset>(11),
+                reader.IsDBNull(12) ? null : reader.GetInt64(12),
+                reader.IsDBNull(13) ? null : reader.GetInt64(13)));
         }
         return result;
     }
@@ -74,4 +76,6 @@ public sealed record SupervisorProductionEntryRecord(
     string Operation,
     string? Note,
     string EnteredBy,
-    DateTimeOffset RecordedAtUtc);
+    DateTimeOffset RecordedAtUtc,
+    long? GoodQuantity = null,
+    long? RejectedQuantity = null);

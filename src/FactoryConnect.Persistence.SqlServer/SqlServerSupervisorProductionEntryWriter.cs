@@ -26,6 +26,9 @@ public sealed class SqlServerSupervisorProductionEntryWriter
             entry.ShiftEndsAtUtc <= entry.ShiftStartsAtUtc ||
             entry.ShiftEndsAtUtc - entry.ShiftStartsAtUtc > TimeSpan.FromHours(24))
             throw new ArgumentException("Valid identity and ordered UTC shift are required.", nameof(entry));
+        if ((entry.GoodQuantity is null) != (entry.RejectedQuantity is null) ||
+            entry.GoodQuantity < 0 || entry.RejectedQuantity < 0)
+            throw new ArgumentException("Both quantities must be nonnegative or both omitted.", nameof(entry));
         Check(entry.ShiftScheduleAssignmentId, 200);
         Check(entry.ShiftId, 200);
         Check(entry.ProductionOrder, 200);
@@ -67,6 +70,8 @@ public sealed class SqlServerSupervisorProductionEntryWriter
                       AND Operation = @Operation AND
                           ((Note IS NULL AND @Note IS NULL) OR Note = @Note)
                       AND EnteredBy = @EnteredBy
+                      AND ((GoodQuantity IS NULL AND @GoodQuantity IS NULL) OR GoodQuantity = @GoodQuantity)
+                      AND ((RejectedQuantity IS NULL AND @RejectedQuantity IS NULL) OR RejectedQuantity = @RejectedQuantity)
                 )
                     THROW 51025, 'Entry ID already belongs to a different declaration.', 1;
                 SELECT CAST(0 AS bit);
@@ -76,10 +81,10 @@ public sealed class SqlServerSupervisorProductionEntryWriter
                 INSERT INTO dbo.SupervisorProductionEntry
                     (EntryId, MachineId, ShiftScheduleAssignmentId, ShiftId,
                      ShiftStartsAtUtc, ShiftEndsAtUtc, ProductionOrder, PartNumber,
-                     Operation, Note, EnteredBy, RecordedAtUtc)
+                     Operation, Note, EnteredBy, RecordedAtUtc, GoodQuantity, RejectedQuantity)
                 VALUES (@EntryId, @MachineId, @AssignmentId, @ShiftId,
                         @Starts, @Ends, @ProductionOrder, @PartNumber,
-                        @Operation, @Note, @EnteredBy, @RecordedAt);
+                        @Operation, @Note, @EnteredBy, @RecordedAt, @GoodQuantity, @RejectedQuantity);
                 SELECT CAST(1 AS bit);
             END
             """;
@@ -95,6 +100,8 @@ public sealed class SqlServerSupervisorProductionEntryWriter
         AddText(command, "@Note", entry.Note, 2000);
         AddText(command, "@EnteredBy", entry.EnteredBy, 200);
         command.Parameters.Add("@RecordedAt", SqlDbType.DateTimeOffset).Value = entry.RecordedAtUtc;
+        command.Parameters.Add("@GoodQuantity", SqlDbType.BigInt).Value = (object?)entry.GoodQuantity ?? DBNull.Value;
+        command.Parameters.Add("@RejectedQuantity", SqlDbType.BigInt).Value = (object?)entry.RejectedQuantity ?? DBNull.Value;
         var inserted = (bool)(await command.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidDataException("Supervisor insert returned no result."));
         await transaction.CommitAsync(cancellationToken);

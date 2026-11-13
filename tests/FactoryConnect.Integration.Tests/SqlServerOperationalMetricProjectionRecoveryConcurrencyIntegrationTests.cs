@@ -121,6 +121,8 @@ public sealed class SqlServerOperationalMetricProjectionRecoveryConcurrencyInteg
     private static async Task AssertWaitingAsync(Task task)
     {
         // A bounded observation window after an explicitly signalled held gate.
-        Assert.NotSame(task, await Task.WhenAny(task, Task.Delay(150)));
+        using var delayCancellation = new CancellationTokenSource();
+        try { Assert.NotSame(task, await Task.WhenAny(task, Task.Delay(150, delayCancellation.Token))); }
+        finally { await delayCancellation.CancelAsync(); }
     }
 }

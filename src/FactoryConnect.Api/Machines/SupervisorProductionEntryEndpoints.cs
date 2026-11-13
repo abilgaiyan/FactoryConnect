@@ -6,7 +6,8 @@ namespace FactoryConnect.Api.Machines;
 /// <summary>Local commissioning access to supervisor declarations; never publishes OEE.</summary>
 public sealed record LocalSupervisorEntryCreateRequest(Guid EntryId, string ShiftScheduleAssignmentId,
     string ShiftId, DateTimeOffset ShiftStartsAtUtc, DateTimeOffset ShiftEndsAtUtc,
-    string ProductionOrder, string PartNumber, string Operation, string? Note);
+    string ProductionOrder, string PartNumber, string Operation, string? Note,
+    long? GoodQuantity = null, long? RejectedQuantity = null);
 public static class SupervisorProductionEntryEndpoints
 {
     public static IEndpointRouteBuilder MapSupervisorProductionEntryEndpoints(this IEndpointRouteBuilder endpoints)
@@ -56,7 +57,7 @@ public static class SupervisorProductionEntryEndpoints
             request.ShiftScheduleAssignmentId, request.ShiftId,
             request.ShiftStartsAtUtc, request.ShiftEndsAtUtc,
             request.ProductionOrder, request.PartNumber, request.Operation,
-            request.Note, actor, clock.GetUtcNow());
+            request.Note, actor, clock.GetUtcNow(), request.GoodQuantity, request.RejectedQuantity);
         try
         {
             var inserted = await new SqlServerSupervisorProductionEntryWriter(connectionString)
