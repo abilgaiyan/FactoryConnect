@@ -21,7 +21,7 @@ internal static class SqlRepositoryPost026SchemaDescriptor
                 SqlReferentialAction.NoAction, SqlReferentialAction.NoAction, true, true, false)],
             [
                 new("CK_SupervisorProductionEntryReview_Decision",
-                    "([Decision]=N'Approved' OR [Decision]=N'Rejected')", true, true, false),
+                    "([Decision]=N'Rejected' OR [Decision]=N'Approved')", true, true, false),
                 new("CK_SupervisorProductionEntryReview_Reason",
                     "(len(Trim([Reason]))>(0))", true, true, false),
                 new("CK_SupervisorProductionEntryReview_Reviewer",
