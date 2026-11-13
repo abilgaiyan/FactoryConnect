@@ -22,7 +22,14 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const [reviewFilter, setReviewFilter] = useState("");
   const [reviewOrder, setReviewOrder] = useState("");
   const [reviewOperation, setReviewOperation] = useState("");
+  const [reviewQuantityStatus, setReviewQuantityStatus] = useState("all");
+  const hasQuantities = (entry: Entry) =>
+    entry.goodQuantity !== null && entry.rejectedQuantity !== null &&
+    Number.isSafeInteger(entry.goodQuantity) && Number.isSafeInteger(entry.rejectedQuantity) &&
+    entry.goodQuantity >= 0 && entry.rejectedQuantity >= 0;
   const filteredEntries = entries.filter(entry =>
+    (reviewQuantityStatus === "all" ||
+      (reviewQuantityStatus === "complete" ? hasQuantities(entry) : !hasQuantities(entry))) &&
     (!reviewOrder || entry.productionOrder === reviewOrder) &&
     (!reviewOperation || entry.operation === reviewOperation) &&
     (!reviewFilter || [entry.partNumber, entry.operation, entry.productionOrder, entry.enteredBy]
@@ -30,10 +37,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const orders = [...new Set(entries.map(entry => entry.productionOrder))].sort();
   const operations = [...new Set(entries.filter(entry => !reviewOrder || entry.productionOrder === reviewOrder)
     .map(entry => entry.operation))].sort();
-  const quantifiedEntries = filteredEntries.filter(entry =>
-    Number.isSafeInteger(entry.goodQuantity) && Number.isSafeInteger(entry.rejectedQuantity) &&
-    entry.goodQuantity !== null && entry.rejectedQuantity !== null &&
-    entry.goodQuantity >= 0 && entry.rejectedQuantity >= 0);
+  const quantifiedEntries = filteredEntries.filter(hasQuantities);
   const declaredGood = quantifiedEntries.reduce((total, entry) => total + BigInt(entry.goodQuantity!), 0n);
   const declaredRejected = quantifiedEntries.reduce((total, entry) => total + BigInt(entry.rejectedQuantity!), 0n);
   const orderBreakdown = [...new Set(filteredEntries.map(entry => entry.productionOrder))].sort()
@@ -170,7 +174,12 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
       <option value="">All operations</option>
       {operations.map(value => <option key={value} value={value}>{value}</option>)}
     </select></label>
-    <button type="button" disabled={!reviewOrder && !reviewOperation && !reviewFilter} onClick={() => { setReviewOrder(""); setReviewOperation(""); setReviewFilter(""); }}>Clear review filters</button>
+    <label>Quantity review<select value={reviewQuantityStatus} onChange={event => setReviewQuantityStatus(event.target.value)}>
+      <option value="all">All entries</option>
+      <option value="complete">Entries with valid quantities</option>
+      <option value="missing">Entries missing or with invalid quantities</option>
+    </select></label>
+    <button type="button" disabled={!reviewOrder && !reviewOperation && !reviewFilter && reviewQuantityStatus === "all"} onClick={() => { setReviewOrder(""); setReviewOperation(""); setReviewFilter(""); setReviewQuantityStatus("all"); }}>Clear review filters</button>
     <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
     <button type="button" disabled={filteredEntries.length === 0} onClick={exportFilteredEntries}>Export filtered entries (CSV)</button>
     <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>
