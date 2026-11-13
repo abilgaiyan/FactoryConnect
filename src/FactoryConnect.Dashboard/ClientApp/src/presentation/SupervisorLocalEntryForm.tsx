@@ -46,6 +46,16 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         rejected: quantified.reduce((total, entry) => total + BigInt(entry.rejectedQuantity!), 0n)
       };
     });
+  const operationBreakdown = [...new Set(filteredEntries.map(entry => entry.operation))].sort()
+    .map(operationName => {
+      const matching = filteredEntries.filter(entry => entry.operation === operationName);
+      const quantified = matching.filter(entry => quantifiedEntries.includes(entry));
+      return {
+        operationName, entries: matching.length, quantified: quantified.length,
+        good: quantified.reduce((total, entry) => total + BigInt(entry.goodQuantity!), 0n),
+        rejected: quantified.reduce((total, entry) => total + BigInt(entry.rejectedQuantity!), 0n)
+      };
+    });
   const url = `/api/supervisor/v1/machines/${encodeURIComponent(scope.machineId)}/entries`;
   const query = new URLSearchParams({ shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc });
 
@@ -171,6 +181,17 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         <thead><tr><th scope="col">Production order</th><th scope="col">Entries</th><th scope="col">With quantities</th><th scope="col">Declared good</th><th scope="col">Declared rejected</th></tr></thead>
         <tbody>{orderBreakdown.map(item => <tr key={item.productionOrder}>
           <th scope="row">{item.productionOrder}</th><td>{item.entries}</td><td>{item.quantified}</td>
+          <td>{item.good.toString()}</td><td>{item.rejected.toString()}</td>
+        </tr>)}</tbody>
+      </table>
+    </section>}
+    {operationBreakdown.length > 0 && <section aria-label="Declared quantities by operation">
+      <h4>Operation breakdown</h4>
+      <p>Totals include only the displayed supervisor declarations. Repeated or overlapping entries are not deduplicated or qualified for OEE.</p>
+      <table>
+        <thead><tr><th scope="col">Operation</th><th scope="col">Entries</th><th scope="col">With quantities</th><th scope="col">Declared good</th><th scope="col">Declared rejected</th></tr></thead>
+        <tbody>{operationBreakdown.map(item => <tr key={item.operationName}>
+          <th scope="row">{item.operationName}</th><td>{item.entries}</td><td>{item.quantified}</td>
           <td>{item.good.toString()}</td><td>{item.rejected.toString()}</td>
         </tr>)}</tbody>
       </table>
