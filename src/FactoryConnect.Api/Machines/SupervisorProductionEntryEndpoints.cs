@@ -8,6 +8,8 @@ public sealed record LocalSupervisorEntryCreateRequest(Guid EntryId, string Shif
     string ShiftId, DateTimeOffset ShiftStartsAtUtc, DateTimeOffset ShiftEndsAtUtc,
     string ProductionOrder, string PartNumber, string Operation, string? Note,
     long? GoodQuantity = null, long? RejectedQuantity = null);
+public sealed record LocalSupervisorReviewRequest(Guid DecisionId, string Decision, string Reason);
+
 public static class SupervisorProductionEntryEndpoints
 {
     public static IEndpointRouteBuilder MapSupervisorProductionEntryEndpoints(this IEndpointRouteBuilder endpoints)
@@ -25,6 +27,12 @@ public static class SupervisorProductionEntryEndpoints
             .ProducesProblem(403)
             .ProducesProblem(409)
             .ProducesProblem(503);
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/reviews", ReadReviewsAsync)
+            .WithName("ReadLocalSupervisorReviews")
+            .WithGroupName("supervisor-local-v1");
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/review", ReviewAsync)
+            .WithName("DecideLocalSupervisorReview")
+            .WithGroupName("supervisor-local-v1");
         return endpoints;
     }
 
@@ -111,4 +119,67 @@ public static class SupervisorProductionEntryEndpoints
             return Results.Problem(statusCode: 503, title: "Supervisor entry SQL read unavailable");
         }
     }
+    private static async Task<IResult> ReviewAsync(Guid machineId, Guid entryId,
+        LocalSupervisorReviewRequest request, HttpContext context, IConfiguration configuration,
+        TimeProvider clock, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration) ||
+            !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
+            return Results.Problem(statusCode: 403, title: "Local review decisions are disabled");
+        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
+        if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
+            string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Local reviewer not configured");
+        if (machineId == Guid.Empty || entryId == Guid.Empty || request.DecisionId == Guid.Empty)
+            return Results.BadRequest(new { reason = "InvalidReviewIdentity" });
+        try
+        {
+            // Bind the decision to the machine path, not just a client-supplied entry ID.
+            var store = new SqlServerSupervisorProductionEntryReviewStore(connectionString);
+            // Machine membership is checked in the transactional decision query.
+            var inserted = await store.DecideAsync(machineId, entryId, request.DecisionId,
+                request.Decision, request.Reason, reviewer, clock.GetUtcNow(), cancellationToken);
+            return inserted ? Results.Created($"/api/supervisor/v1/machines/{machineId:D}/reviews",
+                new { entryId, request.DecisionId, request.Decision }) :
+                Results.Ok(new { entryId, request.DecisionId, alreadyExists = true });
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidReviewDecision" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException exception) when (exception.Number is 51026 or 51027 or 51028)
+        {
+            return Results.Problem(statusCode: 409, title: "Review target, author or prior decision conflict");
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Local review SQL unavailable");
+        }
+    }
+
+    private static async Task<IResult> ReadReviewsAsync(Guid machineId,
+        DateTimeOffset shiftStartsAtUtc, DateTimeOffset shiftEndsAtUtc,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            return Results.Ok(await new SqlServerSupervisorProductionEntryReviewStore(connectionString)
+                .ListAsync(machineId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken));
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidMachineOrUtcShift" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Local review SQL unavailable");
+        }
+    }
+
 }
