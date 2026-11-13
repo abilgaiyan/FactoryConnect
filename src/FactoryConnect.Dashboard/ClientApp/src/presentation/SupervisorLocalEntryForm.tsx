@@ -51,6 +51,39 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     return () => controller.abort();
   }, [url, scope.startsAtUtc, scope.endsAtUtc]);
 
+  function exportFilteredEntries() {
+    // Prefix spreadsheet formulas to prevent execution when a CSV is opened in Excel.
+    const cell = (value: string | number | null) => {
+      const text = String(value ?? "");
+      const safe = /^[\\s]*[=+@-]/.test(text) ? "'" + text : text;
+      return '"' + safe.replace(/"/g, '""') + '"';
+    };
+    const columns = [
+      "Entry ID", "Machine ID", "Shift assignment", "Shift", "Shift start UTC",
+      "Shift end UTC", "Production order", "Part number", "Operation",
+      "Good quantity (declared)", "Rejected quantity (declared)", "Supervisor",
+      "Recorded UTC", "Note"
+    ];
+    const lines = [
+      columns.map(cell).join(","),
+      ...filteredEntries.map(entry => [
+        entry.entryId, entry.machineId, entry.shiftScheduleAssignmentId, entry.shiftId,
+        entry.shiftStartsAtUtc, entry.shiftEndsAtUtc, entry.productionOrder,
+        entry.partNumber, entry.operation, entry.goodQuantity, entry.rejectedQuantity,
+        entry.enteredBy, entry.recordedAtUtc, entry.note
+      ].map(cell).join(","))
+    ];
+    const blob = new Blob(["\\uFEFF", lines.join("\\r\\n")], { type: "text/csv;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = "supervisor-declarations.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(href);
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
     if (loading) return;
@@ -110,6 +143,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
       {orders.map(value => <option key={value} value={value}>{value}</option>)}
     </select></label>
     <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
+    <button type="button" disabled={filteredEntries.length === 0} onClick={exportFilteredEntries}>Export filtered entries (CSV)</button>
     <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>
     {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
