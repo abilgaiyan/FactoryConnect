@@ -32,6 +32,16 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     entry.goodQuantity >= 0 && entry.rejectedQuantity >= 0);
   const declaredGood = quantifiedEntries.reduce((total, entry) => total + BigInt(entry.goodQuantity!), 0n);
   const declaredRejected = quantifiedEntries.reduce((total, entry) => total + BigInt(entry.rejectedQuantity!), 0n);
+  const orderBreakdown = [...new Set(filteredEntries.map(entry => entry.productionOrder))].sort()
+    .map(productionOrder => {
+      const matching = filteredEntries.filter(entry => entry.productionOrder === productionOrder);
+      const quantified = matching.filter(entry => quantifiedEntries.includes(entry));
+      return {
+        productionOrder, entries: matching.length, quantified: quantified.length,
+        good: quantified.reduce((total, entry) => total + BigInt(entry.goodQuantity!), 0n),
+        rejected: quantified.reduce((total, entry) => total + BigInt(entry.rejectedQuantity!), 0n)
+      };
+    });
   const url = `/api/supervisor/v1/machines/${encodeURIComponent(scope.machineId)}/entries`;
   const query = new URLSearchParams({ shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc });
 
@@ -145,6 +155,17 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
     <button type="button" disabled={filteredEntries.length === 0} onClick={exportFilteredEntries}>Export filtered entries (CSV)</button>
     <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>
+    {orderBreakdown.length > 0 && <section aria-label="Declared quantities by production order">
+      <h4>Production order breakdown</h4>
+      <p>Summed supervisor declarations only. Multiple declarations may refer to overlapping production; these totals are not verified OEE evidence.</p>
+      <table>
+        <thead><tr><th scope="col">Production order</th><th scope="col">Entries</th><th scope="col">With quantities</th><th scope="col">Declared good</th><th scope="col">Declared rejected</th></tr></thead>
+        <tbody>{orderBreakdown.map(item => <tr key={item.productionOrder}>
+          <th scope="row">{item.productionOrder}</th><td>{item.entries}</td><td>{item.quantified}</td>
+          <td>{item.good.toString()}</td><td>{item.rejected.toString()}</td>
+        </tr>)}</tbody>
+      </table>
+    </section>}
     {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
       <ul>{filteredEntries.map(entry => <li key={entry.entryId}>{entry.productionOrder} · {entry.partNumber} · {entry.operation} · Good {entry.goodQuantity ?? "Not declared"} · Rejected {entry.rejectedQuantity ?? "Not declared"} · {entry.enteredBy} · {entry.recordedAtUtc}</li>)}</ul>}
