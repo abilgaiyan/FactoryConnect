@@ -26,6 +26,12 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     (!reviewFilter || [entry.partNumber, entry.operation, entry.productionOrder, entry.enteredBy]
       .some(value => value.toLocaleLowerCase().includes(reviewFilter.toLocaleLowerCase()))));
   const orders = [...new Set(entries.map(entry => entry.productionOrder))].sort();
+  const quantifiedEntries = filteredEntries.filter(entry =>
+    Number.isSafeInteger(entry.goodQuantity) && Number.isSafeInteger(entry.rejectedQuantity) &&
+    entry.goodQuantity !== null && entry.rejectedQuantity !== null &&
+    entry.goodQuantity >= 0 && entry.rejectedQuantity >= 0);
+  const declaredGood = quantifiedEntries.reduce((total, entry) => total + BigInt(entry.goodQuantity!), 0n);
+  const declaredRejected = quantifiedEntries.reduce((total, entry) => total + BigInt(entry.rejectedQuantity!), 0n);
   const url = `/api/supervisor/v1/machines/${encodeURIComponent(scope.machineId)}/entries`;
   const query = new URLSearchParams({ shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc });
 
@@ -104,6 +110,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
       {orders.map(value => <option key={value} value={value}>{value}</option>)}
     </select></label>
     <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
+    <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>
     {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
       <ul>{filteredEntries.map(entry => <li key={entry.entryId}>{entry.productionOrder} · {entry.partNumber} · {entry.operation} · Good {entry.goodQuantity ?? "Not declared"} · Rejected {entry.rejectedQuantity ?? "Not declared"} · {entry.enteredBy} · {entry.recordedAtUtc}</li>)}</ul>}
