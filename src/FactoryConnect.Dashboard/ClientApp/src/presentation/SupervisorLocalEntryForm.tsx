@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { SupervisorLocalReviewPanel } from "./SupervisorLocalReviewPanel";
 
 type Entry = {
   entryId: string; machineId: string; shiftScheduleAssignmentId: string; shiftId: string;
@@ -205,6 +206,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         </tr>)}</tbody>
       </table>
     </section>}
+    <SupervisorLocalReviewPanel scope={scope} entries={entries} />
     {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
       <ul>{filteredEntries.map(entry => <li key={entry.entryId}>
