@@ -198,6 +198,22 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     </section>}
     {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
-      <ul>{filteredEntries.map(entry => <li key={entry.entryId}>{entry.productionOrder} · {entry.partNumber} · {entry.operation} · Good {entry.goodQuantity ?? "Not declared"} · Rejected {entry.rejectedQuantity ?? "Not declared"} · {entry.enteredBy} · {entry.recordedAtUtc}</li>)}</ul>}
+      <ul>{filteredEntries.map(entry => <li key={entry.entryId}>
+        <details>
+          <summary>{entry.productionOrder} · {entry.partNumber} · {entry.operation} · Good {entry.goodQuantity ?? "Not declared"} · Rejected {entry.rejectedQuantity ?? "Not declared"} · {entry.enteredBy} · {entry.recordedAtUtc}</summary>
+          <dl>
+            <dt>Entry ID</dt><dd>{entry.entryId}</dd>
+            <dt>Machine ID</dt><dd>{entry.machineId}</dd>
+            <dt>Shift</dt><dd>{entry.shiftId}</dd>
+            <dt>Shift assignment ID</dt><dd>{entry.shiftScheduleAssignmentId}</dd>
+            <dt>Shift starts (UTC)</dt><dd>{entry.shiftStartsAtUtc}</dd>
+            <dt>Shift ends (UTC)</dt><dd>{entry.shiftEndsAtUtc}</dd>
+            <dt>Supervisor</dt><dd>{entry.enteredBy}</dd>
+            <dt>Recorded (UTC)</dt><dd>{entry.recordedAtUtc}</dd>
+            <dt>Note</dt><dd style={{ whiteSpace: "pre-wrap" }}>{entry.note || "No note recorded"}</dd>
+          </dl>
+          <p>Saved supervisor declaration only; not an approved or reconciled production fact.</p>
+        </details>
+      </li>)}</ul>}
   </section>;
 }
