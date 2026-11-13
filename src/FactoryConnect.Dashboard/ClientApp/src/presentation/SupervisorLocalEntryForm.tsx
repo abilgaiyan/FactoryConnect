@@ -21,11 +21,15 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const [loading, setLoading] = useState(false);
   const [reviewFilter, setReviewFilter] = useState("");
   const [reviewOrder, setReviewOrder] = useState("");
+  const [reviewOperation, setReviewOperation] = useState("");
   const filteredEntries = entries.filter(entry =>
     (!reviewOrder || entry.productionOrder === reviewOrder) &&
+    (!reviewOperation || entry.operation === reviewOperation) &&
     (!reviewFilter || [entry.partNumber, entry.operation, entry.productionOrder, entry.enteredBy]
       .some(value => value.toLocaleLowerCase().includes(reviewFilter.toLocaleLowerCase()))));
   const orders = [...new Set(entries.map(entry => entry.productionOrder))].sort();
+  const operations = [...new Set(entries.filter(entry => !reviewOrder || entry.productionOrder === reviewOrder)
+    .map(entry => entry.operation))].sort();
   const quantifiedEntries = filteredEntries.filter(entry =>
     Number.isSafeInteger(entry.goodQuantity) && Number.isSafeInteger(entry.rejectedQuantity) &&
     entry.goodQuantity !== null && entry.rejectedQuantity !== null &&
@@ -148,10 +152,15 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     {status && <p role="status">{status}</p>}
     <h3>Saved entries ({filteredEntries.length} of {entries.length})</h3>
     <p>Review entries for this exact machine and shift. Filters affect only the display, not saved records or OEE.</p>
-    <label>Filter production order<select value={reviewOrder} onChange={event => setReviewOrder(event.target.value)}>
+    <label>Filter production order<select value={reviewOrder} onChange={event => { setReviewOrder(event.target.value); setReviewOperation(""); }}>
       <option value="">All production orders</option>
       {orders.map(value => <option key={value} value={value}>{value}</option>)}
     </select></label>
+    <label>Filter operation<select value={reviewOperation} onChange={event => setReviewOperation(event.target.value)}>
+      <option value="">All operations</option>
+      {operations.map(value => <option key={value} value={value}>{value}</option>)}
+    </select></label>
+    <button type="button" disabled={!reviewOrder && !reviewOperation && !reviewFilter} onClick={() => { setReviewOrder(""); setReviewOperation(""); setReviewFilter(""); }}>Clear review filters</button>
     <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
     <button type="button" disabled={filteredEntries.length === 0} onClick={exportFilteredEntries}>Export filtered entries (CSV)</button>
     <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>
