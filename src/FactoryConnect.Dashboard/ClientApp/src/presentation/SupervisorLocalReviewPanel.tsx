@@ -80,7 +80,7 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
             <button type="button" disabled={busy || !reason.trim() || (pending !== null && (pending.entryId !== entry.entryId || pending.decision !== "Rejected"))} onClick={() => { void decide(entry.entryId, "Rejected"); }}>Reject locally</button>
             <button type="button" disabled={busy || pending !== null} onClick={() => { setSelected(""); setReason(""); }}>Cancel</button>
           </div> : <button type="button" disabled={busy || pending !== null} onClick={() => { setSelected(entry.entryId); setReason(""); }}>Review entry</button>}
-        <SupervisorLocalRevisionPanel machineId={scope.machineId} entry={entry} />
+        <SupervisorLocalRevisionPanel machineId={scope.machineId} entry={entry} startsAtUtc={scope.startsAtUtc} endsAtUtc={scope.endsAtUtc} />
       </li>;
     })}</ul>
   </section>;
