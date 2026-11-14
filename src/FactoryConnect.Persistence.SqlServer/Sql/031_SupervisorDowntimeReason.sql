@@ -2,7 +2,7 @@
 -- Catalog only: no rewrite of existing immutable explanation/review evidence.
 IF OBJECT_ID(N'dbo.SupervisorDowntimeReason', N'U') IS NULL
 BEGIN
-    CREATE TABLE dbo.SupervisorDowntimeReason
+CREATE TABLE dbo.SupervisorDowntimeReason
     (
         ReasonCode nvarchar(100) COLLATE Latin1_General_100_BIN2 NOT NULL,
         DisplayName nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
