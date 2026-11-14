@@ -56,6 +56,8 @@ internal static class SqlRepositorySchemaAuthority
         Table("QualityAssessment"),
         Table("QualityPolicy"),
         Table("ShiftMetricAggregate"),
+        Table("SupervisorDowntimeExplanation"),
+        Table("SupervisorDowntimeExplanationReview"),
         Table("SupervisorProductionEntry"),
         Table("SupervisorProductionEntryReview"),
         Table("SupervisorProductionEntryRevision"),

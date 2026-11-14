@@ -60,6 +60,8 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "QualityAssessment",
         "QualityPolicy",
         "ShiftMetricAggregate",
+        "SupervisorDowntimeExplanation",
+        "SupervisorDowntimeExplanationReview",
         "SupervisorProductionEntry",
         "SupervisorProductionEntryReview",
         "SupervisorProductionEntryRevision",
@@ -71,7 +73,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(56, ownedTables.Length);
+        Assert.Equal(58, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
