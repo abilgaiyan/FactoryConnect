@@ -41,6 +41,10 @@ public static class SupervisorProductionEntryEndpoints
             .WithName("ReadLocalSupervisorRevisions").WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions", CreateRevisionAsync)
             .WithName("CreateLocalSupervisorRevision").WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/revision-reviews", ReadRevisionReviewsAsync)
+            .WithName("ReadLocalRevisionReviews").WithGroupName("supervisor-local-v1");
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/revisions/{revisionId:guid}/review", ReviewRevisionAsync)
+            .WithName("DecideLocalRevisionReview").WithGroupName("supervisor-local-v1");
         return endpoints;
     }
 
@@ -250,6 +254,66 @@ public static class SupervisorProductionEntryEndpoints
         catch (Microsoft.Data.SqlClient.SqlException)
         {
             return Results.Problem(statusCode: 503, title: "Local correction SQL unavailable");
+        }
+    }
+
+    private static async Task<IResult> ReadRevisionReviewsAsync(Guid machineId,
+        DateTimeOffset shiftStartsAtUtc, DateTimeOffset shiftEndsAtUtc,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            return Results.Ok(await new SqlServerSupervisorProductionEntryRevisionReviewStore(connectionString)
+                .ListAsync(machineId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken));
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidMachineOrUtcShift" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Local revision review SQL unavailable");
+        }
+    }
+
+    private static async Task<IResult> ReviewRevisionAsync(Guid machineId, Guid revisionId,
+        LocalSupervisorReviewRequest request, HttpContext context, IConfiguration configuration,
+        TimeProvider clock, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration) ||
+            !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
+            return Results.Problem(statusCode: 403, title: "Local review decisions are disabled");
+        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
+        if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
+            string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Local reviewer not configured");
+        try
+        {
+            var inserted = await new SqlServerSupervisorProductionEntryRevisionReviewStore(connectionString)
+                .DecideAsync(machineId, revisionId, request.DecisionId, request.Decision,
+                    request.Reason, reviewer, clock.GetUtcNow(), cancellationToken);
+            return inserted
+                ? Results.Created($"/api/supervisor/v1/machines/{machineId:D}/revision-reviews",
+                    new { revisionId, request.DecisionId, request.Decision })
+                : Results.Ok(new { revisionId, request.DecisionId, alreadyExists = true });
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidRevisionReviewDecision" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException exception) when (exception.Number is 51036 or 51037 or 51038)
+        {
+            return Results.Problem(statusCode: 409, title: "Revision review target, author or prior decision conflict");
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Local revision review SQL unavailable");
         }
     }
 
