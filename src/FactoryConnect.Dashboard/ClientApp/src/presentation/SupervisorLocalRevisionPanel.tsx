@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 
 type Entry = { entryId: string; productionOrder: string; partNumber: string; operation: string; goodQuantity: number | null; rejectedQuantity: number | null };
+type RevisionReview = { revisionId: string; decisionId: string | null; decision: "Pending" | "Approved" | "Rejected"; reason: string | null; reviewedBy: string | null; reviewedAtUtc: string | null };
 type Revision = { revisionId: string; revisionNumber: number; productionOrder: string; partNumber: string; operation: string; note: string | null; goodQuantity: number | null; rejectedQuantity: number | null; correctionReason: string; revisedBy: string; revisedAtUtc: string };
 
 export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly machineId: string; readonly entry: Entry }) {
   const [history, setHistory] = useState<Revision[]>([]);
+  const [reviews, setReviews] = useState<RevisionReview[]>([]);
+  const [reviewReason, setReviewReason] = useState("");
+  const [reviewTarget, setReviewTarget] = useState("");
   const [status, setStatus] = useState("");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -34,6 +38,20 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
   }, [url]);
 
   const head = history.at(-1);
+  const reviewById = new Map(reviews.map(review => [review.revisionId, review]));
+  async function decide(revisionId: string, decision: "Approved" | "Rejected") {
+    if (busy || !reviewReason.trim()) return;
+    setBusy(true); setStatus("");
+    try {
+      const response = await fetch(`/api/supervisor/v1/machines/${encodeURIComponent(machineId)}/revisions/${encodeURIComponent(revisionId)}/review`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decisionId: crypto.randomUUID(), decision, reason: reviewReason.trim() })
+      });
+      if (!response.ok) throw new Error(`Review not confirmed (HTTP ${response.status}). Refresh before retrying.`);
+      setReviewTarget(""); setReviewReason(""); setStatus("Revision review saved. No OEE evidence published.");
+    } catch (error) { setStatus(String(error)); }
+    finally { setBusy(false); }
+  }
   function begin() {
     setOrder(head?.productionOrder ?? entry.productionOrder);
     setPart(head?.partNumber ?? entry.partNumber);
@@ -69,7 +87,7 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
   }
 
   return <div aria-label="Declaration correction history">
-    <p>Corrections: {history.length}. Original review decisions apply only to the original declaration, never to corrections. Revision approval is not available yet.</p>
+    <p>Corrections: {history.length}. Original review decisions apply only to the original declaration, never to corrections. Corrections require their own independent review.</p>
     <button type="button" disabled={busy} onClick={() => { void refresh().then(() => { setRetry(null); setStatus("Revision history refreshed."); }, error => setStatus(String(error))); }}>Refresh corrections</button>
     {!editing && <button type="button" disabled={busy} onClick={begin}>Correct declaration</button>}
     {status && <p role="status">{status}</p>}
@@ -85,9 +103,16 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
       <button type="button" disabled={busy || retry !== null} onClick={() => setEditing(false)}>Cancel</button>
     </div>}
     <ol>{history.map(item => <li key={item.revisionId}>
-      Revision {item.revisionNumber} · Unreviewed (not approved) · {item.productionOrder} · {item.partNumber} · {item.operation}
+      Revision {item.revisionNumber} · {reviewById.get(item.revisionId)?.decision ?? "Pending"} · {item.productionOrder} · {item.partNumber} · {item.operation}
       · Good {item.goodQuantity ?? "Missing"} · Rejected {item.rejectedQuantity ?? "Missing"}
       · {item.revisedBy} · {item.revisedAtUtc} · Reason: {item.correctionReason}
+      {reviewById.get(item.revisionId)?.decisionId
+        ? <p>Reviewer: {reviewById.get(item.revisionId)?.reviewedBy} · Reason: {reviewById.get(item.revisionId)?.reason}</p>
+        : reviewTarget === item.revisionId
+          ? <div><label>Review reason<textarea maxLength={2000} value={reviewReason} onChange={event => setReviewReason(event.target.value)} /></label>
+              <button type="button" disabled={busy || !reviewReason.trim()} onClick={() => { void decide(item.revisionId, "Approved"); }}>Approve correction</button>
+              <button type="button" disabled={busy || !reviewReason.trim()} onClick={() => { void decide(item.revisionId, "Rejected"); }}>Reject correction</button></div>
+          : <button type="button" disabled={busy} onClick={() => { setReviewTarget(item.revisionId); setReviewReason(""); }}>Review correction</button>}
     </li>)}</ol>
   </div>;
 }
