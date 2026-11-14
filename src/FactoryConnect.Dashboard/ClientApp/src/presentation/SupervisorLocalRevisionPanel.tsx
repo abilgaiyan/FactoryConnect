@@ -63,13 +63,13 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
           correctionReason: reason.trim() }) });
       if (!response.ok) throw new Error(`Correction not confirmed (HTTP ${response.status}). Refresh history before changing values.`);
       setRetry(null); setEditing(false);
-      await refresh(); setStatus("Correction recorded as a new pending revision. No OEE evidence published.");
+      await refresh(); setStatus("Correction recorded as a new unreviewed revision. No OEE evidence published.");
     } catch (error) { setStatus(String(error)); }
     finally { setBusy(false); }
   }
 
   return <div aria-label="Declaration correction history">
-    <p>Corrections: {history.length}. Original declarations and review decisions are preserved.</p>
+    <p>Corrections: {history.length}. Original review decisions apply only to the original declaration, never to corrections. Revision approval is not available yet.</p>
     <button type="button" disabled={busy} onClick={() => { void refresh().then(() => { setRetry(null); setStatus("Revision history refreshed."); }, error => setStatus(String(error))); }}>Refresh corrections</button>
     {!editing && <button type="button" disabled={busy} onClick={begin}>Correct declaration</button>}
     {status && <p role="status">{status}</p>}
@@ -85,7 +85,7 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
       <button type="button" disabled={busy || retry !== null} onClick={() => setEditing(false)}>Cancel</button>
     </div>}
     <ol>{history.map(item => <li key={item.revisionId}>
-      Revision {item.revisionNumber} · Pending review · {item.productionOrder} · {item.partNumber} · {item.operation}
+      Revision {item.revisionNumber} · Unreviewed (not approved) · {item.productionOrder} · {item.partNumber} · {item.operation}
       · Good {item.goodQuantity ?? "Missing"} · Rejected {item.rejectedQuantity ?? "Missing"}
       · {item.revisedBy} · {item.revisedAtUtc} · Reason: {item.correctionReason}
     </li>)}</ol>
