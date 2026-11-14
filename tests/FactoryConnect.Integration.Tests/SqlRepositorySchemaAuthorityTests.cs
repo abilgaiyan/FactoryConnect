@@ -62,7 +62,8 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "ShiftMetricAggregate",
         "SupervisorProductionEntry",
         "SupervisorProductionEntryReview",
-        "SupervisorProductionEntryRevision"
+        "SupervisorProductionEntryRevision",
+                "SupervisorProductionEntryRevisionReview"
     ];
 
     [Fact]
@@ -70,7 +71,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(55, ownedTables.Length);
+        Assert.Equal(56, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }
