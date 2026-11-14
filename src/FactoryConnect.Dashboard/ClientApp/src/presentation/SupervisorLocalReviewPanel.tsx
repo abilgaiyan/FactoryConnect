@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SupervisorLocalRevisionPanel } from "./SupervisorLocalRevisionPanel";
 
 type Scope = { machineId: string; startsAtUtc: string; endsAtUtc: string };
 type Declaration = { entryId: string; productionOrder: string; partNumber: string; operation: string; enteredBy: string; goodQuantity: number | null; rejectedQuantity: number | null };
@@ -79,6 +80,7 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
             <button type="button" disabled={busy || !reason.trim() || (pending !== null && (pending.entryId !== entry.entryId || pending.decision !== "Rejected"))} onClick={() => { void decide(entry.entryId, "Rejected"); }}>Reject locally</button>
             <button type="button" disabled={busy || pending !== null} onClick={() => { setSelected(""); setReason(""); }}>Cancel</button>
           </div> : <button type="button" disabled={busy || pending !== null} onClick={() => { setSelected(entry.entryId); setReason(""); }}>Review entry</button>}
+        <SupervisorLocalRevisionPanel machineId={scope.machineId} entry={entry} />
       </li>;
     })}</ul>
   </section>;
