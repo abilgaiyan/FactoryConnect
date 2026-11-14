@@ -68,7 +68,8 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "SupervisorProductionEntryRevision",
                 "SupervisorProductionEntryRevisionReview",
                 "SupervisorDowntimeExplanation",
-                "SupervisorDowntimeExplanationReview"
+                "SupervisorDowntimeExplanationReview",
+                "SupervisorDowntimeReason"
             ],
             current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }
