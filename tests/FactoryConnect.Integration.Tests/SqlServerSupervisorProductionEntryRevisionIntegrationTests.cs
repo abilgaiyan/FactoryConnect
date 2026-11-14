@@ -54,6 +54,31 @@ public sealed class SqlServerSupervisorProductionEntryRevisionIntegrationTests :
         Assert.Equal(second.RevisionId, history[1].RevisionId);
         Assert.Empty(await store.ListAsync(Guid.NewGuid(), entry.EntryId));
 
+        var reviewStore = new SqlServerSupervisorProductionEntryRevisionReviewStore(_fixture.ConnectionString);
+        var reviewId = Guid.NewGuid();
+        var reviewAt = start.AddHours(2);
+        var selfReview = await Assert.ThrowsAsync<SqlException>(() =>
+            reviewStore.DecideAsync(machine.Value, first.RevisionId, reviewId, "Approved",
+                "Checked correction", "supervisor", reviewAt));
+        Assert.Equal(51037, selfReview.Number);
+        var wrongReviewMachine = await Assert.ThrowsAsync<SqlException>(() =>
+            reviewStore.DecideAsync(Guid.NewGuid(), first.RevisionId, reviewId, "Approved",
+                "Checked correction", "reviewer", reviewAt));
+        Assert.Equal(51036, wrongReviewMachine.Number);
+        Assert.True(await reviewStore.DecideAsync(machine.Value, first.RevisionId, reviewId,
+            "Approved", "Checked correction", "reviewer", reviewAt));
+        Assert.False(await reviewStore.DecideAsync(machine.Value, first.RevisionId, reviewId,
+            "Approved", "Checked correction", "reviewer", reviewAt.AddMinutes(1)));
+        var conflictingReview = await Assert.ThrowsAsync<SqlException>(() =>
+            reviewStore.DecideAsync(machine.Value, first.RevisionId, Guid.NewGuid(),
+                "Rejected", "Changed decision", "reviewer", reviewAt));
+        Assert.Equal(51038, conflictingReview.Number);
+        var revisionReviews = await reviewStore.ListAsync(machine.Value, start, end);
+        Assert.Equal(2, revisionReviews.Count);
+        Assert.Equal("Approved", Assert.Single(revisionReviews, item => item.RevisionId == first.RevisionId).Decision);
+        Assert.Equal("Pending", Assert.Single(revisionReviews, item => item.RevisionId == second.RevisionId).Decision);
+        Assert.Empty(await reviewStore.ListAsync(Guid.NewGuid(), start, end));
+
         var original = Assert.Single(await new SqlServerSupervisorProductionEntryReader(_fixture.ConnectionString)
             .ListAsync(machine.Value, start, end));
         Assert.Equal("ORDER-1", original.ProductionOrder);
