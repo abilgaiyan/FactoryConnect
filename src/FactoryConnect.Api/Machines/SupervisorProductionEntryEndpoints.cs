@@ -63,7 +63,61 @@ public static class SupervisorProductionEntryEndpoints
         endpoints.MapGet("/api/supervisor/v1/downtime-reasons", ReadDowntimeReasonsAsync)
             .WithName("ReadLocalSupervisorDowntimeReasons")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/downtime-reasons/all", ReadAllDowntimeReasonsAsync)
+            .WithName("ReadAllLocalDowntimeReasons").WithGroupName("supervisor-local-v1");
+        endpoints.MapPut("/api/supervisor/v1/downtime-reasons/{reasonCode}", UpsertDowntimeReasonAsync)
+            .WithName("UpsertLocalDowntimeReason").WithGroupName("supervisor-local-v1");
         return endpoints;
+    }
+
+    public sealed record LocalDowntimeReasonRequest(string DisplayName, string? Description, bool IsActive);
+
+    private static async Task<IResult> ReadAllDowntimeReasonsAsync(
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            return Results.Ok(await new SqlServerSupervisorDowntimeReasonStore(connectionString)
+                .ListAsync(activeOnly: false, cancellationToken: cancellationToken));
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Downtime reason catalog unavailable");
+        }
+    }
+
+    private static async Task<IResult> UpsertDowntimeReasonAsync(
+        string reasonCode, LocalDowntimeReasonRequest request,
+        HttpContext context, IConfiguration configuration, TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration) ||
+            !configuration.GetValue<bool>("SupervisorLocalDowntimeReasons:EnableWrites"))
+            return Results.Problem(statusCode: 403, title: "Local downtime reason administration disabled");
+        var connectionString = configuration["SupervisorLocalDowntimeReasons:WriteConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Local downtime reason writer not configured");
+        try
+        {
+            var reason = new SupervisorDowntimeReasonRecord(reasonCode, request.DisplayName,
+                request.Description, request.IsActive);
+            await new SqlServerSupervisorDowntimeReasonStore(connectionString)
+                .UpsertAsync(reason, clock.GetUtcNow(), cancellationToken);
+            return Results.Ok(reason);
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidDowntimeReason" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Downtime reason catalog write unavailable");
+        }
     }
 
     private static async Task<IResult> ReadDowntimeReasonsAsync(
