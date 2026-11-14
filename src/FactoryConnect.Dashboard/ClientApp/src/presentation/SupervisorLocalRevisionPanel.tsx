@@ -4,7 +4,7 @@ type Entry = { entryId: string; productionOrder: string; partNumber: string; ope
 type RevisionReview = { revisionId: string; decisionId: string | null; decision: "Pending" | "Approved" | "Rejected"; reason: string | null; reviewedBy: string | null; reviewedAtUtc: string | null };
 type Revision = { revisionId: string; revisionNumber: number; productionOrder: string; partNumber: string; operation: string; note: string | null; goodQuantity: number | null; rejectedQuantity: number | null; correctionReason: string; revisedBy: string; revisedAtUtc: string };
 
-export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly machineId: string; readonly entry: Entry }) {
+export function SupervisorLocalRevisionPanel({ machineId, entry, startsAtUtc, endsAtUtc }: { readonly machineId: string; readonly entry: Entry; readonly startsAtUtc: string; readonly endsAtUtc: string }) {
   const [history, setHistory] = useState<Revision[]>([]);
   const [reviews, setReviews] = useState<RevisionReview[]>([]);
   const [reviewReason, setReviewReason] = useState("");
@@ -28,6 +28,10 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
     const value: unknown = await response.json();
     if (!Array.isArray(value)) throw new Error("Invalid revision history");
     setHistory(value as Revision[]);
+    const query = new URLSearchParams({ shiftStartsAtUtc: startsAtUtc, shiftEndsAtUtc: endsAtUtc });
+    const reviewResponse = await fetch(`/api/supervisor/v1/machines/${encodeURIComponent(machineId)}/revision-reviews?${query}`, signal ? { signal } : {});
+    if (!reviewResponse.ok) throw new Error(`Revision review history unavailable (HTTP ${reviewResponse.status})`);
+    setReviews(await reviewResponse.json() as RevisionReview[]);
   }
 
   useEffect(() => {
@@ -35,7 +39,7 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
     setHistory([]); setEditing(false); setStatus(""); setRetry(null);
     void refresh(controller.signal).catch(error => { if (!controller.signal.aborted) setStatus(String(error)); });
     return () => controller.abort();
-  }, [url]);
+  }, [url, startsAtUtc, endsAtUtc]);
 
   const head = history.at(-1);
   const reviewById = new Map(reviews.map(review => [review.revisionId, review]));
@@ -48,7 +52,7 @@ export function SupervisorLocalRevisionPanel({ machineId, entry }: { readonly ma
         body: JSON.stringify({ decisionId: crypto.randomUUID(), decision, reason: reviewReason.trim() })
       });
       if (!response.ok) throw new Error(`Review not confirmed (HTTP ${response.status}). Refresh before retrying.`);
-      setReviewTarget(""); setReviewReason(""); setStatus("Revision review saved. No OEE evidence published.");
+      setReviewTarget(""); setReviewReason(""); await refresh(); setStatus("Revision review saved. No OEE evidence published.");
     } catch (error) { setStatus(String(error)); }
     finally { setBusy(false); }
   }
