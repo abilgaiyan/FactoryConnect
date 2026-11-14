@@ -47,7 +47,11 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
 
   async function send(kind: 'submit' | 'review', id: string, payload: object, url: string) {
     if (busy) return;
-    if (pending && (pending.kind !== kind || pending.id !== id)) {
+    if (pending && (pending.kind !== kind || pending.id !== id ||
+      (kind === 'review' && ((pending.payload as { decision: string; reason: string }).decision !== (payload as { decision: string; reason: string }).decision ||
+        (pending.payload as { decision: string; reason: string }).reason !== (payload as { decision: string; reason: string }).reason)) ||
+      (kind === 'submit' && ((pending.payload as { reasonCode: string; explanation: string }).reasonCode !== (payload as { reasonCode: string; explanation: string }).reasonCode ||
+        (pending.payload as { reasonCode: string; explanation: string }).explanation !== (payload as { reasonCode: string; explanation: string }).explanation)))) {
       setStatus('Previous action may have been saved. Refresh before changing the request.'); return;
     }
     const action = pending ?? { kind, id, payload };
@@ -89,13 +93,13 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
         <p><strong>{entry.reasonCode}</strong> — {entry.explanation} · Entered by {entry.enteredBy} · <strong>{review?.decision ?? 'Pending'}</strong></p>
         {review?.decision && review.decision !== 'Pending' ? <p>Reviewed by {review.reviewedBy}: {review.reason}</p> : <>
           <label>Review reason <textarea maxLength={2000} value={reviewReason} disabled={busy} onChange={event => setReviewReason(event.target.value)} /></label>
-          <button type="button" disabled={busy || !reviewReason.trim() || (pending !== null && (pending.kind !== 'review' || pending.id !== entry.explanationId))} onClick={() => decide(entry, 'Approved')}>Approve locally</button>
+          <button type="button" disabled={busy || !reviewReason.trim() || (pending !== null && (pending.kind !== 'review' || pending.id !== entry.explanationId || (pending.payload as { decision: string; reason: string }).decision !== 'Approved' || (pending.payload as { decision: string; reason: string }).reason !== reviewReason.trim()))} onClick={() => decide(entry, 'Approved')}>Approve locally</button>
           <button type="button" disabled={busy || !reviewReason.trim() || pending !== null} onClick={() => decide(entry, 'Rejected')}>Reject locally</button>
         </>}
       </div> : <div>
         <label>Reason code <input maxLength={100} value={reasonCode} disabled={busy} onChange={event => setReasonCode(event.target.value)} /></label>
         <label>Explanation <textarea maxLength={2000} value={explanation} disabled={busy} onChange={event => setExplanation(event.target.value)} /></label>
-        <button type="button" disabled={busy || (pending !== null && (pending.kind !== 'submit' || pending.id !== interval.position)) || !reasonCode.trim() || !explanation.trim()} onClick={submit}>Submit local explanation</button>
+        <button type="button" disabled={busy || (pending !== null && (pending.kind !== 'submit' || pending.id !== interval.position || (pending.payload as { reasonCode: string; explanation: string }).reasonCode !== reasonCode.trim() || (pending.payload as { reasonCode: string; explanation: string }).explanation !== explanation.trim())) || !reasonCode.trim() || !explanation.trim()} onClick={submit}>Submit local explanation</button>
       </div>;
     })()}
   </section>;
