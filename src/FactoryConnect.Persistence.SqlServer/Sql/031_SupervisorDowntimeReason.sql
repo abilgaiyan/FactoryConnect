@@ -5,8 +5,8 @@ BEGIN
     CREATE TABLE dbo.SupervisorDowntimeReason
     (
         ReasonCode nvarchar(100) COLLATE Latin1_General_100_BIN2 NOT NULL,
-        DisplayName nvarchar(200) NOT NULL,
-        Description nvarchar(1000) NULL,
+        DisplayName nvarchar(200) COLLATE Latin1_General_100_BIN2 NOT NULL,
+        Description nvarchar(1000) COLLATE Latin1_General_100_BIN2 NULL,
         IsActive bit NOT NULL CONSTRAINT DF_SupervisorDowntimeReason_IsActive DEFAULT (1),
         CreatedAtUtc datetimeoffset(7) NOT NULL,
         UpdatedAtUtc datetimeoffset(7) NOT NULL,
