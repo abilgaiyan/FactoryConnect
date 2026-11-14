@@ -495,6 +495,10 @@ public static class SupervisorProductionEntryEndpoints
         {
             return Results.BadRequest(new { reason = "InvalidDowntimeExplanation" });
         }
+        catch (Microsoft.Data.SqlClient.SqlException exception) when (exception.Number == 51044)
+        {
+            return Results.Problem(statusCode: 409, title: "Downtime reason is inactive or not configured");
+        }
         catch (Microsoft.Data.SqlClient.SqlException exception) when (exception.Number is 51040 or 2601 or 2627)
         {
             return Results.Problem(statusCode: 409, title: "Downtime explanation already exists or conflicts");
