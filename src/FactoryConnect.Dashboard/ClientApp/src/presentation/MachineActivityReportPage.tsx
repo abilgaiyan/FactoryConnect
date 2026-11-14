@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { activityDateRange, loadActivityReport, type ActivityReport } from '../application/machine-activity-report.ts';
 import { MachineActivityEvidence } from './MachineActivityEvidence.tsx';
+import { SupervisorDowntimePanel } from './SupervisorDowntimePanel.tsx';
 import './machine-activity.css';
 
 export function MachineActivityReportPage({ machineId, timeoutMilliseconds }: { readonly machineId: string; readonly timeoutMilliseconds: number }) {
@@ -42,6 +43,6 @@ export function MachineActivityReportPage({ machineId, timeoutMilliseconds }: { 
     </form>
     <p role="status">{request === 'loading' ? 'Loading activity…' : request === 'success' ? 'Activity read succeeded.' : ''}</p>
     {error && <p role="alert">{error}</p>}
-    {report && <MachineActivityEvidence key={readVersion} report={report} />}
+    {report && <><MachineActivityEvidence key={readVersion} report={report} /><SupervisorDowntimePanel key={`downtime-${readVersion}`} report={report} /></>}
   </section>;
 }
