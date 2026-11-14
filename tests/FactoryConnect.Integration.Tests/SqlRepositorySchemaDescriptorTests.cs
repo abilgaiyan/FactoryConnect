@@ -18,7 +18,7 @@ public sealed class SqlRepositorySchemaDescriptorTests
         Assert.Equal(21, post007.Tables.Length);
         Assert.Equal(34, SqlRepositorySchemaDescriptors.Post012.Tables.Length);
         Assert.Equal(36, SqlRepositorySchemaDescriptors.Post013.Tables.Length);
-        Assert.Equal(54, current.Tables.Length);
+        Assert.Equal(56, current.Tables.Length);
         Assert.Equal(
             legacy.Tables.Select(static table => table.Name),
             current.Tables.Take(legacy.Tables.Length).Select(static table => table.Name));
@@ -64,7 +64,9 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "OperationalMetricResultWitnessReference",
                 "ProductionAdmissionRecoveryAudit",
                 "SupervisorProductionEntry",
-                "SupervisorProductionEntryReview"
+                "SupervisorProductionEntryReview",
+                "SupervisorProductionEntryRevision",
+                "SupervisorProductionEntryRevisionReview"
             ],
             current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }
