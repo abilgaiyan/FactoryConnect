@@ -94,7 +94,7 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
         {review?.decision && review.decision !== 'Pending' ? <p>Reviewed by {review.reviewedBy}: {review.reason}</p> : <>
           <label>Review reason <textarea maxLength={2000} value={reviewReason} disabled={busy} onChange={event => setReviewReason(event.target.value)} /></label>
           <button type="button" disabled={busy || !reviewReason.trim() || (pending !== null && (pending.kind !== 'review' || pending.id !== entry.explanationId || (pending.payload as { decision: string; reason: string }).decision !== 'Approved' || (pending.payload as { decision: string; reason: string }).reason !== reviewReason.trim()))} onClick={() => decide(entry, 'Approved')}>Approve locally</button>
-          <button type="button" disabled={busy || !reviewReason.trim() || pending !== null} onClick={() => decide(entry, 'Rejected')}>Reject locally</button>
+          <button type="button" disabled={busy || !reviewReason.trim() || (pending !== null && (pending.kind !== 'review' || pending.id !== entry.explanationId || (pending.payload as { decision: string; reason: string }).decision !== 'Rejected' || (pending.payload as { decision: string; reason: string }).reason !== reviewReason.trim()))} onClick={() => decide(entry, 'Rejected')}>Reject locally</button>
         </>}
       </div> : <div>
         <label>Reason code <input maxLength={100} value={reasonCode} disabled={busy} onChange={event => setReasonCode(event.target.value)} /></label>
