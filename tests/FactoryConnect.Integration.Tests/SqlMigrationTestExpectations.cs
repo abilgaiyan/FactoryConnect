@@ -2,5 +2,5 @@ namespace FactoryConnect.Integration.Tests;
 
 internal static class SqlMigrationTestExpectations
 {
-    internal static readonly int[] CurrentMigrationIds = Enumerable.Range(1, 27).ToArray();
+    internal static readonly int[] CurrentMigrationIds = Enumerable.Range(1, 28).ToArray();
 }
