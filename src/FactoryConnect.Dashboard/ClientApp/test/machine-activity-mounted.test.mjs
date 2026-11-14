@@ -55,7 +55,11 @@ function manyIntervals(range, count = 121) {
 test('table pagination keeps full-range totals and timeline, supports every size and resets on a successful load', async t => {
   const original = globalThis.fetch; t.after(() => {globalThis.fetch = original;});
   let calls = 0; let count = 121;
-  globalThis.fetch = async (_, options) => {calls++; return Response.json(manyIntervals(JSON.parse(options.body), count));};
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/downtime-')) return Response.json([]);
+    calls++;
+    return Response.json(manyIntervals(JSON.parse(options.body), count));
+  };
   const h = await mountInDom(React.createElement(MachineActivityReportPage, {machineId, timeoutMilliseconds: 1000}));
   t.after(() => h.dispose());
   const inputs = h.document.querySelectorAll('input[type=date]');

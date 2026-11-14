@@ -43,7 +43,9 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 25, "SupervisorProductionQuantity", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 26, "SupervisorProductionEntryReview", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 27, "SupervisorProductionEntryRevision", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 28, "SupervisorProductionEntryRevisionReview", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 28, "SupervisorProductionEntryRevisionReview", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 29, "SupervisorDowntimeExplanation", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 30, "SupervisorDowntimeExplanationReview", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
