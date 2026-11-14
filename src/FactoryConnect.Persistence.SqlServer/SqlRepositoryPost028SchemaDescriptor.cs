@@ -16,7 +16,7 @@ internal static class SqlRepositoryPost028SchemaDescriptor
             ],
             new("PK_SupervisorProductionEntryRevisionReview", new(true, [K("RevisionId")], [], null)),
             [new("UQ_SupervisorProductionEntryRevisionReview_DecisionId", new(false, [K("DecisionId")], [], null))],
-            [new("FK_SupervisorProductionEntryRevisionReview_Entry", ["RevisionId"],
+            [new("FK_SupervisorProductionEntryRevisionReview_Revision", ["RevisionId"],
                 new("dbo", "SupervisorProductionEntryRevision"), ["RevisionId"],
                 SqlReferentialAction.NoAction, SqlReferentialAction.NoAction, true, true, false)],
             [
