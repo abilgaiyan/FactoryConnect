@@ -45,6 +45,10 @@ public static class SupervisorProductionEntryEndpoints
             .WithName("ReadLocalRevisionReviews").WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/revisions/{revisionId:guid}/review", ReviewRevisionAsync)
             .WithName("DecideLocalRevisionReview").WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations",
+            ReadDowntimeExplanationsAsync)
+            .WithName("ReadLocalSupervisorDowntimeExplanations")
+            .WithGroupName("supervisor-local-v1");
         return endpoints;
     }
 
@@ -314,6 +318,30 @@ public static class SupervisorProductionEntryEndpoints
         catch (Microsoft.Data.SqlClient.SqlException)
         {
             return Results.Problem(statusCode: 503, title: "Local revision review SQL unavailable");
+        }
+    }
+
+    private static async Task<IResult> ReadDowntimeExplanationsAsync(
+        Guid machineId, DateTimeOffset fromUtc, DateTimeOffset toUtc,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            return Results.Ok(await new SqlServerSupervisorDowntimeExplanationStore(connectionString)
+                .ListAsync(machineId, fromUtc, toUtc, cancellationToken));
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidMachineOrUtcInterval" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Local downtime explanation SQL unavailable");
         }
     }
 
