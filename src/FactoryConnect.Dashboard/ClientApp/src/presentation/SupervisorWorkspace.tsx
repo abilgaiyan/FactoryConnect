@@ -5,10 +5,12 @@ import { SupervisorReadOnly } from "./SupervisorReadOnly.tsx";
 import "./supervisor-preview.css";
 
 export default function SupervisorWorkspace({ runtime }: { readonly runtime?: DashboardApplicationRuntime }) {
+  const [showReasonAdministration, setShowReasonAdministration] = useState(false);
   return <section className="supervisor-preview" aria-label="Supervisor workspace">
     <h1>Supervisor</h1>
     <RuntimeReadOnly {...(runtime ? { runtime } : {})} />
-    <details><summary>Downtime reason administration (local commissioning)</summary><DowntimeReasonAdministration /></details>
+    <button type="button" aria-expanded={showReasonAdministration} onClick={() => setShowReasonAdministration(value => !value)}>Downtime reason administration (local commissioning)</button>
+    {showReasonAdministration && <DowntimeReasonAdministration />}
   </section>;
 }
 function RuntimeReadOnly({ runtime }: { readonly runtime?: DashboardApplicationRuntime }) {
