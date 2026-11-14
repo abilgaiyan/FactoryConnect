@@ -1,3 +1,5 @@
+using FactoryConnect.Abstractions;
+using FactoryConnect.Core.Machines;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Persistence.SqlServer;
 
@@ -45,6 +47,9 @@ public static class SupervisorProductionEntryEndpoints
             .WithName("ReadLocalRevisionReviews").WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/revisions/{revisionId:guid}/review", ReviewRevisionAsync)
             .WithName("DecideLocalRevisionReview").WithGroupName("supervisor-local-v1");
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations", CreateDowntimeExplanationAsync)
+            .WithName("CreateLocalSupervisorDowntimeExplanation")
+            .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations",
             ReadDowntimeExplanationsAsync)
             .WithName("ReadLocalSupervisorDowntimeExplanations")
@@ -342,6 +347,83 @@ public static class SupervisorProductionEntryEndpoints
         catch (Microsoft.Data.SqlClient.SqlException)
         {
             return Results.Problem(statusCode: 503, title: "Local downtime explanation SQL unavailable");
+        }
+    }
+
+    public sealed record LocalDowntimeExplanationRequest(
+        Guid ExplanationId, string StateProcessorId, long ObservationPosition,
+        DateTimeOffset ActivityStartsAtUtc, DateTimeOffset ActivityEndsAtUtc,
+        string ReasonCode, string Explanation);
+
+    private static async Task<IResult> CreateDowntimeExplanationAsync(
+        Guid machineId, LocalDowntimeExplanationRequest request,
+        HttpContext context, IConfiguration configuration, TimeProvider clock,
+        ICurrentStateOwnerResolver owners, ICurrentStateAuthorityCutProvider cuts,
+        IProductionContextActivityReader reader, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration) ||
+            !configuration.GetValue<bool>("SupervisorLocalDowntime:EnableWrites"))
+            return Results.Problem(statusCode: 403, title: "Local downtime explanation writes disabled");
+        var actor = configuration["SupervisorLocalDowntime:OperatorId"];
+        var connectionString = configuration["SupervisorLocalDowntime:WriteConnectionString"];
+        if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
+            string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Local downtime writer not configured");
+        if (machineId == Guid.Empty || request.ExplanationId == Guid.Empty ||
+            request.ObservationPosition <= 0 ||
+            request.ActivityStartsAtUtc.Offset != TimeSpan.Zero ||
+            request.ActivityEndsAtUtc.Offset != TimeSpan.Zero ||
+            request.ActivityStartsAtUtc >= request.ActivityEndsAtUtc ||
+            request.StateProcessorId != "machine-state-activity")
+            return Results.BadRequest(new { reason = "InvalidDowntimeActivityIdentity" });
+
+        try
+        {
+            if (owners.Resolve(new MachineId(machineId)) is not CurrentStateExactlyOneOwner owner ||
+                owner.Binding.MachineId != new MachineId(machineId) ||
+                owner.Binding.StateProcessorId != new ObservationProcessorId(request.StateProcessorId))
+                return Results.Problem(statusCode: 503, title: "Downtime activity owner unavailable");
+            var cutResult = await cuts.ReadAuthorityCutAsync(owner.Binding, cancellationToken);
+            if (cutResult is not StableCurrentStateAuthorityCut stable ||
+                stable.Cut.Binding != owner.Binding ||
+                (stable.Cut.Evaluation is { } evaluation &&
+                 (evaluation.StateProcessorId != owner.Binding.StateProcessorId ||
+                  evaluation.ObservationStreamId != owner.Binding.ObservationStreamId)))
+                return Results.Problem(statusCode: 503, title: "Stable downtime activity cut unavailable");
+
+            var valid = await SupervisorDowntimeActivityVerifier.VerifyAsync(
+                reader, owner.Binding.ObservationStreamId, owner.Binding.StateProcessorId,
+                stable.Cut.Evaluation?.EvaluatedThrough, machineId, request.ObservationPosition,
+                request.ActivityStartsAtUtc, request.ActivityEndsAtUtc, cancellationToken);
+            if (!valid)
+                return Results.Problem(statusCode: 409, title: "No matching qualified durable downtime activity");
+
+            var record = new SupervisorDowntimeExplanationRecord(request.ExplanationId, machineId,
+                request.StateProcessorId, request.ObservationPosition,
+                request.ActivityStartsAtUtc, request.ActivityEndsAtUtc,
+                request.ReasonCode, request.Explanation, actor, clock.GetUtcNow());
+            var inserted = await new SqlServerSupervisorDowntimeExplanationStore(connectionString)
+                .AppendAsync(record, cancellationToken);
+            return inserted
+                ? Results.Created($"/api/supervisor/v1/machines/{machineId:D}/downtime-explanations",
+                    new { request.ExplanationId, status = "Pending" })
+                : Results.Ok(new { request.ExplanationId, alreadyExists = true });
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidDowntimeExplanation" });
+        }
+        catch (Microsoft.Data.SqlClient.SqlException exception) when (exception.Number is 51040 or 2601 or 2627)
+        {
+            return Results.Problem(statusCode: 409, title: "Downtime explanation already exists or conflicts");
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Downtime explanation SQL unavailable");
+        }
+        catch (InvalidDataException)
+        {
+            return Results.Problem(statusCode: 503, title: "Authoritative downtime activity invalid");
         }
     }
 
