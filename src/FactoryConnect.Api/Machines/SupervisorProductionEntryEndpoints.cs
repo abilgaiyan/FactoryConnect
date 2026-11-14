@@ -60,7 +60,29 @@ public static class SupervisorProductionEntryEndpoints
             ReadDowntimeExplanationsAsync)
             .WithName("ReadLocalSupervisorDowntimeExplanations")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/downtime-reasons", ReadDowntimeReasonsAsync)
+            .WithName("ReadLocalSupervisorDowntimeReasons")
+            .WithGroupName("supervisor-local-v1");
         return endpoints;
+    }
+
+    private static async Task<IResult> ReadDowntimeReasonsAsync(
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            return Results.Ok(await new SqlServerSupervisorDowntimeReasonStore(connectionString)
+                .ListAsync(cancellationToken: cancellationToken));
+        }
+        catch (Microsoft.Data.SqlClient.SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Local downtime reason SQL unavailable");
+        }
     }
 
 
