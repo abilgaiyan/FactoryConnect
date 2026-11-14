@@ -60,6 +60,10 @@ public sealed class SqlServerSupervisorDowntimeExplanationStore
             END
             ELSE
             BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM dbo.SupervisorDowntimeReason WITH (UPDLOCK, HOLDLOCK)
+                    WHERE ReasonCode = @Reason AND IsActive = 1)
+                    THROW 51044, 'Downtime reason is not active or not configured.', 1;
                 INSERT INTO dbo.SupervisorDowntimeExplanation
                     (ExplanationId, MachineId, StateProcessorId, ObservationPosition,
                      ActivityStartsAtUtc, ActivityEndsAtUtc, ReasonCode, Explanation, EnteredBy, EnteredAtUtc)
