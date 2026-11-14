@@ -30,9 +30,10 @@ test('downtime panel offers only complete, safely representable downtime periods
   globalThis.fetch = async url => { urls.push(String(url)); return Response.json([]); };
   const h = await mountInDom(React.createElement(SupervisorDowntimePanel, { report }));
   t.after(() => h.dispose());
-  const choices = [...h.document.querySelectorAll('select option')].map(option => option.value);
+  const choices = [...h.document.querySelectorAll('label select option')].map(option => option.value);
   assert.deepEqual(choices, ['', '1', '5']);
-  assert.equal(urls.length, 2);
+  assert.equal(urls.length, 3);
+  assert.ok(urls.some(url => url.includes('/downtime-reasons')));
   assert.ok(urls.some(url => url.includes('/downtime-explanations?')));
   assert.ok(urls.some(url => url.includes('/downtime-reviews?')));
   assert.match(h.document.body.textContent, /local commissioning only/i);
