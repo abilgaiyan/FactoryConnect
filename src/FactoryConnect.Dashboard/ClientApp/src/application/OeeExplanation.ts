@@ -20,6 +20,22 @@ export function OeeExplanation({ machine, productionDay }: {
       h("p", null, `${machine.displayName} · ${productionDay} · Production day`),
       h("p", null, "OEE combines Availability × Performance × Quality. This report cannot calculate OEE unless all three contributing metrics have sufficient evidence."),
       h("p", null, "Missing values are not zero. The reported statuses below are preserved without recalculation."),
+      h("section", { "aria-label": "OEE evidence checklist" },
+        h("h3", null, "Evidence needed for OEE"),
+        ...(["availability", "performance", "quality"] as const).map(key => {
+          const metric = machine.metrics[key];
+          const label = key[0]!.toUpperCase() + key.slice(1);
+          const detail = metric.kind === "calculated"
+            ? "Calculated in the report; cross-source coherence is not established here."
+            : metric.kind === "missing"
+              ? "Not returned by the reporting source. Check source configuration and coverage."
+              : metric.kind === "unavailable" || metric.kind === "insufficient-evidence"
+                ? "Unresolved evidence: " + (metric.reasonCode ?? "reason not supplied") +
+                  (metric.reasonOperandName ? " (operand: " + metric.reasonOperandName + ")" : "")
+                : "Reported status: " + metric.kind + ". Check source qualification.";
+          return h("p", { key }, label + ": " + detail);
+        })),
+
       h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 16rem), 1fr))", gap: "1rem" } },
         ...(["availability", "performance", "quality", "oee"] as const).map(key =>
           metricExplanation(key, machine.metrics[key]))),
