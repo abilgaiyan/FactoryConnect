@@ -87,15 +87,16 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         <ShiftPerformanceOverviewView key={`metrics:${selectedKey}`} showFilters={false} overview={{ productionDay: overview.productionDay, groups: [{ groupName: null, machines: [{ ...selected.machine, shifts: [selected.occurrence] }] }] }} />
         <p>Only qualified metrics are numeric. Missing production quantities, reference time, or quality evidence remain explicitly unavailable.</p>
       </div>
-      {activeView === "production" && <SupervisorLocalEntryForm key={`entries:${selectedKey}`} scope={{ machineId: selected.machine.machineId,
+      <div hidden={activeView !== "production"}><SupervisorLocalEntryForm key={`entries:${selectedKey}`} scope={{ machineId: selected.machine.machineId,
         shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
         shiftId: selected.occurrence.shift.shiftId,
         startsAtUtc: selected.occurrence.shift.startsAtUtc,
-        endsAtUtc: selected.occurrence.shift.endsAtUtc }} />}
-      {activeView === "activity" && <ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} />}
+        endsAtUtc: selected.occurrence.shift.endsAtUtc }} /></div>
+      <div hidden={activeView !== "activity"}><ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} /></div>
       {activeView === "diagnostics" && <section aria-label="Reporting evidence provenance">
         <h2>Reporting evidence provenance</h2>
         <p>Site {selected.machine.siteId} · Line {selected.machine.productionLineId}</p>
+        <p>Assignment {selected.occurrence.shift.shiftScheduleAssignmentId}</p>
         <dl>
           <dt>Machine ID</dt><dd><code>{selected.machine.machineId}</code></dd>
           <dt>Reporting processor</dt><dd><code>{selected.machine.processorId}</code></dd>
