@@ -35,6 +35,24 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
             "; Performance: " + count("performance") +
             "; Quality: " + count("quality") + ".";
         })()),
+      createElement("section", { "aria-label": "Machine OEE comparison" },
+        createElement("h3", null, "Machine OEE comparison"),
+        ...group.machines.map(machine => {
+          const metric = machine.metrics.oee;
+          const ratio = metric.kind === "calculated" && metric.unit.toLowerCase() === "ratio"
+            ? Number(metric.value) : NaN;
+          const valid = Number.isFinite(ratio) && ratio >= 0 && ratio <= 1;
+          return createElement("div", {
+            key: JSON.stringify([machine.processorId, machine.machineId]),
+            style: { display: "grid", gridTemplateColumns: "minmax(8rem, 1fr) minmax(8rem, 3fr) auto", gap: "0.75rem", alignItems: "center", marginBottom: "0.5rem" },
+          },
+            createElement("span", null, machine.displayName),
+            valid
+              ? createElement("progress", { max: 1, value: ratio, "aria-label": "OEE for " + machine.displayName, style: { width: "100%" } })
+              : createElement("span", null, "No qualified numeric OEE"),
+            createElement("span", null, valid && metric.kind === "calculated"
+              ? formatCalculatedMetric(metric) : "—"));
+        })),
       createElement(
         "table",
         null,
