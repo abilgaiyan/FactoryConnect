@@ -86,6 +86,18 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         <h2>Shift OEE performance</h2>
         <ShiftPerformanceOverviewView key={`metrics:${selectedKey}`} showFilters={false} overview={{ productionDay: overview.productionDay, groups: [{ groupName: null, machines: [{ ...selected.machine, shifts: [selected.occurrence] }] }] }} />
         <p>Only qualified metrics are numeric. Missing production quantities, reference time, or quality evidence remain explicitly unavailable.</p>
+        <section aria-label="OEE evidence checklist">
+          <h3>OEE evidence checklist</h3>
+          <p>These are the reporting service's current evidence states for this exact shift, not a request to enter estimated production.</p>
+          <ul>
+            {([["Availability", selected.occurrence.availability], ["Performance", selected.occurrence.performance], ["Quality", selected.occurrence.quality], ["OEE", selected.occurrence.oee]] as const).map(([name, metric]) => (
+              <li key={name}><strong>{name}:</strong> {metric.state === "calculated" ? "Qualified numeric result" : metric.state === "missing" ? "Not returned by reporting" : metric.state === "insufficient-evidence" ? "Insufficient evidence" : "Unavailable"}
+                {metric.state !== "calculated" && metric.state !== "missing" && metric.reasonCode && <> — {metric.reasonCode}{metric.reasonOperandName ? ` (${metric.reasonOperandName})` : ""}</>}
+              </li>
+            ))}
+          </ul>
+          <p>Production entry is a local commissioning workflow. Saved or locally approved declarations do not automatically become accepted CNC quantities or qualify OEE. Resolve missing reference-time, production quantity and quality evidence through the separate qualification process.</p>
+        </section>
       </div>
       <div hidden={activeView !== "production"}><SupervisorLocalEntryForm key={`entries:${selectedKey}`} scope={{ machineId: selected.machine.machineId,
         shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
