@@ -27,6 +27,14 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
             " machines calculated; " + incomplete + " awaiting qualified reporting evidence.";
         })()),
 
+      createElement("p", { "aria-label": "OEE evidence gaps by component" },
+        (() => {
+          const count = (key: "availability" | "performance" | "quality") =>
+            group.machines.filter(machine => machine.metrics[key].kind !== "calculated").length;
+          return "Evidence gaps — Availability: " + count("availability") +
+            "; Performance: " + count("performance") +
+            "; Quality: " + count("quality") + ".";
+        })()),
       createElement(
         "table",
         null,
