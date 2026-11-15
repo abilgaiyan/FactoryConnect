@@ -51,6 +51,28 @@ export function ShiftPerformanceOverviewView({ overview, showFilters = true }: S
           </article>;
         })}
       </section>}
+
+      {selected.length > 0 && <section aria-label="Shift OEE comparison">
+        <h3>Shift OEE comparison</h3>
+        <p className="report-scope-note">Each bar represents one machine and exact shift occurrence. Missing or conflicting OEE is not plotted.</p>
+        {selected.map(({ machine, shift }) => {
+          const metric = shift.oee;
+          const availabilityConflict = shift.availability.state === "calculated"
+            && shift.availability.unit.toLowerCase() === "ratio"
+            && ratioAboveOne(String(shift.availability.value));
+          const value = metric.state === "calculated" && metric.unit.toLowerCase() === "ratio"
+            ? Number(metric.value) : NaN;
+          const valid = !availabilityConflict && Number.isFinite(value) && value >= 0 && value <= 1;
+          return <div key={JSON.stringify([machineKey(machine), shift.shift])}
+            style={{ display: "grid", gridTemplateColumns: "minmax(10rem, 1fr) minmax(8rem, 3fr) auto", gap: "0.75rem", alignItems: "center", marginBottom: "0.5rem" }}>
+            <span>{machine.displayName} · {shift.shift.shiftId} · {formatReportTimestamp(shift.shift.startsAtUtc)}</span>
+            {valid
+              ? <progress max={1} value={value} aria-label={`OEE for ${machine.displayName}, ${shift.shift.shiftId}, ${shift.shift.startsAtUtc}`} style={{ width: "100%" }} />
+              : <span>No qualified numeric OEE</span>}
+            <span>{valid ? formatPresentedMetric(metric).primary : "—"}</span>
+          </div>;
+        })}
+      </section>}
       {machines.length > 0 && selected.length === 0 && (machineFilter || shiftFilter) && <p role="status">No shift occurrences match these filters.</p>}
       {overview.groups.length === 0
         ? <p>No configured machines.</p>
