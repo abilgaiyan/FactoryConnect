@@ -19,6 +19,14 @@ export function ProductionDayOverviewMatrix({ model }: ProductionDayOverviewMatr
       "section",
       { key: JSON.stringify([group.groupName]) },
       model.groups.length > 1 ? createElement("h2", null, group.groupName ?? "Ungrouped") : null,
+      createElement("p", { "aria-label": "OEE reporting coverage" },
+        (() => {
+          const calculated = group.machines.filter(machine => machine.metrics.oee.kind === "calculated").length;
+          const incomplete = group.machines.length - calculated;
+          return "OEE reporting: " + calculated + " of " + group.machines.length +
+            " machines calculated; " + incomplete + " awaiting qualified reporting evidence.";
+        })()),
+
       createElement(
         "table",
         null,
