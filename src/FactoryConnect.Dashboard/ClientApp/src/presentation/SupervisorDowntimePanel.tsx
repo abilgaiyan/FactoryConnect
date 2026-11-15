@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ActivityReport, ActivityInterval } from '../application/machine-activity-report.ts';
 
 type Explanation = { explanationId: string; observationPosition: number; reasonCode: string; explanation: string; enteredBy: string };
+type DowntimeReason = { reasonCode: string; displayName: string; description: string | null; isActive: boolean };
 type Review = { explanationId: string; decision: string; reviewedBy: string | null; reason: string | null };
 type PendingAction = { kind: 'submit' | 'review'; id: string; payload: object };
 const explainable = (interval: ActivityInterval) => ['stopped', 'fault', 'offline'].includes(interval.state)
@@ -12,6 +13,8 @@ const explainable = (interval: ActivityInterval) => ['stopped', 'fault', 'offlin
 export function SupervisorDowntimePanel({ report }: { readonly report: ActivityReport }) {
   const [entries, setEntries] = useState<Explanation[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [reasons, setReasons] = useState<DowntimeReason[]>([]);
+  const [reasonsError, setReasonsError] = useState('');
   const [selected, setSelected] = useState('');
   const [reasonCode, setReasonCode] = useState('');
   const [explanation, setExplanation] = useState('');
@@ -27,6 +30,16 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
   const interval = intervals.find(item => item.position === selected);
 
   async function refresh(signal?: AbortSignal) {
+    const reasonResponse = await fetch('/api/supervisor/v1/downtime-reasons', signal ? { signal } : {});
+    if (!reasonResponse.ok) {
+      setReasons([]);
+      setReasonsError(`Reason catalog unavailable (HTTP ${reasonResponse.status}).`);
+    } else {
+      const catalog: unknown = await reasonResponse.json();
+      if (!Array.isArray(catalog)) throw new Error('Invalid downtime reason catalog.');
+      setReasons((catalog as DowntimeReason[]).filter(reason => reason.isActive));
+      setReasonsError('');
+    }
     const options = signal ? { signal } : {};
     const [explanationsResponse, reviewsResponse] = await Promise.all([
       fetch(`${base}/downtime-explanations?${query}`, options),
@@ -40,7 +53,7 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
   }
   useEffect(() => {
     const controller = new AbortController();
-    setEntries([]); setReviews([]); setSelected(''); setPending(null); setStatus('');
+    setEntries([]); setReviews([]); setReasons([]); setReasonsError(''); setSelected(''); setPending(null); setStatus('');
     void refresh(controller.signal).catch(error => { if (!controller.signal.aborted) setStatus(String(error)); });
     return () => controller.abort();
   }, [base, report.fromInclusive, report.toExclusive]);
@@ -66,7 +79,7 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
     finally { setBusy(false); }
   }
   function submit() {
-    if (!interval || !reasonCode.trim() || !explanation.trim()) return;
+    if (!interval || !reasons.some(reason => reason.reasonCode === reasonCode) || !explanation.trim()) return;
     const payload = { explanationId: crypto.randomUUID(), stateProcessorId: report.stateProcessorId,
       observationPosition: Number(interval.position), activityStartsAtUtc: interval.sourceStartedAtUtc,
       activityEndsAtUtc: interval.sourceEndedAtUtc, reasonCode: reasonCode.trim(), explanation: explanation.trim() };
@@ -97,9 +110,14 @@ export function SupervisorDowntimePanel({ report }: { readonly report: ActivityR
           <button type="button" disabled={busy || !reviewReason.trim() || (pending !== null && (pending.kind !== 'review' || pending.id !== entry.explanationId || (pending.payload as { decision: string; reason: string }).decision !== 'Rejected' || (pending.payload as { decision: string; reason: string }).reason !== reviewReason.trim()))} onClick={() => decide(entry, 'Rejected')}>Reject locally</button>
         </>}
       </div> : <div>
-        <label>Reason code <input maxLength={100} value={reasonCode} disabled={busy} onChange={event => setReasonCode(event.target.value)} /></label>
+        <label>Downtime reason <select value={reasonCode} disabled={busy || reasons.length === 0} onChange={event => setReasonCode(event.target.value)}>
+          <option value="">Select a reason</option>
+          {reasons.map(reason => <option key={reason.reasonCode} value={reason.reasonCode}>{reason.displayName} ({reason.reasonCode})</option>)}
+        </select></label>
+        {reasonsError && <p role="status">{reasonsError}</p>}
+        {!reasonsError && reasons.length === 0 && <p>No active downtime reasons configured. Ask an administrator to configure reason codes.</p>}
         <label>Explanation <textarea maxLength={2000} value={explanation} disabled={busy} onChange={event => setExplanation(event.target.value)} /></label>
-        <button type="button" disabled={busy || (pending !== null && (pending.kind !== 'submit' || pending.id !== interval.position || (pending.payload as { reasonCode: string; explanation: string }).reasonCode !== reasonCode.trim() || (pending.payload as { reasonCode: string; explanation: string }).explanation !== explanation.trim())) || !reasonCode.trim() || !explanation.trim()} onClick={submit}>Submit local explanation</button>
+        <button type="button" disabled={busy || (pending !== null && (pending.kind !== 'submit' || pending.id !== interval.position || (pending.payload as { reasonCode: string; explanation: string }).reasonCode !== reasonCode.trim() || (pending.payload as { reasonCode: string; explanation: string }).explanation !== explanation.trim())) || !reasons.some(reason => reason.reasonCode === reasonCode) || !explanation.trim()} onClick={submit}>Submit local explanation</button>
       </div>;
     })()}
   </section>;

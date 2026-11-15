@@ -58,6 +58,7 @@ internal static class SqlRepositorySchemaAuthority
         Table("ShiftMetricAggregate"),
         Table("SupervisorDowntimeExplanation"),
         Table("SupervisorDowntimeExplanationReview"),
+        Table("SupervisorDowntimeReason"),
         Table("SupervisorProductionEntry"),
         Table("SupervisorProductionEntryReview"),
         Table("SupervisorProductionEntryRevision"),
