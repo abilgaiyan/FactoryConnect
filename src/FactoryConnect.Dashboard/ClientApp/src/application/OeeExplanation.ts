@@ -32,7 +32,7 @@ export function OeeExplanation({ machine, productionDay }: {
               : metric.kind === "unavailable" || metric.kind === "insufficient-evidence"
                 ? "Unresolved evidence: " + (metric.reasonCode ?? "reason not supplied") +
                   (metric.reasonOperandName ? " (operand: " + metric.reasonOperandName + ")" : "")
-                : "Reported status: " + metric.kind + ". Check source qualification.";
+                : "Check source qualification.";
           return h("p", { key }, label + ": " + detail);
         })),
 
