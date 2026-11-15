@@ -93,7 +93,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         startsAtUtc: selected.occurrence.shift.startsAtUtc,
         endsAtUtc: selected.occurrence.shift.endsAtUtc }} /></div>
       <div hidden={activeView !== "activity"}><ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} /></div>
-      {activeView === "diagnostics" && <section aria-label="Reporting evidence provenance">
+      <div hidden={activeView !== "diagnostics"}><section aria-label="Reporting evidence provenance">
         <h2>Reporting evidence provenance</h2>
         <p>Site {selected.machine.siteId} · Line {selected.machine.productionLineId}</p>
         <p>Assignment {selected.occurrence.shift.shiftScheduleAssignmentId}</p>
@@ -104,7 +104,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
           <dt>Reporting source revision</dt><dd><code>{selected.occurrence.sourceRevision === null ? "Not returned" : JSON.stringify(selected.occurrence.sourceRevision)}</code></dd>
         </dl>
         <p>Metric evidence read time is not provided. Metrics and activity use independent reads and revision domains; no common atomic snapshot is claimed.</p>
-      </section>}
+      </section></div>
     </section>}
   </>;
 }
