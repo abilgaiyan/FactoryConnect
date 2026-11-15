@@ -13,6 +13,7 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
   const [selected, setSelected] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
+  const [decisionFilter, setDecisionFilter] = useState<"All" | "Pending" | "Approved" | "Rejected">("All");
   const base = `/api/supervisor/v1/machines/${encodeURIComponent(scope.machineId)}`;
   const query = new URLSearchParams({ shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc });
 
@@ -37,6 +38,7 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
   const pendingCount = entries.filter(entry => (byEntry.get(entry.entryId)?.decision ?? "Pending") === "Pending").length;
   const approvedCount = entries.filter(entry => byEntry.get(entry.entryId)?.decision === "Approved").length;
   const rejectedCount = entries.filter(entry => byEntry.get(entry.entryId)?.decision === "Rejected").length;
+  const visibleEntries = entries.filter(entry => decisionFilter === "All" || (byEntry.get(entry.entryId)?.decision ?? "Pending") === decisionFilter);
 
   async function decide(entryId: string, decision: "Approved" | "Rejected") {
     if (busy) return;
@@ -68,7 +70,12 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
       void refresh().then(() => { setPending(null); setStatus("Review decisions refreshed."); }, error => setStatus(String(error)));
     }}>Refresh reviews</button>
     {status && <p role="status">{status}</p>}
-    <ul>{entries.map(entry => {
+    <label>Filter review decisions<select aria-label="Filter review decisions" value={decisionFilter} onChange={event => setDecisionFilter(event.target.value as typeof decisionFilter)}>
+      <option value="All">All decisions</option><option value="Pending">Pending</option><option value="Approved">Approved locally</option><option value="Rejected">Rejected locally</option>
+    </select></label>
+    <p role="status">Showing {visibleEntries.length} of {entries.length} declarations. Review status is local commissioning evidence only, not qualified OEE.</p>
+    {visibleEntries.length === 0 && <p>No declarations match the selected review decision.</p>}
+    <ul>{visibleEntries.map(entry => {
       const review = byEntry.get(entry.entryId);
       const decision = review?.decision ?? "Pending";
       return <li key={entry.entryId}>
