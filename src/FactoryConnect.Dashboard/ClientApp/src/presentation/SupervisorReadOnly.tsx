@@ -53,6 +53,7 @@ function ShiftRead({ runtime, sourceIndex, day }: { readonly runtime: DashboardA
 
 function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerformanceOverview; readonly runtime: DashboardApplicationRuntime }) {
   const [selectedKey, setSelectedKey] = useState("");
+  const [activeView, setActiveView] = useState<"overview" | "production" | "activity" | "diagnostics">("overview");
   const occurrences = overview.groups.flatMap(group => group.machines.flatMap(machine => machine.shifts.map(occurrence => ({ machine, occurrence }))));
   const selected = occurrences.find(({ machine, occurrence }) => occurrenceKey(machine, occurrence) === selectedKey);
   return <>
@@ -60,32 +61,51 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
     {occurrences.length > 0 && <div className="supervisor-shift-choices" aria-label="Available shift occurrences">
       {occurrences.map(({ machine, occurrence }) => {
         const key = occurrenceKey(machine, occurrence);
-        return <button type="button" key={key} aria-pressed={selectedKey === key} onClick={() => setSelectedKey(key)}>
+        return <button type="button" key={key} aria-pressed={selectedKey === key} onClick={() => { setSelectedKey(key); setActiveView("overview"); }}>
           {occurrence.shift.shiftId} · {occurrence.shift.startsAtUtc}
           {" · OEE: "}{occurrence.oee.state === "calculated" ? "Calculated" : occurrence.oee.state === "insufficient-evidence" ? "Insufficient evidence" : occurrence.oee.state === "unavailable" ? "Unavailable" : "Missing"}
         </button>;
       })}
     </div>}
-    <label>Exact shift occurrence<select value={selectedKey} onChange={event => setSelectedKey(event.target.value)}>
+    <label>Exact shift occurrence<select value={selectedKey} onChange={event => { setSelectedKey(event.target.value); setActiveView("overview"); }}>
       <option value="">Select an exact occurrence</option>
       {occurrences.map(({ machine, occurrence }) => <option key={occurrenceKey(machine, occurrence)} value={occurrenceKey(machine, occurrence)}>
         {occurrence.shift.shiftId} · {occurrence.shift.shiftScheduleAssignmentId} · {occurrence.shift.startsAtUtc} – {occurrence.shift.endsAtUtc}
       </option>)}
     </select></label>
     {!occurrences.length && <p>No authoritative shift occurrences returned. This does not establish zero production.</p>}
-    {selected && <>
-      <p>Production business date {overview.productionDay} · Site {selected.machine.siteId} · Line {selected.machine.productionLineId}</p>
-      <p>Machine {selected.machine.machineId} · Reporting processor {selected.machine.processorId}<br />Assignment {selected.occurrence.shift.shiftScheduleAssignmentId} · Shift {selected.occurrence.shift.shiftId}<br />Exact UTC {selected.occurrence.shift.startsAtUtc} – {selected.occurrence.shift.endsAtUtc}</p>
-      <p>Metric evidence read time: not returned by this presentation contract. Reporting source revision: <code>{selected.occurrence.sourceRevision === null ? "Not returned" : JSON.stringify(selected.occurrence.sourceRevision)}</code></p>
-      <ShiftPerformanceOverviewView key={`metrics:${selectedKey}`} showFilters={false} overview={{ productionDay: overview.productionDay, groups: [{ groupName: null, machines: [{ ...selected.machine, shifts: [selected.occurrence] }] }] }} />
-      <p>Metrics and activity use the same machine and UTC occurrence scope, but are independent reads and revision domains. No common atomic snapshot or metric/activity convergence is claimed.</p>
-      <SupervisorLocalEntryForm key={`entries:${selectedKey}`} scope={{ machineId: selected.machine.machineId,
+    {selected && <section className="supervisor-selected-shift" aria-label="Selected shift workspace">
+      <p className="supervisor-shift-summary">Production business date <strong>{overview.productionDay}</strong> · Shift <strong>{selected.occurrence.shift.shiftId}</strong> · {selected.occurrence.shift.startsAtUtc} – {selected.occurrence.shift.endsAtUtc} (UTC)</p>
+      <nav className="supervisor-workspace-tabs" aria-label="Selected shift sections">
+        <button type="button" aria-pressed={activeView === "overview"} onClick={() => setActiveView("overview")}>OEE overview</button>
+        <button type="button" aria-pressed={activeView === "production"} onClick={() => setActiveView("production")}>Production entry</button>
+        <button type="button" aria-pressed={activeView === "activity"} onClick={() => setActiveView("activity")}>Machine activity</button>
+        <button type="button" aria-pressed={activeView === "diagnostics"} onClick={() => setActiveView("diagnostics")}>Technical details</button>
+      </nav>
+      <div hidden={activeView !== "overview"}>
+        <h2>Shift OEE performance</h2>
+        <ShiftPerformanceOverviewView key={`metrics:${selectedKey}`} showFilters={false} overview={{ productionDay: overview.productionDay, groups: [{ groupName: null, machines: [{ ...selected.machine, shifts: [selected.occurrence] }] }] }} />
+        <p>Only qualified metrics are numeric. Missing production quantities, reference time, or quality evidence remain explicitly unavailable.</p>
+      </div>
+      <div hidden={activeView !== "production"}><SupervisorLocalEntryForm key={`entries:${selectedKey}`} scope={{ machineId: selected.machine.machineId,
         shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
         shiftId: selected.occurrence.shift.shiftId,
         startsAtUtc: selected.occurrence.shift.startsAtUtc,
-        endsAtUtc: selected.occurrence.shift.endsAtUtc }} />
-      <ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} />
-    </>}
+        endsAtUtc: selected.occurrence.shift.endsAtUtc }} /></div>
+      <div hidden={activeView !== "activity"}><ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} /></div>
+      <div hidden={activeView !== "diagnostics"}><section aria-label="Reporting evidence provenance">
+        <h2>Reporting evidence provenance</h2>
+        <p>Site {selected.machine.siteId} · Line {selected.machine.productionLineId}</p>
+        <p>Assignment {selected.occurrence.shift.shiftScheduleAssignmentId}</p>
+        <dl>
+          <dt>Machine ID</dt><dd><code>{selected.machine.machineId}</code></dd>
+          <dt>Reporting processor</dt><dd><code>{selected.machine.processorId}</code></dd>
+          <dt>Shift assignment</dt><dd><code>{selected.occurrence.shift.shiftScheduleAssignmentId}</code></dd>
+          <dt>Reporting source revision</dt><dd><code>{selected.occurrence.sourceRevision === null ? "Not returned" : JSON.stringify(selected.occurrence.sourceRevision)}</code></dd>
+        </dl>
+        <p>Metric evidence read time is not provided. Metrics and activity use independent reads and revision domains; no common atomic snapshot is claimed.</p>
+      </section></div>
+    </section>}
   </>;
 }
 

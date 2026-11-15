@@ -38,3 +38,11 @@
 .supervisor-shift-choices { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
 .supervisor-shift-choices button { padding: .5rem .75rem; text-align: left; }
 .supervisor-shift-choices button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* Keep the operational task visible while retaining exact evidence in a separate view. */
+.supervisor-selected-shift { min-width: 0; }
+.supervisor-shift-summary { margin-block: 1rem; font-weight: 500; }
+.supervisor-workspace-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+#main-content .supervisor-workspace-tabs button { background: #edf3f9; color: #12334e; border: 1px solid #b9cadb; border-radius: .45rem; padding: .65rem .9rem; }
+#main-content .supervisor-workspace-tabs button[aria-pressed="true"] { background: #12334e; color: #fff; }
+.supervisor-selected-shift [hidden] { display: none !important; }
