@@ -104,7 +104,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         </dl>
         <p>Metric evidence read time is not provided. Metrics and activity use independent reads and revision domains; no common atomic snapshot is claimed.</p>
       </section>}
-    </section>}>}
+    </section>}
   </>;
 }
 
