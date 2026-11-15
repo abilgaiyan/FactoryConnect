@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import React from 'react';
+import React, { act } from 'react';
 import { createServer } from 'vite';
 import { mountInDom } from './dom-test-harness.mjs';
 const vite = await createServer({ root: fileURLToPath(new URL('../', import.meta.url)), server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' });
@@ -46,6 +46,13 @@ test('range route renders separate sources, exact decimal/revision, missing days
     assert.match(text, /No reporting result/);
     assert.match(text, /Undetermined/);
     assert.match(text, /ratios withheld/);
+    assert.equal(h.document.querySelectorAll('circle').length, 0); // OEE-only default; fixture has Availability.
+    const focus = h.document.querySelector('select[aria-label="Trend chart focus"]');
+    assert.equal(focus.value, 'oee');
+    await act(async () => {
+        focus.value = 'all';
+        focus.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    });
     assert.equal(h.document.querySelectorAll('circle').length, 2);
     assert.ok([...h.document.querySelectorAll('polyline')].every(x => x.getAttribute('points').split(' ').length === 1));
 });
