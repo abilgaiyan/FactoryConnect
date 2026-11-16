@@ -145,13 +145,13 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         shiftId: selected.occurrence.shift.shiftId,
         startsAtUtc: selected.occurrence.shift.startsAtUtc,
         endsAtUtc: selected.occurrence.shift.endsAtUtc }} /></div>
-      <div hidden={activeView !== "targets"}><SupervisorLocalShiftTargets key={`targets:${selectedKey}`} scope={{
+      {activeView === "targets" && <div><SupervisorLocalShiftTargets key={`targets:${selectedKey}`} scope={{
         machineId: selected.machine.machineId,
         shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
         shiftId: selected.occurrence.shift.shiftId,
         startsAtUtc: selected.occurrence.shift.startsAtUtc,
         endsAtUtc: selected.occurrence.shift.endsAtUtc
-      }} /></div>
+      }} /></div>}
       <div hidden={activeView !== "activity"}><ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} /></div>
       <div hidden={activeView !== "diagnostics"}><section aria-label="Reporting evidence provenance">
         <h2>Reporting evidence provenance</h2>
