@@ -23,6 +23,9 @@ BEGIN
             (MachineId, ShiftScheduleAssignmentId, ShiftStartsAtUtc, ShiftEndsAtUtc, RevisionNumber),
         CONSTRAINT CK_SupervisorShiftTarget_Quantity CHECK (TargetQuantity >= 0),
         CONSTRAINT CK_SupervisorShiftTarget_Revision CHECK (RevisionNumber >= 1),
+        CONSTRAINT CK_SupervisorShiftTarget_RevisionReason CHECK
+            (RevisionNumber = 1 OR
+             (RevisionReason IS NOT NULL AND LEN(LTRIM(RTRIM(RevisionReason))) > 0)),
         CONSTRAINT CK_SupervisorShiftTarget_Interval CHECK
             (ShiftEndsAtUtc > ShiftStartsAtUtc AND DATEDIFF(MINUTE, ShiftStartsAtUtc, ShiftEndsAtUtc) <= 1440),
         CONSTRAINT CK_SupervisorShiftTarget_Utc CHECK
