@@ -68,7 +68,6 @@ public sealed class SqlServerSupervisorShiftTargetStore
                       AND ShiftStartsAtUtc = @Starts AND ShiftEndsAtUtc = @Ends
                       AND RevisionNumber = @Number AND TargetQuantity = @Quantity
                       AND QuantityUnit = @Unit AND EnteredBy = @Actor
-                      AND RecordedAtUtc = @Recorded
                       AND ((ProductionOrder = @Order) OR (ProductionOrder IS NULL AND @Order IS NULL))
                       AND ((PartNumber = @Part) OR (PartNumber IS NULL AND @Part IS NULL))
                       AND ((Operation = @Operation) OR (Operation IS NULL AND @Operation IS NULL))
