@@ -90,6 +90,16 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   const head = history.reduce<Revision | null>((latest, item) =>
     !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null);
   const current = head;
+  function copyCurrentIntoRevision() {
+    if (!current || loading || loadError || saving || pendingId) return;
+    setQuantity(String(current.targetQuantity));
+    setUnit(current.quantityUnit);
+    setOrder(current.productionOrder ?? "");
+    setPart(current.partNumber ?? "");
+    setOperation(current.operation ?? "");
+    setReason("");
+    setStatus("Current target copied into revision form. Enter a revision reason and save to create a new revision.");
+  }
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving || loading || loadError) return;
@@ -154,6 +164,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
     <form onSubmit={save}>
       <fieldset disabled={saving || loading || Boolean(loadError)}>
         <legend>{head ? "Revise whole-shift target" : "Set first whole-shift target"}</legend>
+        {current && <button type="button" disabled={Boolean(pendingId)} onClick={copyCurrentIntoRevision}>Copy current target to revision form</button>}
         <label>Target quantity<input required inputMode="decimal" value={quantity} onChange={event => setQuantity(event.target.value)} /></label>
         <label>Unit<input required maxLength={50} value={unit} onChange={event => setUnit(event.target.value)} /></label>
         <label>Production order<input maxLength={200} value={order} onChange={event => setOrder(event.target.value)} /></label>
