@@ -115,6 +115,24 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         <section aria-label="Shift target navigation" className="supervisor-detail">
           <h2>Production plan and actual evidence</h2>
           <p>The current SQL planning target is available under Shift targets. Verified achieved quantity and target attainment are not established by this OEE overview.</p>
+          <section aria-label="Actual production evidence readiness">
+            <h3>Actual production evidence readiness</h3>
+            <dl>
+              <dt>Performance evidence</dt>
+              <dd>{selected.occurrence.performance.state === "calculated" ? "Reporting calculated Performance; quantity completeness must still be verified separately" :
+                selected.occurrence.performance.state === "missing" ? "No Performance metric returned" :
+                selected.occurrence.performance.state === "insufficient-evidence" ? "Insufficient evidence" : "Unavailable"}
+                {selected.occurrence.performance.state !== "calculated" && selected.occurrence.performance.state !== "missing" &&
+                  selected.occurrence.performance.reasonCode ? ` — ${selected.occurrence.performance.reasonCode}` : ""}</dd>
+              <dt>Quality evidence</dt>
+              <dd>{selected.occurrence.quality.state === "calculated" ? "Reporting calculated Quality; good/rejected quantity coverage must still be verified separately" :
+                selected.occurrence.quality.state === "missing" ? "No Quality metric returned" :
+                selected.occurrence.quality.state === "insufficient-evidence" ? "Insufficient evidence" : "Unavailable"}
+                {selected.occurrence.quality.state !== "calculated" && selected.occurrence.quality.state !== "missing" &&
+                  selected.occurrence.quality.reasonCode ? ` — ${selected.occurrence.quality.reasonCode}` : ""}</dd>
+              <dt>Verified produced quantity</dt><dd>Not supplied by this reporting response; no actual quantity or attainment percentage calculated</dd>
+            </dl>
+          </section>
           <button type="button" onClick={() => setActiveView("targets")}>View current shift target</button>
           <button type="button" onClick={() => setActiveView("production")}>View supervisor production entries</button>
         </section>
