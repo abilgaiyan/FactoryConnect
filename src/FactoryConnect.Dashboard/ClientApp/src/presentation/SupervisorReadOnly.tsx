@@ -9,6 +9,7 @@ import type { ShiftPerformanceMachine, ShiftPerformanceOverview, ShiftPerformanc
 import { MachineActivityEvidence } from "./MachineActivityEvidence.tsx";
 import { SupervisorLocalEntryForm } from "./SupervisorLocalEntryForm.tsx";
 import { SupervisorLocalShiftTargets } from "./SupervisorLocalShiftTargets.tsx";
+import { SupervisorQuantitySourceInspection } from "./SupervisorQuantitySourceInspection.tsx";
 
 export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift): string {
   return JSON.stringify([machine.machineId, machine.processorId, machine.siteId, machine.productionLineId,
@@ -140,6 +141,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
               <dt>Verified produced quantity</dt><dd>Not supplied by this reporting response; no actual quantity or attainment percentage calculated</dd>
             </dl>
           </section>
+          <SupervisorQuantitySourceInspection key={`quantity:${selectedKey}`} machine={selected.machine} shift={selected.occurrence} />
           <button type="button" onClick={() => setActiveView("targets")}>View current shift target</button>
           <button type="button" onClick={() => setActiveView("production")}>View supervisor production entries</button>
         </section>
