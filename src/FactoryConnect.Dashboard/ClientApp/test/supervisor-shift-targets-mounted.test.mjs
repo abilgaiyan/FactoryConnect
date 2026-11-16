@@ -38,7 +38,13 @@ test('SQL target editor creates, revises, and reconciles ambiguous save without 
   assert.equal(writes[0].expectedHeadRevisionId, null);
   assert.match(h.document.body.textContent, /Revision 1/);
   await h.changeInput(input(h, 'Target quantity'), '150');
-  await h.changeInput(input(h, 'Revision reason'), 'Updated shift plan');
+  await act(async () => {
+    const textarea = input(h, 'Revision reason');
+    const setter = Object.getOwnPropertyDescriptor(h.window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(textarea, 'Updated shift plan');
+    textarea.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+    textarea.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  });
   ambiguous = true;
   await h.click(button(h, 'Save target revision'));
   assert.equal(history.length, 2);
