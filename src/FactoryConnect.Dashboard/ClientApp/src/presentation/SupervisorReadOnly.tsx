@@ -112,6 +112,12 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         <button type="button" aria-pressed={activeView === "diagnostics"} onClick={() => setActiveView("diagnostics")}>Technical details</button>
       </nav>
       <div hidden={activeView !== "overview"}>
+        <section aria-label="Shift target navigation" className="supervisor-detail">
+          <h2>Production plan and actual evidence</h2>
+          <p>The current SQL planning target is available under Shift targets. Verified achieved quantity and target attainment are not established by this OEE overview.</p>
+          <button type="button" onClick={() => setActiveView("targets")}>View current shift target</button>
+          <button type="button" onClick={() => setActiveView("production")}>View supervisor production entries</button>
+        </section>
         <h2>Shift OEE performance</h2>
         <button type="button" onClick={() => exportShiftOeeCsv(overview, selected.machine, selected.occurrence)}>Export exact-shift OEE evidence (CSV)</button>
         <p>The export contains reported values, statuses and reasons only. Missing metrics remain blank, not zero.</p>
