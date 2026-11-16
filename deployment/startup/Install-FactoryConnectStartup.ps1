@@ -21,6 +21,11 @@ if (-not $Install) {
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Administrator required' }
 if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { throw "Task '$taskName' exists; refusing to overwrite" }
+$conflictingTasks=@(Get-ScheduledTask | Where-Object {
+  $_.TaskName -match '(?i)factoryconnect.*(startup|supervisor)|(startup|supervisor).*factoryconnect' -or
+  @($_.Actions | Where-Object { $_.Arguments -match '(?i)Watch-FactoryConnectStartup|Start-FactoryConnectSystem' }).Count -gt 0
+})
+if ($conflictingTasks.Count -gt 0) { throw "Existing FactoryConnect startup task(s) detected: $($conflictingTasks.TaskName -join ', '); refusing parallel supervisor installation" }
 if (Test-Path -LiteralPath $dest) { throw "Existing supervisor at '$dest'; refusing to overwrite" }
 if (Test-Path -LiteralPath $configDest) { throw "Existing configuration at '$configDest'; refusing to overwrite" }
 if (-not $config.components) { throw 'No acquisition components configured; refusing installation' }
