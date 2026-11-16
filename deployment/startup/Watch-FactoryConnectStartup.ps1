@@ -44,6 +44,7 @@ function Cycle {
     foreach ($url in @($config.acquisitionHealthUrls)) {
       if (-not (Check-Http $url)) { Log "WARNING acquisition endpoint unavailable: $url" }
     }
+    if ($config.enableRuntime -eq $false) { Log 'SKIP runtime disabled by configuration'; return }
     $sql=Get-Service -Name $config.sqlService -ErrorAction SilentlyContinue
     if (-not $sql -or $sql.Status -ne 'Running') { Log 'WAIT SQL service not running'; return }
     $names=@('FactoryConnect.Edge.exe','FactoryConnect.Api.exe','FactoryConnect.Dashboard.exe')
