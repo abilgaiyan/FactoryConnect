@@ -21,6 +21,14 @@ if (-not $Install) {
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Administrator required' }
 if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { throw "Task '$taskName' exists; refusing to overwrite" }
+if (Test-Path -LiteralPath $dest) { throw "Existing supervisor at '$dest'; refusing to overwrite" }
+if (Test-Path -LiteralPath $configDest) { throw "Existing configuration at '$configDest'; refusing to overwrite" }
+if (-not $config.components) { throw 'No acquisition components configured; refusing installation' }
+foreach ($component in $config.components) {
+  if ($component.authorized -and ([string]::IsNullOrWhiteSpace([string]$component.executable) -or [string]::IsNullOrWhiteSpace([string]$component.matchArgument) -or [string]::IsNullOrWhiteSpace([string]$component.workingDirectory))) {
+    throw "Authorized component '$($component.name)' lacks required process identity or working directory"
+  }
+}
 New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 Copy-Item -LiteralPath $source -Destination $dest -ErrorAction Stop
 Copy-Item -LiteralPath $ConfigPath -Destination $configDest -ErrorAction Stop
