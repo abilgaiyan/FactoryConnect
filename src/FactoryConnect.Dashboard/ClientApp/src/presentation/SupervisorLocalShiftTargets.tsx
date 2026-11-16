@@ -13,6 +13,24 @@ type Revision = {
   enteredBy: string; recordedAtUtc: string;
 };
 
+export function buildShiftTargetHistoryCsv(scope: Scope, revisions: readonly Revision[]): string {
+  const cell = (value: string | number) => {
+    const text = String(value);
+    const safe = /^\s*[=+@-]/.test(text) ? "'" + text : text;
+    return '"' + safe.replace(/"/g, '""') + '"';
+  };
+  const columns = ["Machine ID", "Shift assignment", "Shift ID", "Shift start UTC", "Shift end UTC",
+    "Revision", "Target quantity", "Unit", "Production order", "Part number", "Operation",
+    "Revision reason", "Entered by", "Recorded UTC", "Evidence classification"];
+  const rows = revisions.map(item => [
+    scope.machineId, scope.shiftScheduleAssignmentId, scope.shiftId, scope.startsAtUtc, scope.endsAtUtc,
+    item.revisionNumber, item.targetQuantity, item.quantityUnit, item.productionOrder ?? "",
+    item.partNumber ?? "", item.operation ?? "", item.revisionReason ?? "",
+    item.enteredBy, item.recordedAtUtc, "Planning target only; not achieved production or OEE evidence"
+  ]);
+  return [columns, ...rows].map(row => row.map(cell).join(",")).join("\r\n");
+}
+
 export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }) {
   const [history, setHistory] = useState<Revision[]>([]);
   const [quantity, setQuantity] = useState("");
@@ -54,6 +72,18 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [url, scope.shiftScheduleAssignmentId, scope.startsAtUtc, scope.endsAtUtc, refreshKey]);
+
+  function exportHistory() {
+    if (loading || loadError || !history.length) return;
+    const csv = buildShiftTargetHistoryCsv(scope, history);
+    const href = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = "supervisor-shift-target-history.csv";
+    document.body.appendChild(anchor);
+    anchor.click(); anchor.remove();
+    URL.revokeObjectURL(href);
+  }
 
   const head = history.at(-1);
   async function save(event: FormEvent) {
@@ -99,6 +129,8 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
     <button type="button" onClick={() => setRefreshKey(value => value + 1)}>Reload target history</button>
     {loadError && <p role="alert">{loadError}. Saving is disabled until a successful read.</p>}
     <h3>Revision history</h3>
+    <button type="button" disabled={loading || Boolean(loadError) || !history.length} onClick={exportHistory}>Export target history (CSV)</button>
+    <p>CSV exports planning revisions only, not achieved production or qualified OEE.</p>
     {loading && <p>Loading SQL target history…</p>}
     {!loading && !loadError && !history.length && <p>Target not provided · TargetMissing</p>}
     {history.map(item => <article className="supervisor-detail" key={item.targetRevisionId}>
