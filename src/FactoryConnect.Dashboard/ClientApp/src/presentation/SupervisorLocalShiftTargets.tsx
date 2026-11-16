@@ -31,7 +31,7 @@ export function buildShiftTargetHistoryCsv(scope: Scope, revisions: readonly Rev
   return [columns, ...rows].map(row => row.map(cell).join(",")).join("\r\n");
 }
 
-export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }) {
+export function SupervisorLocalShiftTargets({ scope, summaryOnly = false }: { readonly scope: Scope; readonly summaryOnly?: boolean }) {
   const [history, setHistory] = useState<Revision[]>([]);
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("pieces");
@@ -146,6 +146,14 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
       setSaving(false);
     }
   }
+  if (summaryOnly) return <section aria-label="Current shift planning target" className="supervisor-detail">
+    <h3>Current whole-shift target · SQL planning</h3>
+    {loading ? <p>Loading target…</p> : loadError ? <p role="alert">{loadError}</p> : current ? <>
+      <p><strong>{current.targetQuantity} {current.quantityUnit}</strong> · Revision {current.revisionNumber}</p>
+      <p>Order {current.productionOrder || "—"} · Part {current.partNumber || "—"} · Operation {current.operation || "—"}</p>
+      <p>Planning only: verified actual production and target attainment are not established.</p>
+    </> : <p>No shift target has been entered. Actual production is not inferred as zero.</p>}
+  </section>;
   return <section aria-label="Durable shift planning targets" className="supervisor-editor">
     <h2>Shift targets · SQL planning history</h2>
     <p>Exact machine and shift occurrence: {scope.shiftId} · {scope.startsAtUtc} – {scope.endsAtUtc} UTC.</p>
