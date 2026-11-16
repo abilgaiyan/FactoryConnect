@@ -1,4 +1,5 @@
 using FactoryConnect.Api.Commissioning;
+using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
 
@@ -23,7 +24,70 @@ public static class SupervisorShiftTargetEndpoints
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
             CreateAsync).WithName("CreateLocalSupervisorShiftTargetRevision")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
+            ReadQuantitySourceCutAsync).WithName("ReadLocalSupervisorQuantitySourceCut")
+            .WithGroupName("supervisor-local-v1");
         return endpoints;
+    }
+
+    private static async Task<IResult> ReadQuantitySourceCutAsync(
+        Guid machineId, string siteId, string assignmentId, string shiftId,
+        DateTimeOffset shiftStartsAtUtc, DateTimeOffset shiftEndsAtUtc,
+        string aggregationProcessorId, string streamKey, ulong position,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            var machine = new MachineId(machineId);
+            var checkpoint = new MetricAggregationCheckpoint(
+                new MetricAggregationProcessorId(aggregationProcessorId),
+                new MetricInputStreamId(machine, streamKey),
+                new MetricInputPosition(position));
+            var occurrence = new ShiftOccurrenceId(
+                new SiteId(siteId), new ShiftScheduleAssignmentId(assignmentId),
+                new ShiftId(shiftId), shiftStartsAtUtc, shiftEndsAtUtc);
+            var cut = await new SqlServerProductionQuantitySourceInventoryReader(connectionString)
+                .ReadAsync(checkpoint, machine, occurrence, cancellationToken);
+            return Results.Ok(new
+            {
+                classification = "HistoricalMetricInputSourceInventoryNotQualifiedActual",
+                machineId,
+                shift = new { siteId, assignmentId, shiftId, shiftStartsAtUtc, shiftEndsAtUtc },
+                sourceRevision = new { aggregationProcessorId, streamKey, position = position.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+                sourceCount = cut.Sources.Count,
+                sources = cut.Sources.Select(source => new
+                {
+                    evidenceId = source.Evidence.Id.Value,
+                    occurredAtUtc = source.Evidence.OccurredAtUtc,
+                    partCountIncrement = source.Evidence.PartCountIncrement,
+                    goodQuantity = source.Evidence.GoodQuantity,
+                    rejectedQuantity = source.Evidence.RejectedQuantity,
+                    productionOrderId = source.Evidence.ProductionOrderId?.Value,
+                    partId = source.Evidence.PartId?.Value,
+                    operationId = source.Evidence.OperationId?.Value,
+                    contributingPositions = source.ContributingPositions.Select(item =>
+                        item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray()
+                }).ToArray(),
+                warning = "Source inventory only. Not accepted actual production, completeness, or target attainment."
+            });
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidQuantitySourceCutIdentity" });
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Problem(statusCode: 409, title: "Quantity source cut unavailable or inconsistent");
+        }
+        catch (SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Quantity source SQL read unavailable");
+        }
     }
 
     private static async Task<IResult> ReadAsync(Guid machineId, string assignmentId,
