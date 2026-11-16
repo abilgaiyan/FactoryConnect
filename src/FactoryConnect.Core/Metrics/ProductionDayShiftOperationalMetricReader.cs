@@ -50,6 +50,14 @@ public sealed class ProductionDayShiftOperationalMetricReader :
             var source = group.Key;
             var occurrences = group.SelectMany(item => item.Roster.Occurrences.Select(
                 ownership => (Roster: item.Roster, Ownership: ownership))).ToArray();
+            // An authoritative roster must not repeat one exact shift occurrence.
+            // Otherwise the same metric publication could be presented twice as distinct production.
+            var duplicate = occurrences
+                .GroupBy(static item => item.Ownership.ShiftOccurrenceId)
+                .FirstOrDefault(static group => group.Count() > 1);
+            if (duplicate is not null)
+                throw new InvalidDataException("Authoritative shift roster contains duplicate exact shift occurrences.");
+
             var metricReports = await _metricReader.ReadShiftsAsync(
                 source.ProcessorId, source.MachineId,
                 occurrences.Select(static item => item.Ownership.ShiftOccurrenceId).ToArray(),
