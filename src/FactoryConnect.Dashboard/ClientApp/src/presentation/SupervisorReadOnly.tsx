@@ -96,6 +96,16 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
               </li>
             ))}
           </ul>
+          <details>
+            <summary>How OEE is calculated and what evidence is required</summary>
+            <dl>
+              <dt>Availability</dt><dd>Actual production time ÷ planned operating time. Requires qualified activity and planned-time evidence.</dd>
+              <dt>Performance</dt><dd>Ideal production duration ÷ actual production time. Requires qualified production quantity and applicable production reference time.</dd>
+              <dt>Quality</dt><dd>Good quantity ÷ total quantity. Requires qualified good and total counts with a consistent production population.</dd>
+              <dt>OEE</dt><dd>Availability × Performance × Quality. The report must establish all three components before numeric OEE is shown.</dd>
+            </dl>
+            <p>These are formula explanations, not recomputed values. Missing evidence is not zero, and a calculated status alone does not establish complete historical coverage.</p>
+          </details>
           <p>Production entry is a local commissioning workflow. Saved or locally approved declarations do not automatically become accepted CNC quantities or qualify OEE. Resolve missing reference-time, production quantity and quality evidence through the separate qualification process.</p>
         </section>
       </div>
