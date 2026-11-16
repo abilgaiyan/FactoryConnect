@@ -1,0 +1,20 @@
+{
+  "installRoot": "D:\\FactoryConnect",
+  "sqlService": "MSSQL$FACTORYCONNECT",
+  "components": [
+    {
+      "name": "MTConnect agent example",
+      "authorized": false,
+      "executable": "D:\\MTConnect\\agent-1\\agent.exe",
+      "arguments": "run agent.cfg",
+      "workingDirectory": "D:\\MTConnect\\agent-1",
+      "matchArgument": "run agent.cfg"
+    }
+  ],
+  "acquisitionHealthUrls": [
+    "http://127.0.0.1:5001/probe"
+  ],
+  "runtimeHealthUrls": [
+    "http://127.0.0.1:3000/health/ready"
+  ]
+}
