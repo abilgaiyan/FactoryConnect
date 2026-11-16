@@ -16,7 +16,7 @@ type Revision = {
 export function buildShiftTargetHistoryCsv(scope: Scope, revisions: readonly Revision[]): string {
   const cell = (value: string | number) => {
     const text = String(value);
-    const safe = /^\\s*[=+@-]/.test(text) ? "'" + text : text;
+    const safe = /^\s*[=+@-]/.test(text) ? "'" + text : text;
     return '"' + safe.replace(/"/g, '""') + '"';
   };
   const columns = ["Machine ID", "Shift assignment", "Shift ID", "Shift start UTC", "Shift end UTC",
@@ -28,7 +28,7 @@ export function buildShiftTargetHistoryCsv(scope: Scope, revisions: readonly Rev
     item.partNumber ?? "", item.operation ?? "", item.revisionReason ?? "",
     item.enteredBy, item.recordedAtUtc, "Planning target only; not achieved production or OEE evidence"
   ]);
-  return [columns, ...rows].map(row => row.map(cell).join(",")).join("\\r\\n");
+  return [columns, ...rows].map(row => row.map(cell).join(",")).join("\r\n");
 }
 
 export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }) {
@@ -76,7 +76,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   function exportHistory() {
     if (loading || loadError || !history.length) return;
     const csv = buildShiftTargetHistoryCsv(scope, history);
-    const href = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const href = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = href;
     anchor.download = "supervisor-shift-target-history.csv";
