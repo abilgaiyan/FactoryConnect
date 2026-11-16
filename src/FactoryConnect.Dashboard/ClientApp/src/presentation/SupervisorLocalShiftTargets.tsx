@@ -24,6 +24,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingPayload, setPendingPayload] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [loadError, setLoadError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -35,22 +36,29 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   });
   useEffect(() => {
     const controller = new AbortController();
-    setHistory([]); setLoadError("");
+    setHistory([]); setLoadError(""); setLoading(true);
     void fetch(`${url}?${query}`, { signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error(`Shift targets unavailable (HTTP ${response.status})`);
       const body: unknown = await response.json();
       if (!Array.isArray(body)) throw new Error("Unexpected shift target history");
-      if (!controller.signal.aborted) setHistory(body as Revision[]);
+      if (!controller.signal.aborted) {
+        setHistory(body as Revision[]);
+        if (pendingId && body.some((item: Revision) => item.targetRevisionId === pendingId)) {
+          setPendingId(null); setPendingPayload(null);
+          setQuantity(""); setReason("");
+          setStatus("Previously uncertain save confirmed in SQL revision history.");
+        }
+      }
     }).catch(error => {
       if (!controller.signal.aborted) setLoadError(String(error));
-    });
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [url, scope.shiftScheduleAssignmentId, scope.startsAtUtc, scope.endsAtUtc, refreshKey]);
 
   const head = history.at(-1);
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (saving || loadError) return;
+    if (saving || loading || loadError) return;
     if (!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(quantity) ||
         !Number.isFinite(Number(quantity)) || Number(quantity) >= 1e15) {
       setStatus("Enter a nonnegative target with at most three decimal places."); return;
@@ -91,7 +99,8 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
     <button type="button" onClick={() => setRefreshKey(value => value + 1)}>Reload target history</button>
     {loadError && <p role="alert">{loadError}. Saving is disabled until a successful read.</p>}
     <h3>Revision history</h3>
-    {!loadError && !history.length && <p>Target not provided · TargetMissing</p>}
+    {loading && <p>Loading SQL target history…</p>}
+    {!loading && !loadError && !history.length && <p>Target not provided · TargetMissing</p>}
     {history.map(item => <article className="supervisor-detail" key={item.targetRevisionId}>
       <h4>Revision {item.revisionNumber} · {item.targetQuantity} {item.quantityUnit}</h4>
       <p>Recorded {item.recordedAtUtc} · Entered by {item.enteredBy}</p>
@@ -99,7 +108,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
       <p>Revision reason: {item.revisionReason || "Initial target"}</p>
     </article>)}
     <form onSubmit={save}>
-      <fieldset disabled={saving || Boolean(loadError)}>
+      <fieldset disabled={saving || loading || Boolean(loadError)}>
         <legend>{head ? "Revise whole-shift target" : "Set first whole-shift target"}</legend>
         <label>Target quantity<input required inputMode="decimal" value={quantity} onChange={event => setQuantity(event.target.value)} /></label>
         <label>Unit<input required maxLength={50} value={unit} onChange={event => setUnit(event.target.value)} /></label>
