@@ -97,7 +97,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
       <p>Revision reason: {item.revisionReason || "Initial target"}</p>
     </article>)}
     <form onSubmit={save}>
-      <fieldset disabled={saving || Boolean(loadError) || Boolean(pendingId)}>
+      <fieldset disabled={saving || Boolean(loadError)}>
         <legend>{head ? "Revise whole-shift target" : "Set first whole-shift target"}</legend>
         <label>Target quantity<input required inputMode="decimal" value={quantity} onChange={event => setQuantity(event.target.value)} /></label>
         <label>Unit<input required maxLength={50} value={unit} onChange={event => setUnit(event.target.value)} /></label>
@@ -108,7 +108,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
         <button type="submit">Save target revision</button>
       </fieldset>
     </form>
-    {pendingId && <p role="alert">Save outcome is uncertain. Reload history and reconcile before submitting another revision.</p>}
+    {pendingId && <p role="alert">Save outcome is uncertain. Reload history to reconcile, or retry with the same revision ID; do not create another revision.</p>}
     {status && <p role="status">{status}</p>}
     <p>Actual achieved: not established. No target approval, sealed baseline, target achievement, or OEE Performance qualification is implied.</p>
   </section>;
