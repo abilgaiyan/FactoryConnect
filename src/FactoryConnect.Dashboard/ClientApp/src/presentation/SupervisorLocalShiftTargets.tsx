@@ -86,6 +86,8 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   }
 
   const head = history.at(-1);
+  const current = history.reduce<Revision | null>((latest, item) =>
+    !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null);
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving || loading || loadError) return;
@@ -128,6 +130,14 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
     <p>Targets are whole-shift goals. Revisions replace the previous goal; they are never added together or treated as achieved production.</p>
     <button type="button" onClick={() => setRefreshKey(value => value + 1)}>Reload target history</button>
     {loadError && <p role="alert">{loadError}. Saving is disabled until a successful read.</p>}
+    <h3>Current whole-shift target</h3>
+    {loading ? <p>Loading current target…</p> : loadError ? <p>Current target unavailable until SQL history loads.</p> : current ?
+      <section aria-label="Current shift planning target" className="supervisor-detail">
+        <p><strong>{current.targetQuantity} {current.quantityUnit}</strong> · Revision {current.revisionNumber}</p>
+        <p>Order {current.productionOrder || "—"} · Part {current.partNumber || "—"} · Operation {current.operation || "—"}</p>
+        <p>Updated {current.recordedAtUtc} by {current.enteredBy}</p>
+        <p>Planning goal only — no actual achieved quantity or target attainment is established.</p>
+      </section> : <p>No shift target has been entered.</p>}
     <h3>Revision history</h3>
     <button type="button" disabled={loading || Boolean(loadError) || !history.length} onClick={exportHistory}>Export target history (CSV)</button>
     <p>CSV exports planning revisions only, not achieved production or qualified OEE.</p>
