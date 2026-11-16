@@ -148,6 +148,8 @@ export function SupervisorLocalShiftTargets({ scope, summaryOnly = false }: { re
   }
   if (summaryOnly) return <section aria-label="Current shift planning target" className="supervisor-detail">
     <h3>Current whole-shift target · SQL planning</h3>
+    <button type="button" disabled={loading} onClick={() => setRefreshKey(value => value + 1)}>Refresh current SQL target</button>
+    <p>Refresh after editing a target to retrieve the latest saved revision. This read is independent of the OEE report.</p>
     {loading ? <p>Loading target…</p> : loadError ? <p role="alert">{loadError}</p> : current ? <>
       <p><strong>{current.targetQuantity} {current.quantityUnit}</strong> · Revision {current.revisionNumber}</p>
       <p>Order {current.productionOrder || "—"} · Part {current.partNumber || "—"} · Operation {current.operation || "—"}</p>
