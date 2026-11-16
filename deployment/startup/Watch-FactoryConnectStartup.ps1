@@ -1,16 +1,17 @@
 param(
   [Parameter(Mandatory=$true)][string]$ConfigPath,
   [switch]$Once,
+  [switch]$CheckOnly,
   [ValidateRange(15,3600)][int]$IntervalSeconds=30
 )
 $ErrorActionPreference='Stop'
 $config=Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $logDir=Join-Path $config.installRoot 'deployment\logs\startup'
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+if (-not $CheckOnly) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $logPath=Join-Path $logDir 'watch.log'
 function Log([string]$message) {
   $line='{0} {1}' -f (Get-Date -Format o),$message
-  Add-Content -LiteralPath $logPath -Value $line
+  if (-not $CheckOnly) { Add-Content -LiteralPath $logPath -Value $line }
   Write-Output $line
 }
 function Find-Processes([string]$exe) {
@@ -33,6 +34,7 @@ function Start-ConfiguredComponent($c) {
   if ($matching.Count -gt 1) { Log "WARNING $($c.name) duplicate matching processes detected"; return }
   if ($matching.Count -eq 1) { return }
   if ($found.Count -gt 0 -and [IO.Path]::GetFileName($c.executable) -ine 'powershell.exe') { Log "WARNING $($c.name) executable already running with different arguments; refusing duplicate"; return }
+  if ($CheckOnly) { Log "CHECK would start $($c.name)"; return }
   Log "START $($c.name)"
   try {
     Start-Process -FilePath $c.executable -ArgumentList ([string]$c.arguments) -WorkingDirectory $c.workingDirectory -WindowStyle Hidden -ErrorAction Stop
@@ -52,6 +54,7 @@ function Cycle {
     if ($running.Count -eq 0) {
       $launcher=Join-Path $config.installRoot 'current\Start-FactoryConnectRuntime.ps1'
       if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { Log 'ERROR runtime launcher missing'; return }
+      if ($CheckOnly) { Log 'CHECK would start FactoryConnect runtime BootSafe'; return }
       Log 'START FactoryConnect runtime BootSafe'
       $ps=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
       $args='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -StartupMode BootSafe' -f $launcher,$config.installRoot
@@ -68,6 +71,6 @@ function Cycle {
 Log 'FactoryConnect startup supervisor launched'
 do {
   Cycle
-  if ($Once) { break }
+  if ($Once -or $CheckOnly) { break }
   Start-Sleep -Seconds $IntervalSeconds
 } while ($true)
