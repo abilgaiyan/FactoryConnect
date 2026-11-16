@@ -14,6 +14,33 @@ export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: Shif
     occurrence.shift.shiftScheduleAssignmentId, occurrence.shift.shiftId, occurrence.shift.startsAtUtc, occurrence.shift.endsAtUtc]);
 }
 
+function exportShiftOeeCsv(overview: ShiftPerformanceOverview, machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift) {
+  const cell = (value: string) => {
+    const safe = /^\\s*[=+@-]/.test(value) ? "'" + value : value;
+    return '"' + safe.replace(/"/g, '""') + '"';
+  };
+  const columns = ["Production day", "Machine ID", "Reporting processor", "Site ID", "Shift ID", "Shift assignment", "Shift start UTC", "Shift end UTC", "Metric", "Status", "Value", "Unit", "Reason code", "Reason operand"];
+  const base = [overview.productionDay, machine.machineId, machine.processorId, machine.siteId, occurrence.shift.shiftId, occurrence.shift.shiftScheduleAssignmentId, occurrence.shift.startsAtUtc, occurrence.shift.endsAtUtc];
+  const rows = ([
+    ["Availability", occurrence.availability], ["Performance", occurrence.performance],
+    ["Quality", occurrence.quality], ["OEE", occurrence.oee],
+  ] as const).map(([name, metric]) => [...base, name, metric.state,
+    metric.state === "calculated" ? String(metric.value) : "",
+    metric.state === "calculated" ? metric.unit : "",
+    metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonCode ?? "" : "",
+    metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonOperandName ?? "" : "",
+  ]);
+  const csv = [columns, ...rows].map(row => row.map(cell).join(",")).join("\\r\\n");
+  const href = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = "supervisor-shift-oee.csv";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
+}
+
 export function SupervisorReadOnly({ runtime }: { readonly runtime: DashboardApplicationRuntime }) {
   const [sourceIndex, setSourceIndex] = useState("");
   const [day, setDay] = useState("");
@@ -84,6 +111,8 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
       </nav>
       <div hidden={activeView !== "overview"}>
         <h2>Shift OEE performance</h2>
+        <button type="button" onClick={() => exportShiftOeeCsv(overview, selected.machine, selected.occurrence)}>Export exact-shift OEE evidence (CSV)</button>
+        <p>The export contains reported values, statuses and reasons only. Missing metrics remain blank, not zero.</p>
         <ShiftPerformanceOverviewView key={`metrics:${selectedKey}`} showFilters={false} overview={{ productionDay: overview.productionDay, groups: [{ groupName: null, machines: [{ ...selected.machine, shifts: [selected.occurrence] }] }] }} />
         <p>Only qualified metrics are numeric. Missing production quantities, reference time, or quality evidence remain explicitly unavailable.</p>
         <section aria-label="OEE evidence checklist">
