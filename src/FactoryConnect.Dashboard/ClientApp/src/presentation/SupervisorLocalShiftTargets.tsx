@@ -22,6 +22,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   const [operation, setOperation] = useState("");
   const [reason, setReason] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -58,22 +59,23 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
       setStatus("Provide a unit and a reason for every revision."); return;
     }
     const id = pendingId ?? crypto.randomUUID();
-    setPendingId(id); setSaving(true); setStatus("");
+    const payload = pendingPayload ?? JSON.stringify({
+      targetRevisionId: id, shiftScheduleAssignmentId: scope.shiftScheduleAssignmentId,
+      shiftId: scope.shiftId, shiftStartsAtUtc: scope.startsAtUtc,
+      shiftEndsAtUtc: scope.endsAtUtc, revisionNumber: (head?.revisionNumber ?? 0) + 1,
+      expectedHeadRevisionId: head?.targetRevisionId ?? null,
+      targetQuantity: Number(quantity), quantityUnit: unit.trim(),
+      productionOrder: order.trim() || null, partNumber: part.trim() || null,
+      operation: operation.trim() || null, revisionReason: reason.trim() || null
+    });
+    setPendingId(id); setPendingPayload(payload); setSaving(true); setStatus("");
     try {
       const response = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          targetRevisionId: id, shiftScheduleAssignmentId: scope.shiftScheduleAssignmentId,
-          shiftId: scope.shiftId, shiftStartsAtUtc: scope.startsAtUtc,
-          shiftEndsAtUtc: scope.endsAtUtc, revisionNumber: (head?.revisionNumber ?? 0) + 1,
-          expectedHeadRevisionId: head?.targetRevisionId ?? null,
-          targetQuantity: Number(quantity), quantityUnit: unit.trim(),
-          productionOrder: order.trim() || null, partNumber: part.trim() || null,
-          operation: operation.trim() || null, revisionReason: reason.trim() || null
-        })
+        body: payload
       });
       if (!response.ok) throw new Error(`Save not confirmed (HTTP ${response.status}). Check history before retrying.`);
-      setPendingId(null); setQuantity(""); setReason("");
+      setPendingId(null); setPendingPayload(null); setQuantity(""); setReason("");
       setStatus("Shift target revision saved. This is planning only, not accepted production or OEE evidence.");
       setRefreshKey(value => value + 1);
     } catch (error) {
