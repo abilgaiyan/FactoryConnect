@@ -42,6 +42,17 @@ export function ShiftPerformanceOverviewView({ overview, showFilters = true }: S
       </div>}
       {showFilters && <p id="shift-filter-scope" className="report-scope-note">The shift filter includes every occurrence with that identifier. KPI cards appear only when exactly one machine and shift occurrence remains.</p>}
       <p className="report-scope-note">Each result belongs to one machine and exact shift interval. Group totals are not calculated.</p>
+      {selected.length > 0 && <section aria-label="OEE reporting coverage">
+        <h3>OEE reporting coverage</h3>
+        <p className="report-scope-note">Counts of exact shift occurrences in the current filters, not a factory-wide OEE average or production total.</p>
+        <dl>
+          <dt>Shift occurrences</dt><dd>{selected.length}</dd>
+          <dt>Calculated OEE</dt><dd>{selected.filter(({ shift }) => shift.oee.state === "calculated").length}</dd>
+          <dt>Insufficient evidence</dt><dd>{selected.filter(({ shift }) => shift.oee.state === "insufficient-evidence").length}</dd>
+          <dt>Unavailable</dt><dd>{selected.filter(({ shift }) => shift.oee.state === "unavailable").length}</dd>
+          <dt>Not returned</dt><dd>{selected.filter(({ shift }) => shift.oee.state === "missing").length}</dd>
+        </dl>
+      </section>}
       {selected.length === 1 && <p className="report-scope-note">Selected: {selected[0]!.machine.displayName} · {selected[0]!.shift.shift.shiftId} · {formatReportTimestamp(selected[0]!.shift.shift.startsAtUtc)} – {formatReportTimestamp(selected[0]!.shift.shift.endsAtUtc)}</p>}
       {selected.length === 1 && <section className="performance-kpis" aria-label="Selected shift metrics">
         {[selected[0]!.shift.availability, selected[0]!.shift.utilization, selected[0]!.shift.performance, selected[0]!.shift.quality, selected[0]!.shift.oee].map(metric => {
