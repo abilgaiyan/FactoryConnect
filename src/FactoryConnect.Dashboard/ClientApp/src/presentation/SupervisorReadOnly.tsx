@@ -8,6 +8,7 @@ import { ShiftPerformanceOverviewView } from "./ShiftPerformanceOverviewView.tsx
 import type { ShiftPerformanceMachine, ShiftPerformanceOverview, ShiftPerformanceShift } from "./shift-performance-model.ts";
 import { MachineActivityEvidence } from "./MachineActivityEvidence.tsx";
 import { SupervisorLocalEntryForm } from "./SupervisorLocalEntryForm.tsx";
+import { SupervisorLocalShiftTargets } from "./SupervisorLocalShiftTargets.tsx";
 
 export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift): string {
   return JSON.stringify([machine.machineId, machine.processorId, machine.siteId, machine.productionLineId,
@@ -80,7 +81,7 @@ function ShiftRead({ runtime, sourceIndex, day }: { readonly runtime: DashboardA
 
 function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerformanceOverview; readonly runtime: DashboardApplicationRuntime }) {
   const [selectedKey, setSelectedKey] = useState("");
-  const [activeView, setActiveView] = useState<"overview" | "production" | "activity" | "diagnostics">("overview");
+  const [activeView, setActiveView] = useState<"overview" | "production" | "targets" | "activity" | "diagnostics">("overview");
   const occurrences = overview.groups.flatMap(group => group.machines.flatMap(machine => machine.shifts.map(occurrence => ({ machine, occurrence }))));
   const selected = occurrences.find(({ machine, occurrence }) => occurrenceKey(machine, occurrence) === selectedKey);
   return <>
@@ -106,6 +107,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
       <nav className="supervisor-workspace-tabs" aria-label="Selected shift sections">
         <button type="button" aria-pressed={activeView === "overview"} onClick={() => setActiveView("overview")}>OEE overview</button>
         <button type="button" aria-pressed={activeView === "production"} onClick={() => setActiveView("production")}>Production entry</button>
+        <button type="button" aria-pressed={activeView === "targets"} onClick={() => setActiveView("targets")}>Shift targets</button>
         <button type="button" aria-pressed={activeView === "activity"} onClick={() => setActiveView("activity")}>Machine activity</button>
         <button type="button" aria-pressed={activeView === "diagnostics"} onClick={() => setActiveView("diagnostics")}>Technical details</button>
       </nav>
@@ -143,6 +145,13 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         shiftId: selected.occurrence.shift.shiftId,
         startsAtUtc: selected.occurrence.shift.startsAtUtc,
         endsAtUtc: selected.occurrence.shift.endsAtUtc }} /></div>
+      <div hidden={activeView !== "targets"}><SupervisorLocalShiftTargets key={`targets:${selectedKey}`} scope={{
+        machineId: selected.machine.machineId,
+        shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
+        shiftId: selected.occurrence.shift.shiftId,
+        startsAtUtc: selected.occurrence.shift.startsAtUtc,
+        endsAtUtc: selected.occurrence.shift.endsAtUtc
+      }} /></div>
       <div hidden={activeView !== "activity"}><ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} /></div>
       <div hidden={activeView !== "diagnostics"}><section aria-label="Reporting evidence provenance">
         <h2>Reporting evidence provenance</h2>
