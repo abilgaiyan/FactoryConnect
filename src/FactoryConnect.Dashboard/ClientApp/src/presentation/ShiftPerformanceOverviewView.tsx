@@ -52,6 +52,25 @@ export function ShiftPerformanceOverviewView({ overview, showFilters = true }: S
         })}
       </section>}
 
+      {selected.length === 1 && <section aria-label="Selected shift OEE component chart">
+        <h3>OEE component chart</h3>
+        <p className="report-scope-note">Reported Availability, Performance, Quality and OEE for the exact selected shift. Missing, invalid or conflicting ratios are not plotted.</p>
+        {([["Availability", selected[0]!.shift.availability], ["Performance", selected[0]!.shift.performance], ["Quality", selected[0]!.shift.quality], ["OEE", selected[0]!.shift.oee]] as const).map(([label, metric]) => {
+          const invalidAvailability = selected[0]!.shift.availability.state === "calculated"
+            && selected[0]!.shift.availability.unit.toLowerCase() === "ratio"
+            && ratioAboveOne(String(selected[0]!.shift.availability.value));
+          const value = metric.state === "calculated" && metric.unit.toLowerCase() === "ratio"
+            ? Number(metric.value) : NaN;
+          const valid = !(invalidAvailability && (label === "Availability" || label === "OEE"))
+            && Number.isFinite(value) && value >= 0 && value <= 1;
+          return <div key={label} style={{ display: "grid", gridTemplateColumns: "minmax(7rem, 1fr) minmax(8rem, 3fr) auto", gap: "0.75rem", alignItems: "center", marginBottom: "0.5rem" }}>
+            <span>{label}</span>
+            {valid ? <progress max={1} value={value} aria-label={label + " for selected shift"} style={{ width: "100%" }} />
+              : <span>{invalidAvailability && (label === "Availability" || label === "OEE") ? "Evidence conflict" : "No qualified numeric ratio"}</span>}
+            <span>{valid ? formatPresentedMetric(metric).primary : "—"}</span>
+          </div>;
+        })}
+      </section>}
       {selected.length > 0 && <section aria-label="Shift OEE comparison">
         <h3>Shift OEE comparison</h3>
         <p className="report-scope-note">Each bar represents one machine and exact shift occurrence. Missing or conflicting OEE is not plotted.</p>
