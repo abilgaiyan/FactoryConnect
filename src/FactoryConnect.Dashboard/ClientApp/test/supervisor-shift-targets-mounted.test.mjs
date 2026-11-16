@@ -50,5 +50,5 @@ test('SQL target editor creates, revises, and reconciles ambiguous save without 
   assert.equal(writes[1].revisionNumber, 2);
   assert.equal(writes[1].expectedHeadRevisionId, history[0].targetRevisionId);
   assert.equal(writes[1].revisionReason, 'Updated shift plan');
-  assert.match(h.document.body.textContent, /planning only, not accepted production or OEE evidence/i);
+  assert.match(h.document.body.textContent, /never added together or treated as achieved production/i);
 });
