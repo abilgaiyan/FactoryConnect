@@ -90,6 +90,16 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   const head = history.reduce<Revision | null>((latest, item) =>
     !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null);
   const current = head;
+  const previous = current
+    ? history.filter(item => item.revisionNumber < current.revisionNumber)
+      .reduce<Revision | null>((latest, item) =>
+        !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null)
+    : null;
+  const comparableTargets = Boolean(current && previous &&
+    current.quantityUnit.trim().toLocaleLowerCase() === previous.quantityUnit.trim().toLocaleLowerCase() &&
+    current.productionOrder === previous.productionOrder &&
+    current.partNumber === previous.partNumber &&
+    current.operation === previous.operation);
   function copyCurrentIntoRevision() {
     if (!current || loading || loadError || saving || pendingId) return;
     setQuantity(String(current.targetQuantity));
@@ -148,6 +158,11 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
         <p><strong>{current.targetQuantity} {current.quantityUnit}</strong> · Revision {current.revisionNumber}</p>
         <p>Order {current.productionOrder || "—"} · Part {current.partNumber || "—"} · Operation {current.operation || "—"}</p>
         <p>Updated {current.recordedAtUtc} by {current.enteredBy}</p>
+        {previous && <p aria-label="Target revision comparison">
+          {comparableTargets
+            ? `Change from revision ${previous.revisionNumber}: ${current.targetQuantity - previous.targetQuantity >= 0 ? "+" : ""}${Number((current.targetQuantity - previous.targetQuantity).toFixed(3))} ${current.quantityUnit} (planning target change only)`
+            : `Revision ${previous.revisionNumber} used a different unit or production context; numeric target change is not comparable.`}
+        </p>}
         <p>Planning goal only — no actual achieved quantity or target attainment is established.</p>
       </section> : <p>No shift target has been entered.</p>}
     <h3>Revision history</h3>
