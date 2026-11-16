@@ -163,7 +163,10 @@ public sealed class ProductionQuantityFactProcessingRuntime
 
     private void ValidateBatch(IReadOnlyList<DurableProductionQuantityEvidence> batch)
     {
-        ObservationPosition? previous = null;
+        if (batch.Count > _batchSize)
+            throw new InvalidDataException("Quantity evidence reader exceeded the requested batch size.");
+
+        ObservationPosition? previous = _checkpoint?.Position;
         foreach (var item in batch)
         {
             ArgumentNullException.ThrowIfNull(item);
@@ -174,7 +177,7 @@ public sealed class ProductionQuantityFactProcessingRuntime
 
             if (previous is not null && item.Position <= previous)
             {
-                throw new InvalidOperationException("Durable quantity evidence positions must be strictly increasing.");
+                throw new InvalidOperationException("Durable quantity evidence must advance strictly beyond the checkpoint and within the batch.");
             }
 
             previous = item.Position;
