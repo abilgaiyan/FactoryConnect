@@ -10,7 +10,7 @@ $dest=Join-Path $destDir 'Watch-FactoryConnectStartup.ps1'
 $configDest=Join-Path $destDir 'startup.config.json'
 $taskName='FactoryConnect Startup Supervisor'
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Supervisor source missing' }
-if (-not (Test-Path -LiteralPath (Join-Path $config.installRoot 'current\Start-FactoryConnectRuntime.ps1'))) { throw 'Runtime launcher missing' }
+if ($config.enableRuntime -ne $false -and -not (Test-Path -LiteralPath (Join-Path $config.installRoot 'current\Start-FactoryConnectRuntime.ps1'))) { throw 'Runtime launcher missing' }
 if (-not $Install) {
   Write-Host 'PREVIEW ONLY. No changes made.'
   Write-Host "Supervisor: $dest"
