@@ -62,6 +62,58 @@ public sealed class ProductionQuantityFactProcessingRuntimeTests
         Assert.Equal(3, store.PositionedMetricInputs.Count);
     }
 
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RejectsReaderBatchOutsideCheckpointOrSizeWithoutPublishing(bool oversized)
+    {
+        var machineId = new MachineId(new Guid("11111111-1111-1111-1111-111111111111"));
+        var streamId = new ObservationStreamId(machineId, "quantity");
+        var processorId = new ObservationProcessorId("quantity-reader-contract");
+        var store = new InMemoryProductionContextProcessingStore();
+        var source = new InMemoryProductionQuantityEvidenceReader();
+        source.Add(CreateDurableEvidence(machineId, streamId, 1, "Q1"));
+        var resolver = CreateShiftResolver();
+
+        Assert.Equal(1, await new ProductionQuantityFactProcessingRuntime(
+            processorId, source, resolver, store, streamId, 1).RunCycleAsync());
+
+        var beforeFacts = store.MetricFacts.Count;
+        var beforeInputs = store.PositionedMetricInputs.Count;
+        var items = oversized
+            ? new[]
+            {
+                CreateDurableEvidence(machineId, streamId, 2, "Q2"),
+                CreateDurableEvidence(machineId, streamId, 3, "Q3"),
+            }
+            : new[] { CreateDurableEvidence(machineId, streamId, 1, "Q1") };
+        var runtime = new ProductionQuantityFactProcessingRuntime(
+            processorId, new NonConformingQuantityReader(items),
+            resolver, store, streamId, 1);
+
+        if (oversized)
+            await Assert.ThrowsAsync<InvalidDataException>(() => runtime.RunCycleAsync());
+        else
+            await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.RunCycleAsync());
+
+        Assert.Equal(beforeFacts, store.MetricFacts.Count);
+        Assert.Equal(beforeInputs, store.PositionedMetricInputs.Count);
+        var checkpoint = await store.ReadCheckpointAsync(processorId, streamId, CancellationToken.None);
+        Assert.NotNull(checkpoint);
+        Assert.Equal(new ObservationPosition(1), checkpoint.Position);
+    }
+
+    private sealed class NonConformingQuantityReader(
+        IReadOnlyList<DurableProductionQuantityEvidence> items) : IProductionQuantityEvidenceReader
+    {
+        public Task<IReadOnlyList<DurableProductionQuantityEvidence>> ReadAsync(
+            ObservationStreamId streamId,
+            ObservationPosition? afterPosition,
+            int batchSize,
+            CancellationToken cancellationToken) => Task.FromResult(items);
+    }
+
     private static ShiftOccurrenceResolver CreateShiftResolver()
     {
         var assignment = new ShiftScheduleAssignment
