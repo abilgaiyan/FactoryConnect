@@ -50,7 +50,7 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving || loadError) return;
-    if (!/^(?:0|[1-9]\\d*)(?:\\.\\d{1,3})?$/.test(quantity) ||
+    if (!/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(quantity) ||
         !Number.isFinite(Number(quantity)) || Number(quantity) >= 1e15) {
       setStatus("Enter a nonnegative target with at most three decimal places."); return;
     }
