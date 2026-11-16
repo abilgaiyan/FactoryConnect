@@ -85,9 +85,11 @@ export function SupervisorLocalShiftTargets({ scope }: { readonly scope: Scope }
     URL.revokeObjectURL(href);
   }
 
-  const head = history.at(-1);
-  const current = history.reduce<Revision | null>((latest, item) =>
+  // Revision authority is the highest SQL revision number, not response array order.
+  // Use the same head for the visible plan and optimistic-concurrency writes.
+  const head = history.reduce<Revision | null>((latest, item) =>
     !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null);
+  const current = head;
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving || loading || loadError) return;
