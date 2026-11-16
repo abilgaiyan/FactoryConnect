@@ -22,7 +22,8 @@ export function ShiftPerformanceOverviewView({ overview, showFilters = true }: S
   const visibleGroups = overview.groups.map(group => ({
     ...group,
     machines: group.machines.filter(machine => !machineFilter || machineKey(machine) === machineFilter)
-      .map(machine => ({ ...machine, shifts: machine.shifts.filter(shift => !shiftFilter || shift.shift.shiftId === shiftFilter) })),
+      .map(machine => ({ ...machine, shifts: machine.shifts.filter(shift => !shiftFilter || shift.shift.shiftId === shiftFilter) }))
+      .filter(machine => !shiftFilter || machine.shifts.length > 0),
   })).filter(group => group.machines.length > 0);
   const selected = visibleGroups.flatMap(group => group.machines.flatMap(machine => machine.shifts.map(shift => ({ machine, shift }))));
   return (
