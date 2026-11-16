@@ -114,6 +114,13 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
       <div hidden={activeView !== "overview"}>
         <section aria-label="Shift target navigation" className="supervisor-detail">
           <h2>Production plan and actual evidence</h2>
+          <SupervisorLocalShiftTargets key={`overview-target:${selectedKey}`} summaryOnly scope={{
+            machineId: selected.machine.machineId,
+            shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
+            shiftId: selected.occurrence.shift.shiftId,
+            startsAtUtc: selected.occurrence.shift.startsAtUtc,
+            endsAtUtc: selected.occurrence.shift.endsAtUtc
+          }} />
           <p>The current SQL planning target is available under Shift targets. Verified achieved quantity and target attainment are not established by this OEE overview.</p>
           <section aria-label="Actual production evidence readiness">
             <h3>Actual production evidence readiness</h3>
