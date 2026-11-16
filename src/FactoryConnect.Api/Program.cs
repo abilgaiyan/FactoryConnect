@@ -64,6 +64,7 @@ app.MapCurrentMachineStateEndpoints();
 app.MapMachineActivityReports();
 app.MapMachineCounterReports();
 app.MapSupervisorProductionEntryEndpoints();
+app.MapSupervisorShiftTargetEndpoints();
 
 await ApiPersistenceStartup.RunAsync(
     app.Services,
