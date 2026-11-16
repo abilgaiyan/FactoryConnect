@@ -47,6 +47,11 @@ async function selectOccurrence(h, index = 1) { const select = control(h,'Exact 
 function mockFetch(t, fetcher) { const previous = globalThis.fetch; globalThis.fetch = (url, options) => {
   if (String(url).startsWith('/api/supervisor/v1/machines/') && (String(url).includes('/entries?') || String(url).includes('/reviews?') || String(url).includes('/shift-targets?')))
     return Promise.resolve(Response.json([]));
+  if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/quantity-source-cut?'))
+    return Promise.resolve(Response.json({
+      classification: 'HistoricalMetricInputSourceInventoryNotQualifiedActual',
+      sourceCount: 0, sources: []
+    }));
   return fetcher(url, options);
 }; t.after(() => { globalThis.fetch = previous; }); }
 function deferred() { let resolve, reject; const promise = new Promise((r,j) => {resolve=r;reject=j;}); return {promise,resolve,reject}; }
