@@ -27,7 +27,63 @@ public static class SupervisorShiftTargetEndpoints
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
             ReadQuantitySourceCutAsync).WithName("ReadLocalSupervisorQuantitySourceCut")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-shift-production",
+            ReadAcceptedShiftProductionAsync).WithName("ReadLocalAcceptedShiftProduction")
+            .WithGroupName("supervisor-local-v1");
         return endpoints;
+    }
+
+    private static async Task<IResult> ReadAcceptedShiftProductionAsync(
+        Guid machineId, string assignmentId, string shiftId,
+        DateTimeOffset shiftStartsAtUtc, DateTimeOffset shiftEndsAtUtc,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            var publication = await new SqlServerAcceptedShiftProductionReader(connectionString)
+                .ReadAsync(machineId, assignmentId, shiftId, shiftStartsAtUtc,
+                    shiftEndsAtUtc, cancellationToken);
+            if (publication is null)
+                return Results.Ok(new { classification = "AcceptedProductionUnavailable",
+                    reason = "NoQualifiedPublicationForShift" });
+            return Results.Ok(new
+            {
+                classification = "AcceptedShiftProduction",
+                publication.PublicationId,
+                publication.MachineId,
+                publication.ShiftScheduleAssignmentId,
+                publication.ShiftId,
+                publication.ShiftStartsAtUtc,
+                publication.ShiftEndsAtUtc,
+                publication.ProductionOrder,
+                publication.PartNumber,
+                publication.Operation,
+                publication.QuantityUnit,
+                publication.AcceptedProducedQuantity,
+                publication.Coverage,
+                publication.AuthorityReference,
+                publication.PublishedAtUtc
+            });
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidShiftOccurrence" });
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Problem(statusCode: 409,
+                title: "Accepted production publication inconsistent");
+        }
+        catch (SqlException)
+        {
+            return Results.Problem(statusCode: 503,
+                title: "Accepted production SQL projection unavailable");
+        }
     }
 
     private static async Task<IResult> ReadQuantitySourceCutAsync(
