@@ -5,6 +5,8 @@ param(
     [switch]$Dashboard,
     [switch]$ApiOnly,
     [switch]$DevUi,
+    [switch]$EnableSupervisorEntries,
+    [string]$SupervisorOperatorId,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
     [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
     [string]$MoxaDeviceKey = 'MOXA-001',
@@ -59,6 +61,12 @@ if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace(
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
+if ($EnableSupervisorEntries -and [string]::IsNullOrWhiteSpace($SupervisorOperatorId)) {
+    throw '-EnableSupervisorEntries requires -SupervisorOperatorId for audit attribution.'
+}
+if ($EnableSupervisorEntries -and $SupervisorOperatorId.Length -gt 200) {
+    throw 'SupervisorOperatorId must not exceed 200 characters.'
+}
 $startDashboard = -not $ApiOnly
 if ($DevUi -and ($UiPort -eq $ApiPort -or $UiPort -eq $DashboardPort)) { throw 'Vite, API and Dashboard ports must differ.' }
 if ($startDashboard -and $ApiPort -eq $DashboardPort) { throw 'API and Dashboard ports must differ.' }
@@ -119,7 +127,7 @@ $apiUrl = "http://127.0.0.1:$ApiPort"
 $dashUrl = "http://127.0.0.1:$DashboardPort"
 $uiUrl = "http://127.0.0.1:$UiPort"
 try {
-    $apiProcess = Start-Service $apiProject $apiUrl @{
+    $apiEnvironment = @{
         'Persistence__Provider' = 'SqlServer'
         'PersistenceProviders__SqlServer__ConnectionString' = $connectionString
         'Commissioning__ReadOnlyConnectionString' = $connectionString
@@ -133,14 +141,22 @@ try {
         'MTConnect__Machines__1__BaseUri' = 'http://127.0.0.1:5000'
         'MTConnect__Machines__1__FromSequence' = '1'
         'MTConnect__Machines__1__PollingInterval' = '00:00:01'
-    } $false
+    }
+    if ($EnableSupervisorEntries) {
+        $apiEnvironment['SupervisorLocalEntry__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalEntry__OperatorId'] = $SupervisorOperatorId
+        $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
+    }
+    $apiProcess = Start-Service $apiProject $apiUrl $apiEnvironment $false
     Wait-Health "$apiUrl/health" $apiProcess 60
     Write-Host "API ready: $apiUrl"
     if ($startDashboard) {
-        $dashboardProcess = Start-Service $dashboardProject $dashUrl @{
+        $dashboardEnvironment = @{
             'Dashboard__ReportingApiBaseAddress' = "$apiUrl/"
             'Dashboard__RequestTimeout' = '00:00:30'
-        } $true
+        }
+        if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
+        $dashboardProcess = Start-Service $dashboardProject $dashUrl $dashboardEnvironment $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
         Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
         Write-Host "React UI (built): $dashUrl/"
@@ -160,7 +176,11 @@ try {
             Write-Host 'Vite is development-only. The built Dashboard UI remains separate on port 5090.'
         }
     }
-    Write-Host 'Supervisor writes remain disabled unless separately and explicitly configured; this launcher does not enable them.'
+    if ($EnableSupervisorEntries) {
+        Write-Host 'Local supervisor entry writes requested for explicit operator identity; API commissioning access rules still apply.'
+    } else {
+        Write-Host 'Supervisor writes are disabled (default). Use -EnableSupervisorEntries and -SupervisorOperatorId to opt in.'
+    }
     Write-Host 'Ctrl+C stops the processes started by this launcher.'
     while ($true) {
         foreach ($process in $owned) {
