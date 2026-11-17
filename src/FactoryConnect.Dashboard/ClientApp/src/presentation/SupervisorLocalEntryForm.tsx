@@ -11,6 +11,7 @@ type Scope = { machineId: string; shiftScheduleAssignmentId: string; shiftId: st
 
 export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [entriesReadState, setEntriesReadState] = useState<"loading" | "ready" | "error">("loading");
   const [order, setOrder] = useState("");
   const [part, setPart] = useState("");
   const [operation, setOperation] = useState("");
@@ -70,12 +71,13 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     const body: unknown = await response.json();
     if (!Array.isArray(body)) throw new Error("Unexpected supervisor entry response");
     setEntries(body as Entry[]);
+    setEntriesReadState("ready");
   }
   useEffect(() => {
     const controller = new AbortController();
-    setEntries([]); setStatus("");
+    setEntries([]); setEntriesReadState("loading"); setStatus("");
     void refresh(controller.signal).catch(error => {
-      if (!controller.signal.aborted) setStatus(String(error));
+      if (!controller.signal.aborted) { setEntriesReadState("error"); setStatus(String(error)); }
     });
     return () => controller.abort();
   }, [url, scope.startsAtUtc, scope.endsAtUtc]);
@@ -143,6 +145,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         await refresh();
         setStatus("Entry saved to SQL. It is not published as CNC evidence or OEE.");
       } catch {
+        setEntriesReadState("error");
         setStatus("Entry saved to SQL, but the saved-entry list could not be refreshed. Use Refresh entries to view it.");
       }
     } catch (error) {
@@ -162,10 +165,12 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
       <label>Rejected quantity<input required type="number" min="0" step="1" value={rejected} onChange={event => { setRejected(event.target.value); setPendingId(null); }} /></label>
       <label>Note<textarea maxLength={2000} value={note} onChange={event => { setNote(event.target.value); setPendingId(null); }} /></label>
       <button type="submit" disabled={loading}>{loading ? "Saving…" : pendingId ? "Retry same entry" : "Save production entry"}</button>
-      <button type="button" disabled={loading} onClick={() => { void refresh().then(() => setStatus("Entries refreshed."), error => setStatus(String(error))); }}>Refresh entries</button>
+      <button type="button" disabled={loading} onClick={() => { setEntriesReadState("loading"); void refresh().then(() => setStatus("Entries refreshed."), error => { setEntriesReadState("error"); setStatus(String(error)); }); }}>Refresh entries</button>
     </form>
     {status && <p role="status">{status}</p>}
-    <h3>Saved entries ({filteredEntries.length} of {entries.length})</h3>
+    <h3>Saved entries {entriesReadState === "ready" ? `(${filteredEntries.length} of ${entries.length})` : "(unverified)"}</h3>
+    {entriesReadState === "loading" && <p role="status">Loading saved entries for this shift…</p>}
+    {entriesReadState === "error" && <p role="alert">Saved-entry history is unavailable. An empty list cannot be interpreted as no production. Refresh entries to retry.</p>}
     <p>Review entries for this exact machine and shift. Filters affect only the display, not saved records or OEE.</p>
     <label>Filter production order<select value={reviewOrder} onChange={event => { setReviewOrder(event.target.value); setReviewOperation(""); }}>
       <option value="">All production orders</option>
@@ -182,9 +187,9 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     </select></label>
     <button type="button" disabled={!reviewOrder && !reviewOperation && !reviewFilter && reviewQuantityStatus === "all"} onClick={() => { setReviewOrder(""); setReviewOperation(""); setReviewFilter(""); setReviewQuantityStatus("all"); }}>Clear review filters</button>
     <label>Search part, operation, order or supervisor<input type="search" value={reviewFilter} onChange={event => setReviewFilter(event.target.value)} /></label>
-    <button type="button" disabled={filteredEntries.length === 0} onClick={exportFilteredEntries}>Export filtered entries (CSV)</button>
-    <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>
-    {orderBreakdown.length > 0 && <section aria-label="Declared quantities by production order">
+    <button type="button" disabled={entriesReadState !== "ready" || filteredEntries.length === 0} onClick={exportFilteredEntries}>Export filtered entries (CSV)</button>
+    {entriesReadState === "ready" && <p aria-label="Filtered supervisor declaration totals">Declared good: {declaredGood.toString()} · Declared rejected: {declaredRejected.toString()} · Quantified entries: {quantifiedEntries.length} of {filteredEntries.length}. These are sums of declarations, not reconciled unique production or OEE.</p>}
+    {entriesReadState === "ready" && orderBreakdown.length > 0 && <section aria-label="Declared quantities by production order">
       <h4>Production order breakdown</h4>
       <p>Summed supervisor declarations only. Multiple declarations may refer to overlapping production; these totals are not verified OEE evidence.</p>
       <table>
@@ -195,7 +200,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         </tr>)}</tbody>
       </table>
     </section>}
-    {operationBreakdown.length > 0 && <section aria-label="Declared quantities by operation">
+    {entriesReadState === "ready" && operationBreakdown.length > 0 && <section aria-label="Declared quantities by operation">
       <h4>Operation breakdown</h4>
       <p>Totals include only the displayed supervisor declarations. Repeated or overlapping entries are not deduplicated or qualified for OEE.</p>
       <table>
@@ -206,8 +211,8 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         </tr>)}</tbody>
       </table>
     </section>}
-    <SupervisorLocalReviewPanel scope={scope} entries={entries} />
-    {entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
+    {entriesReadState === "ready" && <SupervisorLocalReviewPanel scope={scope} entries={entries} />}
+    {entriesReadState !== "ready" ? null : entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
       <ul>{filteredEntries.map(entry => <li key={entry.entryId}>
         <details>
