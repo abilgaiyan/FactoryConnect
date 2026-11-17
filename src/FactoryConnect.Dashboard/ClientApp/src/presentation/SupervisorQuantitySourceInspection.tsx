@@ -35,6 +35,17 @@ export function quantityEvidenceDiagnostics(source: SourceRow): string[] {
   return issues;
 }
 
+/** Actionable source-level gaps; never an accepted-production qualification. */
+export function quantityEvidenceGapCounts(sources: readonly SourceRow[]): { issue: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const source of sources) {
+    for (const issue of quantityEvidenceDiagnostics(source)) {
+      counts.set(issue, (counts.get(issue) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([issue, count]) => ({ issue, count }));
+}
+
 function exportQuantityEvidenceCsv(machine: ShiftPerformanceMachine, shift: ShiftPerformanceShift, inventory: Inventory) {
   const cell = (value: string) => {
     const safe = /^\s*[=+@-]/.test(value) ? "'" + value : value;
@@ -123,6 +134,12 @@ export function SupervisorQuantitySourceInspection({ machine, shift }: {
       <button type="button" onClick={() => exportQuantityEvidenceCsv(machine, shift, inventory)}>Export historical source evidence (CSV)</button>
       <p>{inventory.sourceCount} historical source record(s). No accepted-quantity total is calculated.</p>
       <p>Source-level consistency: {inventory.sources.filter(source => quantityEvidenceDiagnostics(source).length > 0).length} of {inventory.sourceCount} records have missing or inconsistent quantity/context fields. Even zero flagged records do not establish accepted production.</p>
+      {quantityEvidenceGapCounts(inventory.sources).length > 0 && <section aria-label="Quantity evidence gaps by reason">
+        <h4>Evidence gaps to investigate</h4>
+        <ul>{quantityEvidenceGapCounts(inventory.sources).map(({ issue, count }) =>
+          <li key={issue}>{issue}: {count} source record(s)</li>)}</ul>
+        <p>Resolve these source inconsistencies before assessing authority and shift coverage. This list is diagnostic, not a production approval.</p>
+      </section>}
       {inventory.sources.map(source => <article key={source.evidenceId}>
         <p>Evidence {source.evidenceId} · {source.occurredAtUtc}</p>
         <p>Produced increment: {source.partCountIncrement ?? "Not supplied"} · Good: {source.goodQuantity ?? "Not supplied"} · Rejected: {source.rejectedQuantity ?? "Not supplied"}</p>
