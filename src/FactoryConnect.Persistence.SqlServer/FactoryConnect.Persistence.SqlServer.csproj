@@ -4,6 +4,8 @@
     <AssemblyName>FactoryConnect.Persistence.SqlServer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Sql\032_SupervisorShiftTarget.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.032_SupervisorShiftTarget.sql" />
+    <EmbeddedResource Include="Sql\033_SupervisorAcceptedShiftProduction.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.033_SupervisorAcceptedShiftProduction.sql" />
     <EmbeddedResource Include="Sql\031_SupervisorDowntimeReason.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.031_SupervisorDowntimeReason.sql" />
     <EmbeddedResource Include="Sql\030_SupervisorDowntimeExplanationReview.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.030_SupervisorDowntimeExplanationReview.sql" />
     <EmbeddedResource Include="Sql\029_SupervisorDowntimeExplanation.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.029_SupervisorDowntimeExplanation.sql" />
