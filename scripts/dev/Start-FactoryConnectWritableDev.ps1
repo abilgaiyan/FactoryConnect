@@ -6,6 +6,7 @@ param(
     [switch]$ApiOnly,
     [switch]$DevUi,
     [switch]$EnableSupervisorEntries,
+    [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
     [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
@@ -147,6 +148,10 @@ try {
         $apiEnvironment['SupervisorLocalEntry__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
     }
+    if ($EnableDowntimeReasonAdministration) {
+        $apiEnvironment['SupervisorLocalDowntimeReasons__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalDowntimeReasons__WriteConnectionString'] = $connectionString
+    }
     $apiProcess = Start-Service $apiProject $apiUrl $apiEnvironment $false
     Wait-Health "$apiUrl/health" $apiProcess 60
     Write-Host "API ready: $apiUrl"
@@ -156,6 +161,9 @@ try {
             'Dashboard__RequestTimeout' = '00:00:30'
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
+        if ($EnableDowntimeReasonAdministration) {
+            $dashboardEnvironment['SupervisorLocalDowntimeReasons__EnableGateway'] = 'true'
+        }
         $dashboardProcess = Start-Service $dashboardProject $dashUrl $dashboardEnvironment $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
         Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
