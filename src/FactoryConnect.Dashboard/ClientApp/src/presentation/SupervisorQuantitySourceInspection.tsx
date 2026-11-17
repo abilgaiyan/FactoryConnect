@@ -35,6 +35,39 @@ export function quantityEvidenceDiagnostics(source: SourceRow): string[] {
   return issues;
 }
 
+function exportQuantityEvidenceCsv(machine: ShiftPerformanceMachine, shift: ShiftPerformanceShift, inventory: Inventory) {
+  const cell = (value: string) => {
+    const safe = /^[\\s]*[=+@-]/.test(value) ? "'" + value : value;
+    return '"' + safe.replace(/"/g, '""') + '"';
+  };
+  const headers = ["Classification", "Machine ID", "Site ID", "Shift ID", "Shift assignment",
+    "Shift start UTC", "Shift end UTC", "Processor", "Stream", "Checkpoint position",
+    "Evidence ID", "Occurred UTC", "Produced increment", "Good quantity", "Rejected quantity",
+    "Production order", "Part", "Operation", "Contributing positions", "Source diagnostics"];
+  const context = [inventory.classification, machine.machineId, machine.siteId, shift.shift.shiftId,
+    shift.shift.shiftScheduleAssignmentId, shift.shift.startsAtUtc, shift.shift.endsAtUtc,
+    shift.sourceRevision?.processorId ?? "", shift.sourceRevision?.streamKey ?? "",
+    String(shift.sourceRevision?.position ?? "")];
+  const rows = inventory.sources.map(source => [...context, source.evidenceId, source.occurredAtUtc,
+    source.partCountIncrement === null ? "" : String(source.partCountIncrement),
+    source.goodQuantity === null ? "" : String(source.goodQuantity),
+    source.rejectedQuantity === null ? "" : String(source.rejectedQuantity),
+    source.productionOrderId ?? "", source.partId ?? "", source.operationId ?? "",
+    source.contributingPositions.join(";"), quantityEvidenceDiagnostics(source).join(";")]);
+  const csv = [
+    ["Notice", "Historical source inventory only; not qualified actual production or target attainment"],
+    headers, ...rows
+  ].map(row => row.map(cell).join(",")).join("\\r\\n");
+  const url = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "supervisor-quantity-source-evidence.csv";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function SupervisorQuantitySourceInspection({ machine, shift }: {
   readonly machine: ShiftPerformanceMachine;
   readonly shift: ShiftPerformanceShift;
@@ -87,6 +120,7 @@ export function SupervisorQuantitySourceInspection({ machine, shift }: {
     <button type="button" onClick={() => setRefresh(value => value + 1)}>Refresh quantity source inventory</button>
     {status && <p role="status">{status}</p>}
     {inventory && <>
+      <button type="button" onClick={() => exportQuantityEvidenceCsv(machine, shift, inventory)}>Export historical source evidence (CSV)</button>
       <p>{inventory.sourceCount} historical source record(s). No accepted-quantity total is calculated.</p>
       <p>Source-level consistency: {inventory.sources.filter(source => quantityEvidenceDiagnostics(source).length > 0).length} of {inventory.sourceCount} records have missing or inconsistent quantity/context fields. Even zero flagged records do not establish accepted production.</p>
       {inventory.sources.map(source => <article key={source.evidenceId}>
