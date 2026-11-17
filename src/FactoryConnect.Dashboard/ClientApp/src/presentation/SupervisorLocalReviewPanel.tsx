@@ -92,6 +92,6 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
           </div> : <button type="button" disabled={busy || pending !== null} onClick={() => { setSelected(entry.entryId); setReason(""); }}>Review entry</button>}
         <SupervisorLocalRevisionPanel machineId={scope.machineId} entry={entry} startsAtUtc={scope.startsAtUtc} endsAtUtc={scope.endsAtUtc} />
       </li>;
-    })}</ul></>
+    })}</ul></>}
   </section>;
 }
