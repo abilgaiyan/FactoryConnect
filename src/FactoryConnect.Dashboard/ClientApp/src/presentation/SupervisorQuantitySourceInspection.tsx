@@ -18,6 +18,23 @@ interface Inventory {
   sources: SourceRow[];
 }
 
+/** Diagnostic only; passing these checks does not qualify accepted production. */
+export function quantityEvidenceDiagnostics(source: SourceRow): string[] {
+  const issues: string[] = [];
+  const produced = source.partCountIncrement;
+  const good = source.goodQuantity;
+  const rejected = source.rejectedQuantity;
+  if (produced === null) issues.push("Produced increment missing");
+  if (good === null) issues.push("Good quantity missing");
+  if (rejected === null) issues.push("Rejected quantity missing");
+  if (produced !== null && good !== null && rejected !== null &&
+      good + rejected !== produced)
+    issues.push("Good plus rejected does not equal produced increment");
+  if (!source.productionOrderId || !source.partId || !source.operationId)
+    issues.push("Production order, part or operation context incomplete");
+  return issues;
+}
+
 export function SupervisorQuantitySourceInspection({ machine, shift }: {
   readonly machine: ShiftPerformanceMachine;
   readonly shift: ShiftPerformanceShift;
@@ -71,11 +88,15 @@ export function SupervisorQuantitySourceInspection({ machine, shift }: {
     {status && <p role="status">{status}</p>}
     {inventory && <>
       <p>{inventory.sourceCount} historical source record(s). No accepted-quantity total is calculated.</p>
+      <p>Source-level consistency: {inventory.sources.filter(source => quantityEvidenceDiagnostics(source).length > 0).length} of {inventory.sourceCount} records have missing or inconsistent quantity/context fields. Even zero flagged records do not establish accepted production.</p>
       {inventory.sources.map(source => <article key={source.evidenceId}>
         <p>Evidence {source.evidenceId} · {source.occurredAtUtc}</p>
         <p>Produced increment: {source.partCountIncrement ?? "Not supplied"} · Good: {source.goodQuantity ?? "Not supplied"} · Rejected: {source.rejectedQuantity ?? "Not supplied"}</p>
         <p>Order {source.productionOrderId ?? "—"} · Part {source.partId ?? "—"} · Operation {source.operationId ?? "—"}</p>
         <p>Contribution positions: {source.contributingPositions.join(", ")}</p>
+        <p>Diagnostic: {quantityEvidenceDiagnostics(source).length
+          ? quantityEvidenceDiagnostics(source).join("; ")
+          : "Basic quantity/context checks passed; acceptance and complete coverage remain unverified"}</p>
       </article>)}
     </>}
   </section>;
