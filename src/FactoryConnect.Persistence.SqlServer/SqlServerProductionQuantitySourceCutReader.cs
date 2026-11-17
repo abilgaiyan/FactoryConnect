@@ -68,9 +68,7 @@ internal sealed partial class SqlServerMetricAggregationStore : IProductionQuant
         var sources = relevant
             .GroupBy(item => item.Fact.SourceQuantityEvidenceId!.Value)
             .Select(group => ReconstructSource(group.Key, group.OrderBy(item => item.Position).ToArray()))
-            .Select(static entry => entry ?? throw new InvalidOperationException(
-                "Quantity source has good/rejected contributions without a produced increment at the requested aggregation cut."))
-            .OrderBy(entry => entry.ContributingPositions[0])
+             .OrderBy(entry => entry.ContributingPositions[0])
             .ThenBy(entry => entry.Evidence.Id.Value, StringComparer.Ordinal)
             .ToArray();
 
@@ -92,7 +90,7 @@ internal sealed partial class SqlServerMetricAggregationStore : IProductionQuant
             _ => throw new InvalidOperationException("Unsupported operational metric period type."),
         };
 
-    internal static ProductionQuantitySourceEntry? ReconstructSource(
+    internal static ProductionQuantitySourceEntry ReconstructSource(
         ProductionQuantityEvidenceId sourceId,
         IReadOnlyList<PositionedMetricInputFact> items)
     {
