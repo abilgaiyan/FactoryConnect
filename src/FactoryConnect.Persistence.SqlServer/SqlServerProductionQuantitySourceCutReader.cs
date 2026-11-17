@@ -68,8 +68,8 @@ internal sealed partial class SqlServerMetricAggregationStore : IProductionQuant
         var sources = relevant
             .GroupBy(item => item.Fact.SourceQuantityEvidenceId!.Value)
             .Select(group => ReconstructSource(group.Key, group.OrderBy(item => item.Position).ToArray()))
-            .Where(static entry => entry is not null)
-            .Select(static entry => entry!)
+            .Select(static entry => entry ?? throw new InvalidOperationException(
+                "Quantity source has good/rejected contributions without a produced increment at the requested aggregation cut."))
             .OrderBy(entry => entry.ContributingPositions[0])
             .ThenBy(entry => entry.Evidence.Id.Value, StringComparer.Ordinal)
             .ToArray();
@@ -99,9 +99,10 @@ internal sealed partial class SqlServerMetricAggregationStore : IProductionQuant
         var produced = SingleOrNull(items, MetricInputFactKeys.PartCountIncrement);
         if (produced is null)
         {
-            // Good/rejected evidence without a produced source is not an independently
-            // publishable reference-time source.
-            return null;
+            // Do not silently drop orphaned good/rejected evidence from the inventory.
+            // The caller must fail closed rather than presenting an incomplete source cut.
+            throw new InvalidOperationException(
+                "Quantity source has good/rejected contributions without a produced increment at the requested aggregation cut.");
         }
 
         var good = SingleOrNull(items, MetricInputFactKeys.GoodQuantity);
