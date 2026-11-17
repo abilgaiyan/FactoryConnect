@@ -18,7 +18,7 @@ export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: Shif
 
 function exportShiftOeeCsv(overview: ShiftPerformanceOverview, machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift) {
   const cell = (value: string) => {
-    const safe = /^\\s*[=+@-]/.test(value) ? "'" + value : value;
+    const safe = /^\s*[=+@-]/.test(value) ? "'" + value : value;
     return '"' + safe.replace(/"/g, '""') + '"';
   };
   const columns = ["Production day", "Machine ID", "Reporting processor", "Site ID", "Shift ID", "Shift assignment", "Shift start UTC", "Shift end UTC", "Metric", "Status", "Value", "Unit", "Reason code", "Reason operand"];
@@ -32,8 +32,8 @@ function exportShiftOeeCsv(overview: ShiftPerformanceOverview, machine: ShiftPer
     metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonCode ?? "" : "",
     metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonOperandName ?? "" : "",
   ]);
-  const csv = [columns, ...rows].map(row => row.map(cell).join(",")).join("\\r\\n");
-  const href = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+  const csv = [columns, ...rows].map(row => row.map(cell).join(",")).join("\r\n");
+  const href = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
   const anchor = document.createElement("a");
   anchor.href = href;
   anchor.download = "supervisor-shift-oee.csv";
