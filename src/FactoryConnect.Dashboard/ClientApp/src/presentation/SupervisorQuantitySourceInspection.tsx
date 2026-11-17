@@ -37,7 +37,7 @@ export function quantityEvidenceDiagnostics(source: SourceRow): string[] {
 
 function exportQuantityEvidenceCsv(machine: ShiftPerformanceMachine, shift: ShiftPerformanceShift, inventory: Inventory) {
   const cell = (value: string) => {
-    const safe = /^[\\s]*[=+@-]/.test(value) ? "'" + value : value;
+    const safe = /^\s*[=+@-]/.test(value) ? "'" + value : value;
     return '"' + safe.replace(/"/g, '""') + '"';
   };
   const headers = ["Classification", "Machine ID", "Site ID", "Shift ID", "Shift assignment",
@@ -57,8 +57,8 @@ function exportQuantityEvidenceCsv(machine: ShiftPerformanceMachine, shift: Shif
   const csv = [
     ["Notice", "Historical source inventory only; not qualified actual production or target attainment"],
     headers, ...rows
-  ].map(row => row.map(cell).join(",")).join("\\r\\n");
-  const url = URL.createObjectURL(new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+  ].map(row => row.map(cell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = "supervisor-quantity-source-evidence.csv";
