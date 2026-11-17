@@ -10,6 +10,7 @@ import { MachineActivityEvidence } from "./MachineActivityEvidence.tsx";
 import { SupervisorLocalEntryForm } from "./SupervisorLocalEntryForm.tsx";
 import { SupervisorLocalShiftTargets } from "./SupervisorLocalShiftTargets.tsx";
 import { SupervisorQuantitySourceInspection } from "./SupervisorQuantitySourceInspection.tsx";
+import { SupervisorAcceptedProductionReadout } from "./SupervisorAcceptedProductionReadout.tsx";
 
 export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift): string {
   return JSON.stringify([machine.machineId, machine.processorId, machine.siteId, machine.productionLineId,
@@ -122,7 +123,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
             startsAtUtc: selected.occurrence.shift.startsAtUtc,
             endsAtUtc: selected.occurrence.shift.endsAtUtc
           }} />
-          <p>The current SQL planning target is available under Shift targets. Verified achieved quantity and target attainment are not established by this OEE overview.</p>
+          <p>The SQL planning target and separately published accepted actual are shown below. Target attainment is not yet integrated into this OEE overview.</p>
           <section aria-label="Actual production evidence readiness">
             <h3>Actual production evidence readiness</h3>
             <dl>
@@ -141,6 +142,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
               <dt>Verified produced quantity</dt><dd>Not supplied by this reporting response; no actual quantity or attainment percentage calculated</dd>
             </dl>
           </section>
+          <SupervisorAcceptedProductionReadout key={`accepted:${selectedKey}`} machine={selected.machine} shift={selected.occurrence} />
           <SupervisorQuantitySourceInspection key={`quantity:${selectedKey}`} machine={selected.machine} shift={selected.occurrence} />
           <button type="button" onClick={() => setActiveView("targets")}>View current shift target</button>
           <button type="button" onClick={() => setActiveView("production")}>View supervisor production entries</button>
