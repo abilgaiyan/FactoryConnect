@@ -8,6 +8,7 @@ type Pending = { entryId: string; decisionId: string; decision: "Approved" | "Re
 
 export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope: Scope; readonly entries: readonly Declaration[] }) {
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewReadState, setReviewReadState] = useState<"loading" | "ready" | "error">("loading");
   const [status, setStatus] = useState("");
   const [reason, setReason] = useState("");
   const [selected, setSelected] = useState("");
@@ -23,13 +24,14 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
     const data: unknown = await response.json();
     if (!Array.isArray(data)) throw new Error("Invalid review response");
     setReviews(data as Review[]);
+    setReviewReadState("ready");
   }
 
   useEffect(() => {
     const controller = new AbortController();
-    setReviews([]); setStatus(""); setSelected(""); setReason(""); setPending(null);
+    setReviews([]); setReviewReadState("loading"); setStatus(""); setSelected(""); setReason(""); setPending(null);
     void refresh(controller.signal).catch(error => {
-      if (!controller.signal.aborted) setStatus(String(error));
+      if (!controller.signal.aborted) { setReviewReadState("error"); setStatus(String(error)); }
     });
     return () => controller.abort();
   }, [base, scope.startsAtUtc, scope.endsAtUtc]);
@@ -41,7 +43,7 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
   const visibleEntries = entries.filter(entry => decisionFilter === "All" || (byEntry.get(entry.entryId)?.decision ?? "Pending") === decisionFilter);
 
   async function decide(entryId: string, decision: "Approved" | "Rejected") {
-    if (busy) return;
+    if (busy || reviewReadState !== "ready") return;
     const trimmed = reason.trim();
     if (!trimmed) { setStatus("A review reason is required."); return; }
     if (pending && (pending.entryId !== entryId || pending.decision !== decision || pending.reason !== trimmed)) {
@@ -58,19 +60,20 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
       if (!response.ok) throw new Error(`Decision not confirmed (HTTP ${response.status}). Refresh before changing the decision.`);
       setPending(null); setReason(""); setSelected("");
       try { await refresh(); setStatus("Local review decision saved. No production quantity or OEE was published."); }
-      catch { setStatus("Decision saved, but review refresh failed. Use Refresh reviews."); }
+      catch { setReviewReadState("error"); setStatus("Decision saved, but review refresh failed. Use Refresh reviews."); }
     } catch (error) { setStatus(String(error)); }
     finally { setBusy(false); }
   }
 
   return <section aria-label="Local declaration review">
     <h3>Declaration review · local commissioning only</h3>
-    <p>Pending: {pendingCount} · Approved: {approvedCount} · Rejected: {rejectedCount}. Decisions are immutable local review records, not authenticated factory approvals or qualified OEE evidence.</p>
+    {reviewReadState === "ready" ? <p>Pending: {pendingCount} · Approved: {approvedCount} · Rejected: {rejectedCount}. Decisions are immutable local review records, not authenticated factory approvals or qualified OEE evidence.</p> : <p role={reviewReadState === "error" ? "alert" : "status"}>Review decisions {reviewReadState === "error" ? "unavailable" : "loading"}; approval status cannot be inferred as Pending. Refresh reviews to retry.</p>}
     <button type="button" disabled={busy} onClick={() => {
-      void refresh().then(() => { setPending(null); setStatus("Review decisions refreshed."); }, error => setStatus(String(error)));
+      setReviewReadState("loading");
+      void refresh().then(() => { setPending(null); setStatus("Review decisions refreshed."); }, error => { setReviewReadState("error"); setStatus(String(error)); });
     }}>Refresh reviews</button>
     {status && <p role="status">{status}</p>}
-    <label>Filter review decisions<select aria-label="Filter review decisions" value={decisionFilter} onChange={event => setDecisionFilter(event.target.value as typeof decisionFilter)}>
+    {reviewReadState === "ready" && <><label>Filter review decisions<select aria-label="Filter review decisions" value={decisionFilter} onChange={event => setDecisionFilter(event.target.value as typeof decisionFilter)}>
       <option value="All">All decisions</option><option value="Pending">Pending</option><option value="Approved">Approved locally</option><option value="Rejected">Rejected locally</option>
     </select></label>
     <p role="status">Showing {visibleEntries.length} of {entries.length} declarations. Review status is local commissioning evidence only, not qualified OEE.</p>
@@ -89,6 +92,6 @@ export function SupervisorLocalReviewPanel({ scope, entries }: { readonly scope:
           </div> : <button type="button" disabled={busy || pending !== null} onClick={() => { setSelected(entry.entryId); setReason(""); }}>Review entry</button>}
         <SupervisorLocalRevisionPanel machineId={scope.machineId} entry={entry} startsAtUtc={scope.startsAtUtc} endsAtUtc={scope.endsAtUtc} />
       </li>;
-    })}</ul>
+    })}</ul></>
   </section>;
 }
