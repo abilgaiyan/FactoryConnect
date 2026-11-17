@@ -7,6 +7,7 @@ type Revision = { revisionId: string; revisionNumber: number; productionOrder: s
 export function SupervisorLocalRevisionPanel({ machineId, entry, startsAtUtc, endsAtUtc }: { readonly machineId: string; readonly entry: Entry; readonly startsAtUtc: string; readonly endsAtUtc: string }) {
   const [history, setHistory] = useState<Revision[]>([]);
   const [reviews, setReviews] = useState<RevisionReview[]>([]);
+  const [readState, setReadState] = useState<"loading" | "ready" | "error">("loading");
   const [reviewReason, setReviewReason] = useState("");
   const [reviewTarget, setReviewTarget] = useState("");
   const [status, setStatus] = useState("");
@@ -31,20 +32,23 @@ export function SupervisorLocalRevisionPanel({ machineId, entry, startsAtUtc, en
     const query = new URLSearchParams({ shiftStartsAtUtc: startsAtUtc, shiftEndsAtUtc: endsAtUtc });
     const reviewResponse = await fetch(`/api/supervisor/v1/machines/${encodeURIComponent(machineId)}/revision-reviews?${query}`, signal ? { signal } : {});
     if (!reviewResponse.ok) throw new Error(`Revision review history unavailable (HTTP ${reviewResponse.status})`);
-    setReviews(await reviewResponse.json() as RevisionReview[]);
+    const reviewBody: unknown = await reviewResponse.json();
+    if (!Array.isArray(reviewBody)) throw new Error("Invalid revision review history");
+    setReviews(reviewBody as RevisionReview[]);
+    setReadState("ready");
   }
 
   useEffect(() => {
     const controller = new AbortController();
-    setHistory([]); setEditing(false); setStatus(""); setRetry(null);
-    void refresh(controller.signal).catch(error => { if (!controller.signal.aborted) setStatus(String(error)); });
+    setHistory([]); setReviews([]); setReadState("loading"); setEditing(false); setStatus(""); setRetry(null);
+    void refresh(controller.signal).catch(error => { if (!controller.signal.aborted) { setReadState("error"); setStatus(String(error)); } });
     return () => controller.abort();
   }, [url, startsAtUtc, endsAtUtc]);
 
   const head = history.at(-1);
   const reviewById = new Map(reviews.map(review => [review.revisionId, review]));
   async function decide(revisionId: string, decision: "Approved" | "Rejected") {
-    if (busy || !reviewReason.trim()) return;
+    if (busy || readState !== "ready" || !reviewReason.trim()) return;
     setBusy(true); setStatus("");
     try {
       const response = await fetch(`/api/supervisor/v1/machines/${encodeURIComponent(machineId)}/revisions/${encodeURIComponent(revisionId)}/review`, {
@@ -91,11 +95,12 @@ export function SupervisorLocalRevisionPanel({ machineId, entry, startsAtUtc, en
   }
 
   return <div aria-label="Declaration correction history">
-    <p>Corrections: {history.length}. Original review decisions apply only to the original declaration, never to corrections. Corrections require their own independent review.</p>
-    <button type="button" disabled={busy} onClick={() => { void refresh().then(() => { setRetry(null); setStatus("Revision history refreshed."); }, error => setStatus(String(error))); }}>Refresh corrections</button>
-    {!editing && <button type="button" disabled={busy} onClick={begin}>Correct declaration</button>}
+    {readState !== "ready" && <p role={readState === "error" ? "alert" : "status"}>Correction and review history {readState === "error" ? "unavailable" : "loading"}. No Pending or Approved status is inferred until both reads succeed.</p>}
+    {readState === "ready" && <p>Corrections: {history.length}. Original review decisions apply only to the original declaration, never to corrections. Corrections require their own independent review.</p>}
+    <button type="button" disabled={busy} onClick={() => { setReadState("loading"); void refresh().then(() => { setRetry(null); setStatus("Revision history refreshed."); }, error => { setReadState("error"); setStatus(String(error)); }); }}>Refresh corrections</button>
+    {!editing && <button type="button" disabled={busy || readState !== "ready"} onClick={begin}>Correct declaration</button>}
     {status && <p role="status">{status}</p>}
-    {editing && <div>
+    {readState === "ready" && editing && <div>
       <label>Production order<input maxLength={200} value={order} onChange={event => setOrder(event.target.value)} /></label>
       <label>Part number<input maxLength={200} value={part} onChange={event => setPart(event.target.value)} /></label>
       <label>Operation<input maxLength={200} value={operation} onChange={event => setOperation(event.target.value)} /></label>
@@ -106,7 +111,7 @@ export function SupervisorLocalRevisionPanel({ machineId, entry, startsAtUtc, en
       <button type="button" disabled={busy || !reason.trim() || retry !== null && busy} onClick={() => { void submit(); }}>Save pending correction</button>
       <button type="button" disabled={busy || retry !== null} onClick={() => setEditing(false)}>Cancel</button>
     </div>}
-    <ol>{history.map(item => <li key={item.revisionId}>
+    {readState === "ready" && <ol>{history.map(item => <li key={item.revisionId}>
       Revision {item.revisionNumber} · {reviewById.get(item.revisionId)?.decision ?? "Pending"} · {item.productionOrder} · {item.partNumber} · {item.operation}
       · Good {item.goodQuantity ?? "Missing"} · Rejected {item.rejectedQuantity ?? "Missing"}
       · {item.revisedBy} · {item.revisedAtUtc} · Reason: {item.correctionReason}
@@ -117,6 +122,6 @@ export function SupervisorLocalRevisionPanel({ machineId, entry, startsAtUtc, en
               <button type="button" disabled={busy || !reviewReason.trim()} onClick={() => { void decide(item.revisionId, "Approved"); }}>Approve correction</button>
               <button type="button" disabled={busy || !reviewReason.trim()} onClick={() => { void decide(item.revisionId, "Rejected"); }}>Reject correction</button></div>
           : <button type="button" disabled={busy} onClick={() => { setReviewTarget(item.revisionId); setReviewReason(""); }}>Review correction</button>}
-    </li>)}</ol>
+    </li>)}</ol>}
   </div>;
 }
