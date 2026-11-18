@@ -129,8 +129,9 @@ try {
     $updateability = [string]$reader.GetString(2)
     $reader.Close()
     if ($actualDb -cne $Database) { throw 'SQL database identity mismatch.' }
-    if ($Database -cne 'FactoryConnect_V1_Dev_Local' -or $updateability -cne 'READ_WRITE') {
-        throw 'Writable local development requires FactoryConnect_V1_Dev_Local in READ_WRITE mode; no changes were made.'
+    $allowedWritableDatabases = @('FactoryConnect_V1_Dev_Local', 'FactoryConnect_V1_Gajra_Work')
+    if ($Database -cnotin $allowedWritableDatabases -or $updateability -cne 'READ_WRITE') {
+        throw 'Writable local development requires an explicitly allowed local database in READ_WRITE mode; no changes were made.'
     }
     $command = $connection.CreateCommand()
     $command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId IN (32,33)"
