@@ -72,7 +72,12 @@ internal static class SqlContainmentVerifiedRead
             throw Integrity("Archive inventory contradicts the reporting checkpoint.");
         var referenceTimeReads = new SqlContainmentReportingReferenceTimeScope(connection, transaction);
         var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction, referenceTimeReads);
-        var projections = new List<OperationalMetricProjection>(); var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
+        // Verify archives in exact-cut batches. Preflight each retained row and its evidence
+        // before accepting any reconstructed projection; the batch verifier still checks
+        // every archive, witness and historical result in this same Serializable transaction.
+        var retainedResults = new List<(long RowId, ReadOnlyMemory<byte> Payload, ContainmentArchiveBatch.Result Result,
+            MetricAggregationCheckpoint Cut, Dictionary<string, object?> Row)>();
+        var manifestSet = manifest.ToHashSet();
         foreach (var row in retained)
         {
             token.ThrowIfCancellationRequested();
@@ -93,21 +98,43 @@ internal static class SqlContainmentVerifiedRead
             var observedEvidence = await Query("SELECT * FROM dbo.OperationalMetricProjectionEvidence WHERE OperationalMetricProjectionRowId=@Row ORDER BY EvidenceKind,EvidenceOrdinal;", row: rowId);
             if (expectedEvidence.Length != observedEvidence.Count) throw Integrity("Retained evidence inventory differs from canonical evidence.");
             for (var i = 0; i < expectedEvidence.Length; i++) expectedEvidence[i].Match(observedEvidence[i]);
-            // Read-only mode holds shared locks and has an explicit return before all archive DML.
+            retainedResults.Add((rowId, bytes, result, batch.Cut, row));
+        }
+
+        var verifiedById = new Dictionary<string, SqlContainmentArchiveTransaction.VerifiedProjectionHandoff>(StringComparer.Ordinal);
+        foreach (var cutGroup in retainedResults.GroupBy(static item => item.Cut))
+        {
+            token.ThrowIfCancellationRequested();
             var handoffs = await SqlContainmentArchiveTransaction.VerifyExistingAsync(
-                connection, transaction, [(ReadOnlyMemory<byte>)bytes], token, historicalReads);
-            if (handoffs.Count != 1) throw Integrity("Retained result verification returned an unexpected handoff inventory.");
-            var verified = handoffs[0].Read(connection, transaction, result.Id, result.Document.Key, batch.Cut, token);
-            if (!OperationalMetricDependencySnapshotV2Codec.Encode(verified.Document).AsSpan().SequenceEqual(bytes))
+                connection, transaction, cutGroup.Select(static item => item.Payload).ToArray(), token, historicalReads);
+            if (handoffs.Count != cutGroup.Count()) throw Integrity("Retained result verification returned an unexpected handoff inventory.");
+            // The verifier returns projections in canonical evaluation-key order.
+            var ordered = ContainmentArchiveBatch.Preflight(cutGroup.Select(static item => item.Payload).ToArray());
+            for (var i = 0; i < ordered.Results.Count; i++)
+                if (!verifiedById.TryAdd(Convert.ToHexString(ordered.Results[i].Id), handoffs[i]))
+                    throw Integrity("Duplicate retained result archive identity.");
+        }
+
+        var projections = new List<OperationalMetricProjection>();
+        var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
+        var seenKeys = new HashSet<OperationalMetricEvaluationKey>();
+        foreach (var item in retainedResults)
+        {
+            token.ThrowIfCancellationRequested();
+            var result = item.Result;
+            if (!verifiedById.TryGetValue(Convert.ToHexString(result.Id), out var handoff))
+                throw Integrity("Retained result verification is incomplete.");
+            var verified = handoff.Read(connection, transaction, result.Id, result.Document.Key, item.Cut, token);
+            if (!OperationalMetricDependencySnapshotV2Codec.Encode(verified.Document).AsSpan().SequenceEqual(item.Payload.Span))
                 throw Integrity("Historical reconstruction differs from retained canonical result.");
-            if (projections.Any(p => p.Key == verified.Projection.Key)) throw Integrity("Duplicate retained evaluation identity.");
+            if (!seenKeys.Add(verified.Projection.Key)) throw Integrity("Duplicate retained evaluation identity.");
             var core = verified.Projection;
             var metadata = new OperationalMetricPublicationMetadata(2, AvailabilityContainmentV1.PolicyId,
-                Convert.ToHexString(result.Id), row["ConflictWitnessId"] is byte[] witnessId ? Convert.ToHexString(witnessId) : null);
+                Convert.ToHexString(result.Id), item.Row["ConflictWitnessId"] is byte[] witnessId ? Convert.ToHexString(witnessId) : null);
             projections.Add(new OperationalMetricProjection(core.ProcessorId, core.Key, core.Status, core.Value, core.Unit,
                 core.ReasonCode, core.ReasonOperandName, core.SourceRevision, core.OperandEvidence, core.DependencyEvidence,
                 core.AvailabilityScopeConflictEvidence, core.EvaluationPolicyId, metadata));
-            if (manifest.Contains(rowId)) latestKeys.Add(verified.Projection.Key);
+            if (manifestSet.Contains(item.RowId)) latestKeys.Add(verified.Projection.Key);
         }
         verificationTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations);
         verificationTiming?.SetTag("ReferenceTimeAuthorityValidationExecutions", referenceTimeReads.ReferenceTimeAuthorityValidationExecutions);
