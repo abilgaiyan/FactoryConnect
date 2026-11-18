@@ -129,8 +129,14 @@ try {
     $updateability = [string]$reader.GetString(2)
     $reader.Close()
     if ($actualDb -cne $Database) { throw 'SQL database identity mismatch.' }
-    if ($Database -cne 'FactoryConnect_V1_Dev_Local' -or $updateability -cne 'READ_WRITE') {
-        throw 'Writable local development requires FactoryConnect_V1_Dev_Local in READ_WRITE mode; no changes were made.'
+    $explicitWorkingDatabase = [Environment]::GetEnvironmentVariable('FACTORYCONNECT_DEV_WORKING_DATABASE', 'Process')
+    $isDefaultDev = $Database -ceq 'FactoryConnect_V1_Dev_Local'
+    $isExplicitWorkingCopy = (-not [string]::IsNullOrWhiteSpace($explicitWorkingDatabase)) -and
+        ($Database -ceq $explicitWorkingDatabase) -and
+        ($Database -cmatch '^FactoryConnect_V1_[A-Za-z0-9_]+_Work$') -and
+        $SqlInstance.StartsWith(($env:COMPUTERNAME + '\'), [StringComparison]::OrdinalIgnoreCase)
+    if ((-not $isDefaultDev -and -not $isExplicitWorkingCopy) -or $updateability -cne 'READ_WRITE') {
+        throw 'Writable local development requires the default dev database or an explicitly opted-in local working copy in READ_WRITE mode; no changes were made.'
     }
     $command = $connection.CreateCommand()
     $command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId IN (32,33)"
