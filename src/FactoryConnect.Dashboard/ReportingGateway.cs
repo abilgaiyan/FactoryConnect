@@ -85,7 +85,7 @@ public sealed class ReportingGateway(
     {
         var request = new HttpRequestMessage(method, ComposeUpstreamUri(relativePath));
 
-        if (method == HttpMethod.Post)
+        if (method == HttpMethod.Post || method == HttpMethod.Put)
         {
             request.Content = new StreamContent(context.Request.BodyReader.AsStream(leaveOpen: true));
             if (!string.IsNullOrWhiteSpace(context.Request.ContentType))
