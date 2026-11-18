@@ -23,3 +23,6 @@ dist/
 # Local verification evidence and factory backup copies (never commit)
 /.proof/
 /factory-backups/
+
+# Local developer settings (may contain machine-specific values)
+/scripts/dev/development.settings.json
