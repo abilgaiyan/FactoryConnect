@@ -210,7 +210,8 @@ try {
                     $prefix = "Dashboard__Sources__${sourceIndex}__"
                     $dashboardEnvironment[$prefix + 'MachineId'] = $machineGuid.ToString('D')
                     foreach ($field in @('ProcessorId','SiteId','ProductionLineId','DisplayName','GroupName')) {
-                        $dashboardEnvironment[$prefix + $field] = [string]$source.$field
+                        $fieldProperty = $source.PSObject.Properties[$field]
+                        $dashboardEnvironment[$prefix + $field] = if ($null -eq $fieldProperty) { '' } else { [string]$fieldProperty.Value }
                     }
                     $dashboardEnvironment[$prefix + 'DisplayOrder'] = [string]$sourceIndex
                     $sourceIndex++
