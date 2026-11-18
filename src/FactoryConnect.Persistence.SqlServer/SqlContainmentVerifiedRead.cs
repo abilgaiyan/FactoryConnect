@@ -78,6 +78,7 @@ internal static class SqlContainmentVerifiedRead
         var retainedResults = new List<(long RowId, ReadOnlyMemory<byte> Payload, ContainmentArchiveBatch.Result Result,
             MetricAggregationCheckpoint Cut, Dictionary<string, object?> Row)>();
         var manifestSet = manifest.ToHashSet();
+        var retainedRowIds = retained.Select(r => (long)r["OperationalMetricProjectionRowId"]!).ToHashSet();
         // Load retained archive payloads and evidence once per processor, then preserve
         // the existing independent canonical checks for every retained result.
         using var bulkTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.bulk-read");
@@ -101,6 +102,7 @@ internal static class SqlContainmentVerifiedRead
         var evidenceByRow = evidenceRows.GroupBy(r => (long)r["OperationalMetricProjectionRowId"]!)
             .ToDictionary(g => g.Key, g => g.ToList());
         bulkTiming?.SetTag("archive.payload.count", archivesById.Count);
+        bulkTiming?.SetTag("retained.result.count", retained.Count);
         bulkTiming?.SetTag("evidence.row.count", evidenceRows.Count);
         bulkTiming?.Dispose();
         using var retainedTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.preflight");
@@ -131,8 +133,9 @@ internal static class SqlContainmentVerifiedRead
         // The immutable archive inventory can include superseded historical results
         // no longer represented by retained projection rows. Each retained row must
         // still resolve to its exact archive; do not require equal inventory sizes.
-        if (evidenceByRow.Keys.Any(rowId => !retained.Any(r => (long)r["OperationalMetricProjectionRowId"]! == rowId)))
+        if (evidenceByRow.Keys.Any(rowId => !retainedRowIds.Contains(rowId)))
             throw Integrity("Retained archive or evidence inventory contains unexpected rows.");
+        retainedTiming?.SetTag("preflight.result.count", retainedResults.Count);
         retainedTiming?.Dispose();
         using var archiveTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.archive.verify");
         var verifiedById = new Dictionary<string, SqlContainmentArchiveTransaction.VerifiedProjectionHandoff>(StringComparer.Ordinal);
