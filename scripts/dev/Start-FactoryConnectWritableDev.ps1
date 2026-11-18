@@ -17,6 +17,34 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Local configuration is optional; explicit command-line parameters take precedence.
+# Keep credentials out of this file and out of source control.
+$settingsPath = Join-Path $PSScriptRoot 'development.settings.json'
+if (Test-Path -LiteralPath $settingsPath) {
+    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    $settingsMap = @{
+        SqlInstance = 'SqlInstance'; Database = 'Database'; SupervisorOperatorId = 'SupervisorOperatorId';
+        UiPort = 'UiPort'; ApiPort = 'ApiPort'; DashboardPort = 'DashboardPort';
+        Gg003DeviceKey = 'Gg003DeviceKey'; MoxaDeviceKey = 'MoxaDeviceKey'
+    }
+    foreach ($name in $settingsMap.Keys) {
+        if (-not $PSBoundParameters.ContainsKey($name)) {
+            $property = $settings.PSObject.Properties[$settingsMap[$name]]
+            if ($null -ne $property -and $null -ne $property.Value) {
+                Set-Variable -Name $name -Value $property.Value
+            }
+        }
+    }
+    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableDowntimeReasonAdministration')) {
+        if (-not $PSBoundParameters.ContainsKey($name)) {
+            $property = $settings.PSObject.Properties[$name]
+            if ($null -ne $property -and $null -ne $property.Value) {
+                Set-Variable -Name $name -Value ([bool]$property.Value)
+            }
+        }
+    }
+}
+
 Set-StrictMode -Version Latest
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $apiProject = Join-Path $root 'src/FactoryConnect.Api/FactoryConnect.Api.csproj'
