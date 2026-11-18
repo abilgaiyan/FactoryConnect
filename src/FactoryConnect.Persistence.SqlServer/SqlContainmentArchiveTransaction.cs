@@ -47,7 +47,10 @@ internal static class SqlContainmentArchiveTransaction
         SqlContainmentHistoricalReadScope? historicalReads, bool captureProjections, CancellationToken cancellationToken)
     {
         if (verifyOnly && !requireExisting) throw new ArgumentException("Read-only verification requires all archives to exist.", nameof(requireExisting));
+        using var batchTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.batch.verify");
+        batchTiming?.SetTag("archive.batch.size", envelopes.Count);
         var batch = ContainmentArchiveBatch.Preflight(envelopes);
+        batchTiming?.SetTag("archive.batch.source.cut", batch.Cut.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         historicalReads ??= new SqlContainmentHistoricalReadScope(connection, transaction);
         historicalReads.RequireOwner(connection, transaction);
@@ -56,6 +59,7 @@ internal static class SqlContainmentArchiveTransaction
             verifyOnly ? OperationalMetricProjectionProcessorGateMode.Shared : OperationalMetricProjectionProcessorGateMode.Exclusive, cancellationToken);
         var binding = await ReadBinding(connection, transaction, batch, verifyOnly, cancellationToken);
         // Caller holds the retained prefix first; these archive locks continue in reviewed deterministic order.
+        using var slotTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.slots.read");
         var existing = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var result in batch.Results)
         {
@@ -69,6 +73,8 @@ internal static class SqlContainmentArchiveTransaction
             else if (requireExisting) throw Integrity("Replay cannot repair a missing result archive.");
             existing.Add(Convert.ToHexString(result.Id), row is not null);
         }
+        slotTiming?.Dispose();
+        using var witnessTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.witnesses.read");
         var witnessRows = new Dictionary<string, WitnessRow?>(StringComparer.Ordinal);
         foreach (var witness in batch.Witnesses)
         {
@@ -84,6 +90,8 @@ internal static class SqlContainmentArchiveTransaction
                 ? new(reader.GetInt16(0), (byte[])reader[1], reader.GetInt64(2), reader.GetInt64(3),
                     SqlServerUInt64.Materialize(reader.GetDecimal(4)), reader.GetInt64(5), SqlServerUInt64.Materialize(reader.GetDecimal(6))) : null);
         }
+        witnessTiming?.Dispose();
+        using var digestTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.digests.read");
         foreach (var result in batch.Results.OrderBy(r => Convert.ToHexString(r.Id), StringComparer.Ordinal))
         {
             await using var command = CreateForMode(ResultSelect + " WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id;");
@@ -92,6 +100,8 @@ internal static class SqlContainmentArchiveTransaction
             if (row is not null) MatchResult(row, result, binding, batch);
             if ((row is not null) != existing[Convert.ToHexString(result.Id)]) throw Integrity("Result slot and digest disagree.");
         }
+        digestTiming?.Dispose();
+        using var referencesTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.references.read");
         foreach (var result in batch.Results.OrderBy(r => Convert.ToHexString(r.Id), StringComparer.Ordinal))
         {
             await using var command = CreateForMode(
@@ -111,6 +121,8 @@ internal static class SqlContainmentArchiveTransaction
             else if (references.Count != 0) throw Integrity("A new result has orphan witness references.");
         }
         // No archive DML is allowed until every incoming result passes P3 in this exact transaction.
+        referencesTiming?.Dispose();
+        using var reconstructionTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.results.reconstruct");
         var verifiedProjections = new List<VerifiedProjectionHandoff>();
         foreach (var result in batch.Results)
         {
@@ -120,6 +132,8 @@ internal static class SqlContainmentArchiveTransaction
                 verifiedProjections.Add(new VerifiedProjectionHandoff(connection, transaction, result.Id,
                     verified.Document, verified.Projection));
         }
+        reconstructionTiming?.Dispose();
+        using var factsTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.witness-facts.read");
         var factRows = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var witness in batch.Witnesses)
         {
@@ -149,6 +163,7 @@ internal static class SqlContainmentArchiveTransaction
                 throw Integrity("Witness digest or complete archive index conflicts with canonical source evidence.");
             if (requireExisting && witnessRows[hex] is null) throw Integrity("Replay cannot insert a missing witness.");
         }
+        factsTiming?.Dispose();
         if (verifyOnly)
             return Complete();
         foreach (var witness in batch.Witnesses.Where(w => witnessRows[Convert.ToHexString(w.Id)] is null))
