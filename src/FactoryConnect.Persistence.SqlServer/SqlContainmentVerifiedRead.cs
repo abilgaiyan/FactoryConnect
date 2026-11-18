@@ -85,7 +85,9 @@ internal static class SqlContainmentVerifiedRead
             token.ThrowIfCancellationRequested();
             var rowId = (long)row["OperationalMetricProjectionRowId"]!;
             if (row["ContainmentResultId"] is not byte[] resultId) throw Integrity("Retained format-2 result binding is absent.");
+            using var archivePayloadTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.archive-payload.read");
             var archives = await Query("SELECT ResultPayload FROM dbo.OperationalMetricPublicationResultArchive WHERE ResultId=@Result;", result: resultId);
+            archivePayloadTiming?.Dispose();
             if (archives.Count != 1) throw Integrity("Retained immutable archive is missing.");
             var bytes = (byte[])archives[0]["ResultPayload"]!;
             ContainmentArchiveBatch batch;
@@ -97,7 +99,9 @@ internal static class SqlContainmentVerifiedRead
                 throw Integrity("Retained archive identity/source/cut contradicts exact processor binding.");
             Projection(id, result).Match(row);
             var expectedEvidence = Evidence(rowId, result.Document);
+            using var evidenceTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.evidence.read");
             var observedEvidence = await Query("SELECT * FROM dbo.OperationalMetricProjectionEvidence WHERE OperationalMetricProjectionRowId=@Row ORDER BY EvidenceKind,EvidenceOrdinal;", row: rowId);
+            evidenceTiming?.Dispose();
             if (expectedEvidence.Length != observedEvidence.Count) throw Integrity("Retained evidence inventory differs from canonical evidence.");
             for (var i = 0; i < expectedEvidence.Length; i++) expectedEvidence[i].Match(observedEvidence[i]);
             retainedResults.Add((rowId, bytes, result, batch.Cut, row));
@@ -109,6 +113,9 @@ internal static class SqlContainmentVerifiedRead
         foreach (var cutGroup in retainedResults.GroupBy(static item => item.Cut))
         {
             token.ThrowIfCancellationRequested();
+            using var cutTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.archive.cut.verify");
+            cutTiming?.SetTag("archive.cut.result.count", cutGroup.Count());
+            cutTiming?.SetTag("archive.cut.source.position", cutGroup.Key.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
             var handoffs = await SqlContainmentArchiveTransaction.VerifyExistingAsync(
                 connection, transaction, cutGroup.Select(static item => item.Payload).ToArray(), token, historicalReads);
             if (handoffs.Count != cutGroup.Count()) throw Integrity("Retained result verification returned an unexpected handoff inventory.");
@@ -117,6 +124,7 @@ internal static class SqlContainmentVerifiedRead
             for (var i = 0; i < ordered.Results.Count; i++)
                 if (!verifiedById.TryAdd(Convert.ToHexString(ordered.Results[i].Id), handoffs[i]))
                     throw Integrity("Duplicate retained result archive identity.");
+            cutTiming?.Dispose();
         }
 
         archiveTiming?.Dispose();
