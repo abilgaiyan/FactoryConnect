@@ -128,8 +128,10 @@ internal static class SqlContainmentVerifiedRead
             retainedResults.Add((rowId, bytes, result, batch.Cut, row));
         }
 
-        if (archivesById.Count != retained.Count ||
-            evidenceByRow.Keys.Any(rowId => !retained.Any(r => (long)r["OperationalMetricProjectionRowId"]! == rowId)))
+        // The immutable archive inventory can include superseded historical results
+        // no longer represented by retained projection rows. Each retained row must
+        // still resolve to its exact archive; do not require equal inventory sizes.
+        if (evidenceByRow.Keys.Any(rowId => !retained.Any(r => (long)r["OperationalMetricProjectionRowId"]! == rowId)))
             throw Integrity("Retained archive or evidence inventory contains unexpected rows.");
         retainedTiming?.Dispose();
         using var archiveTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.archive.verify");
