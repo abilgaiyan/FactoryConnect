@@ -51,11 +51,16 @@ internal static class SqlContainmentVerifiedRead
             throw Integrity("Unsupported or contradictory processor publication format/policy.");
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         var id = (long)header["OperationalMetricProjectionProcessorRowId"]!;
+        using var inventoryTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.inventory.read");
         var source = await SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(connection, transaction, processor, token);
         var retained = await Query("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id);
         var manifest = (await Query("SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
             .Select(r => (long)r["OperationalMetricProjectionRowId"]!).ToArray();
         var inventory = await Query("SELECT ResultId,SourceRevisionPosition FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY ResultId;", id);
+        inventoryTiming?.SetTag("retained.result.count", retained.Count);
+        inventoryTiming?.SetTag("archive.inventory.count", inventory.Count);
+        inventoryTiming?.SetTag("manifest.result.count", manifest.Length);
+        inventoryTiming?.Dispose();
         if (source is null)
         {
             if (retained.Count != 0 || manifest.Length != 0 || inventory.Count != 0) throw Integrity("Publication state exists without its checkpoint.");
