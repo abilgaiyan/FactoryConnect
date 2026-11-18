@@ -78,6 +78,31 @@ internal static class SqlContainmentVerifiedRead
         var retainedResults = new List<(long RowId, ReadOnlyMemory<byte> Payload, ContainmentArchiveBatch.Result Result,
             MetricAggregationCheckpoint Cut, Dictionary<string, object?> Row)>();
         var manifestSet = manifest.ToHashSet();
+        // Load retained archive payloads and evidence once per processor, then preserve
+        // the existing independent canonical checks for every retained result.
+        using var bulkTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.bulk-read");
+        var archiveRows = await Query("""
+            SELECT a.ResultId,a.ResultPayload FROM dbo.OperationalMetricPublicationResultArchive a
+            WHERE a.OperationalMetricProjectionProcessorRowId=@P;
+            """, id);
+        var archivesById = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        foreach (var archive in archiveRows)
+        {
+            if (archive["ResultId"] is not byte[] archiveId || archive["ResultPayload"] is not byte[] archivePayload ||
+                !archivesById.TryAdd(Convert.ToHexString(archiveId), archivePayload))
+                throw Integrity("Retained archive payload inventory is contradictory.");
+        }
+        var evidenceRows = await Query("""
+            SELECT e.* FROM dbo.OperationalMetricProjectionEvidence e
+            INNER JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId
+            WHERE p.OperationalMetricProjectionProcessorRowId=@P
+            ORDER BY e.OperationalMetricProjectionRowId,e.EvidenceKind,e.EvidenceOrdinal;
+            """, id);
+        var evidenceByRow = evidenceRows.GroupBy(r => (long)r["OperationalMetricProjectionRowId"]!)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        bulkTiming?.SetTag("archive.payload.count", archivesById.Count);
+        bulkTiming?.SetTag("evidence.row.count", evidenceRows.Count);
+        bulkTiming?.Dispose();
         using var retainedTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.preflight");
         retainedTiming?.SetTag("retained.result.count", retained.Count);
         foreach (var row in retained)
@@ -85,11 +110,8 @@ internal static class SqlContainmentVerifiedRead
             token.ThrowIfCancellationRequested();
             var rowId = (long)row["OperationalMetricProjectionRowId"]!;
             if (row["ContainmentResultId"] is not byte[] resultId) throw Integrity("Retained format-2 result binding is absent.");
-            using var archivePayloadTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.archive-payload.read");
-            var archives = await Query("SELECT ResultPayload FROM dbo.OperationalMetricPublicationResultArchive WHERE ResultId=@Result;", result: resultId);
-            archivePayloadTiming?.Dispose();
-            if (archives.Count != 1) throw Integrity("Retained immutable archive is missing.");
-            var bytes = (byte[])archives[0]["ResultPayload"]!;
+            if (!archivesById.TryGetValue(Convert.ToHexString(resultId), out var bytes))
+                throw Integrity("Retained immutable archive is missing.");
             ContainmentArchiveBatch batch;
             try { batch = ContainmentArchiveBatch.Preflight([(ReadOnlyMemory<byte>)bytes]); }
             catch (InvalidDataException error) { throw new ContainmentHistoricalIntegrityException("Malformed retained result archive.", error); }
@@ -99,14 +121,16 @@ internal static class SqlContainmentVerifiedRead
                 throw Integrity("Retained archive identity/source/cut contradicts exact processor binding.");
             Projection(id, result).Match(row);
             var expectedEvidence = Evidence(rowId, result.Document);
-            using var evidenceTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.evidence.read");
-            var observedEvidence = await Query("SELECT * FROM dbo.OperationalMetricProjectionEvidence WHERE OperationalMetricProjectionRowId=@Row ORDER BY EvidenceKind,EvidenceOrdinal;", row: rowId);
-            evidenceTiming?.Dispose();
+            var observedEvidence = evidenceByRow.TryGetValue(rowId, out var evidenceForRow)
+                ? evidenceForRow : new List<Dictionary<string, object?>>();
             if (expectedEvidence.Length != observedEvidence.Count) throw Integrity("Retained evidence inventory differs from canonical evidence.");
             for (var i = 0; i < expectedEvidence.Length; i++) expectedEvidence[i].Match(observedEvidence[i]);
             retainedResults.Add((rowId, bytes, result, batch.Cut, row));
         }
 
+        if (archivesById.Count != retained.Count ||
+            evidenceByRow.Keys.Any(rowId => !retained.Any(r => (long)r["OperationalMetricProjectionRowId"]! == rowId)))
+            throw Integrity("Retained archive or evidence inventory contains unexpected rows.");
         retainedTiming?.Dispose();
         using var archiveTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.archive.verify");
         var verifiedById = new Dictionary<string, SqlContainmentArchiveTransaction.VerifiedProjectionHandoff>(StringComparer.Ordinal);
