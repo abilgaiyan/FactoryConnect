@@ -78,6 +78,8 @@ internal static class SqlContainmentVerifiedRead
         var retainedResults = new List<(long RowId, ReadOnlyMemory<byte> Payload, ContainmentArchiveBatch.Result Result,
             MetricAggregationCheckpoint Cut, Dictionary<string, object?> Row)>();
         var manifestSet = manifest.ToHashSet();
+        using var retainedTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.preflight");
+        retainedTiming?.SetTag("retained.result.count", retained.Count);
         foreach (var row in retained)
         {
             token.ThrowIfCancellationRequested();
@@ -101,6 +103,8 @@ internal static class SqlContainmentVerifiedRead
             retainedResults.Add((rowId, bytes, result, batch.Cut, row));
         }
 
+        retainedTiming?.Dispose();
+        using var archiveTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.archive.verify");
         var verifiedById = new Dictionary<string, SqlContainmentArchiveTransaction.VerifiedProjectionHandoff>(StringComparer.Ordinal);
         foreach (var cutGroup in retainedResults.GroupBy(static item => item.Cut))
         {
@@ -115,6 +119,8 @@ internal static class SqlContainmentVerifiedRead
                     throw Integrity("Duplicate retained result archive identity.");
         }
 
+        archiveTiming?.Dispose();
+        using var materializeTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.projections.materialize");
         var projections = new List<OperationalMetricProjection>();
         var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
         var seenKeys = new HashSet<OperationalMetricEvaluationKey>();
@@ -136,6 +142,7 @@ internal static class SqlContainmentVerifiedRead
                 core.AvailabilityScopeConflictEvidence, core.EvaluationPolicyId, metadata));
             if (manifestSet.Contains(item.RowId)) latestKeys.Add(verified.Projection.Key);
         }
+        materializeTiming?.Dispose();
         verificationTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations);
         verificationTiming?.SetTag("ReferenceTimeAuthorityValidationExecutions", referenceTimeReads.ReferenceTimeAuthorityValidationExecutions);
         verificationTiming?.SetTag("ReferenceTimeAuthorityCacheHits", referenceTimeReads.CacheHits);
