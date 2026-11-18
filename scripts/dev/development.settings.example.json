@@ -1,0 +1,12 @@
+{
+  "SqlInstance": "DESKTOP-1PJK2OB\\FCINVENTORY",
+  "Database": "FactoryConnect_V1_Dev_Local",
+  "Dashboard": true,
+  "DevUi": true,
+  "EnableSupervisorEntries": true,
+  "SupervisorOperatorId": "local-supervisor-test",
+  "EnableDowntimeReasonAdministration": true,
+  "ApiPort": 5080,
+  "DashboardPort": 5090,
+  "UiPort": 5173
+}
