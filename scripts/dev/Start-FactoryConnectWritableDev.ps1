@@ -266,7 +266,7 @@ try {
     }
 }
  -and
-        $SqlInstance -match '^(\\.|localhost|127\\.0\\.0\\.1|'+[regex]::Escape($env:COMPUTERNAME)+')\\'
+        $SqlInstance.StartsWith(($env:COMPUTERNAME + '\'), [StringComparison]::OrdinalIgnoreCase)
     if ((-not $isDefaultDev -and -not $isExplicitWorkingCopy) -or $updateability -cne 'READ_WRITE') {
         throw 'Writable local development requires the default dev database or an explicitly opted-in local working copy in READ_WRITE mode; no changes were made.'
     }
