@@ -33,7 +33,7 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         cancellationToken.ThrowIfCancellationRequested();
         if (periods.Count == 0) return [];
         await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await OperationalMetricReportingDiagnostics.OpenAsync(connection, cancellationToken);
         return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync<IReadOnlyList<OperationalMetricProjectionSummary>>(
             connection, processorId, async (c, transaction, token) =>
             {
@@ -98,7 +98,7 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
         cancellationToken.ThrowIfCancellationRequested();
 
         await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await OperationalMetricReportingDiagnostics.OpenAsync(connection, cancellationToken);
 
         return await SqlServerOperationalMetricProjectionStableRead.ExecuteAsync(connection, processorId,
             (c, transaction, token) => ReadSummariesAsync(c, transaction, processorId, latestBatchOnly, token), cancellationToken);
@@ -149,8 +149,9 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
             SqlDbType.VarBinary,
             StringOrderKeyV2Codec.MaximumEncodedLength).Value = projectionProcessorKeyBinary;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using var readerDiagnostics1 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerOperationalMetricProjectionSummaryReader.reader.1", cancellationToken);
+        var reader = readerDiagnostics1.Reader;
+        if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
         {
             return null;
         }
@@ -202,9 +203,10 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
             "ORDER BY OperationalMetricProjectionRowId;";
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = projectionProcessorRowId;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using var readerDiagnostics2 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerOperationalMetricProjectionSummaryReader.reader.2", cancellationToken);
+        var reader = readerDiagnostics2.Reader;
         var rowIds = new List<long>();
-        while (await reader.ReadAsync(cancellationToken))
+        while (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
         {
             rowIds.Add(reader.GetInt64(0));
         }
@@ -241,9 +243,10 @@ internal sealed class SqlServerOperationalMetricProjectionSummaryReader
             "ORDER BY p.OperationalMetricProjectionRowId;";
         command.Parameters.Add("@ProcessorRowId", SqlDbType.BigInt).Value = projectionProcessorRowId;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using var readerDiagnostics3 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerOperationalMetricProjectionSummaryReader.reader.3", cancellationToken);
+        var reader = readerDiagnostics3.Reader;
         var rows = new List<ProjectionRow>();
-        while (await reader.ReadAsync(cancellationToken))
+        while (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
         {
             rows.Add(MaterializeRow(reader));
         }

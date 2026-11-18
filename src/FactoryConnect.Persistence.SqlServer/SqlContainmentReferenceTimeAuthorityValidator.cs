@@ -120,8 +120,9 @@ internal static partial class SqlContainmentReferenceTimeAuthorityValidator
                 " WHERE o.MetricAggregationProcessorRowId = @Processor AND o.ProductionReferenceTimeRevision <= @R ORDER BY o.ProductionReferenceTimeRevision;", processor))
             {
                 command.Parameters.Add(SqlServerUInt64.CreateParameter("@R", checked((ulong)reference)));
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken)) outcomes.Add(SqlServerProductionReferenceTimeOutcomeStore.Materialize(reader));
+                await using var readerDiagnostics2 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentReferenceTimeAuthorityValidator.reader.2", cancellationToken);
+        var reader = readerDiagnostics2.Reader;
+                while (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken)) outcomes.Add(SqlServerProductionReferenceTimeOutcomeStore.Materialize(reader));
             }
             outcomesTiming?.SetTag("input.count", outcomes.Count);
             outcomesTiming?.SetTag("stage.completed", true);
@@ -201,8 +202,9 @@ internal static partial class SqlContainmentReferenceTimeAuthorityValidator
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@A", cut.Position.Value));
         MetricInputPosition? previous = null;
         long reference = 0;
-        await using var rows = await command.ExecuteReaderAsync(cancellationToken);
-        while (await rows.ReadAsync(cancellationToken))
+        await using var rowsDiagnostics3 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlContainmentReferenceTimeAuthorityValidator.reader.3", cancellationToken);
+        var rows = rowsDiagnostics3.Reader;
+        while (await OperationalMetricReportingDiagnostics.ReadAsync(rows, cancellationToken))
         {
             var revision = new MetricInputPosition(SqlServerUInt64.Materialize(rows.GetDecimal(0)));
             if (rows.IsDBNull(1) || rows.GetByte(5) != 1 || rows.IsDBNull(6))
@@ -243,7 +245,7 @@ internal static partial class SqlContainmentReferenceTimeAuthorityValidator
             command.Transaction = transaction;
             command.CommandText = "SELECT COUNT_BIG(*) FROM dbo.ProductionStandardAuthorityRevision WHERE ProductionStandardAuthorityRevision <= @S;";
             command.Parameters.AddWithValue("@S", revision);
-            if ((decimal)(long)(await command.ExecuteScalarAsync(cancellationToken))! != (decimal)revision + 1m)
+            if ((decimal)(long)(await OperationalMetricReportingDiagnostics.ScalarAsync(command, "SqlContainmentReferenceTimeAuthorityValidator.scalar.1", cancellationToken))! != (decimal)revision + 1m)
                 throw new MissingContainmentHistoricalAuthorityException("The historical standard authority revision chain is incomplete.");
         }
         var versions = new List<ProductionStandardVersion>();
@@ -256,8 +258,9 @@ internal static partial class SqlContainmentReferenceTimeAuthorityValidator
             ORDER BY ProductionStandardAuthorityRevision;
             """;
         read.Parameters.AddWithValue("@S", revision);
-        await using var rows = await read.ExecuteReaderAsync(cancellationToken);
-        while (await rows.ReadAsync(cancellationToken)) versions.Add(SqlServerProductionStandardAuthority.Materialize(rows));
+        await using var rowsDiagnostics4 = await OperationalMetricReportingDiagnostics.ReaderAsync(read, "SqlContainmentReferenceTimeAuthorityValidator.reader.4", cancellationToken);
+        var rows = rowsDiagnostics4.Reader;
+        while (await OperationalMetricReportingDiagnostics.ReadAsync(rows, cancellationToken)) versions.Add(SqlServerProductionStandardAuthority.Materialize(rows));
         if (versions.Count != revision)
             throw new MissingContainmentHistoricalAuthorityException("The historical standard cut lacks its complete version inventory.");
         for (var i = 0; i < versions.Count; i++)

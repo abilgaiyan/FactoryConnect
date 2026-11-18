@@ -91,8 +91,9 @@ internal sealed class SqlServerOperationalMetricProjectionCommitTransaction
         command.Parameters.Add("@ProcessorKeyBinary", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength)
             .Value = keyBinary;
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using var readerDiagnostic = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "publication.checkpoint-header", cancellationToken);
+        var reader = readerDiagnostic.Reader;
+        if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
         {
             return null;
         }

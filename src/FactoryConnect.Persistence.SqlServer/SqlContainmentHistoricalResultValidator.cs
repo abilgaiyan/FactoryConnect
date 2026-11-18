@@ -42,6 +42,10 @@ internal static class SqlContainmentHistoricalResultValidator
         MetricAggregationCheckpoint cut, CancellationToken cancellationToken,
         SqlContainmentHistoricalReadScope? historicalReads = null)
     {
+        using var diagnostic = OperationalMetricReportingDiagnostics.Start("containment.result.operation");
+        try
+        {
+        OperationalMetricReportingDiagnostics.Evaluation(diagnostic, key, cut);
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(cut);
@@ -71,6 +75,8 @@ internal static class SqlContainmentHistoricalResultValidator
         }
         catch (Exception error) when (error is ArgumentException or InvalidDataException or OverflowException or FormatException)
         { throw new ContainmentHistoricalIntegrityException("Historical contributions cannot reproduce the claimed built-in result.", error); }
+        }
+        catch (Exception diagnosticError) { diagnostic.Fail(diagnosticError, cancellationToken); throw; }
     }
 
     private sealed class TransactionSnapshotReader(SqlConnection connection, SqlTransaction transaction,

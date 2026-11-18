@@ -33,7 +33,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         {
             var expectedSiteOrderKey = StringOrderKeyV2Codec.Encode(productionDayId.SiteId.Value);
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
+            await OperationalMetricReportingDiagnostics.OpenAsync(connection, cancellationToken);
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT
@@ -93,8 +93,9 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
                 productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
+            await using var readerDiagnostics2 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerMachineShiftOccurrenceRosterStore.reader.2", cancellationToken);
+        var reader = readerDiagnostics2.Reader;
+            if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
             {
                 return null;
             }
@@ -172,7 +173,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
                         occurrenceId,
                         productionDayId));
                 }
-                while (await reader.ReadAsync(cancellationToken));
+                while (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken));
 
                 return new MachineShiftOccurrenceRoster(
                     machineId,
@@ -217,7 +218,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         try
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
+            await OperationalMetricReportingDiagnostics.OpenAsync(connection, cancellationToken);
             await using var transaction = await connection.BeginTransactionAsync(
                 IsolationLevel.Serializable,
                 cancellationToken);
@@ -332,8 +333,9 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
             productionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using var readerDiagnostics3 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerMachineShiftOccurrenceRosterStore.reader.3", cancellationToken);
+        var reader = readerDiagnostics3.Reader;
+        if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
         {
             return null;
         }
@@ -357,7 +359,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             persisted.BusinessDate,
             persisted.ProductionLineId);
 
-        if (await reader.ReadAsync(cancellationToken))
+        if (await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
         {
             throw Corruption(
                 "Persisted machine-shift occurrence roster has conflicting rows for one semantic identity.");
@@ -451,8 +453,9 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
             command.Parameters.Add("@ProductionBusinessDate", SqlDbType.Date).Value =
                 proposed.ProductionDayId.BusinessDate.ToDateTime(TimeOnly.MinValue);
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
+            await using var readerDiagnostics4 = await OperationalMetricReportingDiagnostics.ReaderAsync(command, "SqlServerMachineShiftOccurrenceRosterStore.reader.4", cancellationToken);
+        var reader = readerDiagnostics4.Reader;
+            if (!await OperationalMetricReportingDiagnostics.ReadAsync(reader, cancellationToken))
             {
                 continue;
             }
@@ -495,7 +498,7 @@ internal sealed class SqlServerMachineShiftOccurrenceRosterStore :
         AddString(command, "@ProductionLineId", roster.ProductionLineId.Value);
         command.Parameters.Add(SqlServerUInt64.CreateParameter("@Revision", roster.Revision.Value));
         return Convert.ToInt64(
-            await command.ExecuteScalarAsync(cancellationToken),
+            await OperationalMetricReportingDiagnostics.ScalarAsync(command, "SqlServerMachineShiftOccurrenceRosterStore.scalar.1", cancellationToken),
             CultureInfo.InvariantCulture);
     }
 

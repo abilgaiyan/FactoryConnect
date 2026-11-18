@@ -23,6 +23,9 @@ internal static class SqlContainmentVerifiedRead
     internal static async Task<Publication?> TryReadAsync(SqlConnection connection, SqlTransaction transaction,
         OperationalMetricProjectionProcessorId processor, CancellationToken token)
     {
+        using var diagnostic = OperationalMetricReportingDiagnostics.Start("containment.publication.operation");
+        try
+        {
         if (IsContainmentIdentity(processor))
         {
             SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
@@ -32,33 +35,38 @@ internal static class SqlContainmentVerifiedRead
         using var verificationTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.verify");
         verificationTiming?.SetTag("processor.id", processor.Value);
         await using (var schema = Command("SELECT COL_LENGTH('dbo.OperationalMetricProjectionProcessor','PublicationFormatVersion');"))
-            if (await schema.ExecuteScalarAsync(token) is null or DBNull)
+            if (await OperationalMetricReportingDiagnostics.ScalarAsync(schema, "SqlContainmentVerifiedRead.scalar.1", token) is null or DBNull)
             {
                 if (IsContainmentIdentity(processor)) throw Integrity("Containment schema is absent.");
                 return null; // Existing V1 fixtures/contracts can precede migration 021.
             }
-        var headers = await Query("""
+        var headers = await Query("publication.header", """
             SELECT OperationalMetricProjectionProcessorRowId,ProcessorKey,ProcessorKeyBinary,PublicationFormatVersion,EvaluationPolicyId
             FROM dbo.OperationalMetricProjectionProcessor WHERE ProcessorKeyBinary=@Key;
             """, key: StringOrderKeyV2Codec.Encode(processor.Value));
-        if (headers.Count == 0) return null;
+        if (headers.Count == 0) { diagnostic.Tag("diagnostic.dispatch", "Absent"); return null; }
         var header = headers.Single();
         if (!Equal(header["ProcessorKey"], processor.Value) || !Equal(header["ProcessorKeyBinary"], StringOrderKeyV2Codec.Encode(processor.Value)))
             throw Integrity("Exact processor identity is contradictory.");
         var format = (short)header["PublicationFormatVersion"]!;
-        if (format == 1 && header["EvaluationPolicyId"] is null && !IsContainmentIdentity(processor)) return null;
+        if (format == 1 && header["EvaluationPolicyId"] is null && !IsContainmentIdentity(processor))
+        { diagnostic.Tag("diagnostic.dispatch", "Legacy"); return null; }
         if (format != 2 || !Equal(header["EvaluationPolicyId"], AvailabilityContainmentV1.PolicyId) || !IsContainmentIdentity(processor))
             throw Integrity("Unsupported or contradictory processor publication format/policy.");
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         var id = (long)header["OperationalMetricProjectionProcessorRowId"]!;
         var source = await SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(connection, transaction, processor, token);
-        var retained = await Query("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id);
-        var manifest = (await Query("SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
+        if (source is not null) ReportingDiagnosticSession.CurrentAttempt?.Publication(source.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var retained = await Query("retained.inventory", "SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id);
+        diagnostic.Tag("diagnostic.rows.total", retained.Count);
+        var manifest = (await Query("manifest.inventory", "SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
             .Select(r => (long)r["OperationalMetricProjectionRowId"]!).ToArray();
-        var inventory = await Query("SELECT ResultId,SourceRevisionPosition FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY ResultId;", id);
+        var inventory = await Query("archive.inventory", "SELECT ResultId,SourceRevisionPosition FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY ResultId;", id);
         if (source is null)
         {
             if (retained.Count != 0 || manifest.Length != 0 || inventory.Count != 0) throw Integrity("Publication state exists without its checkpoint.");
+            diagnostic.Tag("diagnostic.rows.total", 0);
+            ReportingDiagnosticSession.CurrentAttempt?.EnumerationFinished();
             return new Publication([], new HashSet<OperationalMetricEvaluationKey>());
         }
         if (processor != AvailabilityContainmentV1.ProjectionProcessorId(source.StreamId.MachineId)) throw Integrity("Containment identity does not bind the exact source machine.");
@@ -73,14 +81,24 @@ internal static class SqlContainmentVerifiedRead
         var referenceTimeReads = new SqlContainmentReportingReferenceTimeScope(connection, transaction);
         var historicalReads = new SqlContainmentHistoricalReadScope(connection, transaction, referenceTimeReads);
         var projections = new List<OperationalMetricProjection>(); var latestKeys = new HashSet<OperationalMetricEvaluationKey>();
+        ReportingDiagnosticSession.CurrentAttempt?.Publication(source.Position.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var visitedRows = 0;
+        var completedRows = 0;
+        diagnostic.Tag("diagnostic.rows.total", retained.Count);
         foreach (var row in retained)
         {
+            using var rowDiagnostic = OperationalMetricReportingDiagnostics.Start("containment.retained-row.verify");
+            rowDiagnostic.Tag("diagnostic.row.ordinal", ++visitedRows);
+            try
+            {
             token.ThrowIfCancellationRequested();
             var rowId = (long)row["OperationalMetricProjectionRowId"]!;
             if (row["ContainmentResultId"] is not byte[] resultId) throw Integrity("Retained format-2 result binding is absent.");
-            var archives = await Query("SELECT ResultPayload FROM dbo.OperationalMetricPublicationResultArchive WHERE ResultId=@Result;", result: resultId);
+            rowDiagnostic.Tag("diagnostic.result.id", Convert.ToHexString(resultId));
+            var archives = await Query("archive.payload", "SELECT ResultPayload FROM dbo.OperationalMetricPublicationResultArchive WHERE ResultId=@Result;", result: resultId);
             if (archives.Count != 1) throw Integrity("Retained immutable archive is missing.");
             var bytes = (byte[])archives[0]["ResultPayload"]!;
+            rowDiagnostic.Tag("diagnostic.archive.bytes", bytes.Length);
             ContainmentArchiveBatch batch;
             try { batch = ContainmentArchiveBatch.Preflight([(ReadOnlyMemory<byte>)bytes]); }
             catch (InvalidDataException error) { throw new ContainmentHistoricalIntegrityException("Malformed retained result archive.", error); }
@@ -90,7 +108,7 @@ internal static class SqlContainmentVerifiedRead
                 throw Integrity("Retained archive identity/source/cut contradicts exact processor binding.");
             Projection(id, result).Match(row);
             var expectedEvidence = Evidence(rowId, result.Document);
-            var observedEvidence = await Query("SELECT * FROM dbo.OperationalMetricProjectionEvidence WHERE OperationalMetricProjectionRowId=@Row ORDER BY EvidenceKind,EvidenceOrdinal;", row: rowId);
+            var observedEvidence = await Query("projection.evidence", "SELECT * FROM dbo.OperationalMetricProjectionEvidence WHERE OperationalMetricProjectionRowId=@Row ORDER BY EvidenceKind,EvidenceOrdinal;", row: rowId);
             if (expectedEvidence.Length != observedEvidence.Count) throw Integrity("Retained evidence inventory differs from canonical evidence.");
             for (var i = 0; i < expectedEvidence.Length; i++) expectedEvidence[i].Match(observedEvidence[i]);
             // Read-only mode holds shared locks and has an explicit return before all archive DML.
@@ -108,7 +126,18 @@ internal static class SqlContainmentVerifiedRead
                 core.ReasonCode, core.ReasonOperandName, core.SourceRevision, core.OperandEvidence, core.DependencyEvidence,
                 core.AvailabilityScopeConflictEvidence, core.EvaluationPolicyId, metadata));
             if (manifest.Contains(rowId)) latestKeys.Add(verified.Projection.Key);
+            completedRows++;
+            }
+            catch (Exception rowError) { rowDiagnostic.Fail(rowError, token); throw; }
+            finally
+            {
+                diagnostic.Tag("diagnostic.rows.visited", visitedRows);
+                diagnostic.Tag("diagnostic.rows.completed", completedRows);
+                diagnostic.Tag("diagnostic.rows.interrupted", visitedRows - completedRows);
+            }
         }
+        ReportingDiagnosticSession.CurrentAttempt?.EnumerationFinished();
+        ReportingDiagnosticSession.CurrentAttempt?.ReferenceStats(referenceTimeReads.ReferenceTimeAuthorityValidationExecutions, referenceTimeReads.CacheHits);
         verificationTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations);
         verificationTiming?.SetTag("ReferenceTimeAuthorityValidationExecutions", referenceTimeReads.ReferenceTimeAuthorityValidationExecutions);
         verificationTiming?.SetTag("ReferenceTimeAuthorityCacheHits", referenceTimeReads.CacheHits);
@@ -119,15 +148,17 @@ internal static class SqlContainmentVerifiedRead
         return new Publication(projections.AsReadOnly(), latestKeys);
 
         SqlCommand Command(string sql) { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; return command; }
-        async Task<List<Dictionary<string, object?>>> Query(string sql, long? processorId = null, byte[]? key = null, byte[]? result = null, long? row = null)
+        async Task<List<Dictionary<string, object?>>> Query(string operation, string sql, long? processorId = null, byte[]? key = null, byte[]? result = null, long? row = null)
         {
             await using var command = Command(sql);
             if (processorId is not null) command.Parameters.AddWithValue("@P", processorId.Value);
             if (key is not null) command.Parameters.Add("@Key", SqlDbType.VarBinary, StringOrderKeyV2Codec.MaximumEncodedLength).Value = key;
             if (result is not null) command.Parameters.Add("@Result", SqlDbType.Binary, 32).Value = result;
             if (row is not null) command.Parameters.AddWithValue("@Row", row.Value);
-            return await Read(command, token);
+            return await Read(command, token, operation);
         }
+        }
+        catch (Exception diagnosticError) { diagnostic.Fail(diagnosticError, token); throw; }
     }
     private static ContainmentHistoricalIntegrityException Integrity(string message) => new(message);
 }

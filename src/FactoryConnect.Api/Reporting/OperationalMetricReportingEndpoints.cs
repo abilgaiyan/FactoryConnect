@@ -1,4 +1,5 @@
 using FactoryConnect.Abstractions;
+using FactoryConnect.Persistence.SqlServer;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FactoryConnect.Api.Reporting;
@@ -55,6 +56,7 @@ public static class OperationalMetricReportingEndpoints
         {
             OperationalMetricHttpRequestValidator.Validate(request);
             query = OperationalMetricHttpMapper.ToQuery(request);
+            ReportingDiagnosticSession.ReserveKnownProcessors(request.Sources.Select(static source => source.ProcessorId));
         }
         catch (ArgumentException)
         {
@@ -79,6 +81,7 @@ public static class OperationalMetricReportingEndpoints
         {
             OperationalMetricHttpRequestValidator.Validate(request);
             query = OperationalMetricHttpMapper.ToQuery(request);
+            ReportingDiagnosticSession.ReserveKnownProcessors(request.Sources.Select(static source => source.ProcessorId));
         }
         catch (ArgumentException)
         {
@@ -103,6 +106,7 @@ public static class OperationalMetricReportingEndpoints
         {
             OperationalMetricHttpRequestValidator.Validate(request);
             query = OperationalMetricHttpMapper.ToQuery(request);
+            ReportingDiagnosticSession.ReserveKnownProcessors(request.Sources.Select(static source => source.ProcessorId));
         }
         catch (ArgumentException)
         {
