@@ -192,6 +192,31 @@ try {
         if ($EnableDowntimeReasonAdministration) {
             $dashboardEnvironment['SupervisorLocalDowntimeReasons__EnableGateway'] = 'true'
         }
+        # Only advertise reporting sources explicitly selected for this development database.
+        # Do not fabricate a roster or silently select the placeholder development machine.
+        if ($null -ne (Get-Variable -Name settings -ErrorAction SilentlyContinue)) {
+            $sourcesProperty = $settings.PSObject.Properties['ReportingSources']
+            if ($null -ne $sourcesProperty -and $null -ne $sourcesProperty.Value) {
+                $sourceIndex = 0
+                foreach ($source in @($sourcesProperty.Value)) {
+                    $machineGuid = [guid]::Empty
+                    if (-not [guid]::TryParse([string]$source.MachineId, [ref]$machineGuid) -or
+                        $machineGuid -eq [guid]::Empty -or
+                        $machineGuid -eq [guid]'00000000-0000-0000-0000-000000000001' -or
+                        [string]::IsNullOrWhiteSpace([string]$source.ProcessorId) -or
+                        [string]::IsNullOrWhiteSpace([string]$source.SiteId)) {
+                        throw 'ReportingSources requires a real machine GUID, processorId and siteId (no development placeholder).'
+                    }
+                    $prefix = "Dashboard__Sources__${sourceIndex}__"
+                    $dashboardEnvironment[$prefix + 'MachineId'] = $machineGuid.ToString('D')
+                    foreach ($field in @('ProcessorId','SiteId','ProductionLineId','DisplayName','GroupName')) {
+                        $dashboardEnvironment[$prefix + $field] = [string]$source.$field
+                    }
+                    $dashboardEnvironment[$prefix + 'DisplayOrder'] = [string]$sourceIndex
+                    $sourceIndex++
+                }
+            }
+        }
         $dashboardProcess = Start-Service $dashboardProject $dashUrl $dashboardEnvironment $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
         Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
