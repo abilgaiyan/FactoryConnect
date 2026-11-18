@@ -8,5 +8,6 @@
   "EnableDowntimeReasonAdministration": true,
   "ApiPort": 5080,
   "DashboardPort": 5090,
-  "UiPort": 5173
+  "UiPort": 5173,
+  "ReportingSources": []
 }
