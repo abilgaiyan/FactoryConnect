@@ -29,6 +29,9 @@ internal sealed class SqlContainmentHistoricalReadScope
 
     internal SqlContainmentReportingReferenceTimeScope? ReportingReferenceTime { get; }
     internal int RootReconstructionInvocations { get; private set; }
+    internal int VerifiedResultCacheHits { get; private set; }
+    internal int VerifiedResultCacheMisses { get; private set; }
+    internal int UniqueVerifiedResultEnvelopes => _verifiedResults.Count;
     private readonly Dictionary<string, (ContainmentResultDocument Document, OperationalMetricProjection Projection)> _verifiedResults = new(StringComparer.Ordinal);
 
     internal async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> VerifyReportingResultAsync(
@@ -44,11 +47,16 @@ internal sealed class SqlContainmentHistoricalReadScope
         // The complete canonical envelope is the key: a changed claim cannot reuse verification.
         // RequireOwner and cancellation are checked even on hits.
         var key = Convert.ToHexString(envelope.Span);
-        if (_verifiedResults.TryGetValue(key, out var verified)) return verified;
+        if (_verifiedResults.TryGetValue(key, out var verified))
+        {
+            VerifiedResultCacheHits++;
+            return verified;
+        }
         verified = await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
             connection, transaction, envelope, cancellationToken, this);
         cancellationToken.ThrowIfCancellationRequested();
         _verifiedResults.Add(key, verified);
+        VerifiedResultCacheMisses++;
         return verified;
     }
 
