@@ -157,8 +157,10 @@ internal static class SqlContainmentArchiveTransaction
         var verifiedProjections = new List<VerifiedProjectionHandoff>();
         foreach (var result in batch.Results)
         {
-            var verified = await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
-                connection, transaction, result.Payload, cancellationToken, historicalReads);
+            var verified = verifyOnly
+                ? await historicalReads.VerifyReportingResultAsync(connection, transaction, result.Payload, cancellationToken)
+                : await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
+                    connection, transaction, result.Payload, cancellationToken, historicalReads);
             if (captureProjections)
                 verifiedProjections.Add(new VerifiedProjectionHandoff(connection, transaction, result.Id,
                     verified.Document, verified.Projection));
