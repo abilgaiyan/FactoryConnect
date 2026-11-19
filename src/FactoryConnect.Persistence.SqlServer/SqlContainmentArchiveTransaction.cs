@@ -158,6 +158,8 @@ internal static class SqlContainmentArchiveTransaction
         var rootReconstructionBefore = historicalReads.RootReconstructionInvocations;
         var cacheHitsBefore = historicalReads.VerifiedResultCacheHits;
         var cacheMissesBefore = historicalReads.VerifiedResultCacheMisses;
+        var aggregateHitsBefore = historicalReads.AggregateLookupCacheHits;
+        var aggregateMissesBefore = historicalReads.AggregateLookupCacheMisses;
         var verifiedProjections = new List<VerifiedProjectionHandoff>();
         foreach (var result in batch.Results)
         {
@@ -176,6 +178,10 @@ internal static class SqlContainmentArchiveTransaction
         reconstructionTiming?.SetTag("VerifiedResultCacheHits", historicalReads.VerifiedResultCacheHits - cacheHitsBefore);
         reconstructionTiming?.SetTag("VerifiedResultCacheMisses", historicalReads.VerifiedResultCacheMisses - cacheMissesBefore);
         reconstructionTiming?.SetTag("UniqueVerifiedResultEnvelopes", historicalReads.UniqueVerifiedResultEnvelopes);
+        reconstructionTiming?.SetTag("AggregateLookupCacheHits", historicalReads.AggregateLookupCacheHits - aggregateHitsBefore);
+        reconstructionTiming?.SetTag("AggregateLookupCacheMisses", historicalReads.AggregateLookupCacheMisses - aggregateMissesBefore);
+        reconstructionTiming?.SetTag("archive.aggregate.cache.hits", historicalReads.AggregateLookupCacheHits - aggregateHitsBefore);
+        reconstructionTiming?.SetTag("archive.aggregate.cache.misses", historicalReads.AggregateLookupCacheMisses - aggregateMissesBefore);
         reconstructionTiming?.SetTag("archive.reconstruction.cache.hits", historicalReads.VerifiedResultCacheHits - cacheHitsBefore);
         reconstructionTiming?.SetTag("archive.reconstruction.cache.misses", historicalReads.VerifiedResultCacheMisses - cacheMissesBefore);
         reconstructionTiming?.SetTag("archive.reconstruction.unique.envelopes", historicalReads.UniqueVerifiedResultEnvelopes);
