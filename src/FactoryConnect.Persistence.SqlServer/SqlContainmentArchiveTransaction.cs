@@ -171,6 +171,11 @@ internal static class SqlContainmentArchiveTransaction
         }
         reconstructionTiming?.SetTag("archive.reconstruction.elapsed.ms", System.Diagnostics.Stopwatch.GetElapsedTime(reconstructionStart).TotalMilliseconds);
         reconstructionTiming?.SetTag("archive.reconstruction.root.invocations", historicalReads.RootReconstructionInvocations - rootReconstructionBefore);
+        // These established diagnostic field names are emitted by the reporting stage logger.
+        reconstructionTiming?.SetTag("RootReconstructionInvocations", historicalReads.RootReconstructionInvocations - rootReconstructionBefore);
+        reconstructionTiming?.SetTag("VerifiedResultCacheHits", historicalReads.VerifiedResultCacheHits - cacheHitsBefore);
+        reconstructionTiming?.SetTag("VerifiedResultCacheMisses", historicalReads.VerifiedResultCacheMisses - cacheMissesBefore);
+        reconstructionTiming?.SetTag("UniqueVerifiedResultEnvelopes", historicalReads.UniqueVerifiedResultEnvelopes);
         reconstructionTiming?.SetTag("archive.reconstruction.cache.hits", historicalReads.VerifiedResultCacheHits - cacheHitsBefore);
         reconstructionTiming?.SetTag("archive.reconstruction.cache.misses", historicalReads.VerifiedResultCacheMisses - cacheMissesBefore);
         reconstructionTiming?.SetTag("archive.reconstruction.unique.envelopes", historicalReads.UniqueVerifiedResultEnvelopes);
