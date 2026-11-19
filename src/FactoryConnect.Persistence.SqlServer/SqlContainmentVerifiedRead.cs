@@ -94,9 +94,17 @@ internal static class SqlContainmentVerifiedRead
         // Load retained archive payloads and evidence once per processor, then preserve
         // the existing independent canonical checks for every retained result.
         using var bulkTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.bulk-read");
+        // Only retained projections require payload reconstruction. Keep the independent
+        // full archive metadata inventory above for checkpoint and latest-cut validation.
+        // Join by the immutable result ID and processor so an unrelated processor's
+        // archive cannot satisfy a retained binding.
         var archiveRows = await Query("""
-            SELECT a.ResultId,a.ResultPayload FROM dbo.OperationalMetricPublicationResultArchive a
-            WHERE a.OperationalMetricProjectionProcessorRowId=@P;
+            SELECT a.ResultId,a.ResultPayload
+            FROM dbo.OperationalMetricProjection p
+            INNER JOIN dbo.OperationalMetricPublicationResultArchive a
+                ON a.ResultId=p.ContainmentResultId
+               AND a.OperationalMetricProjectionProcessorRowId=p.OperationalMetricProjectionProcessorRowId
+            WHERE p.OperationalMetricProjectionProcessorRowId=@P;
             """, id);
         var archivesById = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         foreach (var archive in archiveRows)
