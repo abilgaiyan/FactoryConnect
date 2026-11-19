@@ -52,11 +52,18 @@ internal static class SqlContainmentVerifiedRead
         SqlContainmentHistoricalContributionReader.RequireStableTransaction(connection, transaction);
         var id = (long)header["OperationalMetricProjectionProcessorRowId"]!;
         using var inventoryTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.inventory.read");
-        var source = await SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(connection, transaction, processor, token);
-        var retained = await Query("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id);
-        var manifest = (await Query("SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
-            .Select(r => (long)r["OperationalMetricProjectionRowId"]!).ToArray();
-        var inventory = await Query("SELECT ResultId,SourceRevisionPosition FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY ResultId;", id);
+        var source = await TimedInventoryRead("containment.publication.checkpoint.read",
+            () => SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(connection, transaction, processor, token));
+        var retained = await TimedInventoryRead("containment.publication.retained.read",
+            () => Query("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id),
+            rows => rows.Count);
+        var manifest = await TimedInventoryRead("containment.publication.manifest.read",
+            async () => (await Query("SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
+                .Select(r => (long)r["OperationalMetricProjectionRowId"]!).ToArray(),
+            rows => rows.Length);
+        var inventory = await TimedInventoryRead("containment.publication.archive.inventory.read",
+            () => Query("SELECT ResultId,SourceRevisionPosition FROM dbo.OperationalMetricPublicationResultArchive WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY ResultId;", id),
+            rows => rows.Count);
         inventoryTiming?.SetTag("retained.result.count", retained.Count);
         inventoryTiming?.SetTag("archive.inventory.count", inventory.Count);
         inventoryTiming?.SetTag("manifest.result.count", manifest.Length);
@@ -193,6 +200,14 @@ internal static class SqlContainmentVerifiedRead
         verificationTiming?.SetTag("retained.result.count", retained.Count);
         verificationTiming?.SetTag("verification.completed", true);
         return new Publication(projections.AsReadOnly(), latestKeys);
+
+        async Task<T> TimedInventoryRead<T>(string stage, Func<Task<T>> read, Func<T, int>? rowCount = null)
+        {
+            using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity(stage);
+            var value = await read();
+            if (rowCount is not null) timing?.SetTag("result.count", rowCount(value));
+            return value;
+        }
 
         SqlCommand Command(string sql) { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; return command; }
         async Task<List<Dictionary<string, object?>>> Query(string sql, long? processorId = null, byte[]? key = null, byte[]? result = null, long? row = null)
