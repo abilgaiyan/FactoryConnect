@@ -8,7 +8,7 @@ namespace FactoryConnect.Persistence.SqlServer;
 /// Reuses validated source inputs and their validated aggregate contribution set within one
 /// caller-owned Serializable transaction and exact aggregation revision.
 /// Callers must not write source facts, contribution membership or aggregation revisions in this scope.
-/// Result evaluation is not cached. Reference-time reuse requires an explicit reporting-only scope.
+/// Verified identical result envelopes can be reused within a reporting transaction. Reference-time reuse requires an explicit reporting-only scope.
 /// </summary>
 internal sealed class SqlContainmentHistoricalReadScope
 {
@@ -29,6 +29,28 @@ internal sealed class SqlContainmentHistoricalReadScope
 
     internal SqlContainmentReportingReferenceTimeScope? ReportingReferenceTime { get; }
     internal int RootReconstructionInvocations { get; private set; }
+    private readonly Dictionary<string, (ContainmentResultDocument Document, OperationalMetricProjection Projection)> _verifiedResults = new(StringComparer.Ordinal);
+
+    internal async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> VerifyReportingResultAsync(
+        SqlConnection connection, SqlTransaction transaction, ReadOnlyMemory<byte> envelope,
+        CancellationToken cancellationToken)
+    {
+        RequireOwner(connection, transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ReportingReferenceTime is null)
+            return await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
+                connection, transaction, envelope, cancellationToken, this);
+
+        // The complete canonical envelope is the key: a changed claim cannot reuse verification.
+        // RequireOwner and cancellation are checked even on hits.
+        var key = Convert.ToHexString(envelope.Span);
+        if (_verifiedResults.TryGetValue(key, out var verified)) return verified;
+        verified = await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
+            connection, transaction, envelope, cancellationToken, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        _verifiedResults.Add(key, verified);
+        return verified;
+    }
 
     internal void RecordRootReconstruction()
     {
