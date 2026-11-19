@@ -33,6 +33,8 @@ internal sealed class SqlContainmentHistoricalReadScope
 
     internal SqlContainmentReportingReferenceTimeScope? ReportingReferenceTime { get; }
     internal int RootReconstructionInvocations { get; private set; }
+    internal int AggregateLookupCacheHits { get; private set; }
+    internal int AggregateLookupCacheMisses { get; private set; }
     internal int VerifiedResultCacheHits { get; private set; }
     internal int VerifiedResultCacheMisses { get; private set; }
     internal int UniqueVerifiedResultEnvelopes => _verifiedResults.Count;
@@ -71,10 +73,15 @@ internal sealed class SqlContainmentHistoricalReadScope
         RequireOwner(_connection, _transaction);
         cancellationToken.ThrowIfCancellationRequested();
         var key = (cut, machineId, period, aggregateKey);
-        if (_aggregateLookups.TryGetValue(key, out var cached)) return cached;
+        if (_aggregateLookups.TryGetValue(key, out var cached))
+        {
+            AggregateLookupCacheHits++;
+            return cached;
+        }
         var value = resolve();
         cancellationToken.ThrowIfCancellationRequested();
         _aggregateLookups.Add(key, value);
+        AggregateLookupCacheMisses++;
         return value;
     }
 
