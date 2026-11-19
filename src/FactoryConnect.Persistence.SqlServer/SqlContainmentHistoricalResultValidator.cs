@@ -77,9 +77,7 @@ internal static class SqlContainmentHistoricalResultValidator
         MetricAggregationCheckpoint cut, SqlContainmentHistoricalReadScope historicalReads) : IOperationalMetricComponentSnapshotReader
     {
         internal ContainmentHistoricalAuthority? ReferenceBinding { get; private set; }
-        // Dependency evaluation can request the same aggregate repeatedly within one root.
-        // Retain the original SingleOrDefault integrity check on the first lookup.
-        private readonly Dictionary<(OperationalMetricPeriodId Period, object AggregateKey), MetricAggregateValue?> _aggregateValues = [];
+        // Share first-lookup validation across roots at the same exact cut and period.
 
         public async ValueTask<OperationalMetricComponentSnapshot> ReadAsync(OperationalMetricComponentSnapshotRequest request,
             CancellationToken cancellationToken)
@@ -101,19 +99,15 @@ internal static class SqlContainmentHistoricalResultValidator
                 }
                 else
                 {
-                    var lookup = (request.EvaluationKey.PeriodId, (object)aggregateKey);
-                    if (!_aggregateValues.TryGetValue(lookup, out aggregate))
-                    {
-                        aggregate = request.EvaluationKey.PeriodId switch
+                    aggregate = historicalReads.GetOrAddAggregate(cut, request.EvaluationKey.MachineId,
+                        request.EvaluationKey.PeriodId, aggregateKey, () => request.EvaluationKey.PeriodId switch
                         {
                             OperationalMetricPeriodId.Shift shift => aggregates.ShiftContributions.SingleOrDefault(c =>
                                 c.Key == new ShiftMetricAggregateKey(request.EvaluationKey.MachineId, shift.ShiftOccurrenceId, aggregateKey))?.Value,
                             OperationalMetricPeriodId.ProductionDay day => aggregates.ProductionDayContributions.SingleOrDefault(c =>
                                 c.Key == new ProductionDayMetricAggregateKey(request.EvaluationKey.MachineId, day.ProductionDayId, aggregateKey))?.Value,
                             _ => throw new InvalidDataException("Unsupported containment period.")
-                        };
-                        _aggregateValues.Add(lookup, aggregate);
-                    }
+                        }, cancellationToken);
                 }
                 if (aggregate is not null)
                     components.Add(new OperationalMetricComponent(operand.OperandName,
