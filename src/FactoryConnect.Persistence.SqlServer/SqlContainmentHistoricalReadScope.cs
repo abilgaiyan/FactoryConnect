@@ -18,7 +18,7 @@ internal sealed class SqlContainmentHistoricalReadScope
     private readonly EvidenceCache _inputs;
     // Reuse exact-cut aggregate lookups across independent result roots in this transaction.
     // Each first lookup still executes the original SingleOrDefault integrity check.
-    private readonly Dictionary<(MetricAggregationCheckpoint Cut, Guid MachineId, OperationalMetricPeriodId Period, object AggregateKey), MetricAggregateValue?> _aggregateLookups = [];
+    private readonly Dictionary<(MetricAggregationCheckpoint Cut, object MachineId, OperationalMetricPeriodId Period, object AggregateKey), MetricAggregateValue?> _aggregateLookups = [];
 
     internal SqlContainmentHistoricalReadScope(SqlConnection connection, SqlTransaction transaction,
         SqlContainmentReportingReferenceTimeScope? reportingReferenceTime = null)
@@ -65,7 +65,7 @@ internal sealed class SqlContainmentHistoricalReadScope
     }
 
     internal MetricAggregateValue? GetOrAddAggregate(
-        MetricAggregationCheckpoint cut, Guid machineId, OperationalMetricPeriodId period,
+        MetricAggregationCheckpoint cut, object machineId, OperationalMetricPeriodId period,
         object aggregateKey, Func<MetricAggregateValue?> resolve, CancellationToken cancellationToken)
     {
         RequireOwner(_connection, _transaction);
