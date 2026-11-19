@@ -58,17 +58,39 @@ internal static class SqlContainmentArchiveTransaction
         await SqlServerOperationalMetricProjectionProcessorGate.AcquireAsync(connection, transaction, batch.Processor,
             verifyOnly ? OperationalMetricProjectionProcessorGateMode.Shared : OperationalMetricProjectionProcessorGateMode.Exclusive, cancellationToken);
         var binding = await ReadBinding(connection, transaction, batch, verifyOnly, cancellationToken);
+        // Reporting verifies an immutable exact cut under the caller's Serializable transaction.
+        // Read the slot and digest inventories in two set-based passes rather than issuing
+        // two round trips for every result. The independent comparisons below remain intact.
+        Dictionary<string, ResultRow>? reportingSlots = null;
+        Dictionary<string, ResultRow>? reportingDigests = null;
+        if (verifyOnly)
+        {
+            reportingSlots = await ReadReportingResultBatchAsync(
+                connection, transaction, binding.Processor, batch.Cut.Position.Value,
+                "containment.archive.slots.batch-read", cancellationToken);
+            reportingDigests = await ReadReportingResultBatchAsync(
+                connection, transaction, binding.Processor, batch.Cut.Position.Value,
+                "containment.archive.digests.batch-read", cancellationToken);
+        }
         // Caller holds the retained prefix first; these archive locks continue in reviewed deterministic order.
         using var slotTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.slots.read");
         var existing = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (var result in batch.Results)
         {
-            await using var command = CreateForMode(ResultSelect +
-                " WITH (UPDLOCK,HOLDLOCK,INDEX(UQ_OMPRA_Slot)) WHERE OperationalMetricProjectionProcessorRowId=@P AND EvaluationKeyHash=@K AND SourceRevisionPosition=@A;");
-            command.Parameters.AddWithValue("@P", binding.Processor);
-            Bytes(command, "@K", result.KeyHash, 32);
-            command.Parameters.Add(SqlServerUInt64.CreateParameter("@A", batch.Cut.Position.Value));
-            var row = await ReadResult(command, cancellationToken);
+            ResultRow? row;
+            if (reportingSlots is not null)
+            {
+                reportingSlots.TryGetValue(Convert.ToHexString(result.KeyHash), out row);
+            }
+            else
+            {
+                await using var command = CreateForMode(ResultSelect +
+                    " WITH (UPDLOCK,HOLDLOCK,INDEX(UQ_OMPRA_Slot)) WHERE OperationalMetricProjectionProcessorRowId=@P AND EvaluationKeyHash=@K AND SourceRevisionPosition=@A;");
+                command.Parameters.AddWithValue("@P", binding.Processor);
+                Bytes(command, "@K", result.KeyHash, 32);
+                command.Parameters.Add(SqlServerUInt64.CreateParameter("@A", batch.Cut.Position.Value));
+                row = await ReadResult(command, cancellationToken);
+            }
             if (row is not null) MatchResult(row, result, binding, batch);
             else if (requireExisting) throw Integrity("Replay cannot repair a missing result archive.");
             existing.Add(Convert.ToHexString(result.Id), row is not null);
@@ -94,9 +116,18 @@ internal static class SqlContainmentArchiveTransaction
         using var digestTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.digests.read");
         foreach (var result in batch.Results.OrderBy(r => Convert.ToHexString(r.Id), StringComparer.Ordinal))
         {
-            await using var command = CreateForMode(ResultSelect + " WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id;");
-            Bytes(command, "@Id", result.Id, 32);
-            var row = await ReadResult(command, cancellationToken);
+            ResultRow? row;
+            if (reportingDigests is not null)
+            {
+                // MatchResult still verifies the full canonical payload, not merely the digest.
+                reportingDigests.TryGetValue(Convert.ToHexString(result.Id), out row);
+            }
+            else
+            {
+                await using var command = CreateForMode(ResultSelect + " WITH (UPDLOCK,HOLDLOCK) WHERE ResultId=@Id;");
+                Bytes(command, "@Id", result.Id, 32);
+                row = await ReadResult(command, cancellationToken);
+            }
             if (row is not null) MatchResult(row, result, binding, batch);
             if ((row is not null) != existing[Convert.ToHexString(result.Id)]) throw Integrity("Result slot and digest disagree.");
         }
@@ -231,6 +262,41 @@ internal static class SqlContainmentArchiveTransaction
             // Identical replay executes no DML and does not traverse mutation failure hooks.
             if (failureInjection is not null && existing.Values.Any(v => !v)) await failureInjection(stage, cancellationToken);
         }
+    }
+
+    // Read-only reporting fast path. Publication continues to use its existing
+    // deterministic per-row lock and write sequence. No ORDER BY or wide SQL sort:
+    // rows are keyed and verified by the caller against canonical result identities.
+    private static async Task<Dictionary<string, ResultRow>> ReadReportingResultBatchAsync(
+        SqlConnection connection, SqlTransaction transaction, long processor, ulong position,
+        string stage, CancellationToken token)
+    {
+        using var timing = OperationalMetricReportingDiagnostics.Source.StartActivity(stage);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = ResultSelect +
+            " WHERE OperationalMetricProjectionProcessorRowId=@P AND SourceRevisionPosition=@A;";
+        command.Parameters.AddWithValue("@P", processor);
+        command.Parameters.Add(SqlServerUInt64.CreateParameter("@A", position));
+        var rows = new Dictionary<string, ResultRow>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
+        {
+            var row = new ResultRow((byte[])reader[0], reader.GetInt64(1), reader.GetInt16(2),
+                reader.GetInt64(3), reader.GetInt64(4),
+                SqlServerUInt64.Materialize(reader.GetDecimal(5)), (byte[])reader[6],
+                (byte[])reader[7], reader.GetString(8), reader.GetInt16(9),
+                (byte[])reader[10], reader.GetByte(11),
+                reader.IsDBNull(12) ? null : reader.GetByte(12),
+                reader.IsDBNull(13) ? null : (byte[])reader[13]);
+            // Key by slot for the first pass, and by immutable digest for the second.
+            var key = stage.Contains("slots", StringComparison.Ordinal)
+                ? Convert.ToHexString(row.KeyHash) : Convert.ToHexString(row.Id);
+            if (!rows.TryAdd(key, row))
+                throw Integrity("Duplicate archive slot or digest in reporting batch.");
+        }
+        timing?.SetTag("result.count", rows.Count);
+        return rows;
     }
 
     internal sealed class VerifiedProjectionHandoff
