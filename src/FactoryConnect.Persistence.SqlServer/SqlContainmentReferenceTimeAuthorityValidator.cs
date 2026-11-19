@@ -27,8 +27,7 @@ internal static partial class SqlContainmentReferenceTimeAuthorityValidator
             evidence = await ValidatedCutEvidence.LoadAsync(connection, transaction, cut, historicalReads, cancellationToken);
         historicalReads.RequireOwner(connection, transaction);
         cancellationToken.ThrowIfCancellationRequested();
-        if (historicalReads.ReportingReferenceTime is { } reportingScope)
-            return reportingScope.EvaluatePeriod(connection, transaction, evidence, period, cancellationToken);
+        historicalReads.ReportingReferenceTime?.RecordPeriodEvaluation(connection, transaction);
         return evidence.EvaluatePeriod(connection, transaction, period, cancellationToken);
     }
 
