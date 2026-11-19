@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
@@ -15,6 +16,9 @@ internal sealed class SqlContainmentHistoricalReadScope
     private readonly SqlConnection _connection;
     private readonly SqlTransaction _transaction;
     private readonly EvidenceCache _inputs;
+    // Reuse exact-cut aggregate lookups across independent result roots in this transaction.
+    // Each first lookup still executes the original SingleOrDefault integrity check.
+    private readonly Dictionary<(MetricAggregationCheckpoint Cut, Guid MachineId, OperationalMetricPeriodId Period, object AggregateKey), MetricAggregateValue?> _aggregateLookups = [];
 
     internal SqlContainmentHistoricalReadScope(SqlConnection connection, SqlTransaction transaction,
         SqlContainmentReportingReferenceTimeScope? reportingReferenceTime = null)
@@ -58,6 +62,20 @@ internal sealed class SqlContainmentHistoricalReadScope
         _verifiedResults.Add(key, verified);
         VerifiedResultCacheMisses++;
         return verified;
+    }
+
+    internal MetricAggregateValue? GetOrAddAggregate(
+        MetricAggregationCheckpoint cut, Guid machineId, OperationalMetricPeriodId period,
+        object aggregateKey, Func<MetricAggregateValue?> resolve, CancellationToken cancellationToken)
+    {
+        RequireOwner(_connection, _transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = (cut, machineId, period, aggregateKey);
+        if (_aggregateLookups.TryGetValue(key, out var cached)) return cached;
+        var value = resolve();
+        cancellationToken.ThrowIfCancellationRequested();
+        _aggregateLookups.Add(key, value);
+        return value;
     }
 
     internal void RecordRootReconstruction()
