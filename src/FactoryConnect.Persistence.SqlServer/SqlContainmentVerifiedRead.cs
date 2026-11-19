@@ -98,7 +98,7 @@ internal static class SqlContainmentVerifiedRead
         // full archive metadata inventory above for checkpoint and latest-cut validation.
         // Join by the immutable result ID and processor so an unrelated processor's
         // archive cannot satisfy a retained binding.
-        var archiveRows = await Query("""
+        var archiveRows = await TimedBulkRead("containment.publication.retained.bulk-read.archive-payloads", """
             SELECT a.ResultId,a.ResultPayload
             FROM dbo.OperationalMetricProjection p
             INNER JOIN dbo.OperationalMetricPublicationResultArchive a
@@ -113,7 +113,7 @@ internal static class SqlContainmentVerifiedRead
                 !archivesById.TryAdd(Convert.ToHexString(archiveId), archivePayload))
                 throw Integrity("Retained archive payload inventory is contradictory.");
         }
-        var evidenceRows = await Query("""
+        var evidenceRows = await TimedBulkRead("containment.publication.retained.bulk-read.evidence", """
             SELECT e.* FROM dbo.OperationalMetricProjectionEvidence e
             INNER JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId
             WHERE p.OperationalMetricProjectionProcessorRowId=@P
@@ -241,6 +241,31 @@ internal static class SqlContainmentVerifiedRead
             var value = await read();
             if (rowCount is not null) timing?.SetTag("result.count", rowCount(value));
             return value;
+        }
+
+        async Task<List<Dictionary<string, object?>>> TimedBulkRead(string stage, string sql, long processorId)
+        {
+            await using var command = Command(sql);
+            command.Parameters.AddWithValue("@P", processorId);
+            SqlDataReader reader;
+            using (OperationalMetricReportingDiagnostics.Source.StartActivity(stage + ".execute"))
+                reader = await command.ExecuteReaderAsync(token);
+            await using (reader)
+            {
+                var rows = new List<Dictionary<string, object?>>();
+                using (var timing = OperationalMetricReportingDiagnostics.Source.StartActivity(stage + ".materialize"))
+                {
+                    while (await reader.ReadAsync(token))
+                    {
+                        var row = new Dictionary<string, object?>(StringComparer.Ordinal);
+                        for (var i = 0; i < reader.FieldCount; i++)
+                            row.Add(reader.GetName(i), reader.IsDBNull(i) ? null : reader.GetValue(i));
+                        rows.Add(row);
+                    }
+                    timing?.SetTag("result.count", rows.Count);
+                }
+                return rows;
+            }
         }
 
         SqlCommand Command(string sql) { var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = sql; return command; }
