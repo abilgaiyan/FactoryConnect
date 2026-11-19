@@ -116,11 +116,17 @@ internal static class SqlContainmentVerifiedRead
         var evidenceRows = await TimedBulkRead("containment.publication.retained.bulk-read.evidence", """
             SELECT e.* FROM dbo.OperationalMetricProjectionEvidence e
             INNER JOIN dbo.OperationalMetricProjection p ON p.OperationalMetricProjectionRowId=e.OperationalMetricProjectionRowId
-            WHERE p.OperationalMetricProjectionProcessorRowId=@P
-            ORDER BY e.OperationalMetricProjectionRowId,e.EvidenceKind,e.EvidenceOrdinal;
+            WHERE p.OperationalMetricProjectionProcessorRowId=@P;
             """, id);
+        // SQL ORDER BY on wide evidence rows can block for a memory grant even
+        // when the result set is small. Re-establish the canonical order in memory
+        // before positional comparison with ContainmentRetainedState.Evidence().
+        // These are SQL tinyint/int fields, so numeric ordering is unambiguous.
         var evidenceByRow = evidenceRows.GroupBy(r => (long)r["OperationalMetricProjectionRowId"]!)
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .ToDictionary(g => g.Key, g => g
+                .OrderBy(r => (byte)r["EvidenceKind"]!)
+                .ThenBy(r => (int)r["EvidenceOrdinal"]!)
+                .ToList());
         bulkTiming?.SetTag("archive.payload.count", archivesById.Count);
         bulkTiming?.SetTag("retained.result.count", retained.Count);
         bulkTiming?.SetTag("evidence.row.count", evidenceRows.Count);
