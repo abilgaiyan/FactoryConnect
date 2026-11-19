@@ -55,7 +55,7 @@ internal static class SqlContainmentVerifiedRead
         var source = await TimedInventoryRead("containment.publication.checkpoint.read",
             () => SqlServerOperationalMetricProjectionCommitTransaction.ReadCheckpointHeaderAsync(connection, transaction, processor, token));
         var retained = await TimedInventoryRead("containment.publication.retained.read",
-            () => Query("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;", id),
+            () => ReadRetainedProjections(id),
             rows => rows.Count);
         var manifest = await TimedInventoryRead("containment.publication.manifest.read",
             async () => (await Query("SELECT OperationalMetricProjectionRowId FROM dbo.OperationalMetricProjectionManifest WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY OperationalMetricProjectionRowId;", id))
@@ -200,6 +200,32 @@ internal static class SqlContainmentVerifiedRead
         verificationTiming?.SetTag("retained.result.count", retained.Count);
         verificationTiming?.SetTag("verification.completed", true);
         return new Publication(projections.AsReadOnly(), latestKeys);
+
+        // Diagnostic split of the existing retained SELECT * path: no change to SQL or row values.
+        async Task<List<Dictionary<string, object?>>> ReadRetainedProjections(long processorId)
+        {
+            await using var command = Command("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;");
+            command.Parameters.AddWithValue("@P", processorId);
+            SqlDataReader reader;
+            using (OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.execute"))
+                reader = await command.ExecuteReaderAsync(token);
+            await using (reader)
+            {
+                var rows = new List<Dictionary<string, object?>>();
+                using (var materialize = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.materialize"))
+                {
+                    while (await reader.ReadAsync(token))
+                    {
+                        var row = new Dictionary<string, object?>(StringComparer.Ordinal);
+                        for (var i = 0; i < reader.FieldCount; i++)
+                            row.Add(reader.GetName(i), reader.IsDBNull(i) ? null : reader.GetValue(i));
+                        rows.Add(row);
+                    }
+                    materialize?.SetTag("result.count", rows.Count);
+                }
+                return rows;
+            }
+        }
 
         async Task<T> TimedInventoryRead<T>(string stage, Func<Task<T>> read, Func<T, int>? rowCount = null)
         {
