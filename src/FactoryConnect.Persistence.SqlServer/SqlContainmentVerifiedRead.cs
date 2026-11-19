@@ -204,7 +204,7 @@ internal static class SqlContainmentVerifiedRead
         // Diagnostic split of the existing retained SELECT * path: no change to SQL or row values.
         async Task<List<Dictionary<string, object?>>> ReadRetainedProjections(long processorId)
         {
-            await using var command = Command("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P ORDER BY EvaluationKeyHash;");
+            await using var command = Command("SELECT * FROM dbo.OperationalMetricProjection WHERE OperationalMetricProjectionProcessorRowId=@P;");
             command.Parameters.AddWithValue("@P", processorId);
             SqlDataReader reader;
             using (OperationalMetricReportingDiagnostics.Source.StartActivity("containment.publication.retained.execute"))
