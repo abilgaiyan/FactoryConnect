@@ -12,6 +12,7 @@ internal sealed class SqlContainmentReportingReferenceTimeScope
     private readonly SqlConnection _connection;
     private readonly SqlTransaction _transaction;
     private readonly Dictionary<Identity, SqlContainmentReferenceTimeAuthorityValidator.ValidatedCutEvidence> _validated = [];
+    private readonly Dictionary<(MetricAggregationCheckpoint Cut, OperationalMetricPeriodId Period), SqlContainmentReferenceTimeAuthorityValidator.VerifiedReferenceTime> _periodResults = [];
     private int _reading;
 
     internal SqlContainmentReportingReferenceTimeScope(SqlConnection connection, SqlTransaction transaction)
@@ -24,6 +25,29 @@ internal sealed class SqlContainmentReportingReferenceTimeScope
     internal int ReferenceTimeAuthorityValidationExecutions { get; private set; }
     internal int CacheHits { get; private set; }
     internal int PeriodEvaluations { get; private set; }
+    internal int PeriodCacheHits { get; private set; }
+
+    internal SqlContainmentReferenceTimeAuthorityValidator.VerifiedReferenceTime EvaluatePeriod(
+        SqlConnection connection, SqlTransaction transaction,
+        SqlContainmentReferenceTimeAuthorityValidator.ValidatedCutEvidence evidence,
+        OperationalMetricPeriodId period, CancellationToken cancellationToken)
+    {
+        RequireOwner(connection, transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+        evidence.RequireOwner(connection, transaction, evidence.Cut);
+        var key = (evidence.Cut, period);
+        if (_periodResults.TryGetValue(key, out var cached))
+        {
+            PeriodCacheHits++;
+            return cached;
+        }
+        RecordPeriodEvaluation(connection, transaction);
+        var result = evidence.EvaluatePeriod(connection, transaction, period, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        RequireOwner(connection, transaction);
+        _periodResults.Add(key, result);
+        return result;
+    }
 
     internal void RecordPeriodEvaluation(SqlConnection connection, SqlTransaction transaction)
     {
