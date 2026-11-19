@@ -154,6 +154,10 @@ internal static class SqlContainmentArchiveTransaction
         // No archive DML is allowed until every incoming result passes P3 in this exact transaction.
         referencesTiming?.Dispose();
         using var reconstructionTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.results.reconstruct");
+        var reconstructionStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        var rootReconstructionBefore = historicalReads.RootReconstructionInvocations;
+        var cacheHitsBefore = historicalReads.VerifiedResultCacheHits;
+        var cacheMissesBefore = historicalReads.VerifiedResultCacheMisses;
         var verifiedProjections = new List<VerifiedProjectionHandoff>();
         foreach (var result in batch.Results)
         {
@@ -165,6 +169,13 @@ internal static class SqlContainmentArchiveTransaction
                 verifiedProjections.Add(new VerifiedProjectionHandoff(connection, transaction, result.Id,
                     verified.Document, verified.Projection));
         }
+        reconstructionTiming?.SetTag("archive.reconstruction.elapsed.ms", System.Diagnostics.Stopwatch.GetElapsedTime(reconstructionStart).TotalMilliseconds);
+        reconstructionTiming?.SetTag("archive.reconstruction.root.invocations", historicalReads.RootReconstructionInvocations - rootReconstructionBefore);
+        reconstructionTiming?.SetTag("archive.reconstruction.cache.hits", historicalReads.VerifiedResultCacheHits - cacheHitsBefore);
+        reconstructionTiming?.SetTag("archive.reconstruction.cache.misses", historicalReads.VerifiedResultCacheMisses - cacheMissesBefore);
+        reconstructionTiming?.SetTag("archive.reconstruction.unique.envelopes", historicalReads.UniqueVerifiedResultEnvelopes);
+        batchTiming?.SetTag("archive.reconstruction.cache.hits", historicalReads.VerifiedResultCacheHits - cacheHitsBefore);
+        batchTiming?.SetTag("archive.reconstruction.cache.misses", historicalReads.VerifiedResultCacheMisses - cacheMissesBefore);
         reconstructionTiming?.Dispose();
         using var factsTiming = OperationalMetricReportingDiagnostics.Source.StartActivity("containment.archive.witness-facts.read");
         var factRows = new Dictionary<string, long>(StringComparer.Ordinal);
