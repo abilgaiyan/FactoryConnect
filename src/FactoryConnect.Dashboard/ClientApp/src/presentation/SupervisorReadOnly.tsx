@@ -87,12 +87,28 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
   const [activeView, setActiveView] = useState<"overview" | "production" | "targets" | "activity" | "diagnostics">("overview");
   const occurrences = overview.groups.flatMap(group => group.machines.flatMap(machine => machine.shifts.map(occurrence => ({ machine, occurrence }))));
   const selected = occurrences.find(({ machine, occurrence }) => occurrenceKey(machine, occurrence) === selectedKey);
+  const oeeBlockers = new Map<string, number>();
+  for (const { occurrence } of occurrences) {
+    if (occurrence.oee.state === "calculated") continue;
+    const reasons = [occurrence.performance, occurrence.quality, occurrence.availability]
+      .filter(metric => metric.state === "insufficient-evidence" || metric.state === "unavailable")
+      .map(metric => metric.reasonCode?.trim())
+      .filter((reason): reason is string => Boolean(reason));
+    const distinct = new Set(reasons.length ? reasons : [occurrence.oee.state === "missing" ? "OEE not returned" : occurrence.oee.reasonCode?.trim() || "Reason not provided"]);
+    for (const reason of distinct) oeeBlockers.set(reason, (oeeBlockers.get(reason) ?? 0) + 1);
+  }
   return <>
     <p role="status">{occurrences.length} recorded shift occurrence(s) returned for {overview.productionDay}. Select one to inspect its metrics and activity.</p>
     {occurrences.length > 0 && <section aria-label="Shift OEE evidence coverage" className="supervisor-detail">
       <h2>OEE readiness for this production day</h2>
       <p><strong>{occurrences.filter(({ occurrence }) => occurrence.oee.state === "calculated").length}</strong> of <strong>{occurrences.length}</strong> shift occurrences have a reported calculated OEE.</p>
       <p>{occurrences.filter(({ occurrence }) => occurrence.oee.state === "insufficient-evidence").length} insufficient evidence · {occurrences.filter(({ occurrence }) => occurrence.oee.state === "unavailable").length} unavailable · {occurrences.filter(({ occurrence }) => occurrence.oee.state === "missing").length} not returned.</p>
+      {oeeBlockers.size > 0 && <div aria-label="OEE evidence blockers">
+        <h3>Evidence gaps to resolve</h3>
+        <ul>{[...oeeBlockers.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([reason, count]) =>
+          <li key={reason}>{reason}: {count} shift occurrence(s)</li>)}</ul>
+        <p>A shift may have more than one evidence gap. These are reporting reason codes, not inferred production quantities.</p>
+      </div>}
       <p>Counts are per exact shift, not an average or a production total. Select a shift to inspect its evidence and reasons.</p>
     </section>}
     {occurrences.length > 0 && <div className="supervisor-shift-choices" aria-label="Available shift occurrences">
