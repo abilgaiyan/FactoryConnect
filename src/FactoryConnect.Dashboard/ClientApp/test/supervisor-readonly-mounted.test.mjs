@@ -69,6 +69,8 @@ test('real mode reuses canonical reporting and exact overnight activity; inspect
   assert.equal(requests.length,0);
   assert.equal(control(h,'Exact shift occurrence').options.length,3);
   assert.match(text(h),/2 recorded shift occurrence\(s\)/);
+  assert.match(h.document.querySelector('[aria-label="Shift OEE evidence coverage"]').textContent,/0 of 2 shift occurrences have a reported calculated OEE/);
+  assert.match(h.document.querySelector('[aria-label="Shift OEE evidence coverage"]').textContent,/2 insufficient evidence · 0 unavailable · 0 not returned/);
   assert.equal(h.document.querySelectorAll('.supervisor-shift-choices button').length,2);
   await selectOccurrence(h);
   assert.equal(requests.length,1);
