@@ -54,6 +54,20 @@ export function ShiftPerformanceOverviewView({ overview, showFilters = true }: S
           <dt>Not returned</dt><dd>{selected.filter(({ shift }) => shift.oee.state === "missing").length}</dd>
         </dl>
       </section>}
+      {selected.length > 0 && <section aria-label="OEE component evidence coverage">
+        <h3>OEE component readiness</h3>
+        <p className="report-scope-note">Calculated metrics per exact shift occurrence in the current filters. These counts are not percentages or an OEE average.</p>
+        <dl>{(["availability", "performance", "quality"] as const).map(component => {
+          const calculated = selected.filter(({ shift }) => shift[component].state === "calculated").length;
+          const insufficient = selected.filter(({ shift }) => shift[component].state === "insufficient-evidence").length;
+          const unavailable = selected.filter(({ shift }) => shift[component].state === "unavailable").length;
+          const missing = selected.filter(({ shift }) => shift[component].state === "missing").length;
+          return <div key={component}>
+            <dt>{component === "availability" ? "Availability" : component === "performance" ? "Performance" : "Quality"}</dt>
+            <dd>{calculated} of {selected.length} calculated · {insufficient} insufficient evidence · {unavailable} unavailable · {missing} not returned</dd>
+          </div>;
+        })}</dl>
+      </section>}
       {selected.length === 1 && <p className="report-scope-note">Selected: {selected[0]!.machine.displayName} · {selected[0]!.shift.shift.shiftId} · {formatReportTimestamp(selected[0]!.shift.shift.startsAtUtc)} – {formatReportTimestamp(selected[0]!.shift.shift.endsAtUtc)}</p>}
       {selected.length === 1 && <section className="performance-kpis" aria-label="Selected shift metrics">
         {[selected[0]!.shift.availability, selected[0]!.shift.utilization, selected[0]!.shift.performance, selected[0]!.shift.quality, selected[0]!.shift.oee].map(metric => {
