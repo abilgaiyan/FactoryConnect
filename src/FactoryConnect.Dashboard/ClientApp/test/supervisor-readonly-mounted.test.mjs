@@ -236,3 +236,20 @@ test('supervisor declaration read rejects a different exact shift and withholds 
   assert.equal(h.document.querySelector('[aria-label="Filtered supervisor declaration totals"]'), null);
   assert.equal(h.document.querySelector('[aria-label="Declared quantities by production order"]'), null);
 });
+
+
+test('historical quantity inventory rejects malformed and negative source rows before display or export', async () => {
+  const { validQuantitySourceInventory } = await vite.ssrLoadModule('/src/presentation/SupervisorQuantitySourceInspection.tsx');
+  const sourceRow = {
+    evidenceId: 'evidence-1', occurredAtUtc: '2026-10-28T20:00:00Z',
+    partCountIncrement: 3, goodQuantity: 2, rejectedQuantity: 1,
+    productionOrderId: 'ORDER', partId: 'PART', operationId: 'OP',
+    contributingPositions: ['9007199254740993']
+  };
+  const inventory = { classification: 'HistoricalMetricInputSourceInventoryNotQualifiedActual', sourceCount: 1, sources: [sourceRow] };
+  assert.equal(validQuantitySourceInventory(inventory), true);
+  assert.equal(validQuantitySourceInventory({ ...inventory, sources: [{ ...sourceRow, goodQuantity: -1 }] }), false);
+  assert.equal(validQuantitySourceInventory({ ...inventory, sources: [{ ...sourceRow, contributingPositions: null }] }), false);
+  assert.equal(validQuantitySourceInventory({ ...inventory, sources: [{ ...sourceRow, partCountIncrement: '3' }] }), false);
+  assert.equal(validQuantitySourceInventory({ ...inventory, sourceCount: 2 }), false);
+});
