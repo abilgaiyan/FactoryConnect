@@ -91,9 +91,8 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
   for (const { occurrence } of occurrences) {
     if (occurrence.oee.state === "calculated") continue;
     const reasons = [occurrence.performance, occurrence.quality, occurrence.availability]
-      .filter(metric => metric.state === "insufficient-evidence" || metric.state === "unavailable")
-      .map(metric => metric.reasonCode?.trim())
-      .filter((reason): reason is string => Boolean(reason));
+      .flatMap(metric => metric.state === "insufficient-evidence" || metric.state === "unavailable"
+        ? [metric.reasonCode?.trim()].filter((reason): reason is string => Boolean(reason)) : []);
     const distinct = new Set(reasons.length ? reasons : [occurrence.oee.state === "missing" ? "OEE not returned" : occurrence.oee.reasonCode?.trim() || "Reason not provided"]);
     for (const reason of distinct) oeeBlockers.set(reason, (oeeBlockers.get(reason) ?? 0) + 1);
   }
