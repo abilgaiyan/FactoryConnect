@@ -1,5 +1,6 @@
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core;
+using FactoryConnect.Core.Metrics;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Persistence.SqlServer;
@@ -8,13 +9,16 @@ namespace FactoryConnect.Persistence.SqlServer;
 /// Reuses validated source inputs and their validated aggregate contribution set within one
 /// caller-owned Serializable transaction and exact aggregation revision.
 /// Callers must not write source facts, contribution membership or aggregation revisions in this scope.
-/// Result evaluation is not cached. Reference-time reuse requires an explicit reporting-only scope.
+/// Verified identical result envelopes can be reused within a reporting transaction. Reference-time reuse requires an explicit reporting-only scope.
 /// </summary>
 internal sealed class SqlContainmentHistoricalReadScope
 {
     private readonly SqlConnection _connection;
     private readonly SqlTransaction _transaction;
     private readonly EvidenceCache _inputs;
+    // Reuse exact-cut aggregate lookups across independent result roots in this transaction.
+    // Each first lookup still executes the original SingleOrDefault integrity check.
+    private readonly Dictionary<(MetricAggregationCheckpoint Cut, object MachineId, OperationalMetricPeriodId Period, object AggregateKey), MetricAggregateValue?> _aggregateLookups = [];
 
     internal SqlContainmentHistoricalReadScope(SqlConnection connection, SqlTransaction transaction,
         SqlContainmentReportingReferenceTimeScope? reportingReferenceTime = null)
@@ -29,6 +33,57 @@ internal sealed class SqlContainmentHistoricalReadScope
 
     internal SqlContainmentReportingReferenceTimeScope? ReportingReferenceTime { get; }
     internal int RootReconstructionInvocations { get; private set; }
+    internal int AggregateLookupCacheHits { get; private set; }
+    internal int AggregateLookupCacheMisses { get; private set; }
+    internal int VerifiedResultCacheHits { get; private set; }
+    internal int VerifiedResultCacheMisses { get; private set; }
+    internal int UniqueVerifiedResultEnvelopes => _verifiedResults.Count;
+    private readonly Dictionary<string, (ContainmentResultDocument Document, OperationalMetricProjection Projection)> _verifiedResults = new(StringComparer.Ordinal);
+
+    internal async Task<(ContainmentResultDocument Document, OperationalMetricProjection Projection)> VerifyReportingResultAsync(
+        SqlConnection connection, SqlTransaction transaction, ReadOnlyMemory<byte> envelope,
+        CancellationToken cancellationToken)
+    {
+        RequireOwner(connection, transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ReportingReferenceTime is null)
+            return await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
+                connection, transaction, envelope, cancellationToken, this);
+
+        // The complete canonical envelope is the key: a changed claim cannot reuse verification.
+        // RequireOwner and cancellation are checked even on hits.
+        var key = Convert.ToHexString(envelope.Span);
+        if (_verifiedResults.TryGetValue(key, out var verified))
+        {
+            VerifiedResultCacheHits++;
+            return verified;
+        }
+        verified = await SqlContainmentHistoricalResultValidator.VerifyProjectionAsync(
+            connection, transaction, envelope, cancellationToken, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        _verifiedResults.Add(key, verified);
+        VerifiedResultCacheMisses++;
+        return verified;
+    }
+
+    internal MetricAggregateValue? GetOrAddAggregate(
+        MetricAggregationCheckpoint cut, object machineId, OperationalMetricPeriodId period,
+        object aggregateKey, Func<MetricAggregateValue?> resolve, CancellationToken cancellationToken)
+    {
+        RequireOwner(_connection, _transaction);
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = (cut, machineId, period, aggregateKey);
+        if (_aggregateLookups.TryGetValue(key, out var cached))
+        {
+            AggregateLookupCacheHits++;
+            return cached;
+        }
+        var value = resolve();
+        cancellationToken.ThrowIfCancellationRequested();
+        _aggregateLookups.Add(key, value);
+        AggregateLookupCacheMisses++;
+        return value;
+    }
 
     internal void RecordRootReconstruction()
     {

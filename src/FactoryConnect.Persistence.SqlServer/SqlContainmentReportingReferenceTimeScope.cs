@@ -24,7 +24,6 @@ internal sealed class SqlContainmentReportingReferenceTimeScope
     internal int ReferenceTimeAuthorityValidationExecutions { get; private set; }
     internal int CacheHits { get; private set; }
     internal int PeriodEvaluations { get; private set; }
-
     internal void RecordPeriodEvaluation(SqlConnection connection, SqlTransaction transaction)
     {
         RequireOwner(connection, transaction);
