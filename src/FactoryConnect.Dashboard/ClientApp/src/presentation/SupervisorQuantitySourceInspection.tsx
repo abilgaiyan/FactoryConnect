@@ -35,7 +35,7 @@ export function validQuantitySourceInventory(value: unknown): value is Inventory
       quantity(source.partCountIncrement) && quantity(source.goodQuantity) && quantity(source.rejectedQuantity) &&
       context(source.productionOrderId) && context(source.partId) && context(source.operationId) &&
       Array.isArray(source.contributingPositions) &&
-      source.contributingPositions.every(position => typeof position === "string" && /^\\d+$/.test(position));
+      source.contributingPositions.every(position => typeof position === "string" && /^\d+$/.test(position));
   });
 }
 
