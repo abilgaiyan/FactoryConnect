@@ -28,7 +28,7 @@ internal static partial class SqlContainmentReferenceTimeAuthorityValidator
         historicalReads.RequireOwner(connection, transaction);
         cancellationToken.ThrowIfCancellationRequested();
         historicalReads.ReportingReferenceTime?.RecordPeriodEvaluation(connection, transaction);
-        return historicalReads.GetOrEvaluateReferenceTimePeriod(connection, transaction, cut, period, evidence, cancellationToken);
+        return evidence.EvaluatePeriod(connection, transaction, period, cancellationToken);
     }
 
     // Only the full phase-A loader can construct this proof. It accepts NO requested period.
