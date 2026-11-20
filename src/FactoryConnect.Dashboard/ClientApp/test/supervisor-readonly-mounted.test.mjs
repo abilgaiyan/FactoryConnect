@@ -212,3 +212,27 @@ test('quick-select shift preserves exact occurrence and OEE evidence status', as
   assert.equal(buttons[1].getAttribute('aria-pressed'),'true');
   assert.deepEqual(requests[0],{fromInclusive:second.startsAtUtc,toExclusive:second.endsAtUtc});
 });
+
+
+test('supervisor declaration read rejects a different exact shift and withholds declared totals', async t => {
+  const { SupervisorLocalEntryForm } = await vite.ssrLoadModule('/src/presentation/SupervisorLocalEntryForm.tsx');
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json([{
+    entryId: 'entry-1', machineId: source.machineId, shiftScheduleAssignmentId: second.shiftScheduleAssignmentId,
+    shiftId: first.shiftId, shiftStartsAtUtc: first.startsAtUtc, shiftEndsAtUtc: first.endsAtUtc,
+    productionOrder: 'ORDER-1', partNumber: 'PART-1', operation: 'OP-1', note: null,
+    enteredBy: 'supervisor', recordedAtUtc: '2026-10-29T03:00:00Z',
+    goodQuantity: 10, rejectedQuantity: 2
+  }]);
+  t.after(() => { globalThis.fetch = previousFetch; });
+  const h = await mountInDom(React.createElement(SupervisorLocalEntryForm, {
+    scope: { machineId: source.machineId, shiftScheduleAssignmentId: first.shiftScheduleAssignmentId,
+      shiftId: first.shiftId, startsAtUtc: first.startsAtUtc, endsAtUtc: first.endsAtUtc }
+  }));
+  t.after(() => h.dispose());
+  await act(async () => { await new Promise(resolve => setImmediate(resolve)); });
+  assert.match(text(h), /different shift; review totals withheld/);
+  assert.match(text(h), /Saved-entry history is unavailable/);
+  assert.equal(h.document.querySelector('[aria-label="Filtered supervisor declaration totals"]'), null);
+  assert.equal(h.document.querySelector('[aria-label="Declared quantities by production order"]'), null);
+});

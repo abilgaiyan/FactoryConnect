@@ -70,6 +70,20 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     if (!response.ok) throw new Error(`Entry read unavailable (HTTP ${response.status})`);
     const body: unknown = await response.json();
     if (!Array.isArray(body)) throw new Error("Unexpected supervisor entry response");
+    const scoped = body.every((item: unknown) => {
+      if (!item || typeof item !== "object") return false;
+      const entry = item as Partial<Entry>;
+      return entry.machineId === scope.machineId &&
+        entry.shiftScheduleAssignmentId === scope.shiftScheduleAssignmentId &&
+        entry.shiftId === scope.shiftId &&
+        entry.shiftStartsAtUtc === scope.startsAtUtc && entry.shiftEndsAtUtc === scope.endsAtUtc &&
+        typeof entry.entryId === "string" && typeof entry.productionOrder === "string" &&
+        typeof entry.partNumber === "string" && typeof entry.operation === "string" &&
+        typeof entry.enteredBy === "string" && typeof entry.recordedAtUtc === "string" &&
+        (entry.goodQuantity === null || (typeof entry.goodQuantity === "number" && Number.isSafeInteger(entry.goodQuantity) && entry.goodQuantity >= 0)) &&
+        (entry.rejectedQuantity === null || (typeof entry.rejectedQuantity === "number" && Number.isSafeInteger(entry.rejectedQuantity) && entry.rejectedQuantity >= 0));
+    });
+    if (!scoped) throw new Error("Supervisor entry response contains invalid data or a different shift; review totals withheld");
     setEntries(body as Entry[]);
     setEntriesReadState("ready");
   }
