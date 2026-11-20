@@ -75,6 +75,12 @@ test('real mode reuses canonical reporting and exact overnight activity; inspect
   assert.match(blockers,/MissingReferenceTime: 2 shift occurrence\(s\)/);
   assert.match(blockers,/MissingGoodQuantity: 2 shift occurrence\(s\)/);
   assert.doesNotMatch(blockers,/DependencyUnavailable/);
+  const blockerButton = [...h.document.querySelectorAll('[aria-label="OEE evidence blockers"] button')]
+    .find(item => item.textContent.includes("MissingReferenceTime"));
+  await h.click(blockerButton);
+  assert.match(text(h),/Production business date/);
+  assert.match(h.document.querySelector('[aria-label="Selected shift workspace"]').textContent,/MissingReferenceTime/);
+  assert.equal(control(h,"Exact shift occurrence").selectedIndex,1);
   assert.equal(h.document.querySelectorAll('.supervisor-shift-choices button').length,2);
   await selectOccurrence(h);
   assert.equal(requests.length,1);
