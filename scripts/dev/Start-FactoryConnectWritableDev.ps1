@@ -192,7 +192,7 @@ try {
     if ($startDashboard) {
         $dashboardEnvironment = @{
             'Dashboard__ReportingApiBaseAddress' = "$apiUrl/"
-            'Dashboard__RequestTimeout' = '00:00:30'
+            'Dashboard__RequestTimeout' = '00:02:00'
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
         if ($EnableDowntimeReasonAdministration) {
