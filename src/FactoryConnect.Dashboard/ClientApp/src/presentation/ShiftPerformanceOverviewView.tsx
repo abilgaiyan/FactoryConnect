@@ -68,6 +68,27 @@ export function ShiftPerformanceOverviewView({ overview, showFilters = true }: S
           </div>;
         })}</dl>
       </section>}
+      {selected.length > 0 && <section aria-label="OEE missing evidence reasons">
+        <h3>Reported OEE evidence gaps</h3>
+        <p className="report-scope-note">Reason codes from Availability, Performance, and Quality for the current filters. One shift can appear under several reasons; counts are not additive.</p>
+        {(() => {
+          const reasons = new Map<string, number>();
+          for (const { shift } of selected) {
+            if (shift.oee.state === "calculated") continue;
+            const perShift = new Set<string>();
+            for (const component of [shift.availability, shift.performance, shift.quality]) {
+              if (component.state === "insufficient-evidence" || component.state === "unavailable")
+                perShift.add(component.reasonCode?.trim() || "Reason not provided");
+            }
+            if (!perShift.size) perShift.add(shift.oee.state === "missing" ? "OEE not returned" : shift.oee.reasonCode?.trim() || "Reason not provided");
+            for (const reason of perShift) reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+          }
+          return reasons.size > 0
+            ? <ul>{[...reasons.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([reason, count]) =>
+                <li key={reason}>{reason}: {count} shift occurrence(s)</li>)}</ul>
+            : <p>No unresolved OEE evidence gaps reported for these shift occurrences.</p>;
+        })()}
+      </section>}
       {selected.length === 1 && <p className="report-scope-note">Selected: {selected[0]!.machine.displayName} · {selected[0]!.shift.shift.shiftId} · {formatReportTimestamp(selected[0]!.shift.shift.startsAtUtc)} – {formatReportTimestamp(selected[0]!.shift.shift.endsAtUtc)}</p>}
       {selected.length === 1 && <section className="performance-kpis" aria-label="Selected shift metrics">
         {[selected[0]!.shift.availability, selected[0]!.shift.utilization, selected[0]!.shift.performance, selected[0]!.shift.quality, selected[0]!.shift.oee].map(metric => {
