@@ -89,6 +89,12 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
   const selected = occurrences.find(({ machine, occurrence }) => occurrenceKey(machine, occurrence) === selectedKey);
   return <>
     <p role="status">{occurrences.length} recorded shift occurrence(s) returned for {overview.productionDay}. Select one to inspect its metrics and activity.</p>
+    {occurrences.length > 0 && <section aria-label="Shift OEE evidence coverage" className="supervisor-detail">
+      <h2>OEE readiness for this production day</h2>
+      <p><strong>{occurrences.filter(({ occurrence }) => occurrence.oee.state === "calculated").length}</strong> of <strong>{occurrences.length}</strong> shift occurrences have a reported calculated OEE.</p>
+      <p>{occurrences.filter(({ occurrence }) => occurrence.oee.state === "insufficient-evidence").length} insufficient evidence · {occurrences.filter(({ occurrence }) => occurrence.oee.state === "unavailable").length} unavailable · {occurrences.filter(({ occurrence }) => occurrence.oee.state === "missing").length} not returned.</p>
+      <p>Counts are per exact shift, not an average or a production total. Select a shift to inspect its evidence and reasons.</p>
+    </section>}
     {occurrences.length > 0 && <div className="supervisor-shift-choices" aria-label="Available shift occurrences">
       {occurrences.map(({ machine, occurrence }) => {
         const key = occurrenceKey(machine, occurrence);
