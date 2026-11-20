@@ -13,6 +13,9 @@ export type QualifiedProductionContribution = {
   shiftStartsAtUtc: string;
   shiftEndsAtUtc: string;
   quantityUnit: string;
+  productionOrder: string | null;
+  partNumber: string | null;
+  operation: string | null;
   produced: number;
   good: number;
   rejected: number;
@@ -21,7 +24,8 @@ export type QualifiedProductionContribution = {
 
 export type ReconciliationScope = Pick<QualifiedProductionContribution,
   "machineId" | "shiftScheduleAssignmentId" | "shiftId" |
-  "shiftStartsAtUtc" | "shiftEndsAtUtc" | "quantityUnit">;
+  "shiftStartsAtUtc" | "shiftEndsAtUtc" | "quantityUnit" |
+  "productionOrder" | "partNumber" | "operation">;
 
 export type ReconciliationCandidate =
   | { state: "candidate"; produced: number; good: number; rejected: number;
@@ -59,6 +63,10 @@ export function reconcileQualifiedProduction(
         item.shiftEndsAtUtc !== scope.shiftEndsAtUtc ||
         item.quantityUnit !== scope.quantityUnit)
       return { state: "held", reason: "ScopeMismatch" };
+    if (item.productionOrder !== scope.productionOrder ||
+        item.partNumber !== scope.partNumber ||
+        item.operation !== scope.operation)
+      return { state: "held", reason: "ProductionContextMismatch" };
     if (!item.evidenceId?.trim() || !item.populationKey?.trim())
       return { state: "held", reason: "ProvenanceMissing" };
     if (evidenceIds.has(item.evidenceId))
