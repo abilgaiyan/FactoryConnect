@@ -253,3 +253,22 @@ test('historical quantity inventory rejects malformed and negative source rows b
   assert.equal(validQuantitySourceInventory({ ...inventory, sources: [{ ...sourceRow, partCountIncrement: '3' }] }), false);
   assert.equal(validQuantitySourceInventory({ ...inventory, sourceCount: 2 }), false);
 });
+
+
+test('accepted production publication requires valid context and publication time', async () => {
+  const { validPublication } = await vite.ssrLoadModule('/src/presentation/SupervisorAcceptedProductionReadout.tsx');
+  const shift = { shift: first };
+  const publication = {
+    classification: 'AcceptedShiftProduction', publicationId: '12345678-1234-1234-1234-123456789abc',
+    machineId: source.machineId, shiftScheduleAssignmentId: first.shiftScheduleAssignmentId,
+    shiftId: first.shiftId, shiftStartsAtUtc: first.startsAtUtc, shiftEndsAtUtc: first.endsAtUtc,
+    productionOrder: null, partNumber: 'PART', operation: 'OP', quantityUnit: 'pieces',
+    acceptedProducedQuantity: 12, coverage: 'Complete', authorityReference: 'qualified-source',
+    publishedAtUtc: '2026-10-29T04:00:00Z'
+  };
+  assert.equal(validPublication(publication, source, shift), true);
+  assert.equal(validPublication({ ...publication, operation: { value: 'OP' } }, source, shift), false);
+  assert.equal(validPublication({ ...publication, publishedAtUtc: 'not-a-date' }, source, shift), false);
+  assert.equal(validPublication({ ...publication, acceptedProducedQuantity: -1 }, source, shift), false);
+  assert.equal(validPublication({ ...publication, shiftId: 'other-shift' }, source, shift), false);
+});
