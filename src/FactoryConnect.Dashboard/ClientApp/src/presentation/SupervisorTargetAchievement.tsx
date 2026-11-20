@@ -79,6 +79,12 @@ export function SupervisorTargetAchievement({ machine, shift }: {
         "reason" in actual && actual.reason === "NoQualifiedPublicationForShift") {
         publication = null;
       } else if (isAccepted(actual)) {
+        if (actual.machineId !== machine.machineId ||
+            actual.shiftScheduleAssignmentId !== scope.shiftScheduleAssignmentId ||
+            actual.shiftId !== scope.shiftId ||
+            actual.shiftStartsAtUtc !== scope.startsAtUtc ||
+            actual.shiftEndsAtUtc !== scope.endsAtUtc)
+          throw new Error("Accepted production publication does not match selected shift occurrence");
         publication = actual;
       } else {
         throw new Error("Invalid accepted-production publication response");
