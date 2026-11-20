@@ -19,7 +19,7 @@ type AcceptedPublication = {
   publishedAtUtc: string;
 };
 
-function validPublication(value: unknown, machine: ShiftPerformanceMachine, shift: ShiftPerformanceShift): value is AcceptedPublication {
+export function validPublication(value: unknown, machine: ShiftPerformanceMachine, shift: ShiftPerformanceShift): value is AcceptedPublication {
   if (!value || typeof value !== "object") return false;
   const p = value as Partial<AcceptedPublication>;
   return p.classification === "AcceptedShiftProduction" &&
@@ -32,6 +32,11 @@ function validPublication(value: unknown, machine: ShiftPerformanceMachine, shif
     p.coverage === "Complete" &&
     typeof p.authorityReference === "string" && p.authorityReference.trim().length > 0 &&
     typeof p.quantityUnit === "string" && p.quantityUnit.trim().length > 0 &&
+    (p.productionOrder === null || typeof p.productionOrder === "string") &&
+    (p.partNumber === null || typeof p.partNumber === "string") &&
+    (p.operation === null || typeof p.operation === "string") &&
+    typeof p.publishedAtUtc === "string" &&
+    Number.isFinite(Date.parse(p.publishedAtUtc)) &&
     typeof p.acceptedProducedQuantity === "number" &&
     Number.isSafeInteger(p.acceptedProducedQuantity) && p.acceptedProducedQuantity >= 0;
 }
