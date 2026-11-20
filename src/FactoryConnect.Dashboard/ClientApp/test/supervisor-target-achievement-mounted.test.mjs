@@ -55,3 +55,13 @@ test('context mismatch and duplicate target revisions fail closed', async t => {
   assert.match(h.document.body.textContent, /Conflicting target revisions/);
   assert.doesNotMatch(h.document.body.textContent, /% achieved/);
 });
+
+
+test('mismatched accepted publication fails closed even when no target revision exists', async t => {
+  mock(t, () => [], () => ({ ...actual, shiftScheduleAssignmentId: 'different-assignment' }));
+  const h = await mountInDom(React.createElement(SupervisorTargetAchievement, { machine, shift }));
+  t.after(() => h.dispose()); await settle();
+  assert.match(h.document.body.textContent, /Accepted production publication does not match selected shift occurrence/);
+  assert.doesNotMatch(h.document.body.textContent, /% achieved/);
+  assert.doesNotMatch(h.document.body.textContent, /TargetMissing/);
+});
