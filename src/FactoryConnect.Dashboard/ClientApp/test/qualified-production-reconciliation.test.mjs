@@ -12,7 +12,8 @@ after(() => vite.close());
 const scope = {
   machineId: 'machine-1', shiftScheduleAssignmentId: 'assignment-1',
   shiftId: 'shift-1', shiftStartsAtUtc: '2026-11-20T02:00:00Z',
-  shiftEndsAtUtc: '2026-11-20T10:30:00Z', quantityUnit: 'pieces'
+  shiftEndsAtUtc: '2026-11-20T10:30:00Z', quantityUnit: 'pieces',
+  productionOrder: 'ORDER-1', partNumber: 'PART-1', operation: 'OP-1'
 };
 const contribution = {
   ...scope, evidenceId: 'evidence-1', populationKey: 'population-1',
@@ -60,4 +61,13 @@ test('non-UTC, ambiguous and invalid shift times are held', () => {
   assert.deepEqual(reconcileQualifiedProduction(
     { ...scope, shiftEndsAtUtc: 'not-a-date' }, [contribution]),
     { state: 'held', reason: 'InvalidShiftScope' });
+});
+
+test('different production orders, parts and operations cannot be combined', () => {
+  held([{ ...contribution, productionOrder: 'ORDER-2' }], 'ProductionContextMismatch');
+  held([{ ...contribution, partNumber: 'PART-2' }], 'ProductionContextMismatch');
+  held([{ ...contribution, operation: 'OP-2' }], 'ProductionContextMismatch');
+  held([{ ...contribution, operation: null }], 'ProductionContextMismatch');
+  held([contribution, { ...contribution, evidenceId: 'evidence-2',
+    populationKey: 'population-2', productionOrder: 'ORDER-2' }], 'ProductionContextMismatch');
 });
