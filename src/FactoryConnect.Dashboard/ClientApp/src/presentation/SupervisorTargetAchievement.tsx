@@ -69,7 +69,8 @@ export function SupervisorTargetAchievement({ machine, shift }: {
         throw new Error("Target revision history does not match selected occurrence");
       const revisions = targets as Revision[];
       const numbers = new Set(revisions.map(item => item.revisionNumber));
-      if (numbers.size !== revisions.length)
+      const identities = new Set(revisions.map(item => item.targetRevisionId));
+      if (numbers.size !== revisions.length || identities.size !== revisions.length)
         throw new Error("Conflicting target revisions");
       const head = revisions.reduce<Revision | null>((latest, item) =>
         !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null);
