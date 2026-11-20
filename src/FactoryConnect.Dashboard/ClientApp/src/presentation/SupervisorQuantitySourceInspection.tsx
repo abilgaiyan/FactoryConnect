@@ -18,6 +18,27 @@ interface Inventory {
   sources: SourceRow[];
 }
 
+/** Reject malformed inventory before diagnostics or CSV export can imply trustworthy source rows. */
+export function validQuantitySourceInventory(value: unknown): value is Inventory {
+  if (!value || typeof value !== "object") return false;
+  const inventory = value as Partial<Inventory>;
+  if (inventory.classification !== "HistoricalMetricInputSourceInventoryNotQualifiedActual" ||
+      !Array.isArray(inventory.sources) || !Number.isSafeInteger(inventory.sourceCount) ||
+      inventory.sourceCount !== inventory.sources.length) return false;
+  return inventory.sources.every((item: unknown) => {
+    if (!item || typeof item !== "object") return false;
+    const source = item as Partial<SourceRow>;
+    const quantity = (v: unknown) => v === null || (typeof v === "number" && Number.isSafeInteger(v) && v >= 0);
+    const context = (v: unknown) => v === null || typeof v === "string";
+    return typeof source.evidenceId === "string" && source.evidenceId.length > 0 &&
+      typeof source.occurredAtUtc === "string" && Number.isFinite(Date.parse(source.occurredAtUtc)) &&
+      quantity(source.partCountIncrement) && quantity(source.goodQuantity) && quantity(source.rejectedQuantity) &&
+      context(source.productionOrderId) && context(source.partId) && context(source.operationId) &&
+      Array.isArray(source.contributingPositions) &&
+      source.contributingPositions.every(position => typeof position === "string" && /^\\d+$/.test(position));
+  });
+}
+
 /** Diagnostic only; passing these checks does not qualify accepted production. */
 export function quantityEvidenceDiagnostics(source: SourceRow): string[] {
   const issues: string[] = [];
@@ -111,10 +132,7 @@ export function SupervisorQuantitySourceInspection({ machine, shift }: {
       { signal: controller.signal }).then(async response => {
         if (!response.ok) throw new Error(`Historical source inventory unavailable (HTTP ${response.status})`);
         const body: unknown = await response.json();
-        if (!body || typeof body !== "object" || !("classification" in body) ||
-          body.classification !== "HistoricalMetricInputSourceInventoryNotQualifiedActual" ||
-          !("sources" in body) || !Array.isArray(body.sources) ||
-          !("sourceCount" in body) || body.sourceCount !== body.sources.length)
+        if (!validQuantitySourceInventory(body))
           throw new Error("Historical source inventory response invalid");
         if (!controller.signal.aborted) {
           setInventory(body as Inventory);
