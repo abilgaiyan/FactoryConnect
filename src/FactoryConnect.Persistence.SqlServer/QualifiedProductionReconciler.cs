@@ -62,6 +62,8 @@ public static class QualifiedProductionReconciler
             if (input.MachineId != scope.MachineId ||
                 !StringComparer.Ordinal.Equals(input.AssignmentId, scope.AssignmentId) ||
                 !StringComparer.Ordinal.Equals(input.ShiftId, scope.ShiftId) ||
+                input.StartsAtUtc.Offset != TimeSpan.Zero ||
+                input.EndsAtUtc.Offset != TimeSpan.Zero ||
                 input.StartsAtUtc != scope.StartsAtUtc ||
                 input.EndsAtUtc != scope.EndsAtUtc ||
                 !StringComparer.Ordinal.Equals(input.QuantityUnit, scope.QuantityUnit))
@@ -70,7 +72,8 @@ public static class QualifiedProductionReconciler
                 !StringComparer.Ordinal.Equals(input.PartNumber, scope.PartNumber) ||
                 !StringComparer.Ordinal.Equals(input.Operation, scope.Operation))
                 return ProductionReconciliationResult.Held("ProductionContextMismatch");
-            if (input.EvidenceId == Guid.Empty || string.IsNullOrWhiteSpace(input.PopulationKey))
+            if (input.EvidenceId == Guid.Empty || string.IsNullOrWhiteSpace(input.PopulationKey) ||
+                input.PopulationKey.Length > 200 || input.AuthorityReference.Length > 200)
                 return ProductionReconciliationResult.Held("ProvenanceMissing");
             if (!evidence.Add(input.EvidenceId))
                 return ProductionReconciliationResult.Held("DuplicateEvidence");
