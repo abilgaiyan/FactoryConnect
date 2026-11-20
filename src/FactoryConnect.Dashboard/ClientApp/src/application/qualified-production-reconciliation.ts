@@ -28,13 +28,19 @@ export type ReconciliationCandidate =
       evidenceIds: string[]; authorityReferences: string[] }
   | { state: "held"; reason: string };
 
+function validUtc(value: string): boolean {
+  return typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
+
 export function reconcileQualifiedProduction(
   scope: ReconciliationScope, contributions: readonly QualifiedProductionContribution[]
 ): ReconciliationCandidate {
   if (!scope.machineId?.trim() || !scope.shiftScheduleAssignmentId?.trim() ||
       !scope.shiftId?.trim() || !scope.quantityUnit?.trim() ||
-      !Number.isFinite(Date.parse(scope.shiftStartsAtUtc)) ||
-      !Number.isFinite(Date.parse(scope.shiftEndsAtUtc)) ||
+      !validUtc(scope.shiftStartsAtUtc) ||
+      !validUtc(scope.shiftEndsAtUtc) ||
       Date.parse(scope.shiftEndsAtUtc) <= Date.parse(scope.shiftStartsAtUtc))
     return { state: "held", reason: "InvalidShiftScope" };
   if (contributions.length === 0)
@@ -60,7 +66,9 @@ export function reconcileQualifiedProduction(
     if (populations.has(item.populationKey))
       return { state: "held", reason: "PopulationOverlap" };
     if (![item.produced, item.good, item.rejected].every(
-      n => Number.isSafeInteger(n) && n >= 0) || item.good + item.rejected !== item.produced)
+      n => Number.isSafeInteger(n) && n >= 0) ||
+      !Number.isSafeInteger(item.good + item.rejected) ||
+      item.good + item.rejected !== item.produced)
       return { state: "held", reason: "QuantityInconsistent" };
     produced += item.produced; good += item.good; rejected += item.rejected;
     if (![produced, good, rejected].every(Number.isSafeInteger))

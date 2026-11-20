@@ -48,3 +48,16 @@ test('inconsistent quantities and unsafe sums are held', () => {
     { ...contribution, evidenceId: 'evidence-2', populationKey: 'population-2',
       produced: 1, good: 1, rejected: 0 }], 'QuantityOverflow');
 });
+
+
+test('non-UTC, ambiguous and invalid shift times are held', () => {
+  assert.deepEqual(reconcileQualifiedProduction(
+    { ...scope, shiftStartsAtUtc: '2026-11-20T07:30:00+05:30' }, [contribution]),
+    { state: 'held', reason: 'InvalidShiftScope' });
+  assert.deepEqual(reconcileQualifiedProduction(
+    { ...scope, shiftStartsAtUtc: '2026-11-20T02:00:00' }, [contribution]),
+    { state: 'held', reason: 'InvalidShiftScope' });
+  assert.deepEqual(reconcileQualifiedProduction(
+    { ...scope, shiftEndsAtUtc: 'not-a-date' }, [contribution]),
+    { state: 'held', reason: 'InvalidShiftScope' });
+});
