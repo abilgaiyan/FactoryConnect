@@ -65,3 +65,12 @@ test('mismatched accepted publication fails closed even when no target revision 
   assert.doesNotMatch(h.document.body.textContent, /% achieved/);
   assert.doesNotMatch(h.document.body.textContent, /TargetMissing/);
 });
+
+
+test('duplicate target revision identity with different revision numbers fails closed', async t => {
+  mock(t, () => [target, { ...target, revisionNumber: 2 }], () => actual);
+  const h = await mountInDom(React.createElement(SupervisorTargetAchievement, { machine, shift }));
+  t.after(() => h.dispose()); await settle();
+  assert.match(h.document.body.textContent, /Conflicting target revisions/);
+  assert.doesNotMatch(h.document.body.textContent, /% achieved/);
+});
