@@ -85,35 +85,6 @@ internal sealed class SqlContainmentHistoricalReadScope
         return value;
     }
 
-    // Period evaluation can scan large source/outcome collections. Reuse the independently
-    // validated result only within this exact transaction, cut and period.
-    private readonly Dictionary<(MetricAggregationCheckpoint Cut, OperationalMetricPeriodId Period),
-        SqlContainmentReferenceTimeAuthorityValidator.VerifiedReferenceTime> _referenceTimePeriods = [];
-    internal int ReferenceTimePeriodCacheHits { get; private set; }
-    internal int ReferenceTimePeriodCacheMisses { get; private set; }
-
-    internal SqlContainmentReferenceTimeAuthorityValidator.VerifiedReferenceTime GetOrEvaluateReferenceTimePeriod(
-        SqlConnection connection, SqlTransaction transaction, MetricAggregationCheckpoint cut,
-        OperationalMetricPeriodId period,
-        SqlContainmentReferenceTimeAuthorityValidator.ValidatedCutEvidence evidence,
-        CancellationToken cancellationToken)
-    {
-        RequireOwner(connection, transaction);
-        cancellationToken.ThrowIfCancellationRequested();
-        evidence.RequireOwner(connection, transaction, cut);
-        var key = (cut, period);
-        if (_referenceTimePeriods.TryGetValue(key, out var cached))
-        {
-            ReferenceTimePeriodCacheHits++;
-            return cached;
-        }
-        var evaluated = evidence.EvaluatePeriod(connection, transaction, period, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-        _referenceTimePeriods.Add(key, evaluated);
-        ReferenceTimePeriodCacheMisses++;
-        return evaluated;
-    }
-
     internal void RecordRootReconstruction()
     {
         RequireOwner(_connection, _transaction);
