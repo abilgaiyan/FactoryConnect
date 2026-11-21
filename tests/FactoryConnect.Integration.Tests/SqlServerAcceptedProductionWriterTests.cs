@@ -108,4 +108,62 @@ public sealed class SqlServerAcceptedProductionWriterTests
         Assert.Equal(1L, reader.GetInt64(1));
     }
 
+    [Fact]
+    public async Task MismatchedVerifiedQuantityCannotPublishOrLeavePartialRows()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var connection = new SqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
+            connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+
+        var receipt = Guid.NewGuid();
+        var verification = Guid.NewGuid();
+        await using (var setup = new SqlCommand("""
+            INSERT dbo.SupervisorProductionQualificationReceipt
+                (ReceiptId, EvidenceId, EvidenceKind, PopulationKey, MachineId,
+                 ShiftScheduleAssignmentId, ShiftId, ShiftStartsAtUtc, ShiftEndsAtUtc,
+                 QuantityUnit, ProducedQuantity, GoodQuantity, RejectedQuantity,
+                 QualificationDecision, AuthorityReference, QualifiedAtUtc)
+            VALUES (@receipt, @evidence, N'SupervisorRevision', N'population-two',
+                    @machine, N'assignment-two', N'shift-2',
+                    '2026-11-18T02:00:00+00:00', '2026-11-18T10:30:00+00:00',
+                    N'pieces', 11, 10, 1, N'Qualified', N'test-only',
+                    '2026-11-18T11:00:00+00:00');
+            INSERT dbo.SupervisorAcceptedProductionVerification
+                (VerificationId, ReceiptId, VerifiedProducedQuantity, Coverage,
+                 AuthorityReference, VerifiedAtUtc)
+            VALUES (@verification, @receipt, 12, N'Complete', N'test-only',
+                    '2026-11-18T11:01:00+00:00');
+            """, connection))
+        {
+            setup.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            setup.Parameters.Add("@evidence", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@machine", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@verification", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        await using (var command = new SqlCommand("dbo.PublishSupervisorAcceptedProduction", connection)
+        {
+            CommandType = System.Data.CommandType.StoredProcedure
+        })
+        {
+            command.Parameters.Add("@PublicationId", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            command.Parameters.Add("@ReceiptId", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            command.Parameters.Add("@VerificationId", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            var error = await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+            Assert.Equal(51038, error.Number);
+        }
+
+        await using var counts = new SqlCommand("""
+            SELECT (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProduction),
+                   (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProductionSource)
+            """, connection);
+        await using var reader = await counts.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(0L, reader.GetInt64(0));
+        Assert.Equal(0L, reader.GetInt64(1));
+    }
+
 }
