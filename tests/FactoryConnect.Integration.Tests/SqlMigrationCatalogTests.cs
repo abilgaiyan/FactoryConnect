@@ -52,7 +52,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 34, "SupervisorProductionQualificationReceipt", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 35, "SupervisorAcceptedShiftProductionSource", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 36, "InspectSupervisorAcceptedProductionReceipt", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 37, "GuardAcceptedProductionSourceIntegrity", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 37, "GuardAcceptedProductionSourceIntegrity", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 38, "PublishSupervisorAcceptedProduction", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
