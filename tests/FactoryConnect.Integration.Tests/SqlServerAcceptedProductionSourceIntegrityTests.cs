@@ -19,6 +19,18 @@ public sealed class SqlServerAcceptedProductionSourceIntegrityTests
         await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
             connection, TimeSpan.FromMinutes(2), CancellationToken.None);
 
+        // Verify migration 037 installed an enabled guard before exercising rejection paths.
+        await using (var guard = new SqlCommand("""
+            SELECT COUNT_BIG(*)
+            FROM sys.triggers
+            WHERE object_id = OBJECT_ID(N'dbo.TR_SupervisorAcceptedShiftProductionSource_Integrity', N'TR')
+              AND parent_id = OBJECT_ID(N'dbo.SupervisorAcceptedShiftProductionSource', N'U')
+              AND is_disabled = 0
+            """, connection))
+        {
+            Assert.Equal(1L, (long)(await guard.ExecuteScalarAsync())!);
+        }
+
         var receipt = Guid.NewGuid();
         var publication = Guid.NewGuid();
         var machine = Guid.NewGuid();
