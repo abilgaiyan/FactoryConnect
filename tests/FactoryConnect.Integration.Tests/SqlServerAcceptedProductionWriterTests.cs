@@ -166,4 +166,77 @@ public sealed class SqlServerAcceptedProductionWriterTests
         Assert.Equal(0L, reader.GetInt64(1));
     }
 
+    [Fact]
+    public async Task ConcurrentPublicationOfSameReceiptProducesExactlyOnePublication()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var setupConnection = new SqlConnection(database.ConnectionString);
+        await setupConnection.OpenAsync();
+        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
+            setupConnection, TimeSpan.FromMinutes(2), CancellationToken.None);
+
+        var receipt = Guid.NewGuid();
+        var verification = Guid.NewGuid();
+        await using (var setup = new SqlCommand("""
+            INSERT dbo.SupervisorProductionQualificationReceipt
+                (ReceiptId, EvidenceId, EvidenceKind, PopulationKey, MachineId,
+                 ShiftScheduleAssignmentId, ShiftId, ShiftStartsAtUtc, ShiftEndsAtUtc,
+                 QuantityUnit, ProducedQuantity, GoodQuantity, RejectedQuantity,
+                 QualificationDecision, AuthorityReference, QualifiedAtUtc)
+            VALUES (@receipt, @evidence, N'SupervisorRevision', N'concurrent-population',
+                    @machine, N'concurrent-assignment', N'shift-1',
+                    '2026-11-19T02:00:00+00:00', '2026-11-19T10:30:00+00:00',
+                    N'pieces', 11, 10, 1, N'Qualified', N'test-only',
+                    '2026-11-19T11:00:00+00:00');
+            INSERT dbo.SupervisorAcceptedProductionVerification
+                (VerificationId, ReceiptId, VerifiedProducedQuantity, Coverage,
+                 AuthorityReference, VerifiedAtUtc)
+            VALUES (@verification, @receipt, 11, N'Complete', N'test-only',
+                    '2026-11-19T11:01:00+00:00');
+            """, setupConnection))
+        {
+            setup.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            setup.Parameters.Add("@evidence", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@machine", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@verification", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        async Task<int> AttemptAsync()
+        {
+            await using var connection = new SqlConnection(database.ConnectionString);
+            await connection.OpenAsync();
+            await using var command = new SqlCommand("dbo.PublishSupervisorAcceptedProduction", connection)
+            {
+                CommandType = System.Data.CommandType.StoredProcedure,
+                CommandTimeout = 30
+            };
+            command.Parameters.Add("@PublicationId", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            command.Parameters.Add("@ReceiptId", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            command.Parameters.Add("@VerificationId", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            try
+            {
+                await command.ExecuteNonQueryAsync();
+                return 0;
+            }
+            catch (SqlException error)
+            {
+                return error.Number;
+            }
+        }
+
+        var results = await Task.WhenAll(AttemptAsync(), AttemptAsync());
+        Assert.Equal(1, results.Count(static result => result == 0));
+        Assert.Equal(1, results.Count(static result => result == 51039));
+
+        await using var counts = new SqlCommand("""
+            SELECT (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProduction),
+                   (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProductionSource)
+            """, setupConnection);
+        await using var reader = await counts.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.Equal(1L, reader.GetInt64(1));
+    }
+
 }
