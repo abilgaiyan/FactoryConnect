@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../tools/FactoryConnect.ConfigurationPreflight/G2ConfigurationPreflight.cs" Link="G2ConfigurationPreflight.cs" />
+    <Compile Include="../../tools/FactoryConnect.EdgeQualification/QualificationHarness.cs" Link="QualificationHarness.cs" />
   </ItemGroup>
 </Project>

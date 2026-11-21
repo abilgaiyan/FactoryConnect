@@ -1,3 +1,5 @@
+using FactoryConnect.Core.Machines;
+
 namespace FactoryConnect.Core;
 
 public sealed class DurableObservationProcessingPipelineSet
@@ -32,6 +34,8 @@ public sealed class DurableObservationProcessingPipelineSet
     public IReadOnlyList<DurableObservationProcessingPipeline> Pipelines =>
         _pipelines;
 
+    public event Action<MachineStateActivityChronologyHold>? ChronologyHeld;
+
     public async Task<bool> RunCycleAsync(
         CancellationToken cancellationToken = default)
     {
@@ -40,7 +44,12 @@ public sealed class DurableObservationProcessingPipelineSet
         foreach (var pipeline in _pipelines)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var previousHold = pipeline.ChronologyHold;
             processed = await pipeline.RunCycleAsync(cancellationToken) || processed;
+            if (pipeline.ChronologyHold is { } hold && hold != previousHold)
+            {
+                ChronologyHeld?.Invoke(hold);
+            }
         }
 
         return processed;

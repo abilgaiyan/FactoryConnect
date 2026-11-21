@@ -159,8 +159,6 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                     IMappedMachineObservationSink>();
                 var authorityGraph = provider.GetRequiredService<
                     ObservationAuthorityStoreGraph>();
-                var mappedReader = provider.GetRequiredService<
-                    IDurableMappedObservationReader>();
                 var cursorReader = provider.GetRequiredService<
                     IMachineStateActivityCursorReader>();
                 var stateActivityProcessor = provider.GetRequiredService<
@@ -169,25 +167,36 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
 
                 foreach (var streamId in streams)
                 {
-                    IObservationProcessor mappingProcessor = new MachineSignalMappingProcessor(
-                        new ObservationProcessorId("canonical-mapping"),
-                        mappings[streamId],
-                        mappedSink,
-                        authorityGraph.MappingStore);
-                    if (executionNormalizations.TryGetValue(streamId, out var execution))
+                    IObservationProcessor CreateMappingProcessor(
+                        IMappedMachineObservationSink sink,
+                        IMappingCoverageAuthorityStore coverage)
                     {
-                        mappingProcessor = new ExecutionNormalizationProcessor(
-                            mappingProcessor, streamId, execution.Source, execution.Address);
+                        IObservationProcessor mappingProcessor = new MachineSignalMappingProcessor(
+                            new ObservationProcessorId("canonical-mapping"),
+                            mappings[streamId],
+                            sink,
+                            coverage);
+                        if (executionNormalizations.TryGetValue(streamId, out var execution))
+                        {
+                            mappingProcessor = new ExecutionNormalizationProcessor(
+                                mappingProcessor, streamId, execution.Source, execution.Address);
+                        }
+                        if (moxaNormalizations.TryGetValue(streamId, out var moxa))
+                        {
+                            mappingProcessor = new MoxaStatusNormalizationProcessor(
+                                mappingProcessor, streamId, moxa.Source, moxa.Address);
+                        }
+                        if (demoCanonicalInputs)
+                        {
+                            mappingProcessor = new DemoExecutionMappingProcessor(mappingProcessor);
+                        }
+                        return mappingProcessor;
                     }
-                    if (moxaNormalizations.TryGetValue(streamId, out var moxa))
-                    {
-                        mappingProcessor = new MoxaStatusNormalizationProcessor(
-                            mappingProcessor, streamId, moxa.Source, moxa.Address);
-                    }
-                    if (demoCanonicalInputs)
-                    {
-                        mappingProcessor = new DemoExecutionMappingProcessor(mappingProcessor);
-                    }
+
+                    var mappingProcessor = CreateMappingProcessor(mappedSink, authorityGraph.MappingStore);
+                    var retainedReader = new RetainedActivityObservationReader(
+                        rawReader, checkpoints, mappingProcessor.ProcessorId,
+                        sink => CreateMappingProcessor(sink, new InMemoryMappingCoverageAuthorityStore()));
 
                     pipelines.Add(
                         new DurableObservationProcessingPipeline(
@@ -199,7 +208,7 @@ public static class EdgeObservationProcessingServiceCollectionExtensions
                                 options,
                                 provider.GetRequiredService<SqlObservationReadRetryPolicy>()),
                             new MappedObservationProcessingRuntime(
-                                mappedReader,
+                                retainedReader,
                                 cursorReader,
                                 stateActivityProcessor,
                                 streamId,
