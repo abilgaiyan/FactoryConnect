@@ -9,6 +9,8 @@ param(
     [bool]$SeparateServiceWindows = $true,
     [switch]$EnableSupervisorEntries,
     [switch]$EnableSupervisorShiftTargets,
+    [switch]$EnableSupervisorReviews,
+    [string]$SupervisorReviewerId,
     [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
@@ -123,6 +125,10 @@ if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace(
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
+if ($EnableSupervisorReviews -and
+    ([string]::IsNullOrWhiteSpace($SupervisorReviewerId) -or $SupervisorReviewerId.Length -gt 200)) {
+    throw '-EnableSupervisorReviews requires -SupervisorReviewerId (1-200 characters).'
+}
 if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and [string]::IsNullOrWhiteSpace($SupervisorOperatorId)) {
     throw '-EnableSupervisorEntries requires -SupervisorOperatorId for audit attribution.'
 }
@@ -229,6 +235,11 @@ try {
         $apiEnvironment['SupervisorLocalEntry__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalEntry__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
+    }
+    if ($EnableSupervisorReviews) {
+        $apiEnvironment['SupervisorLocalReview__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalReview__ReviewerId'] = $SupervisorReviewerId
+        $apiEnvironment['SupervisorLocalReview__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorShiftTargets) {
         $apiEnvironment['SupervisorLocalShiftTarget__EnableWrites'] = 'true'
