@@ -76,7 +76,7 @@ public sealed class SqlServerAcceptedProductionAncestryTests
             duplicate.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
             var error = await Assert.ThrowsAsync<SqlException>(
                 () => duplicate.ExecuteNonQueryAsync());
-            Assert.Contains(error.Number, new[] { 2601, 2627 });
+            Assert.True(error.Number is 2601 or 2627, $"Unexpected SQL error number: {error.Number}");
         }
 
         await using var count = new SqlCommand(
