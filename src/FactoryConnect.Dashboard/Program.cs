@@ -84,6 +84,64 @@ app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
         .ConfigureAwait(false);
 });
 
+// Explicit supervisor review/revision routes. Never proxy an arbitrary API path.
+// The gateway opt-in and the API's commissioning/write checks are independent.
+string[] supervisorReviewReadPaths =
+[
+    "/api/supervisor/v1/machines/{machineId:guid}/reviews",
+    "/api/supervisor/v1/machines/{machineId:guid}/revision-reviews",
+    "/api/supervisor/v1/machines/{machineId:guid}/downtime-reviews",
+    "/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations",
+    "/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions"
+];
+foreach (var route in supervisorReviewReadPaths)
+{
+    app.MapGet(route, async (HttpContext context, IConfiguration configuration,
+        ReportingGateway gateway) =>
+    {
+        if (!AllowsSupervisorLocalGateway(context, configuration))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        await gateway.ForwardAsync(context,
+            context.Request.Path.Value!.TrimStart('/') + context.Request.QueryString.Value,
+            HttpMethod.Get).ConfigureAwait(false);
+    });
+}
+
+string[] supervisorReviewWritePaths =
+[
+    "/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/review",
+    "/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions",
+    "/api/supervisor/v1/machines/{machineId:guid}/revisions/{revisionId:guid}/review",
+    "/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations/{explanationId:guid}/review",
+    "/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations"
+];
+foreach (var route in supervisorReviewWritePaths)
+{
+    app.MapPost(route, async (HttpContext context, IConfiguration configuration,
+        ReportingGateway gateway) =>
+    {
+        if (!AllowsSupervisorLocalGateway(context, configuration))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        await gateway.ForwardAsync(context,
+            context.Request.Path.Value!.TrimStart('/') + context.Request.QueryString.Value,
+            HttpMethod.Post).ConfigureAwait(false);
+    });
+}
+
+static bool AllowsSupervisorLocalGateway(HttpContext context, IConfiguration configuration) =>
+    configuration.GetValue<bool>("SupervisorLocalEntry:EnableGateway") &&
+    context.Connection.RemoteIpAddress is { } remote &&
+    System.Net.IPAddress.IsLoopback(remote) &&
+    !context.Request.Headers.ContainsKey("Forwarded") &&
+    !context.Request.Headers.Keys.Any(static key =>
+        key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase));
+
 // Exact local-only downtime reason routes; never expose arbitrary supervisor API paths.
 app.MapMethods("/api/supervisor/v1/downtime-reasons/{reasonCode}",
     [HttpMethods.Put], async (HttpContext context, IConfiguration configuration,
