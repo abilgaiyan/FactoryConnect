@@ -30,4 +30,82 @@ public sealed class SqlServerAcceptedProductionWriterTests
             "SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProduction", connection);
         Assert.Equal(0L, (long)(await verify.ExecuteScalarAsync())!);
     }
+    [Fact]
+    public async Task VerifiedPublicationWritesQuantityAndAncestryAtomicallyAndRejectsReplay()
+    {
+        await using var database = await SqlStartupIsolatedDatabase.CreateAsync();
+        await using var connection = new SqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await SqlServerMigrationEngine.CreateDefault().ApplyAsync(
+            connection, TimeSpan.FromMinutes(2), CancellationToken.None);
+
+        var receipt = Guid.NewGuid();
+        var verification = Guid.NewGuid();
+        var publication = Guid.NewGuid();
+        await using (var setup = new SqlCommand("""
+            INSERT dbo.SupervisorProductionQualificationReceipt
+                (ReceiptId, EvidenceId, EvidenceKind, PopulationKey, MachineId,
+                 ShiftScheduleAssignmentId, ShiftId, ShiftStartsAtUtc, ShiftEndsAtUtc,
+                 QuantityUnit, ProducedQuantity, GoodQuantity, RejectedQuantity,
+                 QualificationDecision, AuthorityReference, QualifiedAtUtc)
+            VALUES (@receipt, @evidence, N'SupervisorRevision', N'population-one',
+                    @machine, N'assignment-one', N'shift-1',
+                    '2026-11-17T02:00:00+00:00', '2026-11-17T10:30:00+00:00',
+                    N'pieces', 11, 10, 1, N'Qualified', N'test-only',
+                    '2026-11-17T11:00:00+00:00');
+            INSERT dbo.SupervisorAcceptedProductionVerification
+                (VerificationId, ReceiptId, VerifiedProducedQuantity, Coverage,
+                 AuthorityReference, VerifiedAtUtc)
+            VALUES (@verification, @receipt, 11, N'Complete', N'test-only',
+                    '2026-11-17T11:01:00+00:00');
+            """, connection))
+        {
+            setup.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            setup.Parameters.Add("@evidence", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@machine", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@verification", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            await setup.ExecuteNonQueryAsync();
+        }
+
+        async Task ExecutePublicationAsync(Guid id)
+        {
+            await using var command = new SqlCommand("dbo.PublishSupervisorAcceptedProduction", connection)
+            {
+                CommandType = System.Data.CommandType.StoredProcedure
+            };
+            command.Parameters.Add("@PublicationId", System.Data.SqlDbType.UniqueIdentifier).Value = id;
+            command.Parameters.Add("@ReceiptId", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            command.Parameters.Add("@VerificationId", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await ExecutePublicationAsync(publication);
+        await using (var verify = new SqlCommand("""
+            SELECT COUNT_BIG(*)
+            FROM dbo.SupervisorAcceptedShiftProduction AS p
+            INNER JOIN dbo.SupervisorAcceptedShiftProductionSource AS s
+                ON s.PublicationId = p.PublicationId
+            WHERE p.PublicationId = @publication AND s.ReceiptId = @receipt
+              AND p.AcceptedProducedQuantity = 11 AND p.Coverage = N'Complete'
+            """, connection))
+        {
+            verify.Parameters.Add("@publication", System.Data.SqlDbType.UniqueIdentifier).Value = publication;
+            verify.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            Assert.Equal(1L, (long)(await verify.ExecuteScalarAsync())!);
+        }
+
+        var replay = await Assert.ThrowsAsync<SqlException>(
+            () => ExecutePublicationAsync(Guid.NewGuid()));
+        Assert.Equal(51039, replay.Number);
+
+        await using var counts = new SqlCommand("""
+            SELECT (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProduction),
+                   (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProductionSource)
+            """, connection);
+        await using var reader = await counts.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.Equal(1L, reader.GetInt64(1));
+    }
+
 }
