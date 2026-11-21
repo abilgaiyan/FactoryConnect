@@ -212,6 +212,7 @@ try {
     $apiEnvironment = @{
         'Persistence__Provider' = 'SqlServer'
         'PersistenceProviders__SqlServer__ConnectionString' = $connectionString
+        'Commissioning__Enabled' = 'true' # Local loopback-only API; CommissioningAccess still rejects remote/forwarded requests.
         'Commissioning__ReadOnlyConnectionString' = $connectionString
         'MTConnect__Machines__0__MachineId' = '677b030b-1ede-4a67-82ae-6a494791357f'
         'MTConnect__Machines__0__DeviceKey' = $Gg003DeviceKey
