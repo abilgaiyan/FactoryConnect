@@ -60,6 +60,30 @@ app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/entries",
         .ConfigureAwait(false);
 });
 
+// Local-only supervisor shift-target history and revision gateway.
+// Explicit opt-in is required even for reads; never expose commissioning routes on LAN.
+app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
+    SupervisorEntryMethods, async (HttpContext context, IConfiguration configuration,
+        ReportingGateway gateway, Guid machineId) =>
+{
+    if (!configuration.GetValue<bool>("SupervisorLocalShiftTarget:EnableGateway") ||
+        context.Connection.RemoteIpAddress is not { } remote ||
+        !System.Net.IPAddress.IsLoopback(remote) ||
+        context.Request.Headers.ContainsKey("Forwarded") ||
+        context.Request.Headers.Keys.Any(static key =>
+            key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+
+    var relativePath = $"api/supervisor/v1/machines/{machineId:D}/shift-targets" +
+        context.Request.QueryString.Value;
+    await gateway.ForwardAsync(context, relativePath,
+        HttpMethods.IsGet(context.Request.Method) ? HttpMethod.Get : HttpMethod.Post)
+        .ConfigureAwait(false);
+});
+
 // Exact local-only downtime reason routes; never expose arbitrary supervisor API paths.
 app.MapMethods("/api/supervisor/v1/downtime-reasons/{reasonCode}",
     [HttpMethods.Put], async (HttpContext context, IConfiguration configuration,
