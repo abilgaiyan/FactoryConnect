@@ -8,6 +8,7 @@ param(
     [switch]$ApplyPendingMigrations,
     [bool]$SeparateServiceWindows = $true,
     [switch]$EnableSupervisorEntries,
+    [switch]$EnableSupervisorShiftTargets,
     [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
@@ -37,7 +38,7 @@ if (Test-Path -LiteralPath $settingsPath) {
             }
         }
     }
-    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableDowntimeReasonAdministration')) {
+    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableDowntimeReasonAdministration')) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             $property = $settings.PSObject.Properties[$name]
             if ($null -ne $property -and $null -ne $property.Value) {
@@ -122,10 +123,10 @@ if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace(
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
-if ($EnableSupervisorEntries -and [string]::IsNullOrWhiteSpace($SupervisorOperatorId)) {
+if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and [string]::IsNullOrWhiteSpace($SupervisorOperatorId)) {
     throw '-EnableSupervisorEntries requires -SupervisorOperatorId for audit attribution.'
 }
-if ($EnableSupervisorEntries -and $SupervisorOperatorId.Length -gt 200) {
+if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and $SupervisorOperatorId.Length -gt 200) {
     throw 'SupervisorOperatorId must not exceed 200 characters.'
 }
 $startDashboard = -not $ApiOnly
@@ -228,6 +229,11 @@ try {
         $apiEnvironment['SupervisorLocalEntry__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
     }
+    if ($EnableSupervisorShiftTargets) {
+        $apiEnvironment['SupervisorLocalShiftTarget__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalShiftTarget__OperatorId'] = $SupervisorOperatorId
+        $apiEnvironment['SupervisorLocalShiftTarget__WriteConnectionString'] = $connectionString
+    }
     if ($EnableDowntimeReasonAdministration) {
         $apiEnvironment['SupervisorLocalDowntimeReasons__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalDowntimeReasons__WriteConnectionString'] = $connectionString
@@ -241,6 +247,9 @@ try {
             'Dashboard__RequestTimeout' = '00:02:00'
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
+        if ($DevUi -or $EnableSupervisorShiftTargets) {
+            $dashboardEnvironment['SupervisorLocalShiftTarget__EnableGateway'] = 'true'
+        }
         if ($EnableDowntimeReasonAdministration) {
             $dashboardEnvironment['SupervisorLocalDowntimeReasons__EnableGateway'] = 'true'
         }
