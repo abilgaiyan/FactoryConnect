@@ -20,7 +20,8 @@ BEGIN
 END;
 -- A verified record is a durable prerequisite, not self-attested caller input.
 -- Until an independent verification issuer is implemented, production publication remains held.
-CREATE OR ALTER PROCEDURE dbo.PublishSupervisorAcceptedProduction
+-- The procedure body is DDL text; transaction statements execute only when the procedure is invoked.
+EXEC(N'CREATE OR ALTER PROCEDURE dbo.PublishSupervisorAcceptedProduction
     @PublicationId uniqueidentifier,
     @ReceiptId uniqueidentifier,
     @VerificationId uniqueidentifier
@@ -46,35 +47,35 @@ BEGIN
         INNER JOIN dbo.SupervisorAcceptedProductionVerification AS v WITH (UPDLOCK, HOLDLOCK)
           ON v.ReceiptId = r.ReceiptId AND v.VerificationId = @VerificationId
          AND v.VerifiedProducedQuantity = r.ProducedQuantity
-         AND v.Coverage = N'Complete'
-        WHERE r.ReceiptId = @ReceiptId AND r.QualificationDecision = N'Qualified';
+         AND v.Coverage = N''Complete''
+        WHERE r.ReceiptId = @ReceiptId AND r.QualificationDecision = N''Qualified'';
 
         IF @machine IS NULL
-            THROW 51038, 'Qualified receipt and independent complete-coverage verification required.', 1;
+            THROW 51038, ''Qualified receipt and independent complete-coverage verification required.'', 1;
 
         IF EXISTS (SELECT 1 FROM dbo.SupervisorAcceptedShiftProductionSource WITH (UPDLOCK, HOLDLOCK)
                    WHERE ReceiptId = @ReceiptId)
-            THROW 51039, 'Receipt already published.', 1;
+            THROW 51039, ''Receipt already published.'', 1;
 
         IF EXISTS (
             SELECT 1 FROM dbo.SupervisorAcceptedShiftProductionSource AS s WITH (UPDLOCK, HOLDLOCK)
             JOIN dbo.SupervisorProductionQualificationReceipt AS r WITH (UPDLOCK, HOLDLOCK)
               ON r.ReceiptId = s.ReceiptId
             WHERE r.MachineId = @machine AND r.PopulationKey = @population)
-            THROW 51040, 'Population already published.', 1;
+            THROW 51040, ''Population already published.'', 1;
 
         IF EXISTS (
             SELECT 1 FROM dbo.SupervisorAcceptedShiftProduction WITH (UPDLOCK, HOLDLOCK)
             WHERE MachineId = @machine AND ShiftScheduleAssignmentId = @assignment
               AND ShiftId = @shift AND ShiftStartsAtUtc = @starts AND ShiftEndsAtUtc = @ends)
-            THROW 51041, 'Shift already published.', 1;
+            THROW 51041, ''Shift already published.'', 1;
 
         INSERT dbo.SupervisorAcceptedShiftProduction
             (PublicationId, MachineId, ShiftScheduleAssignmentId, ShiftId,
              ShiftStartsAtUtc, ShiftEndsAtUtc, QuantityUnit,
              AcceptedProducedQuantity, Coverage, AuthorityReference, PublishedAtUtc)
         VALUES (@PublicationId, @machine, @assignment, @shift, @starts, @ends,
-                @unit, @quantity, N'Complete', @authority, TODATETIMEOFFSET(SYSUTCDATETIME(), 0));
+                @unit, @quantity, N''Complete'', @authority, TODATETIMEOFFSET(SYSUTCDATETIME(), 0));
 
         INSERT dbo.SupervisorAcceptedShiftProductionSource (PublicationId, ReceiptId)
         VALUES (@PublicationId, @ReceiptId);
@@ -85,4 +86,4 @@ BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
         THROW;
     END CATCH;
-END;
+END;');
