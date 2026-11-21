@@ -5,6 +5,8 @@ param(
     [switch]$Dashboard,
     [switch]$ApiOnly,
     [switch]$DevUi,
+    [switch]$ApplyPendingMigrations,
+    [bool]$SeparateServiceWindows = $true,
     [switch]$EnableSupervisorEntries,
     [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
@@ -66,7 +68,37 @@ function Wait-Health([string]$url,[System.Diagnostics.Process]$process,[int]$sec
     }
     throw "Health check timed out: $url"
 }
+# Start-Process opens an independent console on Windows. Temporarily setting process
+# environment variables allows children to inherit secrets without placing them in
+# command-line arguments or writing them to temporary files.
+function Start-DebugWindow([string]$workingDirectory,[string]$command,[hashtable]$envOverrides) {
+    $previous = @{}
+    try {
+        foreach ($name in $envOverrides.Keys) {
+            $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            [Environment]::SetEnvironmentVariable($name, [string]$envOverrides[$name], 'Process')
+        }
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $process = Start-Process -FilePath 'powershell.exe' -ArgumentList "-NoProfile -NoExit -EncodedCommand $encoded" -WorkingDirectory $workingDirectory -PassThru
+        if ($null -eq $process) { throw 'Could not open debug console.' }
+        $owned.Add($process)
+        return $process
+    } finally {
+        foreach ($name in $previous.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
+        }
+    }
+}
 function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[bool]$skipClientBuild) {
+    if ($SeparateServiceWindows) {
+        $arguments = 'run --no-build --no-launch-profile --project "' + $project + '"'
+        if ($skipClientBuild) { $arguments += ' -p:BuildDashboardClient=false' }
+        $arguments += ' -- --urls ' + $url
+        $command = '& dotnet ' + $arguments + '; Write-Host "Service stopped. Exit code: $LASTEXITCODE"'
+        $windowEnvironment = @{ 'ASPNETCORE_ENVIRONMENT' = 'Development'; 'DOTNET_ENVIRONMENT' = 'Development' }
+        foreach ($name in $envOverrides.Keys) { $windowEnvironment[$name] = $envOverrides[$name] }
+        return Start-DebugWindow $root $command $windowEnvironment
+    }
     $info = [System.Diagnostics.ProcessStartInfo]::new()
     $info.FileName = 'dotnet'
     $info.WorkingDirectory = $root
@@ -145,6 +177,20 @@ try {
     if ([int]$command.ExecuteScalar() -ne 1) { throw 'Development database is missing supervisor tables.' }
 } finally { $connection.Dispose() }
 
+if ($ApplyPendingMigrations) {
+    $migrationProject = Join-Path $root 'src/FactoryConnect.Migrations/FactoryConnect.Migrations.csproj'
+    if (-not (Test-Path -LiteralPath $migrationProject)) { throw 'Repository migration project not found.' }
+    Write-Host "Applying repository SQL migrations to $actualServer / $actualDb..."
+    $variableName = 'PersistenceProviders__SqlServer__ConnectionString'
+    $oldValue = [Environment]::GetEnvironmentVariable($variableName, 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable($variableName, $connectionString, 'Process')
+        & dotnet run --project $migrationProject
+        if ($LASTEXITCODE -ne 0) { throw 'SQL migration failed; services were not started.' }
+    } finally {
+        [Environment]::SetEnvironmentVariable($variableName, $oldValue, 'Process')
+    }
+}
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
 if ($DevUi) { Assert-PortAvailable $UiPort }
@@ -236,9 +282,16 @@ try {
             $info.UseShellExecute = $false
             $info.EnvironmentVariables['FACTORYCONNECT_DASHBOARD_DEV_PROXY'] = $dashUrl
             $info.Arguments = "/d /s /c `"npm.cmd run dev -- --host 127.0.0.1 --port $UiPort --strictPort`""
-            $vite = [System.Diagnostics.Process]::Start($info)
-            if ($null -eq $vite) { throw 'Could not start Vite.' }
-            $owned.Add($vite)
+            if ($SeparateServiceWindows) {
+                $vite = Start-DebugWindow $clientDirectory 'npm.cmd run dev -- --host 127.0.0.1 --port $env:FACTORYCONNECT_UI_PORT --strictPort; Write-Host "Vite stopped. Exit code: $LASTEXITCODE"' @{
+                    'FACTORYCONNECT_DASHBOARD_DEV_PROXY' = $dashUrl
+                    'FACTORYCONNECT_UI_PORT' = [string]$UiPort
+                }
+            } else {
+                $vite = [System.Diagnostics.Process]::Start($info)
+                if ($null -eq $vite) { throw 'Could not start Vite.' }
+                $owned.Add($vite)
+            }
             Wait-Health "$uiUrl/" $vite 45
             Write-Host "Development UI (Supervisor Desk preview): $uiUrl/supervisor-preview"
             Write-Host 'Vite is development-only. The built Dashboard UI remains separate on port 5090.'
