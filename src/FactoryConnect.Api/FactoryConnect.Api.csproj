@@ -7,6 +7,7 @@
     <OpenApiGenerateDocumentsOptions>--document-name v1 --file-name factoryconnect-api-v1</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../FactoryConnect.Security/FactoryConnect.Security.csproj" />
     <ProjectReference Include="../FactoryConnect.Persistence.SqlServer/FactoryConnect.Persistence.SqlServer.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server">
