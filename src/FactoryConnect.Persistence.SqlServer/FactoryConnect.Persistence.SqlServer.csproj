@@ -4,6 +4,7 @@
     <AssemblyName>FactoryConnect.Persistence.SqlServer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Sql\036_InspectSupervisorAcceptedProductionReceipt.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.036_InspectSupervisorAcceptedProductionReceipt.sql" />
     <EmbeddedResource Include="Sql\035_SupervisorAcceptedShiftProductionSource.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.035_SupervisorAcceptedShiftProductionSource.sql" />
     <EmbeddedResource Include="Sql\034_SupervisorProductionQualificationReceipt.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.034_SupervisorProductionQualificationReceipt.sql" />
     <EmbeddedResource Include="Sql\032_SupervisorShiftTarget.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.032_SupervisorShiftTarget.sql" />
