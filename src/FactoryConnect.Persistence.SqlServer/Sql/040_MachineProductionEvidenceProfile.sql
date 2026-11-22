@@ -3,7 +3,7 @@
 -- Changes are append-only revisions so historical evidence is never silently reinterpreted.
 IF OBJECT_ID(N'dbo.MachineProductionEvidenceProfile', N'U') IS NULL
 BEGIN
-    CREATE TABLE dbo.MachineProductionEvidenceProfile
+CREATE TABLE dbo.MachineProductionEvidenceProfile
     (
         ProfileRevisionId uniqueidentifier NOT NULL
             CONSTRAINT PK_MachineProductionEvidenceProfile PRIMARY KEY,
