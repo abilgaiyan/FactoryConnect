@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ShiftPerformanceMachine, ShiftPerformanceShift } from "./shift-performance-model.ts";
+import { sourceIntegrityGaps } from "./supervisor-source-readiness.ts";
 
 interface SourceRow {
   evidenceId: string;
@@ -152,6 +153,16 @@ export function SupervisorQuantitySourceInspection({ machine, shift }: {
       <button type="button" onClick={() => exportQuantityEvidenceCsv(machine, shift, inventory)}>Export historical source evidence (CSV)</button>
       <p>{inventory.sourceCount} historical source record(s). No accepted-quantity total is calculated.</p>
       <p>Source-level consistency: {inventory.sources.filter(source => quantityEvidenceDiagnostics(source).length > 0).length} of {inventory.sourceCount} records have missing or inconsistent quantity/context fields. Even zero flagged records do not establish accepted production.</p>
+      <section aria-label="Source integrity readiness">
+        <h4>Source integrity and overlap checks</h4>
+        {sourceIntegrityGaps(inventory.sources, shift.shift.startsAtUtc, shift.shift.endsAtUtc).length > 0
+          ? <>
+            <p>Potential duplicate, out-of-shift or incomplete CNC source evidence detected. Resolve these before independent coverage verification.</p>
+            <ul>{sourceIntegrityGaps(inventory.sources, shift.shift.startsAtUtc, shift.shift.endsAtUtc).map((gap, index) =>
+              <li key={index}>{gap}</li>)}</ul>
+          </>
+          : <p>No duplicate source IDs, repeated CNC positions, out-of-shift timestamps or unsafe quantity sums detected in returned rows. This does not establish complete CNC coverage, disjoint production populations, independent verification or accepted production.</p>}
+      </section>
       {quantityEvidenceGapCounts(inventory.sources).length > 0 && <section aria-label="Quantity evidence gaps by reason">
         <h4>Evidence gaps to investigate</h4>
         <ul>{quantityEvidenceGapCounts(inventory.sources).map(({ issue, count }) =>
