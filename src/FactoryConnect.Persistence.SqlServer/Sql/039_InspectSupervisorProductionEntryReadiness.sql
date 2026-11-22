@@ -23,8 +23,8 @@ BEGIN
         COALESCE(revision.ProductionOrder, e.ProductionOrder) AS ProductionOrder,
         COALESCE(revision.PartNumber, e.PartNumber) AS PartNumber,
         COALESCE(revision.Operation, e.Operation) AS Operation,
-        COALESCE(revision.GoodQuantity, e.GoodQuantity) AS GoodQuantity,
-        COALESCE(revision.RejectedQuantity, e.RejectedQuantity) AS RejectedQuantity,
+        CASE WHEN revision.RevisionId IS NULL THEN e.GoodQuantity ELSE revision.GoodQuantity END AS GoodQuantity,
+        CASE WHEN revision.RevisionId IS NULL THEN e.RejectedQuantity ELSE revision.RejectedQuantity END AS RejectedQuantity,
         CASE WHEN revision.RevisionId IS NULL THEN originalReview.Decision
              ELSE revisionReview.Decision END AS LocalReviewDecision,
         receipt.ReceiptId,
