@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FactoryConnect.Integration.Tests;
 
@@ -27,6 +28,7 @@ public sealed class MachineEvidenceProfileEndpointTests
             ["Commissioning:Enabled"] = commissioning.ToString(),
             ["MachineEvidenceProfileLocal:EnableWrites"] = writes.ToString()
         });
+        builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         await using var app = builder.Build();
         app.Use(async (context, next) =>
         {
@@ -54,6 +56,7 @@ public sealed class MachineEvidenceProfileEndpointTests
         {
             ["Commissioning:Enabled"] = "true"
         });
+        builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         await using var app = builder.Build();
         app.Use(async (context, next) =>
         {
