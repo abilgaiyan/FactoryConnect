@@ -106,7 +106,7 @@ interface RouteViewProps {
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
     case "supervisor": return <Suspense fallback={<p role="status">Loading Supervisor…</p>}><SupervisorWorkspace runtime={runtime} /></Suspense>;
-    case "commissioning": return <CommissioningPage />;
+    case "commissioning": return <CommissioningPage sources={runtime.configuration.sources} />;
     case "overview": return <ManagementOverviewPage runtime={runtime} search={route.search} navigate={navigate} />;
     case "fleet": return <FleetStatusPage runtime={runtime} />;
     case "dateRange": return <DateRangePage key={window.location.search} runtime={runtime} />;
