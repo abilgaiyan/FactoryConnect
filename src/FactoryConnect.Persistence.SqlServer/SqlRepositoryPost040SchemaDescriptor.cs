@@ -30,15 +30,15 @@ internal static class SqlRepositoryPost040SchemaDescriptor
             ], [],
             [
                 new("CK_MachineProductionEvidenceProfile_Identity",
-                    "([MachineId]<>('00000000-0000-0000-0000-000000000000') AND [ProfileRevisionId]<>('00000000-0000-0000-0000-000000000000') AND [RevisionNumber]>(0))", true, true, false),
+                    "([MachineId]<>'00000000-0000-0000-0000-000000000000' AND [ProfileRevisionId]<>'00000000-0000-0000-0000-000000000000' AND [RevisionNumber]>(0))", true, true, false),
                 new("CK_MachineProductionEvidenceProfile_Mode",
                     "([EvidenceMode]=N'CounterOnly' OR [EvidenceMode]=N'StateOnly' OR [EvidenceMode]=N'CncCounterAndState')", true, true, false),
                 new("CK_MachineProductionEvidenceProfile_Signals",
                     "([EvidenceMode]=N'StateOnly' AND [StateDataItemId] IS NOT NULL AND [CounterDataItemId] IS NULL AND [CounterSemantics] IS NULL OR [EvidenceMode]=N'CounterOnly' AND [StateDataItemId] IS NULL AND [CounterDataItemId] IS NOT NULL AND [CounterSemantics] IS NOT NULL OR [EvidenceMode]=N'CncCounterAndState' AND [StateDataItemId] IS NOT NULL AND [CounterDataItemId] IS NOT NULL AND [CounterSemantics] IS NOT NULL)", true, true, false),
                 new("CK_MachineProductionEvidenceProfile_Counter",
-                    "([CounterSemantics] IS NULL OR [CounterSemantics]=N'CyclePulse' OR [CounterSemantics]=N'CumulativeMonotonic' OR [CounterSemantics]=N'CumulativeResettable')", true, true, false),
+                    "([CounterSemantics] IS NULL OR ([CounterSemantics]=N'CyclePulse' OR [CounterSemantics]=N'CumulativeMonotonic' OR [CounterSemantics]=N'CumulativeResettable'))", true, true, false),
                 new("CK_MachineProductionEvidenceProfile_Required",
-                    "(len(TRIM([ConfiguredBy]))>(0) AND ([StateDataItemId] IS NULL OR len(TRIM([StateDataItemId]))>(0)) AND ([CounterDataItemId] IS NULL OR len(TRIM([CounterDataItemId]))>(0)))", true, true, false),
+                    "(len(Trim([ConfiguredBy]))>(0) AND ([StateDataItemId] IS NULL OR len(Trim([StateDataItemId]))>(0)) AND ([CounterDataItemId] IS NULL OR len(Trim([CounterDataItemId]))>(0)))", true, true, false),
                 new("CK_MachineProductionEvidenceProfile_Utc",
                     "(datepart(tzoffset,[EffectiveFromUtc])=(0) AND datepart(tzoffset,[ConfiguredAtUtc])=(0))", true, true, false)
             ], [])
