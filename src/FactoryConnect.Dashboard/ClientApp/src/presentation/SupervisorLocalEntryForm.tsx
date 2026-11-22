@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { SupervisorLocalReviewPanel } from "./SupervisorLocalReviewPanel";
+import { SupervisorEntryReadiness } from "./SupervisorEntryReadiness";
 
 type Entry = {
   entryId: string; machineId: string; shiftScheduleAssignmentId: string; shiftId: string;
@@ -243,6 +244,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
             <dt>Note</dt><dd style={{ whiteSpace: "pre-wrap" }}>{entry.note || "No note recorded"}</dd>
           </dl>
           <p>Saved supervisor declaration only; not an approved or reconciled production fact.</p>
+          <SupervisorEntryReadiness machineId={scope.machineId} entryId={entry.entryId} />
         </details>
       </li>)}</ul>}
   </section>;
