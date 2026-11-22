@@ -64,3 +64,23 @@ test("failed history read never exposes an editor with assumed defaults", async 
   assert.match(h.document.body.textContent, /HTTP 503/);
   assert.equal(button(h, "Save new revision"), undefined);
 });
+
+test("selects configured machine by display name without inventing evidence mode", async t => {
+  const previous = globalThis.fetch;
+  const requested = [];
+  globalThis.fetch = async url => { requested.push(String(url)); return Response.json([]); };
+  t.after(() => { globalThis.fetch = previous; });
+  const sources = [{
+    machineId: machine, displayName: "GG-003", siteId: "Gajra",
+    productionLineId: "line-1", processorId: "processor", groupName: null, displayOrder: 0
+  }];
+  const h = await mountInDom(React.createElement(MachineEvidenceProfileAdministration, { sources }));
+  t.after(() => h.dispose());
+  const select = h.document.querySelector("select");
+  assert.match(select.textContent, /GG-003/);
+  await h.changeInput(select, machine);
+  await h.click(button(h, "Load machine profiles"));
+  assert.equal(requested.length, 1);
+  assert.match(requested[0], new RegExp(machine));
+  assert.match(h.document.body.textContent, /Unconfigured/);
+});
