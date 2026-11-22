@@ -1,3 +1,4 @@
+using System.Data;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Persistence.SqlServer;
@@ -27,10 +28,66 @@ public static class SupervisorShiftTargetEndpoints
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
             ReadQuantitySourceCutAsync).WithName("ReadLocalSupervisorQuantitySourceCut")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/production-entries/{entryId:guid}/qualification-readiness",
+            ReadQualificationReadinessAsync).WithName("ReadSupervisorQualificationReadiness")
+            .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-shift-production",
             ReadAcceptedShiftProductionAsync).WithName("ReadLocalAcceptedShiftProduction")
             .WithGroupName("supervisor-local-v1");
         return endpoints;
+    }
+
+    /// <summary>Read-only local diagnostics. Never grants publication authority.</summary>
+    private static async Task<IResult> ReadQualificationReadinessAsync(
+        Guid machineId, Guid entryId, HttpContext context,
+        IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        if (machineId == Guid.Empty || entryId == Guid.Empty)
+            return Results.BadRequest(new { reason = "InvalidSupervisorEntryIdentity" });
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            await using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(
+                "dbo.InspectSupervisorProductionEntryReadiness", connection)
+            {
+                CommandType = CommandType.StoredProcedure
+            };
+            command.Parameters.Add("@EntryId", SqlDbType.UniqueIdentifier).Value = entryId;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                return Results.Problem(statusCode: 503, title: "Readiness inspection returned no result");
+            var actualMachine = reader.IsDBNull(reader.GetOrdinal("MachineId"))
+                ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("MachineId"));
+            if (actualMachine is not null && actualMachine != machineId)
+                return Results.NotFound();
+            var status = reader.GetString(reader.GetOrdinal("ReadinessStatus"));
+            // This endpoint intentionally never exposes a positive publication decision.
+            return Results.Ok(new
+            {
+                classification = "SupervisorQualificationReadinessDiagnosticOnly",
+                machineId,
+                entryId,
+                currentEvidenceId = reader.IsDBNull(reader.GetOrdinal("CurrentEvidenceId"))
+                    ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("CurrentEvidenceId")),
+                sourceKind = reader.IsDBNull(reader.GetOrdinal("SourceKind"))
+                    ? null : reader.GetString(reader.GetOrdinal("SourceKind")),
+                localReviewDecision = reader.IsDBNull(reader.GetOrdinal("LocalReviewDecision"))
+                    ? null : reader.GetString(reader.GetOrdinal("LocalReviewDecision")),
+                readinessStatus = status,
+                publicationAuthorized = false,
+                warning = "Read-only local inspection. CNC coverage, population reconciliation and independent factory authorization are not established."
+            });
+        }
+        catch (SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Supervisor readiness SQL inspection unavailable");
+        }
     }
 
     private static async Task<IResult> ReadAcceptedShiftProductionAsync(
