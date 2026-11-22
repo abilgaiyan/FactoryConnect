@@ -10,15 +10,15 @@ const unavailable = (metricKey, reasonCode) => ({ metricKey, version: "1.0", sta
 
 const model = {
   productionDay: "2026-11-22",
-  groups: [{ groupName: "Gears", machines: [
+  groups: [{ groupName: "Line 1", machines: [
     {
-      machineId: "GG-003", displayName: "Gear, Machine", productionLineId: "line-1",
+      machineId: "Machine-A", displayName: "Gear, Machine", productionLineId: "line-1",
       productionDayCells: [calculated("availability", "0.80"), unavailable("performance", "missing-reference-time")],
       shifts: [{ shift: { shiftId: "Shift 1", startsAtUtc: "2026-11-22T02:00:00Z", endsAtUtc: "2026-11-22T10:00:00Z" },
         cells: [calculated("oee", "0.45")] }]
     },
     {
-      machineId: "MOXA-001", displayName: "=HYPERLINK(\"bad\")", productionLineId: "line-2",
+      machineId: "Machine-B", displayName: "=HYPERLINK(\"bad\")", productionLineId: "line-2",
       productionDayCells: [], shifts: []
     }
   ] }]
@@ -27,8 +27,8 @@ const model = {
 test("pilot CSV exports both machines with explicit missing OEE and preserved reasons", () => {
   const csv = dailyReportCsv(model, true);
   assert.ok(csv.startsWith("\uFEFF"));
-  assert.match(csv, /"GG-003"/);
-  assert.match(csv, /"MOXA-001"/);
+  assert.match(csv, /"Machine-A"/);
+  assert.match(csv, /"Machine-B"/);
   assert.match(csv, /"unavailable","","","missing-reference-time","ReferenceTime"/);
   assert.match(csv, /"oee","missing","",""/);
   assert.match(csv, /"oee","calculated","0.45","Ratio"/);
@@ -40,7 +40,7 @@ test("shift-filtered CSV omits production-day rows and does not invent empty-mac
   const csv = dailyReportCsv(model, false);
   assert.doesNotMatch(csv, /"Production day",""/);
   assert.match(csv, /"Shift","Shift 1"/);
-  assert.doesNotMatch(csv, /"MOXA-001"/);
+  assert.doesNotMatch(csv, /"Machine-B"/);
   assert.equal(csv.split("\r\n").length, 1 + 5);
 });
 
