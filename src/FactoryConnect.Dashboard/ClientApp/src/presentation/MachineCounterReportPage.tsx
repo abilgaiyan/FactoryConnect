@@ -85,7 +85,7 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   return <section className="activity-report" aria-labelledby="counter-title">
     <h2 id="counter-title">Raw counter inspection</h2>
     <p>Inspect the machine's quantity signal using its exact source and address. Signals are discovered automatically on opening this page. The previous available selection or first discovered signal is selected for convenience; change it before loading if needed. Use Find signals after changing dates. Discovery is not an approved quantity mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
-    {profileInstant && <CounterProfileInspection key={machineId + "|" + profileInstant} machineId={machineId} atUtc={profileInstant} />}
+    {profileInstant && <CounterProfileInspection key={machineId + "|" + profileInstant} machineId={machineId} atUtc={profileInstant} availableSignals={signals ?? []} />}
     <p>Arithmetic differences are diagnostic only. Continuity, counter meaning and shift attribution are not established; production totals are withheld.</p>
     <form onSubmit={submit} className="activity-filters">
       <label>Counter from<input type="date" required value={from} onChange={e => changeDates(e.currentTarget.value, through)} /></label>
