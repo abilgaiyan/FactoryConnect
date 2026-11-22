@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { dailyReportCsv } from "./daily-report-csv.ts";
 import { formatReportDate, formatReportTimestamp } from "./date-formatting.ts";
 import type { DailyReportLifecycleState } from "../application/daily-report-lifecycle.ts";
 import type {
@@ -50,6 +51,18 @@ export function DailyReportPage({
   const shift = shifts.includes(selectedShift) ? selectedShift : "";
   const filteredModel = visibleModel === null ? null : filterDailyReportModel(visibleModel, line, machine, shift);
 
+  function exportCsv() {
+    if (filteredModel === null || !canPrintDailyReportState(state)) return;
+    const url = URL.createObjectURL(new Blob([dailyReportCsv(filteredModel, shift === "")], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "factoryconnect-daily-report.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="daily-report-page">
       <div className="daily-report-controls" aria-label="Daily report actions">
@@ -59,6 +72,9 @@ export function DailyReportPage({
           onClick={() => { void refresh(); }}
         >
           Refresh
+        </button>
+        <button type="button" disabled={!canPrintDailyReportState(state) || filteredModel === null} onClick={exportCsv}>
+          Export CSV
         </button>
         <button
           type="button"
