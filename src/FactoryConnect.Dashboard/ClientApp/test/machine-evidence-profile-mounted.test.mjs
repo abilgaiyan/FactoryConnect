@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import React from "react";
+import React, { act } from "react";
 import { createServer } from "vite";
 import { mountInDom } from "./dom-test-harness.mjs";
 
@@ -63,4 +63,28 @@ test("failed history read never exposes an editor with assumed defaults", async 
   await h.click(button(h, "Load machine profiles"));
   assert.match(h.document.body.textContent, /HTTP 503/);
   assert.equal(button(h, "Save new revision"), undefined);
+});
+
+test("selects configured machine by display name without inventing evidence mode", async t => {
+  const previous = globalThis.fetch;
+  const requested = [];
+  globalThis.fetch = async url => { requested.push(String(url)); return Response.json([]); };
+  t.after(() => { globalThis.fetch = previous; });
+  const sources = [{
+    machineId: machine, displayName: "GG-003", siteId: "Gajra",
+    productionLineId: "line-1", processorId: "processor", groupName: null, displayOrder: 0
+  }];
+  const h = await mountInDom(React.createElement(MachineEvidenceProfileAdministration, { sources }));
+  t.after(() => h.dispose());
+  const select = h.document.querySelector("select");
+  assert.match(select.textContent, /GG-003/);
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(h.window.HTMLSelectElement.prototype, "value").set;
+    setter.call(select, machine);
+    select.dispatchEvent(new h.window.Event("change", { bubbles: true }));
+  });
+  await h.click(button(h, "Load machine profiles"));
+  assert.equal(requested.length, 1);
+  assert.match(requested[0], new RegExp(machine));
+  assert.match(h.document.body.textContent, /Unconfigured/);
 });

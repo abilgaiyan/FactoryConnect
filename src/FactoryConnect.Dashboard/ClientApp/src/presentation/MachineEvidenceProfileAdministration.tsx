@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import type { DashboardRuntimeSource } from "../application/runtime-configuration.ts";
 
 type Mode = "StateOnly" | "CounterOnly" | "CncCounterAndState";
 type Semantics = "CumulativeResettable" | "CumulativeMonotonic" | "CyclePulse";
@@ -13,7 +14,7 @@ const apiPath = (machine: string) => `/api/commissioning/v1/machines/${encodeURI
 const hasState = (mode: Mode) => mode !== "CounterOnly";
 const hasCounter = (mode: Mode) => mode !== "StateOnly";
 
-export function MachineEvidenceProfileAdministration() {
+export function MachineEvidenceProfileAdministration({ sources = [] }: { readonly sources?: readonly DashboardRuntimeSource[] }) {
   const [machine, setMachine] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("");
   const [history, setHistory] = useState<Profile[] | null>(null);
@@ -25,6 +26,7 @@ export function MachineEvidenceProfileAdministration() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const head = history?.at(-1);
+  const options = [...new Map(sources.filter(source => uuid.test(source.machineId)).map(source => [source.machineId.toLowerCase(), source])).values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   const validMachine = uuid.test(machine) && machine !== "00000000-0000-0000-0000-000000000000";
 
   async function load(event?: FormEvent) {
@@ -83,6 +85,10 @@ export function MachineEvidenceProfileAdministration() {
     <h2>Machine evidence configuration</h2>
     <p>Local commissioning only. Enter the commissioned machine UUID and verified MTConnect data item IDs. A profile does not activate acquisition or establish produced quantity.</p>
     <form onSubmit={event => void load(event)}>
+      {options.length > 0 && <label>Configured reporting machine <select value={options.some(option => option.machineId.toLowerCase() === machine.toLowerCase()) ? machine : ""} onChange={event => { setMachine(event.target.value); setHistory(null); setSelectedMachine(""); }}>
+        <option value="">Select machine</option>
+        {options.map(option => <option key={option.machineId} value={option.machineId}>{option.displayName} — {option.siteId}</option>)}
+      </select></label>}
       <label>Machine UUID <input value={machine} onChange={event => { setMachine(event.target.value.trim()); setHistory(null); setSelectedMachine(""); }} placeholder="Commissioned machine UUID" required /></label>
       <button type="submit" disabled={!validMachine || busy}>Load machine profiles</button>
     </form>
