@@ -14,6 +14,7 @@ internal static class SqlRepositorySchemaAuthority
         Table("DerivedOeeAssessment"),
         Table("MachineActivityPeriodHistory"),
         Table("MachineObservation"),
+        Table("MachineProductionEvidenceProfile"),
         Table("MachineShiftOccurrenceRoster"),
         Table("MachineShiftOccurrenceRosterOccurrence"),
         Table("MachineStateActivityAuthority"),
