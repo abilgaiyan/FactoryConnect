@@ -1,3 +1,4 @@
+import { MachineEvidenceProfileAdministration } from "./MachineEvidenceProfileAdministration.tsx";
 import { useEffect, useState } from "react";
 
 export interface CommissioningField { path: string; value: string | null }
@@ -103,5 +104,6 @@ export function CommissioningPage() {
       </table>
       </div>
     </>}
+    <MachineEvidenceProfileAdministration />
   </section>;
 }
