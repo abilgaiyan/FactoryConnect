@@ -38,6 +38,7 @@ test("profile inspection is opt-in and does not infer counter mapping", async t 
   assert.match(h.document.body.textContent, /CncCounterAndState/);
   assert.match(h.document.body.textContent, /part_count/);
   assert.match(h.document.body.textContent, /does not assert that they refer to the same signal/);
+  assert.match(h.document.body.textContent, /No raw signals discovered/);
 });
 
 test("unavailable local commissioning read does not fabricate profile", async t => {
@@ -49,4 +50,22 @@ test("unavailable local commissioning read does not fabricate profile", async t 
   await h.click(h.document.querySelector("button"));
   assert.match(h.document.body.textContent, /HTTP 403/);
   assert.doesNotMatch(h.document.body.textContent, /Configured counter data item ID/);
+});
+
+test("literal raw address match is a candidate, never a verified mapping", async t => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({
+    profileRevisionId: "d14f2d7d-2cb9-47ce-932f-ae1f3c3c512e",
+    revisionNumber: 1, evidenceMode: "CounterOnly",
+    stateDataItemId: null, counterDataItemId: "part_count",
+    counterSemantics: "CumulativeMonotonic", effectiveFromUtc: atUtc
+  });
+  t.after(() => { globalThis.fetch = original; });
+  const h = await mountInDom(React.createElement(CounterProfileInspection, {
+    ...props, availableSignals: [{ source: "mtconnect", address: "part_count" }]
+  }));
+  t.after(() => h.dispose());
+  await h.click(h.document.querySelector("button"));
+  assert.match(h.document.body.textContent, /candidate only; mapping unverified/);
+  assert.match(h.document.body.textContent, /Matching addresses do not prove/);
 });
