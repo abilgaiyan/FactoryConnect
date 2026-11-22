@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import React from "react";
+import React, { act } from "react";
 import { createServer } from "vite";
 import { mountInDom } from "./dom-test-harness.mjs";
 
@@ -78,7 +78,11 @@ test("selects configured machine by display name without inventing evidence mode
   t.after(() => h.dispose());
   const select = h.document.querySelector("select");
   assert.match(select.textContent, /GG-003/);
-  await h.changeInput(select, machine);
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(h.window.HTMLSelectElement.prototype, "value").set;
+    setter.call(select, machine);
+    select.dispatchEvent(new h.window.Event("change", { bubbles: true }));
+  });
   await h.click(button(h, "Load machine profiles"));
   assert.equal(requested.length, 1);
   assert.match(requested[0], new RegExp(machine));
