@@ -60,6 +60,7 @@ test("Daily Report production modules keep the exact approved dependency directi
     await sourceImports("src/presentation/DailyReportPage.tsx"),
     [
       "react",
+      "./daily-report-csv.ts",
       "./date-formatting.ts",
       "../application/daily-report-lifecycle.ts",
       "./daily-report-model.ts",
