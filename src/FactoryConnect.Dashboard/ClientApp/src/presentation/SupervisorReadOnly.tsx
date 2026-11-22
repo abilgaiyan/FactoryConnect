@@ -19,26 +19,33 @@ export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: Shif
 }
 
 function exportShiftOeeCsv(overview: ShiftPerformanceOverview, machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift) {
+  exportOeeCsv(overview, [{ machine, occurrence }], "supervisor-shift-oee.csv");
+}
+
+function exportOeeCsv(overview: ShiftPerformanceOverview,
+  occurrences: ReadonlyArray<{ machine: ShiftPerformanceMachine; occurrence: ShiftPerformanceShift }>, filename: string) {
   const cell = (value: string) => {
     const safe = /^\s*[=+@-]/.test(value) ? "'" + value : value;
     return '"' + safe.replace(/"/g, '""') + '"';
   };
   const columns = ["Production day", "Machine ID", "Reporting processor", "Site ID", "Shift ID", "Shift assignment", "Shift start UTC", "Shift end UTC", "Metric", "Status", "Value", "Unit", "Reason code", "Reason operand"];
-  const base = [overview.productionDay, machine.machineId, machine.processorId, machine.siteId, occurrence.shift.shiftId, occurrence.shift.shiftScheduleAssignmentId, occurrence.shift.startsAtUtc, occurrence.shift.endsAtUtc];
-  const rows = ([
-    ["Availability", occurrence.availability], ["Performance", occurrence.performance],
-    ["Quality", occurrence.quality], ["OEE", occurrence.oee],
-  ] as const).map(([name, metric]) => [...base, name, metric.state,
-    metric.state === "calculated" ? String(metric.value) : "",
-    metric.state === "calculated" ? metric.unit : "",
-    metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonCode ?? "" : "",
-    metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonOperandName ?? "" : "",
-  ]);
+  const rows = occurrences.flatMap(({ machine, occurrence }) => {
+    const base = [overview.productionDay, machine.machineId, machine.processorId, machine.siteId, occurrence.shift.shiftId, occurrence.shift.shiftScheduleAssignmentId, occurrence.shift.startsAtUtc, occurrence.shift.endsAtUtc];
+    return ([
+      ["Availability", occurrence.availability], ["Performance", occurrence.performance],
+      ["Quality", occurrence.quality], ["OEE", occurrence.oee],
+    ] as const).map(([name, metric]) => [...base, name, metric.state,
+      metric.state === "calculated" ? String(metric.value) : "",
+      metric.state === "calculated" ? metric.unit : "",
+      metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonCode ?? "" : "",
+      metric.state === "unavailable" || metric.state === "insufficient-evidence" ? metric.reasonOperandName ?? "" : "",
+    ]);
+  });
   const csv = [columns, ...rows].map(row => row.map(cell).join(",")).join("\r\n");
   const href = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
   const anchor = document.createElement("a");
   anchor.href = href;
-  anchor.download = "supervisor-shift-oee.csv";
+  anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -101,6 +108,8 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
   }
   return <>
     <p role="status">{occurrences.length} recorded shift occurrence(s) returned for {overview.productionDay}. Select one to inspect its metrics and activity.</p>
+    {occurrences.length > 0 && <button type="button" onClick={() => exportOeeCsv(overview, occurrences, "supervisor-production-day-oee.csv")}>Export production-day OEE evidence (CSV)</button>}
+    {occurrences.length > 0 && <p>The production-day export includes all returned machine/shift occurrences, their metric statuses and evidence reasons. Missing values are blank, never zero.</p>}
     {occurrences.length > 0 && <section aria-label="Shift OEE evidence coverage" className="supervisor-detail">
       <h2>OEE readiness for this production day</h2>
       <p><strong>{occurrences.filter(({ occurrence }) => occurrence.oee.state === "calculated").length}</strong> of <strong>{occurrences.length}</strong> shift occurrences have a reported calculated OEE.</p>
