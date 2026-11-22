@@ -1,3 +1,4 @@
+import { CounterProfileInspection } from "./CounterProfileInspection.tsx";
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { hasCounterComparisonIssue, summarizeCounterDiagnostics } from '../application/counter-diagnostics.ts';
 import { activityDateRange } from '../application/machine-activity-report.ts';
@@ -77,9 +78,12 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   const visibleSamples = (report?.samples ?? []).filter(s => !issuesOnly || hasCounterComparisonIssue(s));
   const count = visibleSamples.length; const pages = Math.max(1, Math.ceil(count / pageSize));
   const visiblePage = Math.min(page, pages); const start = (visiblePage - 1) * pageSize;
+  let profileInstant: string | null = null;
+  try { profileInstant = activityDateRange(from, through).fromInclusive; } catch { /* No valid interval to inspect. */ }
   return <section className="activity-report" aria-labelledby="counter-title">
     <h2 id="counter-title">Raw counter inspection</h2>
     <p>Inspect the machine's quantity signal using its exact source and address. Signals are discovered automatically on opening this page. The previous available selection or first discovered signal is selected for convenience; change it before loading if needed. Use Find signals after changing dates. Discovery is not an approved quantity mapping. Numeric and Enumeration signals are listed for discovery; their type or integer text does not establish produced quantity.</p>
+    {profileInstant && <CounterProfileInspection key={machineId + "|" + profileInstant} machineId={machineId} atUtc={profileInstant} />}
     <p>Arithmetic differences are diagnostic only. Continuity, counter meaning and shift attribution are not established; production totals are withheld.</p>
     <form onSubmit={submit} className="activity-filters">
       <label>Counter from<input type="date" required value={from} onChange={e => changeDates(e.currentTarget.value, through)} /></label>
