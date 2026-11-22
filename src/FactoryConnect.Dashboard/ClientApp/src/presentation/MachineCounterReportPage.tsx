@@ -1,3 +1,4 @@
+import { counterReadiness } from "../application/counter-readiness.ts";
 import { CounterProfileInspection } from "./CounterProfileInspection.tsx";
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { hasCounterComparisonIssue, summarizeCounterDiagnostics } from '../application/counter-diagnostics.ts';
@@ -75,6 +76,7 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   const sources = [...new Set((signals ?? []).map(s => s.source))];
   const addresses = (signals ?? []).filter(s => s.source === source).map(s => s.address);
   const summary = summarizeCounterDiagnostics(report?.samples ?? []);
+  const readiness = report ? counterReadiness(report) : null;
   const visibleSamples = (report?.samples ?? []).filter(s => !issuesOnly || hasCounterComparisonIssue(s));
   const count = visibleSamples.length; const pages = Math.max(1, Math.ceil(count / pageSize));
   const visiblePage = Math.min(page, pages); const start = (visiblePage - 1) * pageSize;
@@ -103,6 +105,12 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
     {report && <>
       <p>Loaded signal: {report.source} / {report.address}. Stream {report.streamKey}; raw position {report.throughPosition}; acquisition revision {report.acquisitionRevision}.</p>
       <p>Selected IST calendar interval: {formatReportTimestamp(report.fromInclusive)} – {formatReportTimestamp(report.toExclusive)} (exclusive end). Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>.</p>
+      {readiness && <section aria-labelledby="counter-readiness-title">
+        <h3 id="counter-readiness-title">Counter evidence readiness: {readiness.status}</h3>
+        <p>Selected observations: {readiness.samples}; non-good: {readiness.nonGood}; decreases: {readiness.decreases}; instance changes: {readiness.instanceChanges}; non-increasing timestamps: {readiness.nonIncreasingTimestamps}.</p>
+        <ul>{readiness.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+        <p>No accepted quantity or OEE is calculated from these diagnostics.</p>
+      </section>}
       <section aria-labelledby="counter-summary-title">
         <h3 id="counter-summary-title">Diagnostic summary</h3>
         <p>Counts cover all loaded observations. Comparison categories reconcile to the observation count; flag counts overlap. Increases are not admitted produced quantity. A decrease does not establish its cause or a confirmed reset.</p>
