@@ -1,5 +1,6 @@
 import { MachineEvidenceProfileAdministration } from "./MachineEvidenceProfileAdministration.tsx";
 import { useEffect, useState } from "react";
+import type { DashboardRuntimeSource } from "../application/runtime-configuration.ts";
 
 export interface CommissioningField { path: string; value: string | null }
 export interface CommissioningProcessor {
@@ -46,7 +47,7 @@ export function isCommissioningSnapshot(value: unknown): value is CommissioningS
       nullableString(row.position) && typeof row.admissionBound === "boolean" && nullableString(row.productionStartsAt));
 }
 
-export function CommissioningPage() {
+export function CommissioningPage({ sources = [] }: { readonly sources?: readonly DashboardRuntimeSource[] }) {
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<{ status: "loading" | "failed" | "read"; snapshot?: CommissioningSnapshot }>({ status: "loading" });
   useEffect(() => {
@@ -104,6 +105,6 @@ export function CommissioningPage() {
       </table>
       </div>
     </>}
-    <MachineEvidenceProfileAdministration />
+    <MachineEvidenceProfileAdministration sources={sources} />
   </section>;
 }
