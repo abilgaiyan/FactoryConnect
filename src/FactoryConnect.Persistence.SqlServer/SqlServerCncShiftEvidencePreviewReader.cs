@@ -51,6 +51,12 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                   AND o.ShiftEndsAtUtc = @Ends)
                 THROW 51120, 'Exact commissioned shift occurrence unavailable.', 1;
 
+            -- An address is not a stream identity. Reject ambiguous counter streams.
+            IF (SELECT COUNT(DISTINCT CONVERT(varchar(512), StreamKeyBinary, 2))
+                FROM dbo.MachineObservation
+                WHERE MachineId = @Machine AND Address = @Address) > 1
+                THROW 51122, 'Ambiguous CNC counter stream identity.', 1;
+
             -- Do not silently omit poor-quality or malformed observations and present
             -- the remaining unit transitions as a complete evidence preview.
             IF EXISTS (
