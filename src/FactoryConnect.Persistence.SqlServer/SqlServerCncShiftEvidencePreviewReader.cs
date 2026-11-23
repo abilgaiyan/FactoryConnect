@@ -23,12 +23,13 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
     public async Task<CncShiftEvidenceClassifier.Preview> ReadAsync(
         Guid machineId, string assignmentId, string shiftId,
         DateTimeOffset startsAtUtc, DateTimeOffset endsAtUtc,
-        string counterAddress, CancellationToken cancellationToken = default)
+        string counterAddress, byte[] streamKeyBinary, CancellationToken cancellationToken = default)
     {
         if (machineId == Guid.Empty ||
             string.IsNullOrWhiteSpace(assignmentId) || assignmentId.Length > 200 ||
             string.IsNullOrWhiteSpace(shiftId) || shiftId.Length > 200 ||
             string.IsNullOrWhiteSpace(counterAddress) || counterAddress.Length > 512 ||
+            streamKeyBinary is null || streamKeyBinary.Length == 0 || streamKeyBinary.Length > 512 ||
             startsAtUtc.Offset != TimeSpan.Zero || endsAtUtc.Offset != TimeSpan.Zero ||
             endsAtUtc <= startsAtUtc || endsAtUtc - startsAtUtc > TimeSpan.FromDays(1))
             throw new ArgumentException("Invalid exact CNC shift preview request.");
@@ -51,17 +52,13 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                   AND o.ShiftEndsAtUtc = @Ends)
                 THROW 51120, 'Exact commissioned shift occurrence unavailable.', 1;
 
-            -- An address is not a stream identity. Reject ambiguous counter streams.
-            IF (SELECT COUNT(DISTINCT CONVERT(varchar(512), StreamKeyBinary, 2))
-                FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address) > 1
-                THROW 51122, 'Ambiguous CNC counter stream identity.', 1;
+            -- Exact counter stream identity is mandatory; never combine streams.
 
             -- Do not silently omit poor-quality or malformed observations and present
             -- the remaining unit transitions as a complete evidence preview.
             IF EXISTS (
                 SELECT 1 FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address
+                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
                   AND ObservedAt >= @Starts AND ObservedAt < @Ends
                   AND (Quality IS NULL OR Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL))
                 THROW 51121, 'Incomplete CNC evidence: unusable observations in shift.', 1;
@@ -71,7 +68,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 SELECT TOP (1) Position, ObservedAt, InstanceId,
                        TRY_CONVERT(bigint, ObservationValue) AS CounterValue
                 FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address AND Quality = 0
+                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey AND Quality = 0
                   AND TRY_CONVERT(bigint, ObservationValue) IS NOT NULL
                   AND ObservedAt < @Starts
                 ORDER BY Position DESC
@@ -79,7 +76,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 SELECT TOP (10001) Position, ObservedAt, InstanceId,
                        TRY_CONVERT(bigint, ObservationValue) AS CounterValue
                 FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address AND Quality = 0
+                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey AND Quality = 0
                   AND TRY_CONVERT(bigint, ObservationValue) IS NOT NULL
                   AND ObservedAt >= @Starts AND ObservedAt < @Ends
                 ORDER BY Position
@@ -92,6 +89,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
         command.Parameters.Add("@Assignment", SqlDbType.NVarChar, 200).Value = assignmentId;
         command.Parameters.Add("@Shift", SqlDbType.NVarChar, 200).Value = shiftId;
         command.Parameters.Add("@Address", SqlDbType.NVarChar, 512).Value = counterAddress;
+        command.Parameters.Add("@StreamKey", SqlDbType.VarBinary, streamKeyBinary.Length).Value = streamKeyBinary;
         command.Parameters.Add("@Starts", SqlDbType.DateTimeOffset).Value = startsAtUtc;
         command.Parameters.Add("@Ends", SqlDbType.DateTimeOffset).Value = endsAtUtc;
 
