@@ -1,3 +1,6 @@
+using FactoryConnect.Api.Commissioning;
+using FactoryConnect.Persistence.SqlServer;
+using Microsoft.Data.SqlClient;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core.Machines;
 
@@ -13,7 +16,49 @@ public static class MachineCounterReportEndpoints
         endpoints.MapPost("/api/machines/v1/{machineId}/counter/query", ReadAsync)
             .WithName("QueryMachineCounterReport").WithGroupName("counter-v1")
             .Produces<MachineCounterReport>().ProducesProblem(503).ProducesProblem(422);
+        endpoints.MapPost("/api/commissioning/v1/machines/{machineId}/counter/profile-query", ReadProfileBackedAsync)
+            .WithName("QueryLocalProfileBackedCounterReport").WithGroupName("commissioning-local-v1")
+            .Produces<MachineCounterReport>().ProducesProblem(403).ProducesProblem(503).ProducesProblem(422);
         return endpoints;
+    }
+
+    private static async Task<IResult> ReadProfileBackedAsync(string machineId, MachineCounterReportRequest request,
+        HttpContext context, IConfiguration configuration,
+        ICurrentStateOwnerResolver owners, ICurrentStateAuthorityCutProvider cuts,
+        IDurableObservationReader reader, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        if (!Guid.TryParseExact(machineId, "D", out var id) || id == Guid.Empty ||
+            request.FromInclusive.Offset != TimeSpan.Zero || request.ToExclusive.Offset != TimeSpan.Zero ||
+            request.ToExclusive <= request.FromInclusive || request.ToExclusive - request.FromInclusive > TimeSpan.FromDays(31) ||
+            string.IsNullOrWhiteSpace(request.Source) || string.IsNullOrWhiteSpace(request.Address) ||
+            request.Source.Length > 256 || request.Address.Length > 256 ||
+            request.CandidateDataItemId is not null)
+            return Results.BadRequest(new { reason = "InvalidLocalCounterProfileQuery" });
+
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Machine profile reader not configured");
+
+        try
+        {
+            var profile = await new SqlServerMachineProductionEvidenceProfileStore(connectionString)
+                .GetEffectiveAsync(id, request.FromInclusive, cancellationToken).ConfigureAwait(false);
+            if (profile is null || string.IsNullOrWhiteSpace(profile.CounterDataItemId))
+                return Results.Problem(statusCode: 422, title: "No configured counter profile effective at interval start");
+            // SQL configuration is a candidate for raw address comparison, not verified identity.
+            return await ReadAsync(machineId, request with { CandidateDataItemId = profile.CounterDataItemId },
+                owners, cuts, reader, clock, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidMachineEvidenceProfile" });
+        }
+        catch (SqlException)
+        {
+            return Results.Problem(statusCode: 503, title: "Machine profile reader unavailable");
+        }
     }
 
     private static async Task<IResult> ReadAsync(string machineId, MachineCounterReportRequest request,
