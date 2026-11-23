@@ -98,7 +98,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 ?? throw new InvalidDataException("Missing acquisition instance.");
             readings.Add(new CncShiftEvidenceClassifier.Reading(
                 reader.GetFieldValue<DateTimeOffset>(1).ToUniversalTime(),
-                Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+                reader.GetDecimal(0),
                 instance, reader.GetInt64(3), true));
         }
         // A shift's first observed counter cannot establish a produced unit without
