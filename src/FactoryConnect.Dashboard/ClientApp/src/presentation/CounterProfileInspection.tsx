@@ -10,9 +10,10 @@ type Profile = {
   effectiveFromUtc: string;
 };
 
-export function CounterProfileInspection({ machineId, atUtc }: {
+export function CounterProfileInspection({ machineId, atUtc, availableSignals = [] }: {
   readonly machineId: string;
   readonly atUtc: string;
+  readonly availableSignals?: readonly { readonly source: string; readonly address: string }[];
 }) {
   const [result, setResult] = useState<{ key: string; profile: Profile | null } | null>(null);
   const [message, setMessage] = useState("");
@@ -63,6 +64,15 @@ export function CounterProfileInspection({ machineId, atUtc }: {
       <dt>Counter semantics</dt><dd>{current.counterSemantics ?? "Not applicable"}</dd>
       <dt>Effective from UTC</dt><dd>{current.effectiveFromUtc}</dd>
     </dl>}
+    {current?.counterDataItemId && <section aria-label="Counter signal candidates">
+      <h4>Exact-address raw signal candidates</h4>
+      <p>Text comparison only. Matching addresses do not prove MTConnect identity or production qualification.</p>
+      {availableSignals.length === 0 ? <p>No raw signals discovered in this interval; mapping unresolved.</p> :
+        availableSignals.filter(s => s.address === current.counterDataItemId).length === 0
+          ? <p>No exact-address candidates; mapping unresolved.</p>
+          : <ul>{availableSignals.filter(s => s.address === current.counterDataItemId).map(s =>
+              <li key={s.source + "|" + s.address}>{s.source} / {s.address} — candidate only; mapping unverified</li>)}</ul>}
+    </section>}
     {current && <p>Compare the configured MTConnect data item ID with the exact raw source/address
       independently. This screen does not assert that they refer to the same signal.</p>}
   </section>;
