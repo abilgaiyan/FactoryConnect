@@ -90,7 +90,8 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 ?? throw new InvalidDataException("Missing acquisition instance.");
             readings.Add(new CncShiftEvidenceClassifier.Reading(
                 reader.GetFieldValue<DateTimeOffset>(1).ToUniversalTime(),
-                Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),\n                instance, reader.GetInt64(3), true));
+                Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+                instance, reader.GetInt64(3), true));
         }
         var inShiftCount = readings.Count(r =>
             r.ObservedAtUtc >= startsAtUtc && r.ObservedAtUtc < endsAtUtc);
