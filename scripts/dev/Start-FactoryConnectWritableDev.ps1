@@ -29,6 +29,7 @@ if (Test-Path -LiteralPath $settingsPath) {
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
     $settingsMap = @{
         SqlInstance = 'SqlInstance'; Database = 'Database'; SupervisorOperatorId = 'SupervisorOperatorId';
+        SupervisorReviewerId = 'SupervisorReviewerId';
         UiPort = 'UiPort'; ApiPort = 'ApiPort'; DashboardPort = 'DashboardPort';
         Gg003DeviceKey = 'Gg003DeviceKey'; MoxaDeviceKey = 'MoxaDeviceKey'
     }
@@ -40,7 +41,7 @@ if (Test-Path -LiteralPath $settingsPath) {
             }
         }
     }
-    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableDowntimeReasonAdministration')) {
+    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableSupervisorReviews','EnableDowntimeReasonAdministration')) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             $property = $settings.PSObject.Properties[$name]
             if ($null -ne $property -and $null -ne $property.Value) {
