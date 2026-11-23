@@ -28,6 +28,18 @@ public sealed class ApiMachineCounterReportTests
         }));
 
     [Fact]
+    public async Task ProfileBackedCounterQueryRequiresLocalCommissioningAccessBeforeRawRead()
+    {
+        var reader = new Reader([]);
+        using var factory = Factory(new Cut(new(2)), reader);
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync(
+            $"/api/commissioning/v1/machines/{Machine}/counter/profile-query", Request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, reader.ReadCount);
+    }
+
+    [Fact]
     public async Task RawAcquisitionBoundaryExcludesLaterSamplesWithoutStateEvaluation()
     {
         using var factory = Factory(new Cut(new(2)), new Reader([Sample(1), Sample(2), Sample(3)]));
