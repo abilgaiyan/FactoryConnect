@@ -8,7 +8,7 @@ public static class CncShiftEvidenceClassifier
 {
     public sealed record Reading(
         DateTimeOffset ObservedAtUtc,
-        long Position,
+        decimal Position,
         string InstanceId,
         long? CounterValue,
         bool Usable);
@@ -45,7 +45,7 @@ public static class CncShiftEvidenceClassifier
         long increments = 0, ambiguous = 0, gaps = 0, nonUnit = 0;
         int usable = 0;
         Reading? previous = null;
-        long? previousPosition = null;
+        decimal? previousPosition = null;
         DateTimeOffset? previousObservedAt = null;
         foreach (var reading in orderedReadings)
         {
