@@ -66,3 +66,23 @@ test('representation changes are explicit and cannot carry cross-type difference
   f.samples[0].signalType = 'Text'; f.samples[0].flags = ['ContinuityNotEstablished','AttributionNotEstablished'];
   f.samples[0].arithmeticDifference = '1'; assert.throws(() => decodeCounterReport(f, id, selection));
 });
+
+test('unverified counter identity candidates remain diagnostic only', () => {
+  const f = fixture();
+  f.identityAssessment = { disposition: 'SingleUnverifiedCandidate',
+    candidates: [{source: 'mtconnect', address: 'part_count'}],
+    identityVerified: false, productionQuantityAdmitted: false };
+  const report = decodeCounterReport(f, id, selection);
+  assert.equal(report.identityAssessment.disposition, 'SingleUnverifiedCandidate');
+  for (const mutate of [
+    a => a.identityVerified = true,
+    a => a.productionQuantityAdmitted = true,
+    a => a.candidates.push({source:'other', address:'missing'}),
+    a => a.disposition = 'AmbiguousExactAddressCandidates',
+  ]) {
+    const invalid = fixture();
+    invalid.identityAssessment = structuredClone(f.identityAssessment);
+    mutate(invalid.identityAssessment);
+    assert.throws(() => decodeCounterReport(invalid, id, selection));
+  }
+});
