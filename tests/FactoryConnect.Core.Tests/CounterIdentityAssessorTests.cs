@@ -43,7 +43,8 @@ public sealed class CounterIdentityAssessorTests
         var result = CounterIdentityAssessor.Assess("count",
             [new CounterSignal("source-b", "count"), new CounterSignal("source-a", "count")]);
         Assert.Equal(CounterIdentityDisposition.AmbiguousExactAddressCandidates, result.Disposition);
-        Assert.Equal(new[] { "source-a", "source-b" }, result.Candidates.Select(x => x.Source));
+        Assert.Equal("source-a", result.Candidates[0].Source);
+        Assert.Equal("source-b", result.Candidates[1].Source);
         Assert.False(result.IdentityVerified);
         Assert.False(result.ProductionQuantityAdmitted);
     }
