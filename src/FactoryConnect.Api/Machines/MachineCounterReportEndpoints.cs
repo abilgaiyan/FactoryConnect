@@ -43,10 +43,14 @@ public static class MachineCounterReportEndpoints
 
         try
         {
-            var profile = await new SqlServerMachineProductionEvidenceProfileStore(connectionString)
-                .GetEffectiveAsync(id, request.FromInclusive, cancellationToken).ConfigureAwait(false);
-            if (profile is null || string.IsNullOrWhiteSpace(profile.CounterDataItemId))
-                return Results.Problem(statusCode: 422, title: "No configured counter profile effective at interval start");
+            var profiles = await new SqlServerMachineProductionEvidenceProfileStore(connectionString)
+                .ListAsync(id, cancellationToken).ConfigureAwait(false);
+            var profile = CounterProfileIntervalGuard.EffectiveUnchanged(
+                profiles, request.FromInclusive, request.ToExclusive);
+            if (profile is null)
+                return Results.Problem(statusCode: 422, title: "No unchanged counter profile across requested interval");
+            if (string.IsNullOrWhiteSpace(profile.CounterDataItemId))
+                return Results.Problem(statusCode: 422, title: "Effective machine profile has no counter configured");
             // SQL configuration is a candidate for raw address comparison, not verified identity.
             return await ReadAsync(machineId, request with { CandidateDataItemId = profile.CounterDataItemId },
                 owners, cuts, reader, clock, cancellationToken).ConfigureAwait(false);
