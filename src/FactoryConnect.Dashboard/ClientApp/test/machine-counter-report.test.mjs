@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityDateRange } from '../src/application/machine-activity-report.ts';
-import { decodeCounterReport, loadCounterReport } from '../src/application/machine-counter-report.ts';
+import { decodeCounterReport, loadCounterReport, loadProfileBackedCounterReport } from '../src/application/machine-counter-report.ts';
 const id = 'de2fd552-9bc5-45ed-9a7c-0c4a2cd3e9ed';
 const selection = { ...activityDateRange('2026-10-06', '2026-10-06'), source: 'mtconnect', address: 'part_count' };
 const fixture = () => ({ machineId: id, streamKey: 'mtconnect:M01', throughPosition: '9007199254740995', acquisitionRevision: '2',
@@ -85,4 +85,23 @@ test('unverified counter identity candidates remain diagnostic only', () => {
     mutate(invalid.identityAssessment);
     assert.throws(() => decodeCounterReport(invalid, id, selection));
   }
+});
+
+test('profile-backed query uses local route without caller identity override', async () => {
+  const f = fixture();
+  f.identityAssessment = { disposition: 'SingleUnverifiedCandidate',
+    candidates: [{source:'mtconnect', address:'part_count'}],
+    identityVerified:false, productionQuantityAdmitted:false };
+  let requested;
+  const report = await loadProfileBackedCounterReport(id, selection, new AbortController().signal,
+    async (url, options) => { requested = {url, options}; return Response.json(f); });
+  assert.match(requested.url, /\/api\/commissioning\/v1\/machines\/.*\/counter\/profile-query$/);
+  assert.deepEqual(JSON.parse(requested.options.body), selection);
+  assert.equal(report.identityAssessment.identityVerified, false);
+});
+test('profile-backed query fails closed on missing profile and unauthorized access', async () => {
+  await assert.rejects(loadProfileBackedCounterReport(id, selection, new AbortController().signal,
+    async () => new Response('', {status:403})), /403/);
+  await assert.rejects(loadProfileBackedCounterReport(id, selection, new AbortController().signal,
+    async () => Response.json(fixture())), /did not establish/);
 });
