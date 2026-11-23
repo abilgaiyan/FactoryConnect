@@ -93,7 +93,9 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
                 instance, reader.GetInt64(3), true));
         }
-        // A shift's first observed counter cannot establish a produced unit without\n        // a preceding usable observation. Never present an unanchored count as complete.\n        var inShiftCount = readings.Count(r =>
+        // A shift's first observed counter cannot establish a produced unit without
+        // a preceding usable observation. Never present an unanchored count as complete.
+        var inShiftCount = readings.Count(r =>
             r.ObservedAtUtc >= startsAtUtc && r.ObservedAtUtc < endsAtUtc);
         bool truncated = inShiftCount > MaximumReadings;
         if (truncated)
