@@ -11,7 +11,8 @@ public sealed record CounterSample(string Position, string InstanceId, string Se
 public sealed record MachineCounterReport(Guid MachineId, string StreamKey, string ThroughPosition,
     string AcquisitionRevision, DateTimeOffset FromInclusive, DateTimeOffset ToExclusive,
     DateTimeOffset ReadAsOf, string Source, string Address, IReadOnlyList<CounterSignal> AvailableSignals,
-    IReadOnlyList<CounterSample> Samples);
+    IReadOnlyList<CounterSample> Samples,
+    CounterIdentityAssessment? IdentityAssessment = null);
 
 /// <summary>Diagnostic arithmetic only; no counter continuity or production admission is inferred.</summary>
 public static class MachineCounterReportComposer
@@ -78,6 +79,19 @@ public static class MachineCounterReportComposer
             from, to, readAsOf, source, address,
             Array.AsReadOnly(signals.OrderBy(s => s.Source, StringComparer.Ordinal).ThenBy(s => s.Address, StringComparer.Ordinal).ToArray()),
             samples.AsReadOnly());
+    }
+
+    /// <summary>Produces a counter report and a read-only candidate assessment from one pinned raw prefix.</summary>
+    public static MachineCounterReport ComposeWithIdentityAssessment(
+        ObservationStreamId stream, ObservationPosition through, AcquisitionAuthorityRevision revision,
+        DateTimeOffset from, DateTimeOffset to, DateTimeOffset readAsOf,
+        string source, string address, string? configuredCounterDataItemId,
+        IReadOnlyList<DurableMachineObservation> observations)
+    {
+        var report = Compose(stream, through, revision, from, to, readAsOf, source, address, observations);
+        var assessment = CounterIdentityAssessor.AssessDurablePrefix(
+            configuredCounterDataItemId, stream, through, from, to, observations);
+        return report with { IdentityAssessment = assessment };
     }
 
     private static bool TryCounterValue(MachineObservation observation, out BigInteger value)
