@@ -105,6 +105,14 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
     {report && <>
       <p>Loaded signal: {report.source} / {report.address}. Stream {report.streamKey}; raw position {report.throughPosition}; acquisition revision {report.acquisitionRevision}.</p>
       <p>Selected IST calendar interval: {formatReportTimestamp(report.fromInclusive)} – {formatReportTimestamp(report.toExclusive)} (exclusive end). Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>.</p>
+      {report.identityAssessment && <section aria-labelledby="counter-identity-title">
+        <h3 id="counter-identity-title">Counter identity diagnostic: {report.identityAssessment.disposition}</h3>
+        <p>Raw address matches are candidates only. MTConnect data item ownership, continuity and production attribution are not verified.</p>
+        <p>Candidate source/address pairs: {report.identityAssessment.candidates.length}.</p>
+        {report.identityAssessment.candidates.length > 0 && <ul>{report.identityAssessment.candidates.map(candidate =>
+          <li key={candidate.source + "|" + candidate.address}>{candidate.source} / {candidate.address}</li>)}</ul>}
+        <p>Identity verified: No. Production quantity admitted: No.</p>
+      </section>}
       {readiness && <section aria-labelledby="counter-readiness-title">
         <h3 id="counter-readiness-title">Counter evidence readiness: {readiness.status}</h3>
         <p>Selected observations: {readiness.samples}; non-good: {readiness.nonGood}; decreases: {readiness.decreases}; instance changes: {readiness.instanceChanges}; non-increasing timestamps: {readiness.nonIncreasingTimestamps}.</p>
