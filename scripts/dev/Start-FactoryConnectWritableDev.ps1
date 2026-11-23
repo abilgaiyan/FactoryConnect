@@ -175,8 +175,9 @@ try {
     # Any explicitly selected database name is valid for local development.
     # Retain a local-instance guard so a restored backup is not confused with
     # a remotely hosted factory database.
-    $isLocalInstance = $SqlInstance -match '^(?i:(localhost|\\.\\|127\\.0\\.0\\.1|\\(local\\)|' +
-        [regex]::Escape($env:COMPUTERNAME) + ')(\\\\[^\\\\]+)?$'
+    $localHostNames = @('.', '(local)', 'localhost', '127.0.0.1', $env:COMPUTERNAME)
+    $instanceHost = ($SqlInstance -split '\\')[0]
+    $isLocalInstance = $localHostNames -contains $instanceHost
     if (-not $isLocalInstance) {
         throw 'Development launcher requires a local SQL Server instance; remote factory instances are not supported.'
     }
