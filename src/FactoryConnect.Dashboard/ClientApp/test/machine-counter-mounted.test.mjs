@@ -42,7 +42,7 @@ test('counter UI pages only retained rows; defaults do not load rows; failed rea
   assert.match(summary.textContent,/No arithmetic comparison1/);
   const next=() => [...h.document.querySelectorAll('button')].find(b=>b.textContent==='Next counter page');
   await h.click(next());await h.click(next());assert.equal(h.document.querySelectorAll('tbody tr').length,21);assert.equal(next().disabled,true);assert.equal(calls,3);
-  const issueFilter=h.document.querySelector('input[type=checkbox]');
+  const issueFilter=[...h.document.querySelectorAll('label')].find(l=>l.textContent.includes('Show only rows with diagnostic flags')).querySelector('input[type=checkbox]');
   await h.click(issueFilter);
   assert.equal(h.document.querySelectorAll('tbody tr').length,1);
   assert.match(h.document.body.textContent,/Rows 1–1 of 1 · Page 1 of 1/);
