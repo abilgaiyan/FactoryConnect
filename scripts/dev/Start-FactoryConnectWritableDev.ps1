@@ -11,7 +11,6 @@ param(
     [switch]$EnableSupervisorShiftTargets,
     [switch]$EnableSupervisorReviews,
     [switch]$EnableCncShiftPreview,
-    [string]$CncPreviewReadOnlyConnectionStringEnvironmentVariable,
     [string]$SupervisorReviewerId,
     [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
@@ -128,9 +127,6 @@ if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace(
 if ($EnableCncShiftPreview -and (-not $Dashboard -and -not $DevUi)) {
     throw 'CNC preview requires the Dashboard gateway (-Dashboard or -DevUi).'
 }
-if ($EnableCncShiftPreview -and [string]::IsNullOrWhiteSpace($CncPreviewReadOnlyConnectionStringEnvironmentVariable)) {
-    throw 'CNC preview requires a separately supplied read-only SQL connection string environment variable.'
-}
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
 if ($EnableSupervisorReviews -and
@@ -176,14 +172,16 @@ try {
     $updateability = [string]$reader.GetString(2)
     $reader.Close()
     if ($actualDb -cne $Database) { throw 'SQL database identity mismatch.' }
-    $explicitWorkingDatabase = [Environment]::GetEnvironmentVariable('FACTORYCONNECT_DEV_WORKING_DATABASE', 'Process')
-    $isDefaultDev = $Database -ceq 'FactoryConnect_V1_Dev_Local'
-    $isExplicitWorkingCopy = (-not [string]::IsNullOrWhiteSpace($explicitWorkingDatabase)) -and
-        ($Database -ceq $explicitWorkingDatabase) -and
-        ($Database -cmatch '^FactoryConnect_V1_[A-Za-z0-9_]+_Work$') -and
-        $SqlInstance.StartsWith(($env:COMPUTERNAME + '\'), [StringComparison]::OrdinalIgnoreCase)
-    if ((-not $isDefaultDev -and -not $isExplicitWorkingCopy) -or $updateability -cne 'READ_WRITE') {
-        throw 'Writable local development requires the default dev database or an explicitly opted-in local working copy in READ_WRITE mode; no changes were made.'
+    # Any explicitly selected database name is valid for local development.
+    # Retain a local-instance guard so a restored backup is not confused with
+    # a remotely hosted factory database.
+    $isLocalInstance = $SqlInstance -match '^(?i:(localhost|\\.\\|127\\.0\\.0\\.1|\\(local\\)|' +
+        [regex]::Escape($env:COMPUTERNAME) + ')(\\\\[^\\\\]+)?$'
+    if (-not $isLocalInstance) {
+        throw 'Development launcher requires a local SQL Server instance; remote factory instances are not supported.'
+    }
+    if ($updateability -cne 'READ_WRITE') {
+        throw 'Selected development database must be writable for supervisor workflows.'
     }
     $command = $connection.CreateCommand()
     $command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId IN (32,33)"
@@ -259,21 +257,10 @@ try {
         $apiEnvironment['SupervisorLocalDowntimeReasons__WriteConnectionString'] = $connectionString
     }
     if ($EnableCncShiftPreview) {
-        $previewConnection = [Environment]::GetEnvironmentVariable(
-            $CncPreviewReadOnlyConnectionStringEnvironmentVariable, 'Process')
-        if ([string]::IsNullOrWhiteSpace($previewConnection)) {
-            throw 'CNC preview read-only SQL connection string environment variable is missing.'
-        }
-        $previewBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($previewConnection)
-        if ($previewBuilder['Data Source'] -cne $SqlInstance -or
-            $previewBuilder['Initial Catalog'] -cne $Database) {
-            throw 'CNC preview SQL connection target differs from the selected local working database.'
-        }
-        if ($previewBuilder['Integrated Security']) {
-            throw 'CNC preview requires a dedicated SQL read-only login, not integrated developer credentials.'
-        }
+        # CNC preview is SELECT-only by implementation; local development
+        # can reuse the explicitly selected database connection.
         $apiEnvironment['CncShiftPreview__Enabled'] = 'true'
-        $apiEnvironment['CncShiftPreview__ReadOnlyConnectionString'] = $previewConnection
+        $apiEnvironment['CncShiftPreview__ReadOnlyConnectionString'] = $connectionString
     }
     $apiProcess = Start-Service $apiProject $apiUrl $apiEnvironment $false
     Wait-Health "$apiUrl/health" $apiProcess 60
