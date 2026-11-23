@@ -93,6 +93,17 @@ public sealed class CncShiftEvidenceClassifierTests
     }
 
     [Fact]
+    public void DecimalTwentyPositionBeyondInt64IsOrderedWithoutNarrowing()
+    {
+        const decimal beyondInt64 = 10000000000000000000m;
+        var result = CncShiftEvidenceClassifier.Classify(
+            [new(Start.AddMinutes(1), beyondInt64, "one", 10, true),
+             new(Start.AddMinutes(2), beyondInt64 + 1, "one", 11, true)],
+            Start, End, TimeSpan.FromMinutes(30));
+        Assert.Equal(1, result.ObservedUnitIncrements);
+    }
+
+    [Fact]
     public void InvalidOrderingAndUtcIntervalAreRejected()
     {
         Assert.Throws<ArgumentException>(() =>
