@@ -46,12 +46,16 @@ public static class CncShiftEvidenceClassifier
         int usable = 0;
         Reading? previous = null;
         long? previousPosition = null;
+        DateTimeOffset? previousObservedAt = null;
         foreach (var reading in orderedReadings)
         {
             if (reading.ObservedAtUtc.Offset != TimeSpan.Zero ||
                 (previousPosition.HasValue && reading.Position <= previousPosition.Value))
                 throw new ArgumentException("Readings must be UTC and strictly position ordered.");
+            if (previousObservedAt.HasValue && reading.ObservedAtUtc < previousObservedAt.Value)
+                throw new InvalidDataException("CNC observation timestamps regress in acquisition order.");
             previousPosition = reading.Position;
+            previousObservedAt = reading.ObservedAtUtc;
             if (!reading.Usable || reading.CounterValue is null)
             {
                 // Never bridge an unusable observation to infer a completed part.
