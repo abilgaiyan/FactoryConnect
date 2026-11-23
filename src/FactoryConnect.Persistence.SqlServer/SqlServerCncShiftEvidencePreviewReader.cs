@@ -59,7 +59,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                   AND ObservedAt >= @Starts AND ObservedAt < @Ends
                   AND (Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL))
                 THROW 51121, 'Incomplete CNC evidence: unusable observations in shift.', 1;
-\n            -- Read at most one predecessor, plus a bounded number of in-shift rows.
+            -- Read at most one predecessor, plus a bounded number of in-shift rows.
             -- The extra row detects truncation without silently returning a complete result.
             ;WITH PriorReading AS (
                 SELECT TOP (1) Position, ObservedAt, InstanceId,
