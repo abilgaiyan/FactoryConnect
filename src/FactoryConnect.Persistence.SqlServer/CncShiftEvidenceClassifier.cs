@@ -53,7 +53,11 @@ public static class CncShiftEvidenceClassifier
                 throw new ArgumentException("Readings must be UTC and strictly position ordered.");
             previousPosition = reading.Position;
             if (!reading.Usable || reading.CounterValue is null)
+            {
+                // Never bridge an unusable observation to infer a completed part.
+                previous = null;
                 continue;
+            }
             bool inShift = reading.ObservedAtUtc >= shiftStartsAtUtc &&
                            reading.ObservedAtUtc < shiftEndsAtUtc;
             if (inShift) usable++;
