@@ -60,8 +60,20 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 SELECT 1 FROM dbo.MachineObservation
                 WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
                   AND ObservedAt >= @Starts AND ObservedAt < @Ends
-                  AND (Quality IS NULL OR Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL))
+                  AND (Quality IS NULL OR Quality <> 0 OR (TRY_CONVERT(bigint, ObservationValue) IS NULL OR TRY_CONVERT(bigint, ObservationValue) < 0)))
                 THROW 51121, 'Incomplete CNC evidence: unusable observations in shift.', 1;
+            -- Reject an invalid predecessor rather than skipping it and bridging across it.
+            IF EXISTS (
+                SELECT 1 FROM (
+                    SELECT TOP (1) Quality, ObservationValue
+                    FROM dbo.MachineObservation
+                    WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
+                      AND ObservedAt < @Starts
+                    ORDER BY Position DESC
+                ) AS predecessor
+                WHERE Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL
+                   OR TRY_CONVERT(bigint, ObservationValue) < 0)
+                THROW 51123, 'Incomplete CNC evidence: unusable predecessor.', 1;
             -- Read at most one predecessor, plus a bounded number of in-shift rows.
             -- The extra row detects truncation without silently returning a complete result.
             ;WITH PriorReading AS (
@@ -69,7 +81,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                        TRY_CONVERT(bigint, ObservationValue) AS CounterValue
                 FROM dbo.MachineObservation
                 WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey AND Quality = 0
-                  AND TRY_CONVERT(bigint, ObservationValue) IS NOT NULL
+                  AND TRY_CONVERT(bigint, ObservationValue) >= 0
                   AND ObservedAt < @Starts
                 ORDER BY Position DESC
             ), ShiftReadings AS (
@@ -77,7 +89,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                        TRY_CONVERT(bigint, ObservationValue) AS CounterValue
                 FROM dbo.MachineObservation
                 WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey AND Quality = 0
-                  AND TRY_CONVERT(bigint, ObservationValue) IS NOT NULL
+                  AND TRY_CONVERT(bigint, ObservationValue) >= 0
                   AND ObservedAt >= @Starts AND ObservedAt < @Ends
                 ORDER BY Position
             )
