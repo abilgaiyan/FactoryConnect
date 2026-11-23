@@ -19,6 +19,39 @@ public sealed class MachineCounterReportTests
         MachineCounterReportComposer.Compose(Stream, new(100), new(3), Start, Start.AddHours(1), Start.AddDays(1), "mtconnect", "part_count", items);
 
     [Fact]
+    public void RawReportAndCandidateAssessmentSharePinnedObservationPrefix()
+    {
+        var observations = new[]
+        {
+            Sample(1, 10),
+            Sample(2, 12),
+            Sample(3, 13, address: "other")
+        };
+        var report = MachineCounterReportComposer.ComposeWithIdentityAssessment(
+            Stream, new(100), new(3), Start, Start.AddHours(1), Start.AddDays(1),
+            "mtconnect", "part_count", "part_count", observations);
+        Assert.Equal(2, report.Samples.Count);
+        Assert.NotNull(report.IdentityAssessment);
+        Assert.Equal(CounterIdentityDisposition.SingleUnverifiedCandidate,
+            report.IdentityAssessment.Disposition);
+        Assert.False(report.IdentityAssessment.IdentityVerified);
+        Assert.False(report.IdentityAssessment.ProductionQuantityAdmitted);
+        Assert.All(report.Samples, row => Assert.Contains("AttributionNotEstablished", row.Flags));
+    }
+
+    [Fact]
+    public void MissingCandidateIdDoesNotBecomeVerifiedFromSelectedRawSignal()
+    {
+        var report = MachineCounterReportComposer.ComposeWithIdentityAssessment(
+            Stream, new(100), new(3), Start, Start.AddHours(1), Start.AddDays(1),
+            "mtconnect", "part_count", null, [Sample(1, 10), Sample(2, 12)]);
+        Assert.NotNull(report.IdentityAssessment);
+        Assert.Equal(CounterIdentityDisposition.NoConfiguredDataItem,
+            report.IdentityAssessment.Disposition);
+        Assert.False(report.IdentityAssessment.ProductionQuantityAdmitted);
+    }
+
+    [Fact]
     public void RawValuesRemainExactAndDifferenceDoesNotAdmitProduction()
     {
         var report = Report(Sample(1, 9007199254740993m), Sample(2, 9007199254740995m));
