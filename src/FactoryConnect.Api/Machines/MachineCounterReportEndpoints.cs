@@ -4,7 +4,7 @@ using FactoryConnect.Core.Machines;
 namespace FactoryConnect.Api.Machines;
 
 public sealed record MachineCounterReportRequest(DateTimeOffset FromInclusive, DateTimeOffset ToExclusive,
-    string Source, string Address);
+    string Source, string Address, string? CandidateDataItemId = null);
 
 public static class MachineCounterReportEndpoints
 {
@@ -24,7 +24,9 @@ public static class MachineCounterReportEndpoints
             request.FromInclusive.Offset != TimeSpan.Zero || request.ToExclusive.Offset != TimeSpan.Zero ||
             request.ToExclusive <= request.FromInclusive || request.ToExclusive - request.FromInclusive > TimeSpan.FromDays(31) ||
             string.IsNullOrWhiteSpace(request.Source) || string.IsNullOrWhiteSpace(request.Address) ||
-            request.Source.Length > 256 || request.Address.Length > 256)
+            request.Source.Length > 256 || request.Address.Length > 256 ||
+            (request.CandidateDataItemId is not null &&
+             (string.IsNullOrWhiteSpace(request.CandidateDataItemId) || request.CandidateDataItemId.Length > 256)))
             return Results.BadRequest(new { reason = "InvalidMachineIntervalOrExactSignal" });
         if (owners.Resolve(new MachineId(id)) is not CurrentStateExactlyOneOwner owner)
             return Results.Problem(statusCode: 503, title: "Counter stream owner unavailable");
@@ -64,8 +66,9 @@ public static class MachineCounterReportEndpoints
             if (!reached && !page.HasMore) throw new InvalidDataException("Raw history ended before the pinned boundary.");
         }
         cancellationToken.ThrowIfCancellationRequested();
-        var report = MachineCounterReportComposer.Compose(stream, through, acquisition.AcquisitionRevision,
-            request.FromInclusive, request.ToExclusive, clock.GetUtcNow(), request.Source, request.Address, observations);
+        var report = MachineCounterReportComposer.ComposeWithIdentityAssessment(stream, through, acquisition.AcquisitionRevision,
+            request.FromInclusive, request.ToExclusive, clock.GetUtcNow(), request.Source, request.Address,
+            request.CandidateDataItemId, observations);
         if (report.Samples.Count > 5000)
             return Results.Problem(statusCode: 422, title: "Selected counter sample limit exceeded", detail: "Select a smaller range. No partial report was produced.");
         return Results.Ok(report);
