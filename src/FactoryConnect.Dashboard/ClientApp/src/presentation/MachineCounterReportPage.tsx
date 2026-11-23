@@ -1,3 +1,4 @@
+import { profileSignalSelectionStatus } from '../application/counter-profile-selection.ts';
 import { counterReadiness } from "../application/counter-readiness.ts";
 import { CounterProfileInspection } from "./CounterProfileInspection.tsx";
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -112,6 +113,7 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
       <p>Diagnostic source: {useConfiguredProfile ? 'SQL-backed effective machine evidence profile' : 'Raw signal selection only'}.</p>
       <p>Loaded signal: {report.source} / {report.address}. Stream {report.streamKey}; raw position {report.throughPosition}; acquisition revision {report.acquisitionRevision}.</p>
       <p>Selected IST calendar interval: {formatReportTimestamp(report.fromInclusive)} – {formatReportTimestamp(report.toExclusive)} (exclusive end). Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>.</p>
+      {useConfiguredProfile && report.identityAssessment && <p role="status">Configured counter versus selected raw signal: {profileSignalSelectionStatus(report)}. A selected candidate is not verified MTConnect identity or accepted production.</p>}
       {report.identityAssessment && <section aria-labelledby="counter-identity-title">
         <h3 id="counter-identity-title">Counter identity diagnostic: {report.identityAssessment.disposition}</h3>
         <p>Raw address matches are candidates only. MTConnect data item ownership, continuity and production attribution are not verified.</p>
