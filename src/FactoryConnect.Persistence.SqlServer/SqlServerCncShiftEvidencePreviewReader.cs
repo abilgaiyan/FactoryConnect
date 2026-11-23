@@ -51,7 +51,15 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                   AND o.ShiftEndsAtUtc = @Ends)
                 THROW 51120, 'Exact commissioned shift occurrence unavailable.', 1;
 
-            -- Do not silently omit poor-quality or malformed observations and present\n            -- the remaining unit transitions as a complete evidence preview.\n            IF EXISTS (\n                SELECT 1 FROM dbo.MachineObservation\n                WHERE MachineId = @Machine AND Address = @Address\n                  AND ObservedAt >= @Starts AND ObservedAt < @Ends\n                  AND (Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL))\n                THROW 51121, 'Incomplete CNC evidence: unusable observations in shift.', 1;\n\n            -- Read at most one predecessor, plus a bounded number of in-shift rows.
+            -- Do not silently omit poor-quality or malformed observations and present
+            -- the remaining unit transitions as a complete evidence preview.
+            IF EXISTS (
+                SELECT 1 FROM dbo.MachineObservation
+                WHERE MachineId = @Machine AND Address = @Address
+                  AND ObservedAt >= @Starts AND ObservedAt < @Ends
+                  AND (Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL))
+                THROW 51121, 'Incomplete CNC evidence: unusable observations in shift.', 1;
+\n            -- Read at most one predecessor, plus a bounded number of in-shift rows.
             -- The extra row detects truncation without silently returning a complete result.
             ;WITH PriorReading AS (
                 SELECT TOP (1) Position, ObservedAt, InstanceId,
