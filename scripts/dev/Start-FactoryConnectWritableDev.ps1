@@ -10,6 +10,8 @@ param(
     [switch]$EnableSupervisorEntries,
     [switch]$EnableSupervisorShiftTargets,
     [switch]$EnableSupervisorReviews,
+    [switch]$EnableCncShiftPreview,
+    [string]$CncPreviewReadOnlyConnectionStringEnvironmentVariable,
     [string]$SupervisorReviewerId,
     [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
@@ -122,6 +124,12 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 }
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
+}
+if ($EnableCncShiftPreview -and (-not $Dashboard -and -not $DevUi)) {
+    throw 'CNC preview requires the Dashboard gateway (-Dashboard or -DevUi).'
+}
+if ($EnableCncShiftPreview -and [string]::IsNullOrWhiteSpace($CncPreviewReadOnlyConnectionStringEnvironmentVariable)) {
+    throw 'CNC preview requires a separately supplied read-only SQL connection string environment variable.'
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
@@ -250,6 +258,23 @@ try {
         $apiEnvironment['SupervisorLocalDowntimeReasons__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalDowntimeReasons__WriteConnectionString'] = $connectionString
     }
+    if ($EnableCncShiftPreview) {
+        $previewConnection = [Environment]::GetEnvironmentVariable(
+            $CncPreviewReadOnlyConnectionStringEnvironmentVariable, 'Process')
+        if ([string]::IsNullOrWhiteSpace($previewConnection)) {
+            throw 'CNC preview read-only SQL connection string environment variable is missing.'
+        }
+        $previewBuilder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($previewConnection)
+        if ($previewBuilder['Data Source'] -cne $SqlInstance -or
+            $previewBuilder['Initial Catalog'] -cne $Database) {
+            throw 'CNC preview SQL connection target differs from the selected local working database.'
+        }
+        if ($previewBuilder['Integrated Security']) {
+            throw 'CNC preview requires a dedicated SQL read-only login, not integrated developer credentials.'
+        }
+        $apiEnvironment['CncShiftPreview__Enabled'] = 'true'
+        $apiEnvironment['CncShiftPreview__ReadOnlyConnectionString'] = $previewConnection
+    }
     $apiProcess = Start-Service $apiProject $apiUrl $apiEnvironment $false
     Wait-Health "$apiUrl/health" $apiProcess 60
     Write-Host "API ready: $apiUrl"
@@ -259,6 +284,7 @@ try {
             'Dashboard__RequestTimeout' = '00:02:00'
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
+        if ($EnableCncShiftPreview) { $dashboardEnvironment['CncShiftPreview__EnableGateway'] = 'true' }
         if ($DevUi -or $EnableSupervisorShiftTargets) {
             $dashboardEnvironment['SupervisorLocalShiftTarget__EnableGateway'] = 'true'
         }
