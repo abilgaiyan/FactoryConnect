@@ -72,6 +72,27 @@ public sealed class CncShiftEvidenceClassifierTests
     }
 
     [Fact]
+    public void MaximumCounterValueDoesNotOverflowIntoFalseIncrement()
+    {
+        var result = CncShiftEvidenceClassifier.Classify(
+            [R(1, 1, long.MaxValue), R(2, 2, long.MinValue)],
+            Start, End, TimeSpan.FromMinutes(30));
+        Assert.Equal(0, result.ObservedUnitIncrements);
+        Assert.Equal(1, result.NonUnitTransitions);
+    }
+
+    [Fact]
+    public void InShiftReadingWithoutPredecessorDoesNotInventAnIncrement()
+    {
+        var result = CncShiftEvidenceClassifier.Classify(
+            [R(1, 1, 500)],
+            Start, End, TimeSpan.FromMinutes(30));
+        Assert.True(result.HasEvidence);
+        Assert.Equal(1, result.UsableReadings);
+        Assert.Equal(0, result.ObservedUnitIncrements);
+    }
+
+    [Fact]
     public void InvalidOrderingAndUtcIntervalAreRejected()
     {
         Assert.Throws<ArgumentException>(() =>
