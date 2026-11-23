@@ -58,7 +58,7 @@ public static class CncShiftEvidencePreviewEndpoints
                 return Results.Problem("CNC preview evidence is incomplete.",
                     statusCode: StatusCodes.Status422UnprocessableEntity);
             }
-        });
+        }).ExcludeFromDescription();
         return endpoints;
     }
 }
