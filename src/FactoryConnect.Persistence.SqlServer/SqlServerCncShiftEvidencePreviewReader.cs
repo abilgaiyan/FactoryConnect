@@ -40,8 +40,7 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
         command.CommandTimeout = 30;
         command.CommandText = """
             SET NOCOUNT ON;
-            IF NOT EXISTS (
-                SELECT 1
+            IF (SELECT COUNT_BIG(*)
                 FROM dbo.MachineShiftOccurrenceRosterOccurrence AS o
                 INNER JOIN dbo.MachineShiftOccurrenceRoster AS r
                   ON r.MachineShiftOccurrenceRosterRowId = o.MachineShiftOccurrenceRosterRowId
@@ -49,8 +48,8 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                   AND o.ShiftScheduleAssignmentId = @Assignment
                   AND o.ShiftId = @Shift
                   AND o.ShiftStartsAtUtc = @Starts
-                  AND o.ShiftEndsAtUtc = @Ends)
-                THROW 51120, 'Exact commissioned shift occurrence unavailable.', 1;
+                  AND o.ShiftEndsAtUtc = @Ends) <> 1
+                THROW 51120, 'Exact commissioned shift occurrence missing or ambiguous.', 1;
 
             -- Exact counter stream identity is mandatory; never combine streams.
 
