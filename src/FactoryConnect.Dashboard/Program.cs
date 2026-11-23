@@ -36,6 +36,27 @@ app.MapGet("/api/commissioning/v1/snapshot", async (
     await gateway.ForwardAsync(context, "api/commissioning/v1/snapshot", HttpMethod.Get).ConfigureAwait(false);
 });
 
+
+// Exact opt-in CNC diagnostic preview route. Only local browser requests can
+// reach the local API; do not expose an arbitrary supervisor proxy.
+app.MapPost("/api/supervisor/cnc-shift-evidence-preview", async (
+    HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
+{
+    if (!configuration.GetValue<bool>("CncShiftPreview:EnableGateway") ||
+        context.Connection.RemoteIpAddress is not { } remote ||
+        !System.Net.IPAddress.IsLoopback(remote) ||
+        context.Request.Headers.ContainsKey("Forwarded") ||
+        context.Request.Headers.Keys.Any(static key =>
+            key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+    await gateway.ForwardAsync(context,
+        "api/supervisor/cnc-shift-evidence-preview", HttpMethod.Post)
+        .ConfigureAwait(false);
+});
+
 // Local-only supervisor entry gateway. Never forward factory-network requests
 // through the dashboard to the loopback-only commissioning API.
 app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/entries",
