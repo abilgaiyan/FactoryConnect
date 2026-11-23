@@ -95,3 +95,23 @@ export async function loadCounterReport(machineId: string, selection: CounterSel
   const body: unknown = await response.json(); signal.throwIfAborted();
   return decodeCounterReport(body, machineId, selection);
 }
+
+/** Local commissioning only. The configured SQL counter ID is never supplied by the browser. */
+export async function loadProfileBackedCounterReport(machineId: string, selection: CounterSelection,
+  signal: AbortSignal, fetchImplementation: typeof fetch = globalThis.fetch): Promise<CounterReport> {
+  if (!text(selection.source) || !text(selection.address)) throw new Error('Select an exact raw signal.');
+  signal.throwIfAborted();
+  const response = await fetchImplementation(
+    `/api/commissioning/v1/machines/${encodeURIComponent(machineId)}/counter/profile-query`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(selection), signal,
+    });
+  signal.throwIfAborted();
+  if (!response.ok) throw new Error(`Profile-backed counter request failed (${response.status}); no report established.`);
+  const body: unknown = await response.json();
+  signal.throwIfAborted();
+  const report = decodeCounterReport(body, machineId, selection);
+  if (!report.identityAssessment || report.identityAssessment.disposition === 'NoConfiguredDataItem')
+    throw new Error('Profile-backed counter response did not establish configured candidate diagnostics.');
+  return report;
+}
