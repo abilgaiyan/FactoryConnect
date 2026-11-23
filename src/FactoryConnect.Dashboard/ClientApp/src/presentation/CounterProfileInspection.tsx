@@ -1,3 +1,4 @@
+import { reviewCounterCandidates } from "../application/counter-candidate-review.ts";
 import { useState } from "react";
 
 type Profile = {
@@ -20,6 +21,7 @@ export function CounterProfileInspection({ machineId, atUtc, availableSignals = 
   const [busy, setBusy] = useState(false);
   const key = machineId + "|" + atUtc;
   const current = result?.key === key ? result.profile : null;
+  const candidateReview = reviewCounterCandidates(current?.counterDataItemId ?? null, availableSignals);
 
   async function inspect() {
     if (busy) return;
@@ -67,11 +69,12 @@ export function CounterProfileInspection({ machineId, atUtc, availableSignals = 
     {current?.counterDataItemId && <section aria-label="Counter signal candidates">
       <h4>Exact-address raw signal candidates</h4>
       <p>Text comparison only. Matching addresses do not prove MTConnect identity or production qualification.</p>
-      {availableSignals.length === 0 ? <p>No raw signals discovered in this interval; mapping unresolved.</p> :
-        availableSignals.filter(s => s.address === current.counterDataItemId).length === 0
-          ? <p>No exact-address candidates; mapping unresolved.</p>
-          : <ul>{availableSignals.filter(s => s.address === current.counterDataItemId).map(s =>
-              <li key={s.source + "|" + s.address}>{s.source} / {s.address} — candidate only; mapping unverified</li>)}</ul>}
+      {candidateReview.status === "NoSignalsDiscovered" && <p>No raw signals discovered in this interval; mapping unresolved.</p>}
+      {candidateReview.status === "NoExactAddressMatch" && <p>No exact-address candidates; mapping unresolved.</p>}
+      {candidateReview.status === "AmbiguousCandidates" && <p role="alert">Multiple raw sources share this address; candidate identity is ambiguous.</p>}
+      {candidateReview.status === "SingleUnverifiedCandidate" && <p>One exact-address candidate; identity remains unverified.</p>}
+      <ul>{candidateReview.candidates.map(s =>
+        <li key={s.source + "|" + s.address}>{s.source} / {s.address} — candidate only; mapping unverified</li>)}</ul>
     </section>}
     {current && <p>Compare the configured MTConnect data item ID with the exact raw source/address
       independently. This screen does not assert that they refer to the same signal.</p>}
