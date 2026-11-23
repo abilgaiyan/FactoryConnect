@@ -3,7 +3,7 @@ import { CounterProfileInspection } from "./CounterProfileInspection.tsx";
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { hasCounterComparisonIssue, summarizeCounterDiagnostics } from '../application/counter-diagnostics.ts';
 import { activityDateRange } from '../application/machine-activity-report.ts';
-import { loadCounterReport, type CounterReport } from '../application/machine-counter-report.ts';
+import { loadCounterReport, loadProfileBackedCounterReport, type CounterReport } from '../application/machine-counter-report.ts';
 import { formatReportTimestamp } from './date-formatting.ts';
 import './machine-activity.css';
 
@@ -19,6 +19,7 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
   const [report, setReport] = useState<CounterReport | null>(null);
   const [request, setRequest] = useState<'idle' | 'loading' | 'success' | 'failure'>('idle'); const [error, setError] = useState('');
   const [issuesOnly, setIssuesOnly] = useState(false);
+  const [useConfiguredProfile, setUseConfiguredProfile] = useState(false);
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(50);
   const active = useRef<AbortController | null>(null);
   const preferenceKey = `factoryconnect:counter-selection:${machineId}`;
@@ -57,7 +58,9 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
       // The existing exact-query API also returns range-wide signal discovery.
       // Probe samples are discarded; the probe is not a selected quantity mapping.
       const selection = { ...range, source: discover ? 'mtconnect' : source, address: discover ? 'part_count' : address };
-      const result = await loadCounterReport(machineId, selection, controller.signal);
+      const result = await (!discover && useConfiguredProfile
+        ? loadProfileBackedCounterReport(machineId, selection, controller.signal)
+        : loadCounterReport(machineId, selection, controller.signal));
       if (active.current === controller) {
         if (discover) {
           setSignals(result.availableSignals);
@@ -97,12 +100,16 @@ export function MachineCounterReportPage({ machineId, timeoutMilliseconds }: { r
       <label>Exact address<select required value={address} disabled={addresses.length === 0} onChange={e => selectSignal(source, e.currentTarget.value)}>
         <option value="">Select address</option>{addresses.map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>
+      <label><input type="checkbox" checked={useConfiguredProfile} onChange={e => {
+        active.current?.abort(); setUseConfiguredProfile(e.currentTarget.checked); setReport(null); setRequest('idle'); setError('');
+      }} />Use configured SQL counter profile (local commissioning access required)</label>
       <button type="submit" disabled={!signals?.some(s => s.source === source && s.address === address)}>Load counter</button>
     </form>
     <p role="status">{request === 'loading' ? 'Loading raw counter signals or rows…' : request === 'success' ? report ? 'Counter read succeeded.' : 'Signal discovery succeeded. Review the source and address, then load the counter.' : ''}</p>
     {error && <p role="alert">{error}</p>}
     {signals !== null && signals.length === 0 && <p>No Numeric or Enumeration signals returned for these dates. This does not establish zero production or an acquisition gap.</p>}
     {report && <>
+      <p>Diagnostic source: {useConfiguredProfile ? 'SQL-backed effective machine evidence profile' : 'Raw signal selection only'}.</p>
       <p>Loaded signal: {report.source} / {report.address}. Stream {report.streamKey}; raw position {report.throughPosition}; acquisition revision {report.acquisitionRevision}.</p>
       <p>Selected IST calendar interval: {formatReportTimestamp(report.fromInclusive)} – {formatReportTimestamp(report.toExclusive)} (exclusive end). Read as of: <time dateTime={report.readAsOf}>{formatReportTimestamp(report.readAsOf)}</time>.</p>
       {report.identityAssessment && <section aria-labelledby="counter-identity-title">
