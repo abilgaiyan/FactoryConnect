@@ -7,12 +7,20 @@ export interface CounterSample {
   readonly observedAtUtc: string; readonly signalType: string; readonly quality: string; readonly rawValue: string | null;
   readonly previousPosition: string | null; readonly arithmeticDifference: string | null; readonly flags: readonly string[];
 }
+export interface CounterIdentityAssessment {
+  readonly disposition: 'NoConfiguredDataItem' | 'NoDiscoveredSignals' | 'NoExactAddressCandidate' |
+    'AmbiguousExactAddressCandidates' | 'SingleUnverifiedCandidate';
+  readonly candidates: readonly { readonly source: string; readonly address: string }[];
+  readonly identityVerified: false;
+  readonly productionQuantityAdmitted: false;
+}
 export interface CounterReport {
   readonly machineId: string; readonly streamKey: string; readonly throughPosition: string; readonly acquisitionRevision: string;
   readonly fromInclusive: string; readonly toExclusive: string; readonly readAsOf: string;
   readonly source: string; readonly address: string;
   readonly availableSignals: readonly { readonly source: string; readonly address: string }[];
   readonly samples: readonly CounterSample[];
+  readonly identityAssessment?: CounterIdentityAssessment | null;
 }
 export interface CounterSelection extends ReturnType<typeof activityDateRange> { readonly source: string; readonly address: string }
 const uint = (v: unknown, positive = false): v is string => typeof v === 'string' && /^(0|[1-9]\d*)$/.test(v) &&
@@ -55,6 +63,23 @@ export function decodeCounterReport(value: unknown, machineId: string, selection
   for (const s of r.availableSignals) {
     if (!s || !text(s.source) || !text(s.address)) return fail();
     const key = JSON.stringify([s.source, s.address]); if (channels.has(key)) return fail(); channels.add(key);
+  }
+  if (r.identityAssessment !== undefined && r.identityAssessment !== null) {
+    const a = r.identityAssessment;
+    const dispositions = ['NoConfiguredDataItem', 'NoDiscoveredSignals', 'NoExactAddressCandidate',
+      'AmbiguousExactAddressCandidates', 'SingleUnverifiedCandidate'];
+    if (!a || !dispositions.includes(a.disposition) || a.identityVerified !== false ||
+        a.productionQuantityAdmitted !== false || !Array.isArray(a.candidates)) return fail();
+    const keys = new Set<string>();
+    for (const candidate of a.candidates) {
+      if (!candidate || !text(candidate.source) || !text(candidate.address)) return fail();
+      const key = JSON.stringify([candidate.source, candidate.address]);
+      if (keys.has(key) || !channels.has(key)) return fail();
+      keys.add(key);
+    }
+    const expected = a.disposition === 'SingleUnverifiedCandidate' ? 1 :
+      a.disposition === 'AmbiguousExactAddressCandidates' ? 2 : 0;
+    if (expected === 2 ? a.candidates.length < 2 : a.candidates.length !== expected) return fail();
   }
   return r;
 }
