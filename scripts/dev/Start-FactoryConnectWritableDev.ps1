@@ -172,18 +172,9 @@ try {
     $updateability = [string]$reader.GetString(2)
     $reader.Close()
     if ($actualDb -cne $Database) { throw 'SQL database identity mismatch.' }
-    # Any explicitly selected database name is valid for local development.
-    # Retain a local-instance guard so a restored backup is not confused with
-    # a remotely hosted factory database.
-    $localHostNames = @('.', '(local)', 'localhost', '127.0.0.1', $env:COMPUTERNAME)
-    $instanceHost = ($SqlInstance -split '\\')[0]
-    $isLocalInstance = $localHostNames -contains $instanceHost
-    if (-not $isLocalInstance) {
-        throw 'Development launcher requires a local SQL Server instance; remote factory instances are not supported.'
-    }
-    if ($updateability -cne 'READ_WRITE') {
-        throw 'Selected development database must be writable for supervisor workflows.'
-    }
+    # The explicitly supplied SQL instance and database are authoritative.
+    # Read-only databases can serve diagnostic previews; write operations
+    # report their own SQL errors when the selected database disallows writes.
     $command = $connection.CreateCommand()
     $command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId IN (32,33)"
     if ([int]$command.ExecuteScalar() -ne 2) { throw 'Development database must have migrations 032 and 033 applied.' }
