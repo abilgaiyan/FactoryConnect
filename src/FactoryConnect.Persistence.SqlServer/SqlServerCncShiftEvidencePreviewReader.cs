@@ -93,11 +93,13 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
                 Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
                 instance, reader.GetInt64(3), true));
         }
-        var inShiftCount = readings.Count(r =>
+        // A shift's first observed counter cannot establish a produced unit without\n        // a preceding usable observation. Never present an unanchored count as complete.\n        var inShiftCount = readings.Count(r =>
             r.ObservedAtUtc >= startsAtUtc && r.ObservedAtUtc < endsAtUtc);
         bool truncated = inShiftCount > MaximumReadings;
         if (truncated)
             throw new InvalidDataException("CNC preview exceeds bounded read limit; no partial total returned.");
+        if (inShiftCount > 0 && !readings.Any(r => r.ObservedAtUtc < startsAtUtc))
+            throw new InvalidDataException("CNC preview has no pre-shift counter baseline; no complete count returned.");
         return CncShiftEvidenceClassifier.Classify(
             readings, startsAtUtc, endsAtUtc, TimeSpan.FromMinutes(30));
     }
