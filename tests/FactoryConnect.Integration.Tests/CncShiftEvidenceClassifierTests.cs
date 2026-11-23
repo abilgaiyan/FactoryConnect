@@ -63,6 +63,15 @@ public sealed class CncShiftEvidenceClassifierTests
     }
 
     [Fact]
+    public void RegressingObservationTimeFailsClosed()
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            CncShiftEvidenceClassifier.Classify(
+                [R(1, 5, 10), R(2, 4, 11)],
+                Start, End, TimeSpan.FromMinutes(30)));
+    }
+
+    [Fact]
     public void InvalidOrderingAndUtcIntervalAreRejected()
     {
         Assert.Throws<ArgumentException>(() =>
