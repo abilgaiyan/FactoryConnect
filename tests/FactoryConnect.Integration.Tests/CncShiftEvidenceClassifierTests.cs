@@ -53,12 +53,12 @@ public sealed class CncShiftEvidenceClassifierTests
     }
 
     [Fact]
-    public void UnusableReadingIsNotAProducedPart()
+    public void UnusableReadingBreaksCounterContinuity()
     {
         var result = CncShiftEvidenceClassifier.Classify(
             [R(1, 1, 10), R(2, 2, null, usable: false), R(3, 3, 11)],
             Start, End, TimeSpan.FromMinutes(30));
-        Assert.Equal(1, result.ObservedUnitIncrements);
+        Assert.Equal(0, result.ObservedUnitIncrements);
         Assert.Equal(2, result.UsableReadings);
     }
 
