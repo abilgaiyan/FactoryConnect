@@ -24,14 +24,14 @@ internal static class LocalAuthentication
                     var userId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
                     var role = context.Principal?.FindFirstValue(ClaimTypes.Role);
                     var connection = LocalUsers.ConnectionString(context.HttpContext.RequestServices.GetRequiredService<IConfiguration>());
-                    if (!Guid.TryParse(userId, out var id) || role is not ("Administrator" or "Supervisor" or "Manager") || string.IsNullOrWhiteSpace(connection))
+                    if (!Guid.TryParse(context.Principal?.FindFirstValue("fc.session-version"), out var version) || !Guid.TryParse(userId, out var id) || role is not ("Administrator" or "Supervisor" or "Manager") || string.IsNullOrWhiteSpace(connection))
                     {
                         context.RejectPrincipal();
                         return;
                     }
                     try
                     {
-                        if (!await new LocalUsers(connection).IsActiveAsync(id, role, context.HttpContext.RequestAborted))
+                        if (!await new LocalUsers(connection).IsActiveAsync(id, role, version, context.HttpContext.RequestAborted))
                             context.RejectPrincipal();
                     }
                     catch (Exception)
@@ -70,7 +70,7 @@ internal static class LocalAuthentication
                 return Results.Unauthorized();
             var connection = LocalUsers.ConnectionString(config);
             if (string.IsNullOrWhiteSpace(connection)) return Results.Problem(statusCode: 503, title: "User database not configured");
-            (Guid Id, string Username, string Role)? user;
+            (Guid Id, string Username, string Role, Guid SessionVersion)? user;
             try { user = await new LocalUsers(connection).VerifyAsync(request.Username, request.Password, http.RequestAborted); }
             catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested) { throw; }
             catch (Exception) { return Results.Problem(statusCode: 503, title: "User database unavailable"); }
@@ -78,7 +78,8 @@ internal static class LocalAuthentication
             var claims = new[] {
                 new Claim(ClaimTypes.NameIdentifier, user.Value.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Value.Username),
-                new Claim(ClaimTypes.Role, user.Value.Role)
+                new Claim(ClaimTypes.Role, user.Value.Role),
+                new Claim("fc.session-version", user.Value.SessionVersion.ToString())
             };
             await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
                 new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
