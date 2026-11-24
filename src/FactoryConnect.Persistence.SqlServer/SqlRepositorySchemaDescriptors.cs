@@ -73,13 +73,39 @@ internal static class SqlRepositorySchemaDescriptors
 
     public static SqlSchemaDescriptor Post040 { get; } = SqlRepositoryPost040SchemaDescriptor.Create(Post031);
 
-    public static SqlSchemaDescriptor Current { get; } = new(
+    public static SqlSchemaDescriptor Post041 { get; } = new(
         Post040.Tables.Select(table => table.Name == new SqlObjectName("dbo", "MachineObservation")
             ? table with { Indexes = [.. table.Indexes,
                 Index("IX_MachineObservation_CncEvidence",
                     ["MachineId", "StreamKeyBinary", "Address", "ObservedAt", "Position"],
                     ["InstanceId", "Quality"])] }
             : table).ToImmutableArray());
+
+    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser()]);
+
+    private static SqlTableDescriptor LocalUser() => Table(
+        "LocalUser",
+        columns:
+        [
+            Column("UserId", "uniqueidentifier"),
+            Column("Username", "nvarchar", 64, collation: "Latin1_General_100_CI_AS"),
+            Column("PasswordSalt", "varbinary", 32),
+            Column("PasswordHash", "varbinary", 32),
+            Column("Iterations", "int"),
+            Column("RoleName", "nvarchar", 32, collation: BinaryCollation),
+            Column("IsActive", "bit"),
+            Column("FailedAttempts", "int"),
+            new("LockedUntilUtc", "datetime2", null, null, 7, true, null, null)
+        ],
+        primaryKey: PrimaryKey("PK_LocalUser", "UserId"),
+        uniques: [Unique("UQ_LocalUser_Username", "Username")],
+        checks:
+        [
+            Check("CK_LocalUser_Role", "([RoleName]=N'Manager' OR [RoleName]=N'Supervisor' OR [RoleName]=N'Administrator')"),
+            Check("CK_LocalUser_Iterations", "([Iterations]>=(100000) AND [Iterations]<=(1000000))"),
+            Check("CK_LocalUser_Credentials", "(datalength([PasswordSalt])=(32) AND datalength([PasswordHash])=(32))"),
+            Check("CK_LocalUser_FailedAttempts", "([FailedAttempts]>=(0) AND [FailedAttempts]<=(4))")
+        ]);
 
     private static SqlSchemaDescriptor CreatePost004() => new(
     [
