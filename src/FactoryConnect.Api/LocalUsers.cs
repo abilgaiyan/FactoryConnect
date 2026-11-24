@@ -144,6 +144,32 @@ internal sealed class LocalUsers(string connectionString)
         finally { CryptographicOperations.ZeroMemory(salt); CryptographicOperations.ZeroMemory(hash); }
     }
 
+    internal async Task<bool> ChangeAccessAsync(Guid actorId, Guid userId, string role, bool active, CancellationToken ct)
+    {
+        if (actorId == userId || role is not ("Administrator" or "Supervisor" or "Manager"))
+            throw new ArgumentException("Cannot change your own access or assign an invalid role.");
+        await using var db = new SqlConnection(connectionString);
+        await db.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await db.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        await using var guard = new SqlCommand("""
+            SELECT COUNT_BIG(*) FROM dbo.LocalUser WITH (UPDLOCK, HOLDLOCK)
+            WHERE UserId = @actor AND RoleName = N'Administrator' AND IsActive = 1
+            """, db, tx);
+        guard.Parameters.Add("@actor", System.Data.SqlDbType.UniqueIdentifier).Value = actorId;
+        if ((long)(await guard.ExecuteScalarAsync(ct) ?? 0L) != 1)
+            throw new InvalidOperationException("Administrator access is no longer active.");
+        await using var cmd = new SqlCommand("""
+            UPDATE dbo.LocalUser SET RoleName = @role, IsActive = @active
+            WHERE UserId = @id
+            """, db, tx);
+        cmd.Parameters.Add("@role", System.Data.SqlDbType.NVarChar, 32).Value = role;
+        cmd.Parameters.Add("@active", System.Data.SqlDbType.Bit).Value = active;
+        cmd.Parameters.Add("@id", System.Data.SqlDbType.UniqueIdentifier).Value = userId;
+        var changed = await cmd.ExecuteNonQueryAsync(ct) == 1;
+        await tx.CommitAsync(ct);
+        return changed;
+    }
+
     private static bool ValidUsername(string username) =>
         username.Length is >= 3 and <= 64 &&
         username.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
