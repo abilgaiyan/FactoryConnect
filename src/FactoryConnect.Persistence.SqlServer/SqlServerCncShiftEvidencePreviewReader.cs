@@ -53,46 +53,23 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
 
             -- Exact counter stream identity is mandatory; never combine streams.
 
-            -- Do not silently omit poor-quality or malformed observations and present
-            -- the remaining unit transitions as a complete evidence preview.
-            IF EXISTS (
-                SELECT 1 FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
-                  AND ObservedAt >= @Starts AND ObservedAt < @Ends
-                  AND (Quality IS NULL OR Quality <> 0 OR (TRY_CONVERT(bigint, ObservationValue) IS NULL OR TRY_CONVERT(bigint, ObservationValue) < 0)))
-                THROW 51121, 'Incomplete CNC evidence: unusable observations in shift.', 1;
-            -- Reject an invalid predecessor rather than skipping it and bridging across it.
-            IF EXISTS (
-                SELECT 1 FROM (
-                    SELECT TOP (1) Quality, ObservationValue
-                    FROM dbo.MachineObservation
-                    WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
-                      AND ObservedAt < @Starts
-                    ORDER BY Position DESC
-                ) AS predecessor
-                WHERE Quality <> 0 OR TRY_CONVERT(bigint, ObservationValue) IS NULL
-                   OR TRY_CONVERT(bigint, ObservationValue) < 0)
-                THROW 51123, 'Incomplete CNC evidence: unusable predecessor.', 1;
-            -- Read at most one predecessor, plus a bounded number of in-shift rows.
-            -- The extra row detects truncation without silently returning a complete result.
+            -- Retrieve the exact stream once per range, including unusable readings.
             ;WITH PriorReading AS (
-                SELECT TOP (1) Position, ObservedAt, InstanceId,
+                SELECT TOP (1) Position, ObservedAt, InstanceId, Quality,
                        TRY_CONVERT(bigint, ObservationValue) AS CounterValue
                 FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey AND Quality = 0
-                  AND TRY_CONVERT(bigint, ObservationValue) >= 0
+                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
                   AND ObservedAt < @Starts
                 ORDER BY Position DESC
             ), ShiftReadings AS (
-                SELECT TOP (10001) Position, ObservedAt, InstanceId,
+                SELECT TOP (10001) Position, ObservedAt, InstanceId, Quality,
                        TRY_CONVERT(bigint, ObservationValue) AS CounterValue
                 FROM dbo.MachineObservation
-                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey AND Quality = 0
-                  AND TRY_CONVERT(bigint, ObservationValue) >= 0
+                WHERE MachineId = @Machine AND Address = @Address AND StreamKeyBinary = @StreamKey
                   AND ObservedAt >= @Starts AND ObservedAt < @Ends
                 ORDER BY Position
             )
-            SELECT Position, ObservedAt, InstanceId, CounterValue
+            SELECT Position, ObservedAt, InstanceId, CounterValue, Quality
             FROM (SELECT * FROM PriorReading UNION ALL SELECT * FROM ShiftReadings) AS readings
             ORDER BY Position;
             """;
@@ -108,6 +85,9 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            if (reader.IsDBNull(4) || reader.GetByte(4) != 0 ||
+                reader.IsDBNull(3) || reader.GetInt64(3) < 0)
+                throw new InvalidDataException("CNC preview contains an unusable observation.");
             // InstanceId is decimal(20,0) in the original schema; never narrow to Int64.
             var instance = Convert.ToString(reader.GetValue(2), CultureInfo.InvariantCulture)
                 ?? throw new InvalidDataException("Missing acquisition instance.");
