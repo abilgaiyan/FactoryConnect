@@ -34,6 +34,8 @@ import { routePath, type ApplicationRoute } from "./routing/application-route.ts
 import { shouldHandleApplicationNavigation } from "./routing/navigation-policy.ts";
 import { useApplicationRouter } from "./routing/use-application-router.ts";
 
+import { useSessionRole } from "./presentation/SessionGate.tsx";
+
 const SupervisorWorkspace = lazy(() => import("./presentation/SupervisorWorkspace.tsx"));
 
 export interface AppProps {
@@ -42,6 +44,10 @@ export interface AppProps {
 
 export function App({ runtime }: AppProps) {
   const { route, navigate } = useApplicationRouter();
+  const role = useSessionRole();
+  const supervisorAllowed = role !== "Manager";
+  const commissioningAllowed = role === null || role === "Administrator";
+  const denied = (route.kind === "supervisor" && !supervisorAllowed) || (route.kind === "commissioning" && !commissioningAllowed);
   const returnToOverview = overviewReturn(window.location.search, runtime.configuration.sources);
 
   return (
@@ -55,8 +61,8 @@ export function App({ runtime }: AppProps) {
           ))].map(label => <span key={label}>{label}</span>)}
         </div>
         <nav aria-label="Dashboard">
-          <ApplicationLink href="/supervisor" navigate={navigate} current={route.kind === "supervisor"}>Supervisor</ApplicationLink>
-          <ApplicationLink href="/commissioning" navigate={navigate} current={route.kind === "commissioning"}>Commissioning</ApplicationLink>{" "}
+          {supervisorAllowed && <ApplicationLink href="/supervisor" navigate={navigate} current={route.kind === "supervisor"}>Supervisor</ApplicationLink>}
+          {commissioningAllowed && <ApplicationLink href="/commissioning" navigate={navigate} current={route.kind === "commissioning"}>Commissioning</ApplicationLink>}{" "}
           <ApplicationLink href="/overview" navigate={navigate} current={route.kind === "overview"}>Overview</ApplicationLink>{" "}
           <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
           <ApplicationLink href="/reports/range" navigate={navigate} current={route.kind === "dateRange"}>Date-range report</ApplicationLink>{" "}
@@ -67,7 +73,7 @@ export function App({ runtime }: AppProps) {
       </header>
       <main id="main-content">
         {returnToOverview && <ApplicationLink href={returnToOverview} navigate={navigate}>Back to selected overview</ApplicationLink>}
-        <RouteView route={route} navigate={navigate} runtime={runtime} />
+        {denied ? <p role="alert">This workspace is not available for your role.</p> : <RouteView route={route} navigate={navigate} runtime={runtime} />}
       </main>
     </div>
   );
