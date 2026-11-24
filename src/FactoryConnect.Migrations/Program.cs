@@ -60,7 +60,7 @@ catch (OperationCanceledException)
 }
 catch (Exception exception)
 {
-    Console.Error.WriteLine($"FactoryConnect SQL migration failed: {exception.GetType().Name}: {exception.Message}");
+    Console.Error.WriteLine(exception.ToString());
     return 1;
 }
 finally
