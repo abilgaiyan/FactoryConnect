@@ -71,6 +71,8 @@ internal static class SqlServerMigrationExecutor
                 cancellationToken.ThrowIfCancellationRequested();
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
+                // Schema upgrades can build indexes over retained production history.
+                command.CommandTimeout = 600;
                 command.CommandText = batch;
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
