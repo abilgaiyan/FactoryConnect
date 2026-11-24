@@ -15,11 +15,11 @@ public static class MachineEvidenceProfileEndpoints
     public static IEndpointRouteBuilder MapMachineEvidenceProfileEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/commissioning/v1/machines/{machineId:guid}/evidence-profiles",
-            ListAsync).WithName("ListLocalMachineEvidenceProfiles").WithGroupName("commissioning-local-v1");
+            ListAsync).RequireAuthorization("OperationalRead").WithName("ListLocalMachineEvidenceProfiles").WithGroupName("commissioning-local-v1");
         endpoints.MapGet("/api/commissioning/v1/machines/{machineId:guid}/evidence-profile",
-            ReadEffectiveAsync).WithName("ReadLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
+            ReadEffectiveAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
         endpoints.MapPost("/api/commissioning/v1/machines/{machineId:guid}/evidence-profiles",
-            AppendAsync).WithName("AppendLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
+            AppendAsync).RequireAuthorization("AdministratorWrite").WithName("AppendLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
         return endpoints;
     }
 
