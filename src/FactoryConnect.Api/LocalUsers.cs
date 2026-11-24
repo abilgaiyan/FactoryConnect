@@ -37,7 +37,7 @@ internal sealed class LocalUsers(string connectionString)
         finally { CryptographicOperations.ZeroMemory(salt); CryptographicOperations.ZeroMemory(hash); }
     }
 
-    internal async Task<(Guid Id, string Username, string Role)?> VerifyAsync(string username, string password, CancellationToken ct)
+    internal async Task<(Guid Id, string Username, string Role, Guid SessionVersion)?> VerifyAsync(string username, string password, CancellationToken ct)
     {
         if (!ValidUsername(username) || password.Length is < 1 or > 256) return null;
         await using var db = new SqlConnection(connectionString);
@@ -45,12 +45,12 @@ internal sealed class LocalUsers(string connectionString)
         await using var tx = (SqlTransaction)await db.BeginTransactionAsync(ct);
         await using var cmd = new SqlCommand("""
             SELECT UserId, Username, PasswordSalt, PasswordHash, Iterations, RoleName, IsActive,
-                   FailedAttempts, LockedUntilUtc
+                   FailedAttempts, LockedUntilUtc, SessionVersion
             FROM dbo.LocalUser WITH (UPDLOCK, ROWLOCK)
             WHERE Username = @username
             """, db, tx);
         cmd.Parameters.Add("@username", System.Data.SqlDbType.NVarChar, 64).Value = username;
-        Guid id;
+        Guid id, sessionVersion;
         string canonicalUsername, role;
         byte[] salt, storedHash;
         int iterations, failed;
@@ -68,6 +68,7 @@ internal sealed class LocalUsers(string connectionString)
             active = reader.GetBoolean(6);
             failed = reader.GetInt32(7);
             locked = reader.IsDBNull(8) ? null : reader.GetDateTime(8);
+            sessionVersion = reader.GetGuid(9);
         }
         if (!active || locked is not null && locked.Value > DateTime.UtcNow) return null;
         if (iterations is < 100_000 or > 1_000_000 || salt.Length != SaltBytes || storedHash.Length != HashBytes)
@@ -85,19 +86,20 @@ internal sealed class LocalUsers(string connectionString)
         update.Parameters.Add("@id", System.Data.SqlDbType.UniqueIdentifier).Value = id;
         await update.ExecuteNonQueryAsync(ct);
         await tx.CommitAsync(ct);
-        return valid ? (id, canonicalUsername, role) : null;
+        return valid ? (id, canonicalUsername, role, sessionVersion) : null;
     }
 
-    internal async Task<bool> IsActiveAsync(Guid userId, string role, CancellationToken ct)
+    internal async Task<bool> IsActiveAsync(Guid userId, string role, Guid sessionVersion, CancellationToken ct)
     {
         await using var db = new SqlConnection(connectionString);
         await db.OpenAsync(ct);
         await using var cmd = new SqlCommand("""
             SELECT COUNT_BIG(*) FROM dbo.LocalUser
-            WHERE UserId = @id AND RoleName = @role AND IsActive = 1
+            WHERE UserId = @id AND RoleName = @role AND IsActive = 1 AND SessionVersion = @version
             """, db);
         cmd.Parameters.Add("@id", System.Data.SqlDbType.UniqueIdentifier).Value = userId;
         cmd.Parameters.Add("@role", System.Data.SqlDbType.NVarChar, 32).Value = role;
+        cmd.Parameters.Add("@version", System.Data.SqlDbType.UniqueIdentifier).Value = sessionVersion;
         return (long)(await cmd.ExecuteScalarAsync(ct) ?? 0L) == 1;
     }
 
@@ -159,7 +161,7 @@ internal sealed class LocalUsers(string connectionString)
         if ((long)(await guard.ExecuteScalarAsync(ct) ?? 0L) != 1)
             throw new InvalidOperationException("Administrator access is no longer active.");
         await using var cmd = new SqlCommand("""
-            UPDATE dbo.LocalUser SET RoleName = @role, IsActive = @active
+            UPDATE dbo.LocalUser SET RoleName = @role, IsActive = @active, SessionVersion = NEWID()
             WHERE UserId = @id
             """, db, tx);
         cmd.Parameters.Add("@role", System.Data.SqlDbType.NVarChar, 32).Value = role;
