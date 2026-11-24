@@ -24,6 +24,8 @@ if (args.Length > 0 && args[0] == "--create-admin")
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddLocalAuthentication();
+
 builder.Services.AddOpenApi(options =>
 {
     options.AddSchemaTransformer<OperationalMetricStatusOpenApiTransformer>();
@@ -65,6 +67,10 @@ app.MapCommissioning();
 
 app.UseReportingTimings();
 app.UseExceptionHandler();
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapLocalAuthentication();
 
 app.MapGet("/health", () => Results.Ok(new
 {
