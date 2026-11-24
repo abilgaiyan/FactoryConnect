@@ -1,8 +1,11 @@
-import { useEffect, useState, type FormEvent, type PropsWithChildren } from "react";
+import { useEffect, useState, type FormEvent, createContext, useContext, type PropsWithChildren } from "react";
 
 import { UserMaster } from "./UserMaster.tsx";
 
 type Session = { username: string; role: "Administrator" | "Supervisor" | "Manager" };
+
+const SessionRoleContext = createContext<Session["role"] | null>(null);
+export function useSessionRole() { return useContext(SessionRoleContext); }
 
 function parseSession(value: unknown): Session {
   if (typeof value !== "object" || value === null || !("username" in value) ||
@@ -84,7 +87,7 @@ export function SessionGate({ children }: PropsWithChildren) {
       <button type="button" disabled={busy} onClick={() => void logout()}>Sign out</button>
       {error && <p role="alert">{error}</p>}
     </div>
-    {showUsers && session.role === "Administrator" ? <UserMaster currentUsername={session.username} onSessionEnded={() => { setSession(null); setShowUsers(false); setPassword(""); setError("Please sign in again."); }} /> : children}
+    {showUsers && session.role === "Administrator" ? <UserMaster currentUsername={session.username} onSessionEnded={() => { setSession(null); setShowUsers(false); setPassword(""); setError("Please sign in again."); }} /> : <SessionRoleContext.Provider value={session.role}>{children}</SessionRoleContext.Provider>}
   </>;
   return <main className="session-login">
     <form onSubmit={event => void login(event)}>
