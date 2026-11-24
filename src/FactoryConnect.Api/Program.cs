@@ -63,13 +63,27 @@ builder.Services.AddFactoryConnectCurrentMachineState(
 builder.Services.AddSingleton<CommissioningSnapshotReader>();
 
 var app = builder.Build();
-app.MapGroup("").RequireAuthorization("OperationalRead").MapCommissioning();
+app.MapCommissioning();
 
 app.UseReportingTimings();
 app.UseExceptionHandler();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/commissioning"))
+    {
+        var authorization = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationService>();
+        if (!(await authorization.AuthorizeAsync(context.User, null, "OperationalRead")).Succeeded)
+        {
+            context.Response.StatusCode = context.User.Identity?.IsAuthenticated == true
+                ? StatusCodes.Status403Forbidden : StatusCodes.Status401Unauthorized;
+            return;
+        }
+    }
+    await next(context);
+});
 app.MapLocalAuthentication();
 
 app.MapGet("/health", () => Results.Ok(new
