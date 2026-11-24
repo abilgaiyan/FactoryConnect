@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Data;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Abstractions;
@@ -236,7 +237,7 @@ public static class SupervisorShiftTargetEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalShiftTarget:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local shift target writes disabled");
-        var actor = configuration["SupervisorLocalShiftTarget:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalShiftTarget:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
