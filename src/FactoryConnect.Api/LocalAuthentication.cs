@@ -42,7 +42,12 @@ internal static class LocalAuthentication
                 options.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
                 options.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
             });
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy("OperationalRead", policy => policy.RequireRole("Administrator", "Supervisor", "Manager"));
+            options.AddPolicy("SupervisorWrite", policy => policy.RequireRole("Administrator", "Supervisor"));
+            options.AddPolicy("AdministratorWrite", policy => policy.RequireRole("Administrator"));
+        });
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = 429;
