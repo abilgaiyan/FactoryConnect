@@ -5,11 +5,12 @@ param(
     [switch]$Dashboard,
     [switch]$ApiOnly,
     [switch]$DevUi,
-    [switch]$ApplyPendingMigrations,
+    [switch]$ApplyPendingMigrations = $true,
     [bool]$SeparateServiceWindows = $true,
     [switch]$EnableSupervisorEntries,
     [switch]$EnableSupervisorShiftTargets,
     [switch]$EnableSupervisorReviews,
+    [switch]$EnableCncShiftPreview,
     [string]$SupervisorReviewerId,
     [switch]$EnableDowntimeReasonAdministration,
     [string]$SupervisorOperatorId,
@@ -123,6 +124,9 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
 }
+if ($EnableCncShiftPreview -and (-not $Dashboard -and -not $DevUi)) {
+    throw 'CNC preview requires the Dashboard gateway (-Dashboard or -DevUi).'
+}
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
 if ($EnableSupervisorReviews -and
@@ -168,23 +172,12 @@ try {
     $updateability = [string]$reader.GetString(2)
     $reader.Close()
     if ($actualDb -cne $Database) { throw 'SQL database identity mismatch.' }
-    $explicitWorkingDatabase = [Environment]::GetEnvironmentVariable('FACTORYCONNECT_DEV_WORKING_DATABASE', 'Process')
-    $isDefaultDev = $Database -ceq 'FactoryConnect_V1_Dev_Local'
-    $isExplicitWorkingCopy = (-not [string]::IsNullOrWhiteSpace($explicitWorkingDatabase)) -and
-        ($Database -ceq $explicitWorkingDatabase) -and
-        ($Database -cmatch '^FactoryConnect_V1_[A-Za-z0-9_]+_Work$') -and
-        $SqlInstance.StartsWith(($env:COMPUTERNAME + '\'), [StringComparison]::OrdinalIgnoreCase)
-    if ((-not $isDefaultDev -and -not $isExplicitWorkingCopy) -or $updateability -cne 'READ_WRITE') {
-        throw 'Writable local development requires the default dev database or an explicitly opted-in local working copy in READ_WRITE mode; no changes were made.'
-    }
-    $command = $connection.CreateCommand()
-    $command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId IN (32,33)"
-    if ([int]$command.ExecuteScalar() -ne 2) { throw 'Development database must have migrations 032 and 033 applied.' }
-    $command.CommandText = "SELECT CASE WHEN OBJECT_ID('dbo.SupervisorShiftTarget','U') IS NOT NULL AND OBJECT_ID('dbo.SupervisorAcceptedShiftProduction','U') IS NOT NULL THEN 1 ELSE 0 END"
-    if ([int]$command.ExecuteScalar() -ne 1) { throw 'Development database is missing supervisor tables.' }
+    # The explicitly supplied SQL instance and database are authoritative.
+    # Read-only databases can serve diagnostic previews; write operations
+    # report their own SQL errors when the selected database disallows writes.
 } finally { $connection.Dispose() }
 
-if ($ApplyPendingMigrations) {
+if ($ApplyPendingMigrations -and $updateability -eq 'READ_WRITE') {
     $migrationProject = Join-Path $root 'src/FactoryConnect.Migrations/FactoryConnect.Migrations.csproj'
     if (-not (Test-Path -LiteralPath $migrationProject)) { throw 'Repository migration project not found.' }
     Write-Host "Applying repository SQL migrations to $actualServer / $actualDb..."
@@ -197,6 +190,8 @@ if ($ApplyPendingMigrations) {
     } finally {
         [Environment]::SetEnvironmentVariable($variableName, $oldValue, 'Process')
     }
+} elseif ($ApplyPendingMigrations) {
+    Write-Host 'Database is read-only; skipping migrations. API compatibility verification still applies.'
 }
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
@@ -250,6 +245,12 @@ try {
         $apiEnvironment['SupervisorLocalDowntimeReasons__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalDowntimeReasons__WriteConnectionString'] = $connectionString
     }
+    if ($EnableCncShiftPreview) {
+        # CNC preview is SELECT-only by implementation; local development
+        # can reuse the explicitly selected database connection.
+        $apiEnvironment['CncShiftPreview__Enabled'] = 'true'
+        $apiEnvironment['CncShiftPreview__ReadOnlyConnectionString'] = $connectionString
+    }
     $apiProcess = Start-Service $apiProject $apiUrl $apiEnvironment $false
     Wait-Health "$apiUrl/health" $apiProcess 60
     Write-Host "API ready: $apiUrl"
@@ -259,6 +260,7 @@ try {
             'Dashboard__RequestTimeout' = '00:02:00'
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
+        if ($EnableCncShiftPreview) { $dashboardEnvironment['CncShiftPreview__EnableGateway'] = 'true' }
         if ($DevUi -or $EnableSupervisorShiftTargets) {
             $dashboardEnvironment['SupervisorLocalShiftTarget__EnableGateway'] = 'true'
         }

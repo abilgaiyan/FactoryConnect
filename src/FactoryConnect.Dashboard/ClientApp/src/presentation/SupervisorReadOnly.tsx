@@ -12,6 +12,7 @@ import { SupervisorLocalShiftTargets } from "./SupervisorLocalShiftTargets.tsx";
 import { SupervisorQuantitySourceInspection } from "./SupervisorQuantitySourceInspection.tsx";
 import { SupervisorAcceptedProductionReadout } from "./SupervisorAcceptedProductionReadout.tsx";
 import { SupervisorTargetAchievement } from "./SupervisorTargetAchievement.tsx";
+import { CncShiftEvidencePreview } from "./CncShiftEvidencePreview.tsx";
 
 export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift): string {
   return JSON.stringify([machine.machineId, machine.processorId, machine.siteId, machine.productionLineId,
@@ -225,6 +226,13 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         endsAtUtc: selected.occurrence.shift.endsAtUtc
       }} /></div>}
       <div hidden={activeView !== "activity"}><ExactActivity key={`activity:${selectedKey}`} machine={selected.machine} occurrence={selected.occurrence} timeoutMilliseconds={runtime.configuration.requestTimeoutMilliseconds} /></div>
+      {activeView === "diagnostics" && <CncShiftEvidencePreview key={`cnc:${selectedKey}`} scope={{
+        machineId: selected.machine.machineId,
+        shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
+        shiftId: selected.occurrence.shift.shiftId,
+        startsAtUtc: selected.occurrence.shift.startsAtUtc,
+        endsAtUtc: selected.occurrence.shift.endsAtUtc
+      }} />}
       <div hidden={activeView !== "diagnostics"}><section aria-label="Reporting evidence provenance">
         <h2>Reporting evidence provenance</h2>
         <p>Site {selected.machine.siteId} · Line {selected.machine.productionLineId}</p>

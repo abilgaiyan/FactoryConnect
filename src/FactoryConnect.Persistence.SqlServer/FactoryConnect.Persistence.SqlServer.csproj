@@ -4,6 +4,7 @@
     <AssemblyName>FactoryConnect.Persistence.SqlServer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Sql\041_MachineObservationCncEvidenceIndex.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.041_MachineObservationCncEvidenceIndex.sql" />
     <EmbeddedResource Include="Sql\040_MachineProductionEvidenceProfile.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.040_MachineProductionEvidenceProfile.sql" />
     <EmbeddedResource Include="Sql\039_InspectSupervisorProductionEntryReadiness.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.039_InspectSupervisorProductionEntryReadiness.sql" />
     <EmbeddedResource Include="Sql\038_PublishSupervisorAcceptedProduction.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.038_PublishSupervisorAcceptedProduction.sql" />
