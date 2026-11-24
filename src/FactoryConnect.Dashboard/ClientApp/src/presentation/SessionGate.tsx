@@ -84,7 +84,7 @@ export function SessionGate({ children }: PropsWithChildren) {
       <button type="button" disabled={busy} onClick={() => void logout()}>Sign out</button>
       {error && <p role="alert">{error}</p>}
     </div>
-    {showUsers && session.role === "Administrator" ? <UserMaster currentUsername={session.username} /> : children}
+    {showUsers && session.role === "Administrator" ? <UserMaster currentUsername={session.username} onSessionEnded={() => { setSession(null); setShowUsers(false); setPassword(""); setError("Please sign in again."); }} /> : children}
   </>;
   return <main className="session-login">
     <form onSubmit={event => void login(event)}>
