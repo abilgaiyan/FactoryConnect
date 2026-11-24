@@ -31,6 +31,8 @@ app.MapGet("/api/auth/v1/users", (HttpContext context, ReportingGateway gateway)
     gateway.ForwardAsync(context, "api/auth/v1/users", HttpMethod.Get));
 app.MapPost("/api/auth/v1/users", (HttpContext context, ReportingGateway gateway) =>
     gateway.ForwardAsync(context, "api/auth/v1/users", HttpMethod.Post));
+app.MapPut("/api/auth/v1/users/{userId:guid}/access", (Guid userId, HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, $"api/auth/v1/users/{userId:D}/access", HttpMethod.Put));
 app.MapGet("/api/auth/v1/me", (HttpContext context, ReportingGateway gateway) =>
     gateway.ForwardAsync(context, "api/auth/v1/me", HttpMethod.Get));
 app.MapPost("/api/auth/v1/logout", (HttpContext context, ReportingGateway gateway) =>
