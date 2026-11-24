@@ -15,6 +15,7 @@ public static class CncShiftEvidencePreviewEndpoints
     {
         endpoints.MapPost("/api/supervisor/cnc-shift-evidence-preview", async (
             HttpContext context, IConfiguration configuration, Request request,
+            ILogger<SqlServerCncShiftEvidencePreviewReader> logger,
             CancellationToken cancellationToken) =>
         {
             if (!configuration.GetValue<bool>("CncShiftPreview:Enabled"))
@@ -48,10 +49,22 @@ public static class CncShiftEvidencePreviewEndpoints
             {
                 return Results.BadRequest("Invalid CNC preview selection.");
             }
-            catch (SqlException)
+            catch (SqlException exception) when (exception.Number == -2)
             {
-                return Results.Problem("CNC preview evidence is unavailable or ambiguous.",
+                logger.LogWarning("CNC preview SQL timeout. Trace {TraceId}", context.TraceIdentifier);
+                return Results.Problem("CNC preview database query timed out.",
+                    statusCode: StatusCodes.Status504GatewayTimeout);
+            }
+            catch (SqlException exception) when (exception.Number == 51120)
+            {
+                return Results.Problem("Exact commissioned shift occurrence missing or ambiguous.",
                     statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+            catch (SqlException exception)
+            {
+                logger.LogError("CNC preview SQL error {Number}. Trace {TraceId}", exception.Number, context.TraceIdentifier);
+                return Results.Problem("CNC preview database query failed.",
+                    statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidDataException)
             {
