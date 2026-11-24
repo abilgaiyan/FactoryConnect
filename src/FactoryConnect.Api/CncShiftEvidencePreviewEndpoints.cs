@@ -4,8 +4,14 @@ using Microsoft.Data.SqlClient;
 namespace FactoryConnect.Api;
 
 /// <summary>Explicitly enabled loopback-only diagnostic; not a production quantity authority.</summary>
-public static class CncShiftEvidencePreviewEndpoints
+public static partial class CncShiftEvidencePreviewEndpoints
 {
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "CNC preview SQL timeout. Trace {TraceId}")]
+    private static partial void LogSqlTimeout(ILogger logger, string traceId);
+
+    [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "CNC preview SQL error {Number}. Trace {TraceId}")]
+    private static partial void LogSqlError(ILogger logger, int number, string traceId);
+
     public sealed record Request(Guid MachineId, string AssignmentId, string ShiftId,
         DateTimeOffset StartsAtUtc, DateTimeOffset EndsAtUtc,
         string CounterAddress, string StreamKeyHex);
@@ -51,7 +57,7 @@ public static class CncShiftEvidencePreviewEndpoints
             }
             catch (SqlException exception) when (exception.Number == -2)
             {
-                logger.LogWarning("CNC preview SQL timeout. Trace {TraceId}", context.TraceIdentifier);
+                LogSqlTimeout(logger, context.TraceIdentifier);
                 return Results.Problem("CNC preview database query timed out.",
                     statusCode: StatusCodes.Status504GatewayTimeout);
             }
@@ -62,7 +68,7 @@ public static class CncShiftEvidencePreviewEndpoints
             }
             catch (SqlException exception)
             {
-                logger.LogError("CNC preview SQL error {Number}. Trace {TraceId}", exception.Number, context.TraceIdentifier);
+                LogSqlError(logger, exception.Number, context.TraceIdentifier);
                 return Results.Problem("CNC preview database query failed.",
                     statusCode: StatusCodes.Status500InternalServerError);
             }
