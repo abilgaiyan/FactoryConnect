@@ -172,6 +172,41 @@ internal sealed class LocalUsers(string connectionString)
         return changed;
     }
 
+    internal async Task<bool> ResetPasswordAsync(Guid actorId, Guid userId, string password, CancellationToken ct)
+    {
+        if (password.Length is < 14 or > 256)
+            throw new ArgumentException("Password must be 14-256 characters.");
+        byte[] salt = RandomNumberGenerator.GetBytes(SaltBytes);
+        byte[] hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, HashAlgorithmName.SHA256, HashBytes);
+        try
+        {
+            await using var db = new SqlConnection(connectionString);
+            await db.OpenAsync(ct);
+            await using var tx = (SqlTransaction)await db.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            await using var guard = new SqlCommand("""
+                SELECT COUNT_BIG(*) FROM dbo.LocalUser WITH (UPDLOCK, HOLDLOCK)
+                WHERE UserId = @actor AND RoleName = N'Administrator' AND IsActive = 1
+                """, db, tx);
+            guard.Parameters.Add("@actor", System.Data.SqlDbType.UniqueIdentifier).Value = actorId;
+            if ((long)(await guard.ExecuteScalarAsync(ct) ?? 0L) != 1)
+                throw new InvalidOperationException("Administrator access is no longer active.");
+            await using var cmd = new SqlCommand("""
+                UPDATE dbo.LocalUser SET PasswordSalt = @salt, PasswordHash = @hash,
+                    Iterations = @iterations, FailedAttempts = 0, LockedUntilUtc = NULL,
+                    SessionVersion = NEWID()
+                WHERE UserId = @id
+                """, db, tx);
+            cmd.Parameters.Add("@id", System.Data.SqlDbType.UniqueIdentifier).Value = userId;
+            cmd.Parameters.Add("@salt", System.Data.SqlDbType.VarBinary, SaltBytes).Value = salt;
+            cmd.Parameters.Add("@hash", System.Data.SqlDbType.VarBinary, HashBytes).Value = hash;
+            cmd.Parameters.Add("@iterations", System.Data.SqlDbType.Int).Value = Iterations;
+            var changed = await cmd.ExecuteNonQueryAsync(ct) == 1;
+            await tx.CommitAsync(ct);
+            return changed;
+        }
+        finally { CryptographicOperations.ZeroMemory(salt); CryptographicOperations.ZeroMemory(hash); }
+    }
+
     private static bool ValidUsername(string username) =>
         username.Length is >= 3 and <= 64 &&
         username.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
