@@ -2,7 +2,10 @@ import { useEffect, useState, type FormEvent } from "react";
 
 type User = { userId: string; username: string; role: string; isActive: boolean };
 
-export function UserMaster({ currentUsername }: { currentUsername: string }) {
+export function UserMaster({ currentUsername, onSessionEnded }: { currentUsername: string; onSessionEnded: () => void }) {
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [editing, setEditing] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [username, setUsername] = useState("");
@@ -85,6 +88,27 @@ export function UserMaster({ currentUsername }: { currentUsername: string }) {
     }
   }
 
+  async function resetPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!resetUser) return;
+    if (newPassword !== confirmation) { setError("Passwords do not match."); return; }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`/api/auth/v1/users/${encodeURIComponent(resetUser.userId)}/password`, {
+        method: "PUT", cache: "no-store",
+        headers: { "Content-Type": "application/json", "X-FC-Request": "reset-password" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      if (response.status === 401) onSessionEnded();
+      else if (!response.ok) setError("Unable to reset password.");
+      else if (resetUser.username === currentUsername) onSessionEnded();
+      else { setResetUser(null); setNotice("Password reset. Existing sessions have been invalidated."); }
+    } catch { setError("Unable to confirm password reset. Check the connection before retrying."); }
+    finally { setNewPassword(""); setConfirmation(""); setBusy(false); }
+  }
+
   return <main className="user-master">
     <h1>User Master</h1>
     {error && <p role="alert">{error}</p>}
@@ -92,8 +116,18 @@ export function UserMaster({ currentUsername }: { currentUsername: string }) {
     <button type="button" disabled={loading || busy} onClick={() => { setError(""); void load(); }}>Refresh users</button>
     {loading ? <p role="status">Loading users…</p> :
       <table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody>{users.map(user => <tr key={user.userId}><td>{user.username}</td><td>{user.role}</td><td>{user.isActive ? "Active" : "Inactive"}</td><td>{user.username === currentUsername ? "Current account" : <button type="button" disabled={busy} onClick={() => setEditing(user)}>Edit access</button>}</td></tr>)}</tbody>
+        <tbody>{users.map(user => <tr key={user.userId}><td>{user.username}</td><td>{user.role}</td><td>{user.isActive ? "Active" : "Inactive"}</td><td>{user.username === currentUsername ? "Current account" : <button type="button" disabled={busy} onClick={() => { setResetUser(null); setNewPassword(""); setConfirmation(""); setEditing(user); }}>Edit access</button>} <button type="button" disabled={busy} onClick={() => { setEditing(null); setResetUser(user); setNewPassword(""); setConfirmation(""); setError(""); setNotice(""); }}>Reset password</button></td></tr>)}</tbody>
       </table>}
+    {resetUser && <form onSubmit={event => void resetPassword(event)}>
+      <h2>Reset password: {resetUser.username}</h2>
+      <p>Existing sessions will be invalidated. {resetUser.username === currentUsername && "You will need to sign in again."}</p>
+      <label htmlFor="reset-password">New password (at least 14 characters)</label>
+      <input id="reset-password" type="password" autoComplete="new-password" required minLength={14} maxLength={256} disabled={busy} value={newPassword} onChange={event => setNewPassword(event.currentTarget.value)} />
+      <label htmlFor="confirm-password">Confirm password</label>
+      <input id="confirm-password" type="password" autoComplete="new-password" required minLength={14} maxLength={256} disabled={busy} value={confirmation} onChange={event => setConfirmation(event.currentTarget.value)} />
+      <button type="submit" disabled={busy}>Reset password</button>
+      <button type="button" disabled={busy} onClick={() => { setResetUser(null); setNewPassword(""); setConfirmation(""); }}>Cancel</button>
+    </form>}
     {editing && <form onSubmit={event => void saveAccess(event)}>
       <h2>Edit access: {editing.username}</h2>
       <label htmlFor="edit-user-role">Role</label>
