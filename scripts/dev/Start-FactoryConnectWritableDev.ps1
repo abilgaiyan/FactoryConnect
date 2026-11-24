@@ -5,7 +5,7 @@ param(
     [switch]$Dashboard,
     [switch]$ApiOnly,
     [switch]$DevUi,
-    [switch]$ApplyPendingMigrations,
+    [switch]$ApplyPendingMigrations = $true,
     [bool]$SeparateServiceWindows = $true,
     [switch]$EnableSupervisorEntries,
     [switch]$EnableSupervisorShiftTargets,
@@ -175,14 +175,9 @@ try {
     # The explicitly supplied SQL instance and database are authoritative.
     # Read-only databases can serve diagnostic previews; write operations
     # report their own SQL errors when the selected database disallows writes.
-    $command = $connection.CreateCommand()
-    $command.CommandText = "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId IN (32,33)"
-    if ([int]$command.ExecuteScalar() -ne 2) { throw 'Development database must have migrations 032 and 033 applied.' }
-    $command.CommandText = "SELECT CASE WHEN OBJECT_ID('dbo.SupervisorShiftTarget','U') IS NOT NULL AND OBJECT_ID('dbo.SupervisorAcceptedShiftProduction','U') IS NOT NULL THEN 1 ELSE 0 END"
-    if ([int]$command.ExecuteScalar() -ne 1) { throw 'Development database is missing supervisor tables.' }
 } finally { $connection.Dispose() }
 
-if ($ApplyPendingMigrations) {
+if ($ApplyPendingMigrations -and $updateability -eq 'READ_WRITE') {
     $migrationProject = Join-Path $root 'src/FactoryConnect.Migrations/FactoryConnect.Migrations.csproj'
     if (-not (Test-Path -LiteralPath $migrationProject)) { throw 'Repository migration project not found.' }
     Write-Host "Applying repository SQL migrations to $actualServer / $actualDb..."
@@ -195,6 +190,8 @@ if ($ApplyPendingMigrations) {
     } finally {
         [Environment]::SetEnvironmentVariable($variableName, $oldValue, 'Process')
     }
+} elseif ($ApplyPendingMigrations) {
+    Write-Host 'Database is read-only; skipping migrations. API compatibility verification still applies.'
 }
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
