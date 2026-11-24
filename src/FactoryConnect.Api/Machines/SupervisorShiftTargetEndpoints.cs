@@ -20,19 +20,19 @@ public static class SupervisorShiftTargetEndpoints
         this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
-            ReadAsync).WithName("ReadLocalSupervisorShiftTargets")
+            ReadAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalSupervisorShiftTargets")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
-            CreateAsync).WithName("CreateLocalSupervisorShiftTargetRevision")
+            CreateAsync).RequireAuthorization("AdministratorWrite").WithName("CreateLocalSupervisorShiftTargetRevision")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
-            ReadQuantitySourceCutAsync).WithName("ReadLocalSupervisorQuantitySourceCut")
+            ReadQuantitySourceCutAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalSupervisorQuantitySourceCut")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/production-entries/{entryId:guid}/qualification-readiness",
-            ReadQualificationReadinessAsync).WithName("ReadSupervisorQualificationReadiness")
+            ReadQualificationReadinessAsync).RequireAuthorization("OperationalRead").WithName("ReadSupervisorQualificationReadiness")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-shift-production",
-            ReadAcceptedShiftProductionAsync).WithName("ReadLocalAcceptedShiftProduction")
+            ReadAcceptedShiftProductionAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalAcceptedShiftProduction")
             .WithGroupName("supervisor-local-v1");
         return endpoints;
     }
