@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Api.Commissioning;
@@ -151,7 +152,7 @@ public static class SupervisorProductionEntryEndpoints
             !configuration.GetValue<bool>("SupervisorLocalEntry:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local supervisor writes are disabled");
 
-        var actor = configuration["SupervisorLocalEntry:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalEntry:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -229,7 +230,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local review decisions are disabled");
-        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var reviewer = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -315,7 +316,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalRevision:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local correction writes are disabled");
-        var actor = configuration["SupervisorLocalRevision:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalRevision:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -379,7 +380,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local review decisions are disabled");
-        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var reviewer = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -446,7 +447,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalDowntime:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local downtime explanation writes disabled");
-        var actor = configuration["SupervisorLocalDowntime:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalDowntime:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -545,7 +546,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local downtime review writes disabled");
-        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var reviewer = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
