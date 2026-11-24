@@ -84,6 +84,34 @@ internal static class LocalAuthentication
                 new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)));
             return Results.Ok(new { username = user.Value.Username, role = user.Value.Role });
         }).RequireRateLimiting("login").ExcludeFromDescription();
+        app.MapGet("/api/auth/v1/users", async (HttpContext http, IConfiguration config) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            var connection = LocalUsers.ConnectionString(config);
+            if (string.IsNullOrWhiteSpace(connection)) return Results.Problem(statusCode: 503);
+            try { return Results.Ok(await new LocalUsers(connection).ListAsync(http.RequestAborted)); }
+            catch (Microsoft.Data.SqlClient.SqlException) { return Results.Problem(statusCode: 503); }
+        }).RequireAuthorization("AdministratorWrite").ExcludeFromDescription();
+
+        app.MapPost("/api/auth/v1/users", async (CreateUserRequest request, HttpContext http, IConfiguration config) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            if (http.Request.Headers["X-FC-Request"] != "create-user" ||
+                request.Username is null || request.Password is null || request.Role is null)
+                return Results.BadRequest();
+            var connection = LocalUsers.ConnectionString(config);
+            if (string.IsNullOrWhiteSpace(connection)) return Results.Problem(statusCode: 503);
+            try
+            {
+                var id = await new LocalUsers(connection).CreateAsync(request.Username, request.Password, request.Role, http.RequestAborted);
+                return Results.Ok(new { userId = id });
+            }
+            catch (ArgumentException) { return Results.BadRequest(new { reason = "InvalidUser" }); }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number is 2601 or 2627)
+            { return Results.Conflict(new { reason = "UsernameExists" }); }
+            catch (Microsoft.Data.SqlClient.SqlException) { return Results.Problem(statusCode: 503); }
+        }).RequireAuthorization("AdministratorWrite").ExcludeFromDescription();
+
         app.MapGet("/api/auth/v1/me", (ClaimsPrincipal user) =>
             Results.Ok(new { username = user.Identity?.Name, role = user.FindFirstValue(ClaimTypes.Role) }))
             .RequireAuthorization().ExcludeFromDescription();
@@ -95,5 +123,6 @@ internal static class LocalAuthentication
         }).RequireAuthorization().ExcludeFromDescription();
     }
 
+    internal sealed record CreateUserRequest(string? Username, string? Password, string? Role);
     internal sealed record LoginRequest(string? Username, string? Password);
 }
