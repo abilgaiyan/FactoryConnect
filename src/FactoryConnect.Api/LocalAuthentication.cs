@@ -132,6 +132,27 @@ internal static class LocalAuthentication
             catch (Microsoft.Data.SqlClient.SqlException) { return Results.Problem(statusCode: 503); }
         }).RequireAuthorization("AdministratorWrite").ExcludeFromDescription();
 
+        app.MapPut("/api/auth/v1/users/{userId:guid}/password", async (Guid userId, ResetPasswordRequest request, HttpContext http, IConfiguration config) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            if (http.Request.Headers["X-FC-Request"] != "reset-password" ||
+                request.Password is null ||
+                !Guid.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId))
+                return Results.BadRequest();
+            var connection = LocalUsers.ConnectionString(config);
+            if (string.IsNullOrWhiteSpace(connection)) return Results.Problem(statusCode: 503);
+            try
+            {
+                if (!await new LocalUsers(connection).ResetPasswordAsync(actorId, userId, request.Password, http.RequestAborted))
+                    return Results.NotFound();
+                if (actorId == userId) await http.SignOutAsync();
+                return Results.NoContent();
+            }
+            catch (ArgumentException) { return Results.BadRequest(new { reason = "InvalidPassword" }); }
+            catch (InvalidOperationException) { return Results.Conflict(); }
+            catch (Microsoft.Data.SqlClient.SqlException) { return Results.Problem(statusCode: 503); }
+        }).RequireAuthorization("AdministratorWrite").ExcludeFromDescription();
+
         app.MapGet("/api/auth/v1/me", (ClaimsPrincipal user) =>
             Results.Ok(new { username = user.Identity?.Name, role = user.FindFirstValue(ClaimTypes.Role) }))
             .RequireAuthorization().ExcludeFromDescription();
@@ -143,6 +164,7 @@ internal static class LocalAuthentication
         }).RequireAuthorization().ExcludeFromDescription();
     }
 
+    internal sealed record ResetPasswordRequest(string? Password);
     internal sealed record ChangeAccessRequest(string? Role, bool? IsActive);
     internal sealed record CreateUserRequest(string? Username, string? Password, string? Role);
     internal sealed record LoginRequest(string? Username, string? Password);
