@@ -63,7 +63,7 @@ builder.Services.AddFactoryConnectCurrentMachineState(
 builder.Services.AddSingleton<CommissioningSnapshotReader>();
 
 var app = builder.Build();
-app.MapCommissioning();
+app.MapGroup("").RequireAuthorization("OperationalRead").MapCommissioning();
 
 app.UseReportingTimings();
 app.UseExceptionHandler();
@@ -79,10 +79,11 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapOpenApi();
-app.MapOperationalMetricReportingEndpoints();
-app.MapCurrentMachineStateEndpoints();
-app.MapMachineActivityReports();
-app.MapMachineCounterReports();
+var reporting = app.MapGroup("").RequireAuthorization("OperationalRead");
+reporting.MapOperationalMetricReportingEndpoints();
+reporting.MapCurrentMachineStateEndpoints();
+reporting.MapMachineActivityReports();
+reporting.MapMachineCounterReports();
 app.MapSupervisorProductionEntryEndpoints();
 app.MapSupervisorShiftTargetEndpoints();
 app.MapCncShiftEvidencePreviewEndpoints();
