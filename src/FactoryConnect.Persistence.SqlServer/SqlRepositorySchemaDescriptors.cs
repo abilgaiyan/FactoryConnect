@@ -94,6 +94,7 @@ internal static class SqlRepositorySchemaDescriptors
             Column("Iterations", "int"),
             Column("RoleName", "nvarchar", 32, collation: BinaryCollation),
             Column("IsActive", "bit"),
+            Column("SessionVersion", "uniqueidentifier"),
             Column("FailedAttempts", "int"),
             new("LockedUntilUtc", "datetime2", null, null, 7, true, null, null)
         ],
