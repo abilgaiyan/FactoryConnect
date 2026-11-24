@@ -37,7 +37,7 @@ public sealed class ReportingGateway(
                 .ConfigureAwait(false);
 
             context.Response.StatusCode = (int)response.StatusCode;
-            if (relativePath is "api/auth/v1/login" or "api/auth/v1/logout" or "api/auth/v1/me")
+            if (relativePath is "api/auth/v1/login" or "api/auth/v1/logout" or "api/auth/v1/me" or "api/auth/v1/users")
             {
                 context.Response.Headers.CacheControl = "no-store";
                 if (response.Headers.TryGetValues(HeaderNames.SetCookie, out var cookies))
