@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent, type PropsWithChildren } from "react";
 
+import { UserMaster } from "./UserMaster.tsx";
+
 type Session = { username: string; role: "Administrator" | "Supervisor" | "Manager" };
 
 function parseSession(value: unknown): Session {
@@ -12,6 +14,7 @@ function parseSession(value: unknown): Session {
 }
 
 export function SessionGate({ children }: PropsWithChildren) {
+  const [showUsers, setShowUsers] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -65,7 +68,7 @@ export function SessionGate({ children }: PropsWithChildren) {
       const response = await fetch("/api/auth/v1/logout", {
         method: "POST", headers: { "X-FC-Request": "logout" }, cache: "no-store",
       });
-      if (response.ok || response.status === 401) setSession(null);
+      if (response.ok || response.status === 401) { setSession(null); setShowUsers(false); }
       else setError("Sign-out failed. Please retry.");
     } catch {
       setError("Sign-out failed. Please retry.");
@@ -77,10 +80,11 @@ export function SessionGate({ children }: PropsWithChildren) {
   if (checking) return <p role="status">Checking session…</p>;
   if (session) return <>
     <div className="session-bar"><span>{session.username} · {session.role}</span>
+      {session.role === "Administrator" && <button type="button" onClick={() => setShowUsers(value => !value)}>{showUsers ? "Dashboard" : "User Master"}</button>}
       <button type="button" disabled={busy} onClick={() => void logout()}>Sign out</button>
       {error && <p role="alert">{error}</p>}
     </div>
-    {children}
+    {showUsers && session.role === "Administrator" ? <UserMaster /> : children}
   </>;
   return <main className="session-login">
     <form onSubmit={event => void login(event)}>
