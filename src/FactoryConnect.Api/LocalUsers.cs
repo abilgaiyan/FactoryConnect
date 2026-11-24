@@ -101,6 +101,49 @@ internal sealed class LocalUsers(string connectionString)
         return (long)(await cmd.ExecuteScalarAsync(ct) ?? 0L) == 1;
     }
 
+    internal sealed record UserSummary(Guid UserId, string Username, string Role, bool IsActive);
+
+    internal async Task<IReadOnlyList<UserSummary>> ListAsync(CancellationToken ct)
+    {
+        var users = new List<UserSummary>();
+        await using var db = new SqlConnection(connectionString);
+        await db.OpenAsync(ct);
+        await using var cmd = new SqlCommand(
+            "SELECT UserId, Username, RoleName, IsActive FROM dbo.LocalUser ORDER BY Username", db);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            users.Add(new UserSummary(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3)));
+        return users;
+    }
+
+    internal async Task<Guid> CreateAsync(string username, string password, string role, CancellationToken ct)
+    {
+        if (!ValidUsername(username) || password.Length is < 14 or > 256 ||
+            role is not ("Administrator" or "Supervisor" or "Manager"))
+            throw new ArgumentException("Invalid username, password or role.");
+        var id = Guid.NewGuid();
+        byte[] salt = RandomNumberGenerator.GetBytes(SaltBytes);
+        byte[] hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, HashAlgorithmName.SHA256, HashBytes);
+        try
+        {
+            await using var db = new SqlConnection(connectionString);
+            await db.OpenAsync(ct);
+            await using var cmd = new SqlCommand("""
+                INSERT INTO dbo.LocalUser (UserId, Username, PasswordSalt, PasswordHash, Iterations, RoleName, IsActive)
+                VALUES (@id, @username, @salt, @hash, @iterations, @role, 1)
+                """, db);
+            cmd.Parameters.Add("@id", System.Data.SqlDbType.UniqueIdentifier).Value = id;
+            cmd.Parameters.Add("@username", System.Data.SqlDbType.NVarChar, 64).Value = username;
+            cmd.Parameters.Add("@salt", System.Data.SqlDbType.VarBinary, SaltBytes).Value = salt;
+            cmd.Parameters.Add("@hash", System.Data.SqlDbType.VarBinary, HashBytes).Value = hash;
+            cmd.Parameters.Add("@iterations", System.Data.SqlDbType.Int).Value = Iterations;
+            cmd.Parameters.Add("@role", System.Data.SqlDbType.NVarChar, 32).Value = role;
+            await cmd.ExecuteNonQueryAsync(ct);
+            return id;
+        }
+        finally { CryptographicOperations.ZeroMemory(salt); CryptographicOperations.ZeroMemory(hash); }
+    }
+
     private static bool ValidUsername(string username) =>
         username.Length is >= 3 and <= 64 &&
         username.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
