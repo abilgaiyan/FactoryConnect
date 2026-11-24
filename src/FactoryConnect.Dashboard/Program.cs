@@ -17,12 +17,20 @@ builder.Services
     .Bind(builder.Configuration.GetSection(DashboardOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddHttpClient(ReportingGateway.ClientName, client =>
-    client.Timeout = Timeout.InfiniteTimeSpan);
+    client.Timeout = Timeout.InfiniteTimeSpan)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false });
 builder.Services.AddSingleton<ReportingGateway>();
 
 var app = builder.Build();
 
 app.UseStaticFiles();
+
+app.MapPost("/api/auth/v1/login", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/login", HttpMethod.Post));
+app.MapGet("/api/auth/v1/me", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/me", HttpMethod.Get));
+app.MapPost("/api/auth/v1/logout", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/logout", HttpMethod.Post));
 
 app.MapGet("/api/commissioning/v1/snapshot", async (
     HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
