@@ -71,7 +71,15 @@ internal static class SqlRepositorySchemaDescriptors
 
     public static SqlSchemaDescriptor Post031 { get; } = SqlRepositoryPost031SchemaDescriptor.Create(Post030);
 
-    public static SqlSchemaDescriptor Current { get; } = SqlRepositoryPost040SchemaDescriptor.Create(Post031);
+    public static SqlSchemaDescriptor Post040 { get; } = SqlRepositoryPost040SchemaDescriptor.Create(Post031);
+
+    public static SqlSchemaDescriptor Current { get; } = new(
+        Post040.Tables.Select(table => table.Name == new SqlObjectName("dbo", "MachineObservation")
+            ? table with { Indexes = [.. table.Indexes,
+                Index("IX_MachineObservation_CncEvidence",
+                    ["MachineId", "StreamKeyBinary", "Address", "ObservedAt", "Position"],
+                    ["InstanceId", "Quality"])] }
+            : table).ToImmutableArray());
 
     private static SqlSchemaDescriptor CreatePost004() => new(
     [
