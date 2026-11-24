@@ -24,13 +24,15 @@ internal sealed class LocalUsers(string connectionString)
             await db.OpenAsync(ct);
             await using var cmd = new SqlCommand("""
                 INSERT INTO dbo.LocalUser (UserId, Username, PasswordSalt, PasswordHash, Iterations, RoleName, IsActive)
-                VALUES (NEWID(), @username, @salt, @hash, @iterations, 'Administrator', 1)
+                SELECT NEWID(), @username, @salt, @hash, @iterations, 'Administrator', 1
+                WHERE NOT EXISTS (SELECT 1 FROM dbo.LocalUser WITH (UPDLOCK, HOLDLOCK))
                 """, db);
             cmd.Parameters.Add("@username", System.Data.SqlDbType.NVarChar, 64).Value = username;
             cmd.Parameters.Add("@salt", System.Data.SqlDbType.VarBinary, SaltBytes).Value = salt;
             cmd.Parameters.Add("@hash", System.Data.SqlDbType.VarBinary, HashBytes).Value = hash;
             cmd.Parameters.Add("@iterations", System.Data.SqlDbType.Int).Value = Iterations;
-            await cmd.ExecuteNonQueryAsync(ct);
+            if (await cmd.ExecuteNonQueryAsync(ct) != 1)
+                throw new InvalidOperationException("Initial administrator provisioning is only available for an empty user master.");
         }
         finally { CryptographicOperations.ZeroMemory(salt); CryptographicOperations.ZeroMemory(hash); }
     }
