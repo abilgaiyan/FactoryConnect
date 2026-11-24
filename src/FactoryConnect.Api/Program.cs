@@ -8,6 +8,20 @@ using FactoryConnect.Edge;
 using FactoryConnect.Infrastructure;
 using FactoryConnect.Persistence;
 
+if (args.Length > 0 && args[0] == "--create-admin")
+{
+    if (args.Length != 2)
+        throw new ArgumentException("Usage: --create-admin <username>");
+    var configuration = WebApplication.CreateBuilder(Array.Empty<string>()).Configuration;
+    var connectionString = LocalUsers.ConnectionString(configuration)
+        ?? throw new InvalidOperationException("SQL connection configuration is required.");
+    var password = Environment.GetEnvironmentVariable("FC_INITIAL_ADMIN_PASSWORD")
+        ?? throw new InvalidOperationException("FC_INITIAL_ADMIN_PASSWORD is required.");
+    await new LocalUsers(connectionString).CreateAdminAsync(args[1], password, CancellationToken.None);
+    Console.WriteLine("Initial administrator created.");
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi(options =>
