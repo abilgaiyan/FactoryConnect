@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -66,7 +67,7 @@ public static class MachineEvidenceProfileEndpoints
             !configuration.GetValue<bool>("MachineEvidenceProfileLocal:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local machine profile writes disabled");
         var connectionString = configuration["MachineEvidenceProfileLocal:WriteConnectionString"];
-        var actor = configuration["MachineEvidenceProfileLocal:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(connectionString) ||
             string.IsNullOrWhiteSpace(actor) || actor.Length > 200)
             return Results.Problem(statusCode: 503, title: "Machine profile writer not configured");
