@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Persistence.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -15,11 +16,11 @@ public static class MachineEvidenceProfileEndpoints
     public static IEndpointRouteBuilder MapMachineEvidenceProfileEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/commissioning/v1/machines/{machineId:guid}/evidence-profiles",
-            ListAsync).WithName("ListLocalMachineEvidenceProfiles").WithGroupName("commissioning-local-v1");
+            ListAsync).RequireAuthorization("OperationalRead").WithName("ListLocalMachineEvidenceProfiles").WithGroupName("commissioning-local-v1");
         endpoints.MapGet("/api/commissioning/v1/machines/{machineId:guid}/evidence-profile",
-            ReadEffectiveAsync).WithName("ReadLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
+            ReadEffectiveAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
         endpoints.MapPost("/api/commissioning/v1/machines/{machineId:guid}/evidence-profiles",
-            AppendAsync).WithName("AppendLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
+            AppendAsync).RequireAuthorization("AdministratorWrite").WithName("AppendLocalMachineEvidenceProfile").WithGroupName("commissioning-local-v1");
         return endpoints;
     }
 
@@ -66,7 +67,7 @@ public static class MachineEvidenceProfileEndpoints
             !configuration.GetValue<bool>("MachineEvidenceProfileLocal:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local machine profile writes disabled");
         var connectionString = configuration["MachineEvidenceProfileLocal:WriteConnectionString"];
-        var actor = configuration["MachineEvidenceProfileLocal:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(connectionString) ||
             string.IsNullOrWhiteSpace(actor) || actor.Length > 200)
             return Results.Problem(statusCode: 503, title: "Machine profile writer not configured");

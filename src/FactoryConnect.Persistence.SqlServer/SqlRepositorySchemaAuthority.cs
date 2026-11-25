@@ -12,6 +12,7 @@ internal static class SqlRepositorySchemaAuthority
         Table("AssumedBreakConfigurationSnapshot"),
         Table("ContextualizedActivityOutput"),
         Table("DerivedOeeAssessment"),
+        Table("LocalUser"),
         Table("MachineActivityPeriodHistory"),
         Table("MachineObservation"),
         Table("MachineProductionEvidenceProfile"),

@@ -18,11 +18,11 @@ public sealed class SqlServerMigration021IntegrationTests
         await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
         await AssertCurrent(connection);
         if (upgrade) Assert.Equal(previous, await Prefix(connection));
-        var history = await Scalar(connection, "SELECT STRING_AGG(CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127)),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;");
+        var history = await Scalar(connection, "SELECT STRING_AGG(CONVERT(nvarchar(max), CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127))),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;");
         Assert.Equal(SqlMigrationTestExpectations.CurrentMigrationIds.Length, (int)(await Scalar(connection, "SELECT COUNT(*) FROM dbo.FactoryConnectMigrationHistory;"))!);
         Assert.Equal(0, (int)(await Scalar(connection, "SELECT (SELECT COUNT(*) FROM dbo.OperationalMetricConflictWitnessArchive)+(SELECT COUNT(*) FROM dbo.OperationalMetricPublicationResultArchive)+(SELECT COUNT(*) FROM dbo.OperationalMetricResultWitnessReference);"))!);
         await SqlServerMigrationEngine.CreateDefault().ApplyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
-        Assert.Equal(history, await Scalar(connection, "SELECT STRING_AGG(CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127)),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;"));
+        Assert.Equal(history, await Scalar(connection, "SELECT STRING_AGG(CONVERT(nvarchar(max), CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127))),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory;"));
         var compatibility = await SqlServerRuntimeSchemaCompatibilityVerifier.CreateDefault().VerifyAsync(connection, TimeSpan.FromMinutes(2), CancellationToken.None);
         Assert.Equal(SqlRuntimeCompatibilityClassification.Compatible, compatibility.Classification);
     }
@@ -120,6 +120,6 @@ public sealed class SqlServerMigration021IntegrationTests
         var comparison = SqlSchemaComparator.Compare(expected, actual);
         Assert.True(comparison.IsExactMatch, string.Join(Environment.NewLine, comparison.Differences));
     }
-    private static async Task<string> Prefix(SqlConnection c) => (string)(await Scalar(c, "SELECT STRING_AGG(CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127)),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId<=20;"))!;
+    private static async Task<string> Prefix(SqlConnection c) => (string)(await Scalar(c, "SELECT STRING_AGG(CONVERT(nvarchar(max), CONCAT(MigrationId,':',CanonicalChecksum,':',CONVERT(nvarchar(48),AppliedAtUtc,127))),',') WITHIN GROUP (ORDER BY MigrationId) FROM dbo.FactoryConnectMigrationHistory WHERE MigrationId<=20;"))!;
     private static async Task<object?> Scalar(SqlConnection c, string sql) { await using var command = c.CreateCommand(); command.CommandText = sql; return await command.ExecuteScalarAsync(); }
 }

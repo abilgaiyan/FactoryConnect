@@ -20,7 +20,7 @@ public sealed class ApiMachineCounterReportTests
     private static DurableMachineObservation Sample(ulong position) => new(new(position), Stream, 1, position,
         new MachineObservation { MachineId = Machine, Source = "mtconnect", Address = "part_count", Type = SignalType.Numeric, Value = (decimal)position, Timestamp = Start.AddTicks((long)position) });
     private static WebApplicationFactory<Program> Factory(ICurrentStateAuthorityCutProvider cuts, IDurableObservationReader reader) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        new WebApplicationFactory<Program>().WithReportingIdentity().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ICurrentStateOwnerResolver>(); services.AddSingleton<ICurrentStateOwnerResolver>(new Owner());
             services.RemoveAll<ICurrentStateAuthorityCutProvider>(); services.AddSingleton(cuts);

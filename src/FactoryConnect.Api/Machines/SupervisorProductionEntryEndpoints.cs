@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FactoryConnect.Abstractions;
 using FactoryConnect.Core.Machines;
 using FactoryConnect.Api.Commissioning;
@@ -20,52 +21,52 @@ public static class SupervisorProductionEntryEndpoints
 {
     public static IEndpointRouteBuilder MapSupervisorProductionEntryEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/entries", ReadAsync)
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/entries", ReadAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadSupervisorProductionEntries")
             .WithGroupName("supervisor-local-v1")
             .Produces<IReadOnlyList<SupervisorProductionEntryRecord>>()
             .ProducesProblem(403)
             .ProducesProblem(503);
-        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries", CreateAsync)
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries", CreateAsync).RequireAuthorization("SupervisorWrite")
             .WithName("CreateLocalSupervisorProductionEntry")
             .WithGroupName("supervisor-local-v1")
             .Produces<SupervisorProductionEntryRecord>(201)
             .ProducesProblem(403)
             .ProducesProblem(409)
             .ProducesProblem(503);
-        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/reviews", ReadReviewsAsync)
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/reviews", ReadReviewsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadLocalSupervisorReviews")
             .WithGroupName("supervisor-local-v1");
-        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/review", ReviewAsync)
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/review", ReviewAsync).RequireAuthorization("SupervisorWrite")
             .WithName("DecideLocalSupervisorReview")
             .WithGroupName("supervisor-local-v1");
-        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions", ReadRevisionsAsync)
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions", ReadRevisionsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadLocalSupervisorRevisions").WithGroupName("supervisor-local-v1");
-        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions", CreateRevisionAsync)
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries/{entryId:guid}/revisions", CreateRevisionAsync).RequireAuthorization("SupervisorWrite")
             .WithName("CreateLocalSupervisorRevision").WithGroupName("supervisor-local-v1");
-        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/revision-reviews", ReadRevisionReviewsAsync)
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/revision-reviews", ReadRevisionReviewsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadLocalRevisionReviews").WithGroupName("supervisor-local-v1");
-        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/revisions/{revisionId:guid}/review", ReviewRevisionAsync)
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/revisions/{revisionId:guid}/review", ReviewRevisionAsync).RequireAuthorization("SupervisorWrite")
             .WithName("DecideLocalRevisionReview").WithGroupName("supervisor-local-v1");
-        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/downtime-reviews", ReadDowntimeReviewsAsync)
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/downtime-reviews", ReadDowntimeReviewsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadLocalSupervisorDowntimeReviews")
             .WithGroupName("supervisor-local-v1");
-        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations/{explanationId:guid}/review", ReviewDowntimeExplanationAsync)
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations/{explanationId:guid}/review", ReviewDowntimeExplanationAsync).RequireAuthorization("SupervisorWrite")
             .WithName("ReviewLocalSupervisorDowntimeExplanation")
             .WithGroupName("supervisor-local-v1");
-        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations", CreateDowntimeExplanationAsync)
+        endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations", CreateDowntimeExplanationAsync).RequireAuthorization("SupervisorWrite")
             .WithName("CreateLocalSupervisorDowntimeExplanation")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/downtime-explanations",
-            ReadDowntimeExplanationsAsync)
+            ReadDowntimeExplanationsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadLocalSupervisorDowntimeExplanations")
             .WithGroupName("supervisor-local-v1");
-        endpoints.MapGet("/api/supervisor/v1/downtime-reasons", ReadDowntimeReasonsAsync)
+        endpoints.MapGet("/api/supervisor/v1/downtime-reasons", ReadDowntimeReasonsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadLocalSupervisorDowntimeReasons")
             .WithGroupName("supervisor-local-v1");
-        endpoints.MapGet("/api/supervisor/v1/downtime-reasons/all", ReadAllDowntimeReasonsAsync)
+        endpoints.MapGet("/api/supervisor/v1/downtime-reasons/all", ReadAllDowntimeReasonsAsync).RequireAuthorization("OperationalRead")
             .WithName("ReadAllLocalDowntimeReasons").WithGroupName("supervisor-local-v1");
-        endpoints.MapPut("/api/supervisor/v1/downtime-reasons/{reasonCode}", UpsertDowntimeReasonAsync)
+        endpoints.MapPut("/api/supervisor/v1/downtime-reasons/{reasonCode}", UpsertDowntimeReasonAsync).RequireAuthorization("AdministratorWrite")
             .WithName("UpsertLocalDowntimeReason").WithGroupName("supervisor-local-v1");
         return endpoints;
     }
@@ -151,7 +152,7 @@ public static class SupervisorProductionEntryEndpoints
             !configuration.GetValue<bool>("SupervisorLocalEntry:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local supervisor writes are disabled");
 
-        var actor = configuration["SupervisorLocalEntry:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalEntry:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -229,7 +230,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local review decisions are disabled");
-        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var reviewer = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -315,7 +316,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalRevision:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local correction writes are disabled");
-        var actor = configuration["SupervisorLocalRevision:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalRevision:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -379,7 +380,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local review decisions are disabled");
-        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var reviewer = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -446,7 +447,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalDowntime:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local downtime explanation writes disabled");
-        var actor = configuration["SupervisorLocalDowntime:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalDowntime:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))
@@ -545,7 +546,7 @@ public static class SupervisorProductionEntryEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalReview:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local downtime review writes disabled");
-        var reviewer = configuration["SupervisorLocalReview:ReviewerId"];
+        var reviewer = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalReview:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(reviewer) || reviewer.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))

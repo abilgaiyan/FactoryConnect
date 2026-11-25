@@ -37,6 +37,12 @@ public sealed class ReportingGateway(
                 .ConfigureAwait(false);
 
             context.Response.StatusCode = (int)response.StatusCode;
+            if (relativePath is "api/auth/v1/login" or "api/auth/v1/logout" or "api/auth/v1/me" or "api/auth/v1/users" || relativePath.StartsWith("api/auth/v1/users/", StringComparison.Ordinal))
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                if (response.Headers.TryGetValues(HeaderNames.SetCookie, out var cookies))
+                    context.Response.Headers.Append(HeaderNames.SetCookie, cookies.ToArray());
+            }
             if (response.Content is not { } responseContent)
             {
                 return;
@@ -100,6 +106,11 @@ public sealed class ReportingGateway(
         {
             request.Headers.TryAddWithoutValidation(HeaderNames.Accept, accept.ToArray());
         }
+
+        if (context.Request.Cookies.TryGetValue("fc1.session", out var session))
+            request.Headers.TryAddWithoutValidation(HeaderNames.Cookie, "fc1.session=" + session);
+        if (context.Request.Headers.TryGetValue("X-FC-Request", out var action))
+            request.Headers.TryAddWithoutValidation("X-FC-Request", action.ToArray());
 
         return request;
     }

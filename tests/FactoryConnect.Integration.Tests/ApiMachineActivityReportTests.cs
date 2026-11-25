@@ -20,7 +20,7 @@ public sealed class ApiMachineActivityReportTests
     private static object Request => new { fromInclusive = Start, toExclusive = Start.AddHours(1) };
 
     private static WebApplicationFactory<Program> Factory(ICurrentStateAuthorityCutProvider cuts, IProductionContextActivityReader reader) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        new WebApplicationFactory<Program>().WithReportingIdentity().WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ICurrentStateOwnerResolver>(); services.AddSingleton<ICurrentStateOwnerResolver>(new Owner());
             services.RemoveAll<ICurrentStateAuthorityCutProvider>(); services.AddSingleton(cuts);

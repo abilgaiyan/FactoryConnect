@@ -17,12 +17,28 @@ builder.Services
     .Bind(builder.Configuration.GetSection(DashboardOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddHttpClient(ReportingGateway.ClientName, client =>
-    client.Timeout = Timeout.InfiniteTimeSpan);
+    client.Timeout = Timeout.InfiniteTimeSpan)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false });
 builder.Services.AddSingleton<ReportingGateway>();
 
 var app = builder.Build();
 
 app.UseStaticFiles();
+
+app.MapPost("/api/auth/v1/login", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/login", HttpMethod.Post));
+app.MapGet("/api/auth/v1/users", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/users", HttpMethod.Get));
+app.MapPost("/api/auth/v1/users", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/users", HttpMethod.Post));
+app.MapPut("/api/auth/v1/users/{userId:guid}/access", (Guid userId, HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, $"api/auth/v1/users/{userId:D}/access", HttpMethod.Put));
+app.MapPut("/api/auth/v1/users/{userId:guid}/password", (Guid userId, HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, $"api/auth/v1/users/{userId:D}/password", HttpMethod.Put));
+app.MapGet("/api/auth/v1/me", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/me", HttpMethod.Get));
+app.MapPost("/api/auth/v1/logout", (HttpContext context, ReportingGateway gateway) =>
+    gateway.ForwardAsync(context, "api/auth/v1/logout", HttpMethod.Post));
 
 app.MapGet("/api/commissioning/v1/snapshot", async (
     HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
@@ -109,6 +125,9 @@ app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
 // The gateway opt-in and the API's commissioning/write checks are independent.
 string[] supervisorReviewReadPaths =
 [
+    "/api/supervisor/v1/machines/{machineId:guid}/accepted-shift-production",
+    "/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
+    "/api/supervisor/v1/machines/{machineId:guid}/production-entries/{entryId:guid}/qualification-readiness",
     "/api/supervisor/v1/machines/{machineId:guid}/reviews",
     "/api/supervisor/v1/machines/{machineId:guid}/revision-reviews",
     "/api/supervisor/v1/machines/{machineId:guid}/downtime-reviews",

@@ -16,6 +16,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
         "AssumedBreakConfigurationSnapshot",
         "ContextualizedActivityOutput",
         "DerivedOeeAssessment",
+        "LocalUser",
         "MachineActivityPeriodHistory",
         "MachineObservation",
         "MachineProductionEvidenceProfile",
@@ -75,7 +76,7 @@ public sealed class SqlRepositorySchemaAuthorityTests
     {
         var ownedTables = SqlRepositorySchemaAuthority.OwnedObjects.OwnedTables;
 
-        Assert.Equal(60, ownedTables.Length);
+        Assert.Equal(61, ownedTables.Length);
         Assert.All(ownedTables, static table => Assert.Equal("dbo", table.SchemaName));
         Assert.Equal(ExpectedOwnedTableNames, ownedTables.Select(static table => table.ObjectName));
     }

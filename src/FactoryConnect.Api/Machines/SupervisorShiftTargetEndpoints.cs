@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Data;
 using FactoryConnect.Api.Commissioning;
 using FactoryConnect.Abstractions;
@@ -20,19 +21,19 @@ public static class SupervisorShiftTargetEndpoints
         this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
-            ReadAsync).WithName("ReadLocalSupervisorShiftTargets")
+            ReadAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalSupervisorShiftTargets")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
-            CreateAsync).WithName("CreateLocalSupervisorShiftTargetRevision")
+            CreateAsync).RequireAuthorization("AdministratorWrite").WithName("CreateLocalSupervisorShiftTargetRevision")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
-            ReadQuantitySourceCutAsync).WithName("ReadLocalSupervisorQuantitySourceCut")
+            ReadQuantitySourceCutAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalSupervisorQuantitySourceCut")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/production-entries/{entryId:guid}/qualification-readiness",
-            ReadQualificationReadinessAsync).WithName("ReadSupervisorQualificationReadiness")
+            ReadQualificationReadinessAsync).RequireAuthorization("OperationalRead").WithName("ReadSupervisorQualificationReadiness")
             .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-shift-production",
-            ReadAcceptedShiftProductionAsync).WithName("ReadLocalAcceptedShiftProduction")
+            ReadAcceptedShiftProductionAsync).RequireAuthorization("OperationalRead").WithName("ReadLocalAcceptedShiftProduction")
             .WithGroupName("supervisor-local-v1");
         return endpoints;
     }
@@ -236,7 +237,7 @@ public static class SupervisorShiftTargetEndpoints
         if (!CommissioningAccess.Allows(context, configuration) ||
             !configuration.GetValue<bool>("SupervisorLocalShiftTarget:EnableWrites"))
             return Results.Problem(statusCode: 403, title: "Local shift target writes disabled");
-        var actor = configuration["SupervisorLocalShiftTarget:OperatorId"];
+        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var connectionString = configuration["SupervisorLocalShiftTarget:WriteConnectionString"];
         if (string.IsNullOrWhiteSpace(actor) || actor.Length > 200 ||
             string.IsNullOrWhiteSpace(connectionString))

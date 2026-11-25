@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Net;
 using System.Net.Http.Json;
 using FactoryConnect.Api.Machines;
@@ -28,13 +29,22 @@ public sealed class MachineEvidenceProfileEndpointTests
             ["Commissioning:Enabled"] = commissioning.ToString(),
             ["MachineEvidenceProfileLocal:EnableWrites"] = writes.ToString()
         });
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("OperationalRead", policy => policy.RequireRole("Administrator", "Supervisor", "Manager"));
+            options.AddPolicy("AdministratorWrite", policy => policy.RequireRole("Administrator"));
+        });
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         await using var app = builder.Build();
         app.Use(async (context, next) =>
         {
             context.Connection.RemoteIpAddress = IPAddress.Loopback;
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                new[] { new Claim(ClaimTypes.NameIdentifier, Machine.ToString()),
+                    new Claim(ClaimTypes.Role, "Administrator") }, "Test"));
             await next(context);
         });
+        app.UseAuthorization();
         app.MapMachineEvidenceProfileEndpoints();
         await app.StartAsync();
         using var client = app.GetTestClient();
@@ -56,13 +66,22 @@ public sealed class MachineEvidenceProfileEndpointTests
         {
             ["Commissioning:Enabled"] = "true"
         });
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("OperationalRead", policy => policy.RequireRole("Administrator", "Supervisor", "Manager"));
+            options.AddPolicy("AdministratorWrite", policy => policy.RequireRole("Administrator"));
+        });
         builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
         await using var app = builder.Build();
         app.Use(async (context, next) =>
         {
             context.Connection.RemoteIpAddress = IPAddress.Loopback;
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                new[] { new Claim(ClaimTypes.NameIdentifier, Machine.ToString()),
+                    new Claim(ClaimTypes.Role, "Administrator") }, "Test"));
             await next(context);
         });
+        app.UseAuthorization();
         app.MapMachineEvidenceProfileEndpoints();
         await app.StartAsync();
         using var client = app.GetTestClient();

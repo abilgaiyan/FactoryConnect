@@ -7,13 +7,11 @@ param(
     [switch]$DevUi,
     [switch]$ApplyPendingMigrations = $true,
     [bool]$SeparateServiceWindows = $true,
-    [switch]$EnableSupervisorEntries,
-    [switch]$EnableSupervisorShiftTargets,
-    [switch]$EnableSupervisorReviews,
-    [switch]$EnableCncShiftPreview,
-    [string]$SupervisorReviewerId,
-    [switch]$EnableDowntimeReasonAdministration,
-    [string]$SupervisorOperatorId,
+    [switch]$EnableSupervisorEntries = $true,
+    [switch]$EnableSupervisorShiftTargets = $true,
+    [switch]$EnableSupervisorReviews = $true,
+    [switch]$EnableCncShiftPreview = $true,
+    [switch]$EnableDowntimeReasonAdministration = $true,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
     [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
     [string]$MoxaDeviceKey = 'MOXA-001',
@@ -29,7 +27,7 @@ $settingsPath = Join-Path $PSScriptRoot 'development.settings.json'
 if (Test-Path -LiteralPath $settingsPath) {
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
     $settingsMap = @{
-        SqlInstance = 'SqlInstance'; Database = 'Database'; SupervisorOperatorId = 'SupervisorOperatorId';
+        SqlInstance = 'SqlInstance'; Database = 'Database';
         UiPort = 'UiPort'; ApiPort = 'ApiPort'; DashboardPort = 'DashboardPort';
         Gg003DeviceKey = 'Gg003DeviceKey'; MoxaDeviceKey = 'MoxaDeviceKey'
     }
@@ -41,10 +39,11 @@ if (Test-Path -LiteralPath $settingsPath) {
             }
         }
     }
-    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableDowntimeReasonAdministration')) {
+    foreach ($name in @('Dashboard','ApiOnly','DevUi','ApplyPendingMigrations','SeparateServiceWindows','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableSupervisorReviews','EnableCncShiftPreview','EnableDowntimeReasonAdministration')) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             $property = $settings.PSObject.Properties[$name]
             if ($null -ne $property -and $null -ne $property.Value) {
+                if ($property.Value -isnot [bool]) { throw "Development setting '$name' must be a JSON boolean." }
                 Set-Variable -Name $name -Value ([bool]$property.Value)
             }
         }
@@ -124,21 +123,14 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
 }
-if ($EnableCncShiftPreview -and (-not $Dashboard -and -not $DevUi)) {
-    throw 'CNC preview requires the Dashboard gateway (-Dashboard or -DevUi).'
+if ($ApiOnly -and -not $PSBoundParameters.ContainsKey('EnableCncShiftPreview')) {
+    $EnableCncShiftPreview = $false
+}
+if ($EnableCncShiftPreview -and $ApiOnly) {
+    throw 'CNC preview requires the Dashboard gateway; remove -ApiOnly.'
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
-if ($EnableSupervisorReviews -and
-    ([string]::IsNullOrWhiteSpace($SupervisorReviewerId) -or $SupervisorReviewerId.Length -gt 200)) {
-    throw '-EnableSupervisorReviews requires -SupervisorReviewerId (1-200 characters).'
-}
-if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and [string]::IsNullOrWhiteSpace($SupervisorOperatorId)) {
-    throw '-EnableSupervisorEntries requires -SupervisorOperatorId for audit attribution.'
-}
-if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and $SupervisorOperatorId.Length -gt 200) {
-    throw 'SupervisorOperatorId must not exceed 200 characters.'
-}
 $startDashboard = -not $ApiOnly
 if ($DevUi -and ($UiPort -eq $ApiPort -or $UiPort -eq $DashboardPort)) { throw 'Vite, API and Dashboard ports must differ.' }
 if ($startDashboard -and $ApiPort -eq $DashboardPort) { throw 'API and Dashboard ports must differ.' }
@@ -193,6 +185,16 @@ if ($ApplyPendingMigrations -and $updateability -eq 'READ_WRITE') {
 } elseif ($ApplyPendingMigrations) {
     Write-Host 'Database is read-only; skipping migrations. API compatibility verification still applies.'
 }
+# Authentication requires an explicitly provisioned local user master.
+$authConnection = [System.Data.SqlClient.SqlConnection]::new($connectionString)
+try {
+    $authConnection.Open()
+    $authCommand = $authConnection.CreateCommand()
+    $authCommand.CommandText = "SELECT COUNT_BIG(*) FROM dbo.LocalUser WHERE IsActive = 1 AND RoleName = N'Administrator'"
+    if ([long]$authCommand.ExecuteScalar() -eq 0) {
+        Write-Warning 'No active administrator exists. Provision the initial administrator using the API --create-admin command before signing in.'
+    }
+} finally { $authConnection.Dispose() }
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
 if ($DevUi) { Assert-PortAvailable $UiPort }
@@ -228,17 +230,18 @@ try {
     }
     if ($EnableSupervisorEntries) {
         $apiEnvironment['SupervisorLocalEntry__EnableWrites'] = 'true'
-        $apiEnvironment['SupervisorLocalEntry__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
+        $apiEnvironment['SupervisorLocalRevision__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalRevision__WriteConnectionString'] = $connectionString
+        $apiEnvironment['SupervisorLocalDowntime__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalDowntime__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorReviews) {
         $apiEnvironment['SupervisorLocalReview__EnableWrites'] = 'true'
-        $apiEnvironment['SupervisorLocalReview__ReviewerId'] = $SupervisorReviewerId
         $apiEnvironment['SupervisorLocalReview__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorShiftTargets) {
         $apiEnvironment['SupervisorLocalShiftTarget__EnableWrites'] = 'true'
-        $apiEnvironment['SupervisorLocalShiftTarget__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalShiftTarget__WriteConnectionString'] = $connectionString
     }
     if ($EnableDowntimeReasonAdministration) {
@@ -261,7 +264,7 @@ try {
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
         if ($EnableCncShiftPreview) { $dashboardEnvironment['CncShiftPreview__EnableGateway'] = 'true' }
-        if ($DevUi -or $EnableSupervisorShiftTargets) {
+        if ($EnableSupervisorShiftTargets) {
             $dashboardEnvironment['SupervisorLocalShiftTarget__EnableGateway'] = 'true'
         }
         if ($EnableDowntimeReasonAdministration) {
@@ -295,7 +298,7 @@ try {
         }
         $dashboardProcess = Start-Service $dashboardProject $dashUrl $dashboardEnvironment $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
-        Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
+        Write-Host "Dashboard gateway: $dashUrl (120-second upstream timeout)"
         Write-Host "React UI (built): $dashUrl/"
         if ($DevUi) {
             $clientDirectory = Join-Path $root 'src/FactoryConnect.Dashboard/ClientApp'
@@ -321,9 +324,9 @@ try {
         }
     }
     if ($EnableSupervisorEntries) {
-        Write-Host 'Local supervisor entry writes requested for explicit operator identity; API commissioning access rules still apply.'
+        Write-Host 'Local supervisor entry writes enabled; authenticated user identity and API commissioning access rules apply.'
     } else {
-        Write-Host 'Supervisor writes are disabled (default). Use -EnableSupervisorEntries and -SupervisorOperatorId to opt in.'
+        Write-Host 'Supervisor entry writes are explicitly disabled.'
     }
     Write-Host 'Ctrl+C stops the processes started by this launcher.'
     while ($true) {

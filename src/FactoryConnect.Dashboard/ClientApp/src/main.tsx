@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App.tsx";
+import { SessionGate } from "./presentation/SessionGate.tsx";
 import { createDashboardApplicationRuntime } from "./application/application-runtime.ts";
 import "./presentation/dashboard.css";
 import "./presentation/daily-report.css";
@@ -13,4 +14,4 @@ if (rootElement === null) {
 }
 
 const runtime = await createDashboardApplicationRuntime(window.location.origin);
-  createRoot(rootElement).render(<StrictMode><App runtime={runtime} /></StrictMode>);
+  createRoot(rootElement).render(<StrictMode><SessionGate><App runtime={runtime} /></SessionGate></StrictMode>);
