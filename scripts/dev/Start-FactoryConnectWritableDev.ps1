@@ -39,7 +39,7 @@ if (Test-Path -LiteralPath $settingsPath) {
             }
         }
     }
-    foreach ($name in @('Dashboard','ApiOnly','DevUi','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableDowntimeReasonAdministration')) {
+    foreach ($name in @('Dashboard','ApiOnly','DevUi','ApplyPendingMigrations','SeparateServiceWindows','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableSupervisorReviews','EnableCncShiftPreview','EnableDowntimeReasonAdministration')) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             $property = $settings.PSObject.Properties[$name]
             if ($null -ne $property -and $null -ne $property.Value) {
@@ -122,8 +122,8 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
 }
-if ($EnableCncShiftPreview -and (-not $Dashboard -and -not $DevUi)) {
-    throw 'CNC preview requires the Dashboard gateway (-Dashboard or -DevUi).'
+if ($EnableCncShiftPreview -and $ApiOnly) {
+    throw 'CNC preview requires the Dashboard gateway; remove -ApiOnly.'
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
