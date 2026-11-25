@@ -18,7 +18,7 @@ public sealed class OperationalMetricReportingCompositionTests
     [Fact]
     public async Task ProductionProgramPreservesScopesMachineIsolationAndSeekPagination()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>().WithReportingIdentity();
         var providerServices = factory.Services.GetRequiredService<PersistenceProviderServices>();
         var store = Assert.IsType<InMemoryOperationalMetricProjectionStore>(
             providerServices.OperationalMetricProjectionStore);
