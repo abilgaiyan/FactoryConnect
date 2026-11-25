@@ -13,7 +13,7 @@ public sealed class OperationalMetricUnpartitionedContextTransportTests
     [Fact]
     public async Task UnpartitionedOnlyCannotBeCombinedWithContextIdentityOverHttp()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>().WithReportingIdentity();
         using var client = factory.CreateClient();
         var body = new
         {
