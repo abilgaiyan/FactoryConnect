@@ -185,6 +185,16 @@ if ($ApplyPendingMigrations -and $updateability -eq 'READ_WRITE') {
 } elseif ($ApplyPendingMigrations) {
     Write-Host 'Database is read-only; skipping migrations. API compatibility verification still applies.'
 }
+# Authentication requires an explicitly provisioned local user master.
+$authConnection = [System.Data.SqlClient.SqlConnection]::new($connectionString)
+try {
+    $authConnection.Open()
+    $authCommand = $authConnection.CreateCommand()
+    $authCommand.CommandText = "SELECT COUNT_BIG(*) FROM dbo.LocalUser WHERE IsActive = 1 AND RoleName = N'Administrator'"
+    if ([long]$authCommand.ExecuteScalar() -eq 0) {
+        Write-Warning 'No active administrator exists. Provision the initial administrator using the API --create-admin command before signing in.'
+    }
+} finally { $authConnection.Dispose() }
 Assert-PortAvailable $ApiPort
 if ($startDashboard) { Assert-PortAvailable $DashboardPort }
 if ($DevUi) { Assert-PortAvailable $UiPort }
