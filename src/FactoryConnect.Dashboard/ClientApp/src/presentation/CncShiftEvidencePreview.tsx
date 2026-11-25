@@ -20,8 +20,6 @@ interface PreviewResponse {
   };
 }
 export function CncShiftEvidencePreview({ scope }: { readonly scope: ShiftScope }) {
-  const [address, setAddress] = useState("");
-  const [streamKeyHex, setStreamKeyHex] = useState("");
   const [result, setResult] = useState<PreviewResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -38,13 +36,11 @@ export function CncShiftEvidencePreview({ scope }: { readonly scope: ShiftScope 
           shiftId: scope.shiftId,
           startsAtUtc: scope.startsAtUtc,
           endsAtUtc: scope.endsAtUtc,
-          counterAddress: address,
-          streamKeyHex,
         }),
       });
       if (!response.ok) throw new Error(response.status === 404
         ? "CNC preview is not enabled on this installation."
-        : `CNC evidence unavailable (HTTP ${response.status}).`);
+        : response.status === 422 ? "CNC evidence unavailable for this shift. Ask an administrator to check counter configuration and evidence coverage." : `CNC evidence unavailable (HTTP ${response.status}).`);
       const payload = await response.json() as PreviewResponse;
       setResult(payload);
     } catch (cause) {
@@ -55,10 +51,8 @@ export function CncShiftEvidencePreview({ scope }: { readonly scope: ShiftScope 
   }
   return <section aria-label="Provisional CNC shift evidence" className="supervisor-detail">
     <h2>CNC shift evidence (provisional)</h2>
-    <p>Diagnostic only. These counts are not accepted production and do not feed OEE.</p>
+    <p>Uses the configured counter and current acquisition stream as diagnostic candidates. These counts are not accepted production and do not feed OEE.</p>
     <form onSubmit={event => { void load(event); }}>
-      <label>Counter address <input required value={address} onChange={event => setAddress(event.currentTarget.value)} /></label>
-      <label>Exact stream key (hexadecimal) <input required pattern="[0-9a-fA-F]+" value={streamKeyHex} onChange={event => setStreamKeyHex(event.currentTarget.value)} /></label>
       <button type="submit" disabled={loading}>{loading ? "Loading…" : "Inspect CNC evidence"}</button>
     </form>
     {error && <p role="alert">{error}</p>}
