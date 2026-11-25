@@ -7,11 +7,11 @@ param(
     [switch]$DevUi,
     [switch]$ApplyPendingMigrations = $true,
     [bool]$SeparateServiceWindows = $true,
-    [switch]$EnableSupervisorEntries,
-    [switch]$EnableSupervisorShiftTargets,
-    [switch]$EnableSupervisorReviews,
-    [switch]$EnableCncShiftPreview,
-    [switch]$EnableDowntimeReasonAdministration,
+    [switch]$EnableSupervisorEntries = $true,
+    [switch]$EnableSupervisorShiftTargets = $true,
+    [switch]$EnableSupervisorReviews = $true,
+    [switch]$EnableCncShiftPreview = $true,
+    [switch]$EnableDowntimeReasonAdministration = $true,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
     [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
     [string]$MoxaDeviceKey = 'MOXA-001',
@@ -122,6 +122,9 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
 }
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
     throw 'SqlInstance and Database are required.'
+}
+if ($ApiOnly -and -not $PSBoundParameters.ContainsKey('EnableCncShiftPreview')) {
+    $EnableCncShiftPreview = $false
 }
 if ($EnableCncShiftPreview -and $ApiOnly) {
     throw 'CNC preview requires the Dashboard gateway; remove -ApiOnly.'
@@ -251,7 +254,7 @@ try {
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
         if ($EnableCncShiftPreview) { $dashboardEnvironment['CncShiftPreview__EnableGateway'] = 'true' }
-        if ($DevUi -or $EnableSupervisorShiftTargets) {
+        if ($EnableSupervisorShiftTargets) {
             $dashboardEnvironment['SupervisorLocalShiftTarget__EnableGateway'] = 'true'
         }
         if ($EnableDowntimeReasonAdministration) {
@@ -311,9 +314,9 @@ try {
         }
     }
     if ($EnableSupervisorEntries) {
-        Write-Host 'Local supervisor entry writes requested; authenticated user identity and API commissioning access rules apply.'
+        Write-Host 'Local supervisor entry writes enabled; authenticated user identity and API commissioning access rules apply.'
     } else {
-        Write-Host 'Supervisor writes are disabled (default). Use -EnableSupervisorEntries to opt in.'
+        Write-Host 'Supervisor entry writes are explicitly disabled.'
     }
     Write-Host 'Ctrl+C stops the processes started by this launcher.'
     while ($true) {
