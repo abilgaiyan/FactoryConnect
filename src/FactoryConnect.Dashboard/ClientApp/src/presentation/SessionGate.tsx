@@ -45,6 +45,7 @@ export function SessionGate({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!session) return;
+    const expectedSession = session;
     const controller = new AbortController();
     async function revalidate() {
       try {
@@ -53,7 +54,7 @@ export function SessionGate({ children }: PropsWithChildren) {
         if (response.ok) {
           const current = parseSession(await response.json());
           if (controller.signal.aborted) return;
-          if (current.username !== session.username || current.role !== session.role) {
+          if (current.username !== expectedSession.username || current.role !== expectedSession.role) {
             setSession(null);
             setShowUsers(false);
             setError("The active account has changed. Please sign in again.");
