@@ -50,7 +50,15 @@ export function SessionGate({ children }: PropsWithChildren) {
       try {
         const response = await fetch("/api/auth/v1/me", { cache: "no-store", signal: controller.signal });
         if (controller.signal.aborted) return;
-        if (response.status === 401 || response.status === 403) {
+        if (response.ok) {
+          const current = parseSession(await response.json());
+          if (controller.signal.aborted) return;
+          if (current.username !== session.username || current.role !== session.role) {
+            setSession(null);
+            setShowUsers(false);
+            setError("The active account has changed. Please sign in again.");
+          }
+        } else if (response.status === 401 || response.status === 403) {
           setSession(null);
           setShowUsers(false);
           setError("Your session has ended. Please sign in again.");
