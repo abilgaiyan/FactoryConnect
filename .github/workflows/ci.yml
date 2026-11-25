@@ -110,9 +110,10 @@ jobs:
           --results-directory TestResults/P2Migration021
 
       - name: Retain registered migration 021 evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: p2-migration-021-evidence
           path: TestResults/P2Migration021
           if-no-files-found: warn
@@ -128,9 +129,10 @@ jobs:
           --results-directory TestResults/P3HistoricalAuthority
 
       - name: Retain P3 historical authority evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: p3-historical-authority-evidence
           path: TestResults/P3HistoricalAuthority
           if-no-files-found: warn
@@ -146,9 +148,10 @@ jobs:
           --results-directory TestResults/P4Archives
 
       - name: Retain P4 archive foundation evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: p4-archive-foundation-evidence
           path: TestResults/P4Archives
           if-no-files-found: warn
@@ -164,9 +167,10 @@ jobs:
           --results-directory TestResults/P4Publication
 
       - name: Retain P4 atomic publication evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: p4-atomic-publication-evidence
           path: TestResults/P4Publication
           if-no-files-found: warn
@@ -182,9 +186,10 @@ jobs:
           --results-directory TestResults/P5VerifiedReads
 
       - name: Retain P5 verified reporting read evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: p5-verified-read-evidence
           path: TestResults/P5VerifiedReads
           if-no-files-found: warn
@@ -200,9 +205,10 @@ jobs:
           --results-directory TestResults/ContainmentComposition
 
       - name: Retain containment composition evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: containment-composition-evidence
           path: TestResults/ContainmentComposition
           if-no-files-found: warn
@@ -232,9 +238,10 @@ jobs:
           --results-directory TestResults/B1Concurrency
 
       - name: Retain B1 concurrency evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: b1-concurrency-evidence
           path: TestResults/B1Concurrency
           if-no-files-found: warn
@@ -258,9 +265,10 @@ jobs:
           --results-directory TestResults/B1SourceLocks
 
       - name: Retain B1 source lock evidence
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: b1-source-lock-evidence
           path: TestResults/B1SourceLocks
           if-no-files-found: warn
