@@ -13,6 +13,16 @@ public sealed class OperationalMetricReportingTransportBindingTests
         "urn:factoryconnect:problem:reporting:invalid-request";
 
     [Fact]
+    public async Task AnonymousReportingRequestRequiresAuthentication()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, ShiftRoute);
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task EmptyBodyReturnsStableProblemDetails()
     {
         await using var factory = new WebApplicationFactory<Program>().WithReportingIdentity();
