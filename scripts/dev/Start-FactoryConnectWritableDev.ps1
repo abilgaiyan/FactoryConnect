@@ -43,6 +43,7 @@ if (Test-Path -LiteralPath $settingsPath) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             $property = $settings.PSObject.Properties[$name]
             if ($null -ne $property -and $null -ne $property.Value) {
+                if ($property.Value -isnot [bool]) { throw "Development setting '$name' must be a JSON boolean." }
                 Set-Variable -Name $name -Value ([bool]$property.Value)
             }
         }
@@ -217,6 +218,10 @@ try {
     if ($EnableSupervisorEntries) {
         $apiEnvironment['SupervisorLocalEntry__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
+        $apiEnvironment['SupervisorLocalRevision__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalRevision__WriteConnectionString'] = $connectionString
+        $apiEnvironment['SupervisorLocalDowntime__EnableWrites'] = 'true'
+        $apiEnvironment['SupervisorLocalDowntime__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorReviews) {
         $apiEnvironment['SupervisorLocalReview__EnableWrites'] = 'true'
@@ -280,7 +285,7 @@ try {
         }
         $dashboardProcess = Start-Service $dashboardProject $dashUrl $dashboardEnvironment $true
         Wait-Health "$dashUrl/health/live" $dashboardProcess 30
-        Write-Host "Dashboard gateway: $dashUrl (30-second upstream timeout)"
+        Write-Host "Dashboard gateway: $dashUrl (120-second upstream timeout)"
         Write-Host "React UI (built): $dashUrl/"
         if ($DevUi) {
             $clientDirectory = Join-Path $root 'src/FactoryConnect.Dashboard/ClientApp'
