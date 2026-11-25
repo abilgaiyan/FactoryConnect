@@ -1,4 +1,6 @@
 using FactoryConnect.Persistence.SqlServer;
+using FactoryConnect.Abstractions;
+using FactoryConnect.Api.Machines;
 using Microsoft.Data.SqlClient;
 
 namespace FactoryConnect.Api;
@@ -14,7 +16,7 @@ public static partial class CncShiftEvidencePreviewEndpoints
 
     public sealed record Request(Guid MachineId, string AssignmentId, string ShiftId,
         DateTimeOffset StartsAtUtc, DateTimeOffset EndsAtUtc,
-        string CounterAddress, string StreamKeyHex);
+        string? CounterAddress = null, string? StreamKeyHex = null);
 
     public static IEndpointRouteBuilder MapCncShiftEvidencePreviewEndpoints(
         this IEndpointRouteBuilder endpoints)
@@ -22,6 +24,7 @@ public static partial class CncShiftEvidencePreviewEndpoints
         endpoints.MapPost("/api/supervisor/cnc-shift-evidence-preview", async (
             HttpContext context, IConfiguration configuration, Request request,
             ILogger<SqlServerCncShiftEvidencePreviewReader> logger,
+            ICurrentStateOwnerResolver owners,
             CancellationToken cancellationToken) =>
         {
             if (!configuration.GetValue<bool>("CncShiftPreview:Enabled"))
@@ -33,21 +36,40 @@ public static partial class CncShiftEvidencePreviewEndpoints
             if (string.IsNullOrWhiteSpace(connectionString))
                 return Results.Problem("CNC preview read-only database is not configured.",
                     statusCode: StatusCodes.Status503ServiceUnavailable);
-            byte[] stream;
-            try
-            {
-                stream = Convert.FromHexString(request.StreamKeyHex);
-            }
-            catch (Exception exception) when (exception is FormatException or ArgumentNullException)
-            {
-                return Results.BadRequest("Invalid stream key hexadecimal encoding.");
-            }
             try
             {
                 var reader = new SqlServerCncShiftEvidencePreviewReader(connectionString);
-                var preview = await reader.ReadAsync(request.MachineId,
-                    request.AssignmentId, request.ShiftId, request.StartsAtUtc,
-                    request.EndsAtUtc, request.CounterAddress, stream, cancellationToken);
+                CncShiftEvidenceClassifier.Preview preview;
+                if (request.CounterAddress is null && request.StreamKeyHex is null)
+                {
+                    if (request.MachineId == Guid.Empty)
+                        return Results.BadRequest("Machine required.");
+                    var profiles = await new SqlServerMachineProductionEvidenceProfileStore(connectionString)
+                        .ListAsync(request.MachineId, cancellationToken);
+                    var profile = CounterProfileIntervalGuard.EffectiveUnchanged(
+                        profiles, request.StartsAtUtc, request.EndsAtUtc);
+                    if (profile is null || string.IsNullOrWhiteSpace(profile.CounterDataItemId) ||
+                        profile.CounterSemantics is not ("CumulativeResettable" or "CumulativeMonotonic"))
+                        return Results.Problem("No unchanged cumulative counter profile for this shift.",
+                            statusCode: 422);
+                    if (owners.Resolve(new MachineId(request.MachineId)) is not CurrentStateExactlyOneOwner owner)
+                        return Results.Problem("Counter stream owner unavailable.", statusCode: 422);
+                    // Current owner is a diagnostic candidate, not proof of historical identity.
+                    preview = await reader.ReadForStreamAsync(request.MachineId, request.AssignmentId,
+                        request.ShiftId, request.StartsAtUtc, request.EndsAtUtc,
+                        profile.CounterDataItemId, owner.Binding.ObservationStreamId, cancellationToken);
+                }
+                else
+                {
+                    if (request.CounterAddress is null || request.StreamKeyHex is null)
+                        return Results.BadRequest("Supply both diagnostic overrides or neither.");
+                    byte[] stream;
+                    try { stream = Convert.FromHexString(request.StreamKeyHex); }
+                    catch (FormatException) { return Results.BadRequest("Invalid stream key hexadecimal encoding."); }
+                    preview = await reader.ReadAsync(request.MachineId, request.AssignmentId,
+                        request.ShiftId, request.StartsAtUtc, request.EndsAtUtc,
+                        request.CounterAddress, stream, cancellationToken);
+                }
                 return Results.Ok(new { Status = preview.HasEvidence ? "provisional" : "no-evidence",
                     Authority = "diagnostic-only", Preview = preview });
             }
