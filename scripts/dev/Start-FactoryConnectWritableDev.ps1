@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$SqlInstance = 'DESKTOP-1PJK2OB\FCINVENTORY',
-    [string]$Database = 'FactoryConnect_V1_Dev_Local',
+    [string]$SqlInstance,
+    [string]$Database,
     [switch]$Dashboard,
     [switch]$ApiOnly,
     [switch]$DevUi,
@@ -29,7 +29,8 @@ if (Test-Path -LiteralPath $settingsPath) {
     $settingsMap = @{
         SqlInstance = 'SqlInstance'; Database = 'Database';
         UiPort = 'UiPort'; ApiPort = 'ApiPort'; DashboardPort = 'DashboardPort';
-        Gg003DeviceKey = 'Gg003DeviceKey'; MoxaDeviceKey = 'MoxaDeviceKey'
+        Gg003DeviceKey = 'Gg003DeviceKey'; MoxaDeviceKey = 'MoxaDeviceKey';
+        ConnectionStringEnvironmentVariable = 'ConnectionStringEnvironmentVariable'
     }
     foreach ($name in $settingsMap.Keys) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
@@ -121,7 +122,7 @@ function Start-Service([string]$project,[string]$url,[hashtable]$envOverrides,[b
     return $process
 }
 if ([string]::IsNullOrWhiteSpace($SqlInstance) -or [string]::IsNullOrWhiteSpace($Database)) {
-    throw 'SqlInstance and Database are required.'
+    throw 'Set SqlInstance and Database in development.settings.json or supply both explicitly. No implicit database target is selected.'
 }
 if ($ApiOnly -and -not $PSBoundParameters.ContainsKey('EnableCncShiftPreview')) {
     $EnableCncShiftPreview = $false
