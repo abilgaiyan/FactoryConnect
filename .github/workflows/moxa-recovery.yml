@@ -20,6 +20,8 @@ jobs:
       - name: Publish review artifact
         run: dotnet publish tools/FactoryConnect.MoxaRecovery/FactoryConnect.MoxaRecovery.csproj -c Release -r win-x64 --self-contained true -o artifacts/moxa-recovery
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
+          retention-days: 7
           name: moxa-recovery-review-only
           path: artifacts/moxa-recovery
