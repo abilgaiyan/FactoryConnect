@@ -11,9 +11,7 @@ param(
     [switch]$EnableSupervisorShiftTargets,
     [switch]$EnableSupervisorReviews,
     [switch]$EnableCncShiftPreview,
-    [string]$SupervisorReviewerId,
     [switch]$EnableDowntimeReasonAdministration,
-    [string]$SupervisorOperatorId,
     [ValidateRange(1024,65535)][int]$UiPort = 5173,
     [string]$Gg003DeviceKey = 'DEWAS-SR-GG-003',
     [string]$MoxaDeviceKey = 'MOXA-001',
@@ -29,7 +27,7 @@ $settingsPath = Join-Path $PSScriptRoot 'development.settings.json'
 if (Test-Path -LiteralPath $settingsPath) {
     $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
     $settingsMap = @{
-        SqlInstance = 'SqlInstance'; Database = 'Database'; SupervisorOperatorId = 'SupervisorOperatorId';
+        SqlInstance = 'SqlInstance'; Database = 'Database';
         UiPort = 'UiPort'; ApiPort = 'ApiPort'; DashboardPort = 'DashboardPort';
         Gg003DeviceKey = 'Gg003DeviceKey'; MoxaDeviceKey = 'MoxaDeviceKey'
     }
@@ -129,16 +127,6 @@ if ($EnableCncShiftPreview -and (-not $Dashboard -and -not $DevUi)) {
 }
 if ($DevUi -and $ApiOnly) { throw '-DevUi requires the Dashboard gateway; remove -ApiOnly.' }
 if ($Dashboard -and $ApiOnly) { throw 'Use either -Dashboard or -ApiOnly, not both.' }
-if ($EnableSupervisorReviews -and
-    ([string]::IsNullOrWhiteSpace($SupervisorReviewerId) -or $SupervisorReviewerId.Length -gt 200)) {
-    throw '-EnableSupervisorReviews requires -SupervisorReviewerId (1-200 characters).'
-}
-if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and [string]::IsNullOrWhiteSpace($SupervisorOperatorId)) {
-    throw '-EnableSupervisorEntries requires -SupervisorOperatorId for audit attribution.'
-}
-if (($EnableSupervisorEntries -or $EnableSupervisorShiftTargets) -and $SupervisorOperatorId.Length -gt 200) {
-    throw 'SupervisorOperatorId must not exceed 200 characters.'
-}
 $startDashboard = -not $ApiOnly
 if ($DevUi -and ($UiPort -eq $ApiPort -or $UiPort -eq $DashboardPort)) { throw 'Vite, API and Dashboard ports must differ.' }
 if ($startDashboard -and $ApiPort -eq $DashboardPort) { throw 'API and Dashboard ports must differ.' }
@@ -228,17 +216,14 @@ try {
     }
     if ($EnableSupervisorEntries) {
         $apiEnvironment['SupervisorLocalEntry__EnableWrites'] = 'true'
-        $apiEnvironment['SupervisorLocalEntry__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalEntry__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorReviews) {
         $apiEnvironment['SupervisorLocalReview__EnableWrites'] = 'true'
-        $apiEnvironment['SupervisorLocalReview__ReviewerId'] = $SupervisorReviewerId
         $apiEnvironment['SupervisorLocalReview__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorShiftTargets) {
         $apiEnvironment['SupervisorLocalShiftTarget__EnableWrites'] = 'true'
-        $apiEnvironment['SupervisorLocalShiftTarget__OperatorId'] = $SupervisorOperatorId
         $apiEnvironment['SupervisorLocalShiftTarget__WriteConnectionString'] = $connectionString
     }
     if ($EnableDowntimeReasonAdministration) {
@@ -321,9 +306,9 @@ try {
         }
     }
     if ($EnableSupervisorEntries) {
-        Write-Host 'Local supervisor entry writes requested for explicit operator identity; API commissioning access rules still apply.'
+        Write-Host 'Local supervisor entry writes requested; authenticated user identity and API commissioning access rules apply.'
     } else {
-        Write-Host 'Supervisor writes are disabled (default). Use -EnableSupervisorEntries and -SupervisorOperatorId to opt in.'
+        Write-Host 'Supervisor writes are disabled (default). Use -EnableSupervisorEntries to opt in.'
     }
     Write-Host 'Ctrl+C stops the processes started by this launcher.'
     while ($true) {
