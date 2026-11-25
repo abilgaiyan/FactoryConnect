@@ -97,3 +97,49 @@ body { margin: 0; background: #f4f7fb; color: #172b3a; font: 16px/1.6 system-ui,
   #main-content .commissioning-table-scroll table,
   #main-content .commissioning-processors-table th { min-width: 0; }
 }
+
+
+/* Authentication uses the same palette and controls as the dashboard shell. */
+.session-login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: linear-gradient(150deg, #12334e 0%, #295776 35%, #f4f7fb 35%);
+}
+.session-login form {
+  width: min(100%, 27rem);
+  display: grid;
+  gap: .65rem;
+  padding: clamp(1.25rem, 5vw, 2.5rem);
+  background: white;
+  border: 1px solid #d9e2ec;
+  border-top: 5px solid #125ca5;
+  border-radius: .8rem;
+  box-shadow: 0 16px 48px #12334e26;
+}
+.session-login h1 { margin: 0; color: #12334e; font-size: clamp(1.6rem, 5vw, 2rem); line-height: 1.25; }
+.session-login form > p { margin: 0 0 .9rem; color: #526579; }
+.session-login label { font-weight: 600; margin-top: .35rem; }
+.session-login input {
+  width: 100%; min-width: 0; min-height: 48px; padding: .65rem .8rem;
+  border: 1px solid #8c9dad; border-radius: .4rem; font: inherit; color: inherit; background: white;
+}
+.session-login button, .session-bar button {
+  min-height: 44px; padding: .65rem 1rem; border: 1px solid #125ca5;
+  border-radius: .45rem; background: #125ca5; color: white; font: inherit; font-weight: 600; cursor: pointer;
+}
+.session-login button { margin-top: .75rem; min-height: 48px; }
+.session-login button:hover:not(:disabled), .session-bar button:hover:not(:disabled) { background: #084780; }
+.session-login button:disabled, .session-bar button:disabled { opacity: .6; cursor: default; }
+.session-login :focus-visible, .session-bar :focus-visible { outline: 3px solid #b65c00; outline-offset: 3px; }
+.session-login [role=alert], .session-bar [role=alert] { color: #8b2525; background: #fff0ef; padding: .8rem; border-radius: .4rem; margin: 0; overflow-wrap: anywhere; }
+.session-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: .5rem .75rem; padding: .6rem max(1rem, calc((100vw - 90rem) / 2));
+  background: white; border-bottom: 1px solid #d9e2ec;
+}
+.session-bar > span { margin-right: auto; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.session-bar [role=alert] { flex-basis: 100%; }
+@media print { .session-bar { display: none !important; } }
