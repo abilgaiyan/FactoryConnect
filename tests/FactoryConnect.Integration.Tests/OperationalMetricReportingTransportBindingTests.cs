@@ -15,7 +15,7 @@ public sealed class OperationalMetricReportingTransportBindingTests
     [Fact]
     public async Task EmptyBodyReturnsStableProblemDetails()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>().WithReportingIdentity();
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, ShiftRoute);
 
@@ -30,7 +30,7 @@ public sealed class OperationalMetricReportingTransportBindingTests
     [InlineData("{\"sources\":\"not-an-array\"}")]
     public async Task InvalidJsonTransportBodyReturnsStableProblemDetails(string body)
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = new WebApplicationFactory<Program>().WithReportingIdentity();
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, ShiftRoute)
         {
