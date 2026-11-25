@@ -153,11 +153,15 @@ internal static class LocalAuthentication
             catch (Microsoft.Data.SqlClient.SqlException) { return Results.Problem(statusCode: 503); }
         }).RequireAuthorization("AdministratorWrite").ExcludeFromDescription();
 
-        app.MapGet("/api/auth/v1/me", (ClaimsPrincipal user) =>
-            Results.Ok(new { username = user.Identity?.Name, role = user.FindFirstValue(ClaimTypes.Role) }))
+        app.MapGet("/api/auth/v1/me", (ClaimsPrincipal user, HttpContext http) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(new { username = user.Identity?.Name, role = user.FindFirstValue(ClaimTypes.Role) });
+        })
             .RequireAuthorization().ExcludeFromDescription();
         app.MapPost("/api/auth/v1/logout", async (HttpContext http) =>
         {
+            http.Response.Headers.CacheControl = "no-store";
             if (http.Request.Headers["X-FC-Request"] != "logout") return Results.BadRequest();
             await http.SignOutAsync();
             return Results.NoContent();
