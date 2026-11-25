@@ -43,6 +43,32 @@ export function SessionGate({ children }: PropsWithChildren) {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!session) return;
+    const controller = new AbortController();
+    async function revalidate() {
+      try {
+        const response = await fetch("/api/auth/v1/me", { cache: "no-store", signal: controller.signal });
+        if (controller.signal.aborted) return;
+        if (response.status === 401 || response.status === 403) {
+          setSession(null);
+          setShowUsers(false);
+          setError("Your session has ended. Please sign in again.");
+        }
+      } catch {
+        // A transient network failure is not proof that the session was revoked.
+      }
+    }
+    const timer = window.setInterval(() => void revalidate(), 60000);
+    const onFocus = () => void revalidate();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [session]);
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
