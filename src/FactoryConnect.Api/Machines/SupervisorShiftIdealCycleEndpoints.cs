@@ -65,7 +65,7 @@ public static class SupervisorShiftIdealCycleEndpoints
         var revision = new SupervisorShiftIdealCycleRevision(
             request.CycleRevisionId, machineId, request.ShiftScheduleAssignmentId,
             request.ShiftId, request.ShiftStartsAtUtc, request.ShiftEndsAtUtc,
-            request.RevisionNumber, request.IdealCycleSeconds, request.QuantityUnit,
+            request.RevisionNumber, request.IdealCycleSeconds,
             request.ProductionOrder, request.PartNumber, request.Operation,
             request.RevisionReason, actor, clock.GetUtcNow());
         try
