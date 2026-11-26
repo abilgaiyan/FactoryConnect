@@ -1,25 +1,7 @@
 name: P0 SQL readiness conformance
 on:
-  push:
-    branches: [feature/fc-p0-reboot-sql-readiness]
-  pull_request:
-    branches: [main]
-    paths:
-      - 'tools/FactoryConnect.SqlReadiness/**'
-      - 'Directory.Packages.props'
-      - 'scripts/deployment/FactoryConnect.SqlReadiness.ps1'
-      - 'scripts/deployment/Restart-FactoryConnectDashboard.ps1'
-      - 'scripts/deployment/FactoryConnect.ProcessTermination.ps1'
-      - 'tests/deployment/*DashboardRestart*'
-      - 'scripts/deployment/Start-FactoryConnectSystem.ps1'
-      - 'scripts/deployment/Start-FactoryConnectRuntime.ps1'
-      - 'tests/deployment/*BootSafe*'
-      - 'scripts/release/Build-FactoryConnectRelease.ps1'
-      - 'tests/deployment/*SqlReadiness*'
-      - 'tests/deployment/Invoke-FactoryBootOrchestrationConformance.ps1'
-      - 'tests/deployment/Invoke-RebootStartupReleasePackageConformance.ps1'
-      - '.github/workflows/p0-sql-readiness.yml'
   workflow_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
