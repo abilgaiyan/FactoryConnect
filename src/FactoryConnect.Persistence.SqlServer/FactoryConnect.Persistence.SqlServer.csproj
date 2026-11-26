@@ -6,6 +6,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Sql\041_MachineObservationCncEvidenceIndex.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.041_MachineObservationCncEvidenceIndex.sql" />
     <EmbeddedResource Include="Sql\042_LocalUser.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.042_LocalUser.sql" />
+    <EmbeddedResource Include="Sql\043_SupervisorShiftIdealCycle.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.043_SupervisorShiftIdealCycle.sql" />
     <EmbeddedResource Include="Sql\040_MachineProductionEvidenceProfile.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.040_MachineProductionEvidenceProfile.sql" />
     <EmbeddedResource Include="Sql\039_InspectSupervisorProductionEntryReadiness.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.039_InspectSupervisorProductionEntryReadiness.sql" />
     <EmbeddedResource Include="Sql\038_PublishSupervisorAcceptedProduction.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.038_PublishSupervisorAcceptedProduction.sql" />
