@@ -10,6 +10,7 @@ param(
     [switch]$EnableSupervisorEntries = $true,
     [switch]$EnableSupervisorShiftTargets = $true,
     [switch]$EnableSupervisorIdealCycles = $true,
+    [switch]$EnablePartMaster = $true,
     [switch]$EnableSupervisorReviews = $true,
     [switch]$EnableCncShiftPreview = $true,
     [switch]$EnableDowntimeReasonAdministration = $true,
@@ -41,7 +42,7 @@ if (Test-Path -LiteralPath $settingsPath) {
             }
         }
     }
-    foreach ($name in @('Dashboard','ApiOnly','DevUi','ApplyPendingMigrations','SeparateServiceWindows','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableSupervisorIdealCycles','EnableSupervisorReviews','EnableCncShiftPreview','EnableDowntimeReasonAdministration')) {
+    foreach ($name in @('Dashboard','ApiOnly','DevUi','ApplyPendingMigrations','SeparateServiceWindows','EnableSupervisorEntries','EnableSupervisorShiftTargets','EnableSupervisorIdealCycles','EnablePartMaster','EnableSupervisorReviews','EnableCncShiftPreview','EnableDowntimeReasonAdministration')) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             $property = $settings.PSObject.Properties[$name]
             if ($null -ne $property -and $null -ne $property.Value) {
@@ -242,6 +243,10 @@ try {
         $apiEnvironment['SupervisorLocalReview__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalReview__WriteConnectionString'] = $connectionString
     }
+    if ($EnablePartMaster) {
+        $apiEnvironment['LocalPartMaster__EnableWrites'] = 'true'
+        $apiEnvironment['LocalPartMaster__WriteConnectionString'] = $connectionString
+    }
     if ($EnableSupervisorIdealCycles) {
         $apiEnvironment['SupervisorLocalShiftIdealCycle__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalShiftIdealCycle__WriteConnectionString'] = $connectionString
@@ -270,6 +275,7 @@ try {
         }
         if ($EnableSupervisorEntries) { $dashboardEnvironment['SupervisorLocalEntry__EnableGateway'] = 'true' }
         if ($EnableCncShiftPreview) { $dashboardEnvironment['CncShiftPreview__EnableGateway'] = 'true' }
+        if ($EnablePartMaster) { $dashboardEnvironment['LocalPartMaster__EnableGateway'] = 'true' }
         if ($EnableSupervisorIdealCycles) { $dashboardEnvironment['SupervisorLocalShiftIdealCycle__EnableGateway'] = 'true' }
         if ($EnableSupervisorShiftTargets) {
             $dashboardEnvironment['SupervisorLocalShiftTarget__EnableGateway'] = 'true'
