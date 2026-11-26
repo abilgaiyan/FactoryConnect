@@ -272,3 +272,33 @@ test('accepted production publication requires valid context and publication tim
   assert.equal(validPublication({ ...publication, acceptedProducedQuantity: -1 }, source, shift), false);
   assert.equal(validPublication({ ...publication, shiftId: 'other-shift' }, source, shift), false);
 });
+
+
+test('production workspace exposes CNC preview for the selected occurrence without technical inputs', async t => {
+  const r = runtime();
+  const previews = [];
+  mockFetch(t, async (url, options) => {
+    if (String(url).includes('/cnc-shift-evidence-preview')) {
+      previews.push(JSON.parse(options.body));
+      return new Response('', {status:422});
+    }
+    return Response.json(activity(JSON.parse(options.body)));
+  });
+  const h = await mountInDom(React.createElement(Workspace,{runtime:r.value}));
+  t.after(() => h.dispose());
+  await load(h); await selectOccurrence(h);
+  assert.equal(button(h,'Inspect CNC evidence'),undefined);
+  await h.click(button(h,'Production entry'));
+  assert.ok(button(h,'Inspect CNC evidence'));
+  await h.click(button(h,'Inspect CNC evidence'));
+  assert.equal(previews.length,1);
+  assert.equal(previews[0].machineId,source.machineId);
+  assert.equal(previews[0].assignmentId,first.shiftScheduleAssignmentId);
+  assert.equal(previews[0].shiftId,first.shiftId);
+  assert.equal(previews[0].startsAtUtc,first.startsAtUtc);
+  assert.equal(previews[0].endsAtUtc,first.endsAtUtc);
+  assert.equal('counterAddress' in previews[0],false);
+  assert.equal('streamKeyHex' in previews[0],false);
+  await h.click(button(h,'Technical details'));
+  assert.equal(button(h,'Inspect CNC evidence'),undefined);
+});
