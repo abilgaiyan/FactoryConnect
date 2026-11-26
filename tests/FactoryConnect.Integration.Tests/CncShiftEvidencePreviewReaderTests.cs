@@ -10,12 +10,12 @@ public sealed class CncShiftEvidencePreviewReaderTests
     private static readonly DateTimeOffset End = Start.AddHours(8);
 
     [Fact]
-    public void AutomaticStreamFromDifferentMachineFailsBeforeSqlConnection()
+    public async Task AutomaticStreamFromDifferentMachineFailsBeforeSqlConnection()
     {
         var reader = new SqlServerCncShiftEvidencePreviewReader(
             "Server=127.0.0.1,1;Database=not-used;Connect Timeout=1;TrustServerCertificate=True");
         var stream = new ObservationStreamId(new MachineId(Guid.NewGuid()), "counter-stream");
-        Assert.Throws<ArgumentException>(() => reader.ReadForStreamAsync(Guid.NewGuid(),
+        await Assert.ThrowsAsync<ArgumentException>(() => reader.ReadForStreamAsync(Guid.NewGuid(),
             "assignment", "shift", Start, End, "complete-counter", stream));
     }
 
