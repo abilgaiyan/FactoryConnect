@@ -1,10 +1,7 @@
 name: Q2B offline exporter validation
 on:
-  pull_request:
-    paths:
-      - 'scripts/diagnostics/gg003-historical-inventory/v4-exporter/**'
-      - '.github/workflows/q2b-exporter-offline.yml'
   workflow_dispatch:
+
 permissions:
   contents: read
 jobs:
