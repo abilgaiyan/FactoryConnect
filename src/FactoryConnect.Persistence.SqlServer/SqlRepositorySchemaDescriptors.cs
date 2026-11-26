@@ -81,7 +81,31 @@ internal static class SqlRepositorySchemaDescriptors
                     ["InstanceId", "Quality"])] }
             : table).ToImmutableArray());
 
-    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster()]);
+    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster(), OperationMaster()]);
+
+    private static SqlTableDescriptor OperationMaster() => Table(
+        "OperationMaster",
+        columns:
+        [
+            Column("PartNumber", "nvarchar", 200, collation: BinaryCollation),
+            Column("OperationCode", "nvarchar", 200, collation: BinaryCollation),
+            Column("DisplayName", "nvarchar", 200, collation: BinaryCollation),
+            Decimal("IdealCycleSeconds", 18, 3, isNullable: true),
+            Column("IsActive", "bit"),
+            Column("UpdatedBy", "nvarchar", 200, collation: BinaryCollation),
+            DateTimeOffset("UpdatedAtUtc", 7)
+        ],
+        primaryKey: PrimaryKey("PK_OperationMaster", "PartNumber", "OperationCode"),
+        foreignKeys:
+        [
+            ForeignKey("FK_OperationMaster_PartMaster", ["PartNumber"], "PartMaster", ["PartNumber"])
+        ],
+        checks:
+        [
+            Check("CK_OperationMaster_Cycle", "([IdealCycleSeconds]>(0) AND [IdealCycleSeconds]<=(86400))"),
+            Check("CK_OperationMaster_Required", "(len(ltrim(rtrim([OperationCode])))>(0) AND len(ltrim(rtrim([DisplayName])))>(0) AND len(ltrim(rtrim([UpdatedBy])))>(0))"),
+            Check("CK_OperationMaster_Utc", "(datepart(tzoffset,[UpdatedAtUtc])=(0))")
+        ]);
 
     private static SqlTableDescriptor PartMaster() => Table(
         "PartMaster",
