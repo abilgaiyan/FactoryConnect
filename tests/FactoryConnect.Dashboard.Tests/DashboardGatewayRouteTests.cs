@@ -81,6 +81,39 @@ public sealed class DashboardGatewayRouteTests
         Assert.Equal(responseBytes, await response.Content.ReadAsByteArrayAsync());
     }
 
+    [Theory]
+    [InlineData("/api/supervisor/v1/downtime-reasons")]
+    [InlineData("/api/supervisor/v1/downtime-reasons/all")]
+    public async Task DowntimeReasonReadsRejectForwardedRequests(string path)
+    {
+        using var upstream = new StubHttpClientFactory((_, _) =>
+            throw new InvalidOperationException("Forwarded request must not reach upstream"));
+        await using var factory = CreateFactory(upstream).WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["SupervisorLocalDowntimeReasons:EnableGateway"] = "true"
+                })));
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.TryAddWithoutValidation("Forwarded", "for=192.0.2.1");
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/supervisor/v1/downtime-reasons")]
+    [InlineData("/api/supervisor/v1/downtime-reasons/all")]
+    public async Task DowntimeReasonReadsRequireGatewayOptIn(string path)
+    {
+        using var upstream = new StubHttpClientFactory((_, _) =>
+            throw new InvalidOperationException("Disabled gateway must not reach upstream"));
+        await using var factory = CreateFactory(upstream);
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(IHttpClientFactory upstream) =>
         new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
