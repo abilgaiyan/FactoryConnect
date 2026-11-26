@@ -1,3 +1,4 @@
+import { formatReportDate, formatReportTimestamp } from "./date-formatting.ts";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { DashboardApplicationRuntime } from "../application/application-runtime.ts";
 import { isProductionDayIdentity } from "../application/production-day-shift-reporting.ts";
@@ -130,7 +131,7 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
       {occurrences.map(({ machine, occurrence }) => {
         const key = occurrenceKey(machine, occurrence);
         return <button type="button" key={key} aria-pressed={selectedKey === key} onClick={() => { setSelectedKey(key); setActiveView("overview"); }}>
-          {occurrence.shift.shiftId} · {occurrence.shift.startsAtUtc}
+          {occurrence.shift.shiftId} · {formatReportTimestamp(occurrence.shift.startsAtUtc)}
           {" · OEE: "}{occurrence.oee.state === "calculated" ? "Calculated" : occurrence.oee.state === "insufficient-evidence" ? "Insufficient evidence" : occurrence.oee.state === "unavailable" ? "Unavailable" : "Missing"}
         </button>;
       })}
@@ -138,12 +139,12 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
     <label>Exact shift occurrence<select value={selectedKey} onChange={event => { setSelectedKey(event.target.value); setActiveView("overview"); }}>
       <option value="">Select an exact occurrence</option>
       {occurrences.map(({ machine, occurrence }) => <option key={occurrenceKey(machine, occurrence)} value={occurrenceKey(machine, occurrence)}>
-        {occurrence.shift.shiftId} · {occurrence.shift.shiftScheduleAssignmentId} · {occurrence.shift.startsAtUtc} – {occurrence.shift.endsAtUtc}
+        {occurrence.shift.shiftId} · {occurrence.shift.shiftScheduleAssignmentId} · {formatReportTimestamp(occurrence.shift.startsAtUtc)} – {formatReportTimestamp(occurrence.shift.endsAtUtc)}
       </option>)}
     </select></label>
     {!occurrences.length && <p>No authoritative shift occurrences returned. This does not establish zero production.</p>}
     {selected && <section className="supervisor-selected-shift" aria-label="Selected shift workspace">
-      <p className="supervisor-shift-summary">Production business date <strong>{overview.productionDay}</strong> · Shift <strong>{selected.occurrence.shift.shiftId}</strong> · {selected.occurrence.shift.startsAtUtc} – {selected.occurrence.shift.endsAtUtc} (UTC)</p>
+      <p className="supervisor-shift-summary">Production business date <strong>{formatReportDate(overview.productionDay)}</strong> · Shift <strong>{selected.occurrence.shift.shiftId}</strong> · {formatReportTimestamp(selected.occurrence.shift.startsAtUtc)} – {formatReportTimestamp(selected.occurrence.shift.endsAtUtc)}</p>
       <nav className="supervisor-workspace-tabs" aria-label="Selected shift sections">
         <button type="button" aria-pressed={activeView === "overview"} onClick={() => setActiveView("overview")}>OEE overview</button>
         <button type="button" aria-pressed={activeView === "production"} onClick={() => setActiveView("production")}>Production entry</button>
