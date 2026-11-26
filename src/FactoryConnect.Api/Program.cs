@@ -100,6 +100,7 @@ reporting.MapMachineActivityReports();
 reporting.MapMachineCounterReports();
 app.MapSupervisorProductionEntryEndpoints();
 app.MapSupervisorShiftTargetEndpoints();
+app.MapSupervisorShiftIdealCycleEndpoints();
 app.MapCncShiftEvidencePreviewEndpoints();
 app.MapMachineEvidenceProfileEndpoints();
 
