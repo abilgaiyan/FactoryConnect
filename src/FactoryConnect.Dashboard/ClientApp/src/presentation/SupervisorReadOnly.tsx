@@ -12,6 +12,7 @@ import { SupervisorLocalShiftTargets } from "./SupervisorLocalShiftTargets.tsx";
 import { SupervisorQuantitySourceInspection } from "./SupervisorQuantitySourceInspection.tsx";
 import { SupervisorAcceptedProductionReadout } from "./SupervisorAcceptedProductionReadout.tsx";
 import { SupervisorTargetAchievement } from "./SupervisorTargetAchievement.tsx";
+import { SupervisorIdealCycle } from "./SupervisorIdealCycle.tsx";
 import { CncShiftEvidencePreview } from "./CncShiftEvidencePreview.tsx";
 
 export function occurrenceKey(machine: ShiftPerformanceMachine, occurrence: ShiftPerformanceShift): string {
@@ -214,6 +215,13 @@ function OccurrenceRead({ overview, runtime }: { readonly overview: ShiftPerform
         </section>
       </div>
       {activeView === "production" && <CncShiftEvidencePreview key={`cnc:${selectedKey}`} scope={{
+        machineId: selected.machine.machineId,
+        shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
+        shiftId: selected.occurrence.shift.shiftId,
+        startsAtUtc: selected.occurrence.shift.startsAtUtc,
+        endsAtUtc: selected.occurrence.shift.endsAtUtc
+      }} />}
+      {activeView === "production" && <SupervisorIdealCycle key={`cycle:${selectedKey}`} scope={{
         machineId: selected.machine.machineId,
         shiftScheduleAssignmentId: selected.occurrence.shift.shiftScheduleAssignmentId,
         shiftId: selected.occurrence.shift.shiftId,
