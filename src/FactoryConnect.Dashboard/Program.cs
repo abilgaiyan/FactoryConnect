@@ -205,6 +205,33 @@ static bool AllowsSupervisorLocalGateway(HttpContext context, IConfiguration con
     !context.Request.Headers.Keys.Any(static key =>
         key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase));
 
+// Read only the two explicit downtime reason collections.
+foreach (var reasonPath in new[] { "/api/supervisor/v1/downtime-reasons", "/api/supervisor/v1/downtime-reasons/all" })
+{
+    app.MapGet(reasonPath, async (HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
+    {
+        if (!configuration.GetValue<bool>("SupervisorLocalDowntimeReasons:EnableGateway") ||
+            context.Connection.RemoteIpAddress is not { } remote ||
+            !System.Net.IPAddress.IsLoopback(remote) ||
+            context.Request.Headers.ContainsKey("Forwarded") ||
+            context.Request.Headers.Keys.Any(static key =>
+                key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        if (!string.Equals(context.Request.Path.Value, reasonPath, StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await gateway.ForwardAsync(context, reasonPath.TrimStart('/'), HttpMethod.Get)
+            .ConfigureAwait(false);
+    });
+}
+
 // Exact local-only downtime reason routes; never expose arbitrary supervisor API paths.
 app.MapMethods("/api/supervisor/v1/downtime-reasons/{reasonCode}",
     [HttpMethods.Put], async (HttpContext context, IConfiguration configuration,
