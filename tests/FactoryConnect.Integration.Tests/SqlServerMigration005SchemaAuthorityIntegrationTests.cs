@@ -17,7 +17,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Equal(51, SqlRepositorySchemaDescriptors.Post022.Tables.Length);
         Assert.Equal(56, SqlRepositorySchemaDescriptors.Post028.Tables.Length);
         Assert.Equal(60, SqlRepositorySchemaDescriptors.Post041.Tables.Length);
-        Assert.Equal(61, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(62, SqlRepositorySchemaDescriptors.Current.Tables.Length);
         Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post041.Tables,
             static table => table.Name.ObjectName == "LocalUser");
         Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post022.Tables,
@@ -43,6 +43,9 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Contains("MachineShiftOccurrenceRosterOccurrence", post005Names);
         Assert.DoesNotContain("AcquisitionContactAuthority", post005Names);
         Assert.Contains("LocalUser", currentNames);
+        Assert.Contains("PartMaster", currentNames);
+        Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post041.Tables,
+            static table => table.Name.ObjectName == "PartMaster");
         Assert.Contains("ProductionAdmissionRecoveryAudit", currentNames);
         Assert.Contains("AcquisitionContactAuthority", currentNames);
         Assert.Contains("ObservationProcessingCheckpoint", currentNames);
