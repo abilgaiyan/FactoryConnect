@@ -10,11 +10,14 @@ public static class PartMasterEndpoints
     public static IEndpointRouteBuilder MapPartMasterEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/supervisor/v1/parts", ReadActiveAsync)
-            .RequireAuthorization("OperationalRead");
+            .RequireAuthorization("OperationalRead").WithName("ReadLocalActiveParts")
+            .WithGroupName("supervisor-local-v1");
         endpoints.MapGet("/api/admin/v1/parts", ReadAllAsync)
-            .RequireAuthorization("AdministratorWrite");
+            .RequireAuthorization("AdministratorWrite").WithName("ReadLocalAllParts")
+            .WithGroupName("supervisor-local-v1");
         endpoints.MapPut("/api/admin/v1/parts", SaveAsync)
-            .RequireAuthorization("AdministratorWrite");
+            .RequireAuthorization("AdministratorWrite").WithName("UpsertLocalPart")
+            .WithGroupName("supervisor-local-v1");
         return endpoints;
     }
 
