@@ -90,7 +90,7 @@ internal static class SqlRepositorySchemaDescriptors
             Column("PartNumber", "nvarchar", 200, collation: BinaryCollation),
             Column("OperationCode", "nvarchar", 200, collation: BinaryCollation),
             Column("DisplayName", "nvarchar", 200, collation: BinaryCollation),
-            Decimal("IdealCycleSeconds", 18, 3, isNullable: true),
+            Decimal("IdealCycleSeconds", 18, 3) with { IsNullable = true },
             Column("IsActive", "bit"),
             Column("UpdatedBy", "nvarchar", 200, collation: BinaryCollation),
             DateTimeOffset("UpdatedAtUtc", 7)
