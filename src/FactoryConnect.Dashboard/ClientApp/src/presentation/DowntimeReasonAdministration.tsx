@@ -48,7 +48,7 @@ export function DowntimeReasonAdministration() {
     } catch (error) { setStatus(String(error)); }
     finally { setBusy(false); }
   }
-  return <section aria-label="Downtime reason administration">
+  return <section className="supervisor-editor" aria-label="Downtime reason administration">
     <h2>Downtime reason master</h2>
     <p>Local commissioning administration. Inactive reasons remain in historical downtime explanations.</p>
     <button type="button" disabled={busy} onClick={() => void load().then(() => setStatus('Reason list refreshed.'), error => setStatus(String(error)))}>Refresh reasons</button>
@@ -64,7 +64,7 @@ export function DowntimeReasonAdministration() {
       <label>Reason code <input value={code} maxLength={100} disabled={reasons.some(reason => reason.reasonCode === code)} onChange={event => setCode(event.target.value)} /></label>
       <label>Display name <input value={name} maxLength={200} onChange={event => setName(event.target.value)} /></label>
       <label>Description <textarea value={description} maxLength={1000} onChange={event => setDescription(event.target.value)} /></label>
-      <label><input type="checkbox" checked={active} onChange={event => setActive(event.target.checked)} /> Active</label>
+      <label className="production-backdate"><input type="checkbox" checked={active} onChange={event => setActive(event.target.checked)} /> Active</label>
       <button type="button" disabled={!code.trim() || !name.trim()} onClick={() => void save()}>Save reason</button>
       <button type="button" onClick={clear}>Clear</button>
     </fieldset>

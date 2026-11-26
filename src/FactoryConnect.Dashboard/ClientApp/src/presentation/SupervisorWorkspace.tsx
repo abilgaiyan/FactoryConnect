@@ -1,16 +1,12 @@
 import { useEffect, useState } from "react";
 import { createDashboardApplicationRuntime, type DashboardApplicationRuntime } from "../application/application-runtime.ts";
-import { DowntimeReasonAdministration } from "./DowntimeReasonAdministration.tsx";
 import { SupervisorReadOnly } from "./SupervisorReadOnly.tsx";
 import "./supervisor-preview.css";
 
 export default function SupervisorWorkspace({ runtime }: { readonly runtime?: DashboardApplicationRuntime }) {
-  const [showReasonAdministration, setShowReasonAdministration] = useState(false);
   return <section className="supervisor-preview" aria-label="Supervisor workspace">
     <h1>Supervisor</h1>
     <RuntimeReadOnly {...(runtime ? { runtime } : {})} />
-    <button type="button" aria-expanded={showReasonAdministration} onClick={() => setShowReasonAdministration(value => !value)}>Downtime reason administration (local commissioning)</button>
-    {showReasonAdministration && <DowntimeReasonAdministration />}
   </section>;
 }
 function RuntimeReadOnly({ runtime }: { readonly runtime?: DashboardApplicationRuntime }) {

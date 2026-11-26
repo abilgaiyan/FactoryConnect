@@ -36,6 +36,7 @@ import { useApplicationRouter } from "./routing/use-application-router.ts";
 
 import { useSessionRole } from "./presentation/SessionGate.tsx";
 
+const MastersPage = lazy(() => import("./presentation/MastersPage.tsx"));
 const SupervisorWorkspace = lazy(() => import("./presentation/SupervisorWorkspace.tsx"));
 
 export interface AppProps {
@@ -47,7 +48,7 @@ export function App({ runtime }: AppProps) {
   const role = useSessionRole();
   const supervisorAllowed = role !== "Manager";
   const commissioningAllowed = role === null || role === "Administrator";
-  const denied = (route.kind === "supervisor" && !supervisorAllowed) || (route.kind === "commissioning" && !commissioningAllowed);
+  const denied = (route.kind === "supervisor" && !supervisorAllowed) || ((route.kind === "commissioning" || route.kind === "masters") && !commissioningAllowed);
   const returnToOverview = overviewReturn(window.location.search, runtime.configuration.sources);
 
   return (
@@ -62,6 +63,7 @@ export function App({ runtime }: AppProps) {
         </div>
         <nav aria-label="Dashboard">
           {supervisorAllowed && <ApplicationLink href="/supervisor" navigate={navigate} current={route.kind === "supervisor"}>Supervisor</ApplicationLink>}
+          {commissioningAllowed && <ApplicationLink href="/masters" navigate={navigate} current={route.kind === "masters"}>Masters</ApplicationLink>}
           {commissioningAllowed && <ApplicationLink href="/commissioning" navigate={navigate} current={route.kind === "commissioning"}>Commissioning</ApplicationLink>}{" "}
           <ApplicationLink href="/overview" navigate={navigate} current={route.kind === "overview"}>Overview</ApplicationLink>{" "}
           <ApplicationLink href="/fleet" navigate={navigate} current={route.kind === "fleet"}>Fleet status</ApplicationLink>{" "}
@@ -112,6 +114,7 @@ interface RouteViewProps {
 function RouteView({ route, navigate, runtime }: RouteViewProps) {
   switch (route.kind) {
     case "supervisor": return <Suspense fallback={<p role="status">Loading Supervisor…</p>}><SupervisorWorkspace runtime={runtime} /></Suspense>;
+    case "masters": return <Suspense fallback={<p role="status">Loading Masters…</p>}><MastersPage /></Suspense>;
     case "commissioning": return <CommissioningPage sources={runtime.configuration.sources} />;
     case "overview": return <ManagementOverviewPage runtime={runtime} search={route.search} navigate={navigate} />;
     case "fleet": return <FleetStatusPage runtime={runtime} />;
