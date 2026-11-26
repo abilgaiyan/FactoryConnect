@@ -18,7 +18,7 @@ public sealed class SqlRepositorySchemaDescriptorTests
         Assert.Equal(21, post007.Tables.Length);
         Assert.Equal(34, SqlRepositorySchemaDescriptors.Post012.Tables.Length);
         Assert.Equal(36, SqlRepositorySchemaDescriptors.Post013.Tables.Length);
-        Assert.Equal(61, current.Tables.Length);
+        Assert.Equal(62, current.Tables.Length);
         Assert.Equal(
             legacy.Tables.Select(static table => table.Name),
             current.Tables.Take(legacy.Tables.Length).Select(static table => table.Name));
@@ -71,7 +71,8 @@ public sealed class SqlRepositorySchemaDescriptorTests
                 "SupervisorDowntimeExplanationReview",
                 "SupervisorDowntimeReason",
                 "MachineProductionEvidenceProfile",
-                "LocalUser"
+                "LocalUser",
+                "PartMaster"
             ],
             current.Tables.Skip(legacy.Tables.Length).Select(static table => table.Name.ObjectName));
     }
