@@ -121,6 +121,29 @@ app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/shift-targets",
         .ConfigureAwait(false);
 });
 
+// Explicit local ideal cycle gateway.
+app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/ideal-cycles",
+    SupervisorEntryMethods, async (HttpContext context, IConfiguration configuration,
+        ReportingGateway gateway, Guid machineId) =>
+{
+    if (!configuration.GetValue<bool>("SupervisorLocalShiftIdealCycle:EnableGateway") ||
+        context.Connection.RemoteIpAddress is not { } remote ||
+        !System.Net.IPAddress.IsLoopback(remote) ||
+        context.Request.Headers.ContainsKey("Forwarded") ||
+        context.Request.Headers.Keys.Any(static key =>
+            key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+
+    var relativePath = $"api/supervisor/v1/machines/{machineId:D}/ideal-cycles" +
+        context.Request.QueryString.Value;
+    await gateway.ForwardAsync(context, relativePath,
+        HttpMethods.IsGet(context.Request.Method) ? HttpMethod.Get : HttpMethod.Post)
+        .ConfigureAwait(false);
+});
+
 // Explicit supervisor review/revision routes. Never proxy an arbitrary API path.
 // The gateway opt-in and the API's commissioning/write checks are independent.
 string[] supervisorReviewReadPaths =
