@@ -81,7 +81,27 @@ internal static class SqlRepositorySchemaDescriptors
                     ["InstanceId", "Quality"])] }
             : table).ToImmutableArray());
 
-    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser()]);
+    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster()]);
+
+    private static SqlTableDescriptor PartMaster() => Table(
+        "PartMaster",
+        columns:
+        [
+            Column("PartNumber", "nvarchar", 200, collation: BinaryCollation),
+            Column("DisplayName", "nvarchar", 200, collation: BinaryCollation),
+            Column("Description", "nvarchar", 1000, isNullable: true, collation: BinaryCollation),
+            Decimal("IdealCycleSeconds", 18, 3),
+            Column("IsActive", "bit"),
+            Column("UpdatedBy", "nvarchar", 200, collation: BinaryCollation),
+            DateTimeOffset("UpdatedAtUtc", 7)
+        ],
+        primaryKey: PrimaryKey("PK_PartMaster", "PartNumber"),
+        checks:
+        [
+            Check("CK_PartMaster_Cycle", "([IdealCycleSeconds]>(0) AND [IdealCycleSeconds]<=(86400))"),
+            Check("CK_PartMaster_Required", "(len(ltrim(rtrim([PartNumber])))>(0) AND len(ltrim(rtrim([DisplayName])))>(0) AND len(ltrim(rtrim([UpdatedBy])))>(0))"),
+            Check("CK_PartMaster_Utc", "(datepart(tzoffset,[UpdatedAtUtc])=(0))")
+        ]);
 
     private static SqlTableDescriptor LocalUser() => Table(
         "LocalUser",
