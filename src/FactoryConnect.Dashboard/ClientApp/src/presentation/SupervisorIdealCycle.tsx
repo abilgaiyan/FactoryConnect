@@ -1,3 +1,4 @@
+import { formatReportTimestamp } from "./date-formatting.ts";
 import { useEffect, useState, type FormEvent } from "react";
 
 type Scope = { machineId: string; shiftScheduleAssignmentId: string; shiftId: string; startsAtUtc: string; endsAtUtc: string };
@@ -66,6 +67,6 @@ export function SupervisorIdealCycle({ scope }: { readonly scope: Scope }) {
     </form>
     {pending && <p role="alert">Save outcome uncertain. Reload history or retry the same revision.</p>}
     {status && <p role="status">{status}</p>}
-    {!loading && !error && history.length > 0 && <details><summary>Ideal cycle revision history</summary>{history.map(item => <p key={item.cycleRevisionId}>Revision {item.revisionNumber}: {item.idealCycleSeconds} seconds/piece · {item.enteredBy} · {item.recordedAtUtc} · {item.revisionReason || "Initial declaration"}</p>)}</details>}
+    {!loading && !error && history.length > 0 && <details><summary>Ideal cycle revision history</summary>{history.map(item => <p key={item.cycleRevisionId}>Revision {item.revisionNumber}: {item.idealCycleSeconds} seconds/piece · {item.enteredBy} · {formatReportTimestamp(item.recordedAtUtc)} · {item.revisionReason || "Initial declaration"}</p>)}</details>}
   </section>;
 }
