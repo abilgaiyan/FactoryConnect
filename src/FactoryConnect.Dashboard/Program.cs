@@ -261,6 +261,32 @@ app.MapMethods("/api/supervisor/v1/downtime-reasons/{reasonCode}",
         HttpMethod.Put).ConfigureAwait(false);
 });
 
+// Explicit local Part Master routes only.
+foreach (var partPath in new[] { "/api/admin/v1/parts", "/api/supervisor/v1/parts" })
+{
+    var methods = partPath == "/api/admin/v1/parts"
+        ? new[] { HttpMethods.Get, HttpMethods.Put } : new[] { HttpMethods.Get };
+    app.MapMethods(partPath, methods, async (HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
+    {
+        if (!configuration.GetValue<bool>("LocalPartMaster:EnableGateway") ||
+            context.Connection.RemoteIpAddress is not { } remote ||
+            !System.Net.IPAddress.IsLoopback(remote) ||
+            context.Request.Headers.ContainsKey("Forwarded") ||
+            context.Request.Headers.Keys.Any(static key => key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        if (!string.Equals(context.Request.Path.Value, partPath, StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        await gateway.ForwardAsync(context, partPath.TrimStart('/') + context.Request.QueryString.Value,
+            HttpMethods.IsPut(context.Request.Method) ? HttpMethod.Put : HttpMethod.Get).ConfigureAwait(false);
+    });
+}
+
 app.MapGet("/health/live", () => Results.Ok(new
 {
     status = "ok",
