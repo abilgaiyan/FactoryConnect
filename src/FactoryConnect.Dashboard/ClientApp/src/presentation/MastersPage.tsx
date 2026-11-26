@@ -1,3 +1,4 @@
+import { ScheduleMaster } from "./ScheduleMaster.tsx";
 import { DowntimeReasonAdministration } from "./DowntimeReasonAdministration.tsx";
 import "./supervisor-preview.css";
 
@@ -10,6 +11,7 @@ export default function MastersPage() {
       <dt>Storage and audit time</dt><dd>UTC</dd></dl>
       <p>Display setting only. Site schedule authority and historical shift boundaries are unchanged. Editable site configuration is not yet available.</p>
     </section>
+    <ScheduleMaster />
     <DowntimeReasonAdministration />
   </section>;
 }
