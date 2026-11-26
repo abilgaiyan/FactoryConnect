@@ -20,6 +20,20 @@ public sealed class SqlServerCncShiftEvidencePreviewReader
         _connectionString = connectionString;
     }
 
+    /// <summary>Uses the same ordinal stream encoding as durable ingestion.</summary>
+    public Task<CncShiftEvidenceClassifier.Preview> ReadForStreamAsync(
+        Guid machineId, string assignmentId, string shiftId,
+        DateTimeOffset startsAtUtc, DateTimeOffset endsAtUtc,
+        string counterAddress, FactoryConnect.Abstractions.ObservationStreamId stream,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (stream.MachineId.Value != machineId)
+            throw new ArgumentException("Counter stream machine mismatch.");
+        return ReadAsync(machineId, assignmentId, shiftId, startsAtUtc, endsAtUtc,
+            counterAddress, OrdinalStringKeyCodec.Encode(stream.StreamKey), cancellationToken);
+    }
+
     public async Task<CncShiftEvidenceClassifier.Preview> ReadAsync(
         Guid machineId, string assignmentId, string shiftId,
         DateTimeOffset startsAtUtc, DateTimeOffset endsAtUtc,
