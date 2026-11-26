@@ -101,6 +101,7 @@ reporting.MapMachineCounterReports();
 app.MapSupervisorProductionEntryEndpoints();
 app.MapSupervisorShiftTargetEndpoints();
 app.MapSupervisorShiftIdealCycleEndpoints();
+app.MapPartMasterEndpoints();
 app.MapCncShiftEvidencePreviewEndpoints();
 app.MapMachineEvidenceProfileEndpoints();
 
