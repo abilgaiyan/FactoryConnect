@@ -1,3 +1,4 @@
+import { PartMaster } from "./PartMaster.tsx";
 import { ScheduleMaster } from "./ScheduleMaster.tsx";
 import { DowntimeReasonAdministration } from "./DowntimeReasonAdministration.tsx";
 import "./supervisor-preview.css";
@@ -12,6 +13,7 @@ export default function MastersPage() {
       <p>Display setting only. Site schedule authority and historical shift boundaries are unchanged. Editable site configuration is not yet available.</p>
     </section>
     <ScheduleMaster />
+    <PartMaster />
     <DowntimeReasonAdministration />
   </section>;
 }
