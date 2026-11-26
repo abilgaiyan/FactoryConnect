@@ -26,7 +26,7 @@ public sealed class CncShiftEvidencePreviewReaderTests
             "Server=127.0.0.1,1;Database=not-used;Connect Timeout=1;TrustServerCertificate=True");
         var machine = Guid.NewGuid();
         var stream = new ObservationStreamId(new MachineId(machine), new string('x', 257));
-        await Assert.ThrowsAsync<ArgumentException>(() => reader.ReadForStreamAsync(machine,
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => reader.ReadForStreamAsync(machine,
             "assignment", "shift", Start, End, "complete-counter", stream));
     }
 
