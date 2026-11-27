@@ -81,7 +81,26 @@ internal static class SqlRepositorySchemaDescriptors
                     ["InstanceId", "Quality"])] }
             : table).ToImmutableArray());
 
-    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster(), OperationMaster()]);
+    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster(), OperationMaster(), SupervisorCycleReview()]);
+
+    private static SqlTableDescriptor SupervisorCycleReview() => Table(
+        "SupervisorCycleReview",
+        columns:
+        [
+            Column("ReviewId", "uniqueidentifier"),
+            Column("CycleRevisionId", "uniqueidentifier"),
+            Column("IsAccepted", "bit"),
+            Column("ReviewedBy", "nvarchar", 200, collation: BinaryCollation),
+            DateTimeOffset("ReviewedAtUtc", 7)
+        ],
+        primaryKey: PrimaryKey("PK_SupervisorCycleReview", "ReviewId"),
+        uniques: [Unique("UQ_SupervisorCycleReview_Revision", "CycleRevisionId")],
+        foreignKeys: [ForeignKey("FK_SupervisorCycleReview_Revision", ["CycleRevisionId"], "SupervisorShiftIdealCycle", ["CycleRevisionId"])],
+        checks:
+        [
+            Check("CK_SupervisorCycleReview_Actor", "(len(ltrim(rtrim([ReviewedBy])))>(0))"),
+            Check("CK_SupervisorCycleReview_Utc", "(datepart(tzoffset,[ReviewedAtUtc])=(0))")
+        ]);
 
     private static SqlTableDescriptor OperationMaster() => Table(
         "OperationMaster",

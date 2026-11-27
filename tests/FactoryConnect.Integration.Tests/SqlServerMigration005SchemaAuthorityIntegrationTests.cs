@@ -17,7 +17,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Equal(51, SqlRepositorySchemaDescriptors.Post022.Tables.Length);
         Assert.Equal(56, SqlRepositorySchemaDescriptors.Post028.Tables.Length);
         Assert.Equal(60, SqlRepositorySchemaDescriptors.Post041.Tables.Length);
-        Assert.Equal(63, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(64, SqlRepositorySchemaDescriptors.Current.Tables.Length);
         Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post041.Tables,
             static table => table.Name.ObjectName == "LocalUser");
         Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post022.Tables,
@@ -45,6 +45,7 @@ public sealed class SqlServerMigration005SchemaAuthorityIntegrationTests
         Assert.Contains("LocalUser", currentNames);
         Assert.Contains("PartMaster", currentNames);
         Assert.Contains("OperationMaster", currentNames);
+        Assert.Contains("SupervisorCycleReview", currentNames);
         Assert.DoesNotContain(SqlRepositorySchemaDescriptors.Post041.Tables,
             static table => table.Name.ObjectName == "PartMaster");
         Assert.Contains("ProductionAdmissionRecoveryAudit", currentNames);

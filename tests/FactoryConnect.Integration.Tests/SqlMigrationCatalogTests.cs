@@ -61,7 +61,8 @@ public sealed class SqlMigrationCatalogTests
             migration => AssertMigration(migration, 43, "SupervisorShiftIdealCycle", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 44, "PartMaster", SqlMigrationTransactionPolicy.EngineOwned),
             migration => AssertMigration(migration, 45, "OperationMaster", SqlMigrationTransactionPolicy.EngineOwned),
-            migration => AssertMigration(migration, 46, "SupervisorCycleContextRevisions", SqlMigrationTransactionPolicy.EngineOwned));
+            migration => AssertMigration(migration, 46, "SupervisorCycleContextRevisions", SqlMigrationTransactionPolicy.EngineOwned),
+            migration => AssertMigration(migration, 47, "SupervisorCycleReview", SqlMigrationTransactionPolicy.EngineOwned));
     }
 
     [Fact]
