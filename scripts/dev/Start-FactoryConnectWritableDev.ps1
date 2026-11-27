@@ -253,6 +253,10 @@ try {
         $apiEnvironment['LocalPartMaster__WriteConnectionString'] = $connectionString
     }
     if ($EnableSupervisorIdealCycles) {
+        if ($EnableSupervisorReviews) {
+            $apiEnvironment['SupervisorLocalCycleReview__EnableWrites'] = 'true'
+            $apiEnvironment['SupervisorLocalCycleReview__WriteConnectionString'] = $connectionString
+        }
         $apiEnvironment['SupervisorLocalShiftIdealCycle__EnableWrites'] = 'true'
         $apiEnvironment['SupervisorLocalShiftIdealCycle__WriteConnectionString'] = $connectionString
     }
