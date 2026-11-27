@@ -43,6 +43,7 @@ internal static class SqlRepositorySchemaAuthority
         Table("OperationalMetricProjectionProcessor"),
         Table("OperationalMetricPublicationResultArchive"),
         Table("OperationalMetricResultWitnessReference"),
+        Table("OperationMaster"),
         Table("PartMaster"),
         Table("ProductionAdmissionRecoveryAudit"),
         Table("ProductionContextCheckpoint"),
