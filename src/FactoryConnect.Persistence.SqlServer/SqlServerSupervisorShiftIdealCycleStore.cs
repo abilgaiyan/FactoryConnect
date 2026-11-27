@@ -89,6 +89,15 @@ public sealed class SqlServerSupervisorShiftIdealCycleStore
                     OR @Number <> ISNULL(@HeadNumber, 0) + 1
                     THROW 51143, 'Stale shift ideal cycle revision head.', 1;
 
+                -- A correction changes the cycle value, not the production population.
+                IF @Head IS NOT NULL AND NOT EXISTS (
+                    SELECT 1 FROM dbo.SupervisorShiftIdealCycle
+                    WHERE CycleRevisionId = @Head AND ShiftId = @Shift
+                      AND ((ProductionOrder = @Order) OR (ProductionOrder IS NULL AND @Order IS NULL))
+                      AND ((PartNumber = @Part) OR (PartNumber IS NULL AND @Part IS NULL))
+                      AND ((Operation = @Operation) OR (Operation IS NULL AND @Operation IS NULL)))
+                    THROW 51143, 'Cycle correction cannot change recorded production context.', 1;
+
                 INSERT INTO dbo.SupervisorShiftIdealCycle
                     (CycleRevisionId, MachineId, ShiftScheduleAssignmentId, ShiftId,
                      ShiftStartsAtUtc, ShiftEndsAtUtc, RevisionNumber, IdealCycleSeconds,
