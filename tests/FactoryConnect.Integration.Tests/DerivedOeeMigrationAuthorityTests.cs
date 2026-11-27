@@ -12,7 +12,7 @@ public sealed class DerivedOeeMigrationAuthorityTests
         Assert.Equal(42, previous.Tables.Length); Assert.Equal(43, current.Tables.Length);
         Assert.Equal(previous.Tables, current.Tables.Take(42));
         Assert.Equal("DerivedOeeAssessment", current.Tables[^1].Name.ObjectName);
-        Assert.Equal(SqlRepositorySchemaDescriptors.Post031.Tables.Length + 5, SqlRepositorySchemaDescriptors.Current.Tables.Length);
+        Assert.Equal(SqlRepositorySchemaDescriptors.Post031.Tables.Length + 6, SqlRepositorySchemaDescriptors.Current.Tables.Length);
         Assert.Equal("ImmutableDerivedOeeAssessment", SqlMigrationCatalog.Load().Migrations.Single(x => x.MigrationId == 17).Name);
     }
 }
