@@ -30,6 +30,9 @@ public static class SupervisorProductionEntryEndpoints
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/declared-ideal-time", ReadDeclaredIdealTimeAsync)
             .RequireAuthorization("OperationalRead").WithName("ReadLocalDeclaredIdealTime")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-ideal-time", ReadAcceptedIdealTimeAsync)
+            .RequireAuthorization("OperationalRead").WithName("ReadLocalAcceptedIdealTime")
+            .WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries", CreateAsync).RequireAuthorization("SupervisorWrite")
             .WithName("CreateLocalSupervisorProductionEntry")
             .WithGroupName("supervisor-local-v1")
@@ -194,6 +197,41 @@ public static class SupervisorProductionEntryEndpoints
         catch (Microsoft.Data.SqlClient.SqlException)
         {
             return Results.Problem(statusCode: 503, title: "Supervisor entry SQL write unavailable");
+        }
+    }
+
+    private static async Task<IResult> ReadAcceptedIdealTimeAsync(
+        Guid machineId, string assignmentId, string shiftId,
+        DateTimeOffset shiftStartsAtUtc, DateTimeOffset shiftEndsAtUtc,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        if (machineId == Guid.Empty || string.IsNullOrWhiteSpace(assignmentId) || assignmentId.Length > 200 ||
+            string.IsNullOrWhiteSpace(shiftId) || shiftId.Length > 200 ||
+            shiftStartsAtUtc.Offset != TimeSpan.Zero || shiftEndsAtUtc.Offset != TimeSpan.Zero ||
+            shiftStartsAtUtc >= shiftEndsAtUtc || shiftEndsAtUtc - shiftStartsAtUtc > TimeSpan.FromDays(1))
+            return Results.BadRequest(new { reason = "InvalidExactShift" });
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            var production = await new SqlServerAcceptedShiftProductionReader(connectionString)
+                .ReadAsync(machineId, assignmentId, shiftId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken);
+            if (production is null)
+                return Results.Ok(SupervisorAcceptedIdealTime.Calculate(null, Array.Empty<SupervisorShiftIdealCycleRevision>()));
+            if (production.MachineId != machineId || production.ShiftScheduleAssignmentId != assignmentId ||
+                production.ShiftId != shiftId || production.ShiftStartsAtUtc != shiftStartsAtUtc ||
+                production.ShiftEndsAtUtc != shiftEndsAtUtc)
+                return Results.Problem(statusCode: 503, title: "Accepted production scope mismatch");
+            var cycles = await new SqlServerSupervisorShiftIdealCycleStore(connectionString)
+                .ListAsync(machineId, assignmentId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken);
+            return Results.Ok(SupervisorAcceptedIdealTime.Calculate(production, cycles));
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
+        {
+            return Results.Problem(statusCode: 503, title: "Accepted ideal time evidence unavailable");
         }
     }
 
