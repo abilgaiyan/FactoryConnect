@@ -148,6 +148,7 @@ app.MapMethods("/api/supervisor/v1/machines/{machineId:guid}/ideal-cycles",
 // The gateway opt-in and the API's commissioning/write checks are independent.
 string[] supervisorReviewReadPaths =
 [
+    "/api/supervisor/v1/machines/{machineId:guid}/declared-ideal-time",
     "/api/supervisor/v1/machines/{machineId:guid}/accepted-shift-production",
     "/api/supervisor/v1/machines/{machineId:guid}/quantity-source-cut",
     "/api/supervisor/v1/machines/{machineId:guid}/production-entries/{entryId:guid}/qualification-readiness",
