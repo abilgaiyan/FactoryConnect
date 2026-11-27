@@ -38,6 +38,16 @@ public sealed class SqlServerSupervisorCycleDefaultStore(string connectionString
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var captured = await CaptureCoreAsync(connection, transaction, context, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return captured;
+    }
+
+    internal static async Task<SupervisorCycleDefaultSnapshot?> CaptureCoreAsync(SqlConnection connection,
+        SqlTransaction transaction, SupervisorCycleContext context, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        Validate(context);
+        if (now.Offset != TimeSpan.Zero) throw new ArgumentException("Capture time must be UTC.");
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -50,7 +60,6 @@ public sealed class SqlServerSupervisorCycleDefaultStore(string connectionString
         var existing = await ReadCoreAsync(connection, transaction, context, cancellationToken);
         if (existing is not null)
         {
-            await transaction.CommitAsync(cancellationToken);
             return existing;
         }
         if (now < context.StartsAtUtc || now >= context.EndsAtUtc)
@@ -77,7 +86,6 @@ public sealed class SqlServerSupervisorCycleDefaultStore(string connectionString
         command.Parameters.Add("@Now", SqlDbType.DateTimeOffset).Value = now;
         await command.ExecuteNonQueryAsync(cancellationToken);
         var captured = await ReadCoreAsync(connection, transaction, context, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
         return captured;
     }
 

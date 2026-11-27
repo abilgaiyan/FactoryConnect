@@ -104,6 +104,20 @@ public sealed class SqlServerSupervisorProductionEntryWriter
         command.Parameters.Add("@RejectedQuantity", SqlDbType.BigInt).Value = (object?)entry.RejectedQuantity ?? DBNull.Value;
         var inserted = (bool)(await command.ExecuteScalarAsync(cancellationToken)
             ?? throw new InvalidDataException("Supervisor insert returned no result."));
+        // Only a newly admitted, in-shift declaration may establish a default.
+        // Late entries and retries must not manufacture historical master evidence.
+        if (inserted && entry.RecordedAtUtc >= entry.ShiftStartsAtUtc &&
+            entry.RecordedAtUtc < entry.ShiftEndsAtUtc &&
+            entry.ProductionOrder == entry.ProductionOrder.Trim() &&
+            entry.PartNumber == entry.PartNumber.Trim() && entry.Operation == entry.Operation.Trim() &&
+            entry.ShiftScheduleAssignmentId == entry.ShiftScheduleAssignmentId.Trim() &&
+            entry.ShiftId == entry.ShiftId.Trim())
+        {
+            await SqlServerSupervisorCycleDefaultStore.CaptureCoreAsync(connection, transaction,
+                new SupervisorCycleContext(entry.MachineId, entry.ShiftScheduleAssignmentId, entry.ShiftId,
+                    entry.ShiftStartsAtUtc, entry.ShiftEndsAtUtc, entry.ProductionOrder,
+                    entry.PartNumber, entry.Operation), entry.RecordedAtUtc, cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
         return inserted;
     }
