@@ -8,6 +8,7 @@ const pageSize = 25;
 type Revision = { cycleRevisionId: string; revisionNumber: number; idealCycleSeconds: number; enteredBy: string; recordedAtUtc: string; revisionReason: string | null; productionOrder: string | null; partNumber: string | null; operation: string | null };
 
 export function SupervisorIdealCycle({ scope }: { readonly scope: Scope }) {
+  const [contextKey, setContextKey] = useState("");
   const [history, setHistory] = useState<Revision[]>([]);
   const [seconds, setSeconds] = useState("");
   const [parts, setParts] = useState<Part[]>([]);
@@ -74,12 +75,21 @@ export function SupervisorIdealCycle({ scope }: { readonly scope: Scope }) {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [url, query, refresh]);
-  const head = history.reduce<Revision | null>((latest, item) => !latest || item.revisionNumber > latest.revisionNumber ? item : latest, null);
+  const keyOf = (item: Revision) => JSON.stringify([item.productionOrder, item.partNumber, item.operation]);
+  const heads = new Map<string, Revision>();
+  for (const item of history) {
+    const key = keyOf(item);
+    const previous = heads.get(key);
+    if (!previous || item.revisionNumber > previous.revisionNumber) heads.set(key, item);
+  }
+  const newKey = JSON.stringify([order.trim() || null, part?.partNumber ?? null, operation?.operationCode ?? null]);
+  const head = contextKey ? heads.get(contextKey) ?? null : heads.get(newKey) ?? null;
+  const missingContext = Boolean(contextKey && !head);
   const value = Number(seconds);
   const valid = /^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(seconds) && value > 0 && value <= 86400;
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (loading || saving || error) return;
+    if (loading || saving || error || missingContext) return;
     if (!pending && (!valid || (head && !reason.trim()))) { setStatus("Enter positive seconds (up to three decimal places) and a correction reason when revising."); return; }
     const id = pending?.id ?? crypto.randomUUID();
     const body = pending?.body ?? JSON.stringify({ cycleRevisionId: id, shiftScheduleAssignmentId: scope.shiftScheduleAssignmentId, shiftId: scope.shiftId, shiftStartsAtUtc: scope.startsAtUtc, shiftEndsAtUtc: scope.endsAtUtc, revisionNumber: (head?.revisionNumber ?? 0) + 1, expectedHeadRevisionId: head?.cycleRevisionId ?? null, idealCycleSeconds: value, productionOrder: head ? head.productionOrder : order.trim() || null, partNumber: head ? head.partNumber : part?.partNumber ?? null, operation: head ? head.operation : operation?.operationCode ?? null, revisionReason: reason.trim() || null });
@@ -90,7 +100,7 @@ export function SupervisorIdealCycle({ scope }: { readonly scope: Scope }) {
         if ([400,401,403,409,422].includes(response.status)) { setPending(null); setRefresh(n => n + 1); }
         throw new Error(`Save not confirmed (HTTP ${response.status}). Reload history before another attempt.`);
       }
-      setPending(null); setSeconds(""); setReason(""); setStatus("Ideal cycle revision saved."); setRefresh(n => n + 1);
+      setPending(null); setContextKey(contextKey || newKey); setSeconds(""); setReason(""); setStatus("Ideal cycle revision saved."); setRefresh(n => n + 1);
     } catch(e) { setStatus(String(e)); } finally { setSaving(false); }
   }
   return <section className="supervisor-editor" aria-label="Shift ideal cycle time">
@@ -98,10 +108,17 @@ export function SupervisorIdealCycle({ scope }: { readonly scope: Scope }) {
     <p>Seconds per piece for this shift. Declaration only; not qualified OEE evidence.</p>
     <button type="button" disabled={loading || saving} onClick={() => setRefresh(n => n + 1)}>Reload ideal cycle history</button>
     {loading ? <p>Loading ideal cycle…</p> : error ? <p role="alert">{error}</p> : head ? <p><strong>{head.idealCycleSeconds} seconds/piece</strong> · {Number((3600/head.idealCycleSeconds).toFixed(2))} pieces/hour · Revision {head.revisionNumber}</p> : <p>No ideal cycle time recorded.</p>}
+    <label>Production context<select value={contextKey} disabled={loading || saving || Boolean(error) || Boolean(pending)} onChange={e => {
+      setContextKey(e.target.value); setSeconds(""); setReason(""); setStatus("");
+      setOrder(""); setPart(null); setOperation(null); setOperations([]); setOperationOffset(0);
+    }}><option value="">New production context</option>
+      {[...heads.entries()].map(([key, item]) => <option key={key} value={key}>{item.productionOrder ?? "No order"} · {item.partNumber ?? "No part"} · {item.operation ?? "No operation"}</option>)}
+    </select></label>
+    {missingContext && <p role="alert">Selected context is unavailable. Select another context.</p>}
     <form onSubmit={save}>
-      <fieldset disabled={loading || saving || Boolean(error)}>
+      <fieldset disabled={loading || saving || Boolean(error) || missingContext}>
         <legend>{head ? "Correct ideal cycle time" : "Set ideal cycle time"}</legend>
-        {!head && <fieldset disabled={Boolean(pending)}>
+        {!contextKey && <fieldset disabled={Boolean(pending)}>
           <legend>Production context (optional)</legend>
           <label>Production order<input maxLength={200} placeholder="e.g. WO-2026-001" value={order} onChange={e => setOrder(e.target.value)} /></label>
           {masterError && <p role="alert">{masterError}</p>}
@@ -137,6 +154,6 @@ export function SupervisorIdealCycle({ scope }: { readonly scope: Scope }) {
     </form>
     {pending && <p role="alert">Save outcome uncertain. Reload history or retry the same revision.</p>}
     {status && <p role="status">{status}</p>}
-    {!loading && !error && history.length > 0 && <details><summary>Ideal cycle revision history</summary>{history.map(item => <p key={item.cycleRevisionId}>Revision {item.revisionNumber}: {item.idealCycleSeconds} seconds/piece · {item.enteredBy} · {formatReportTimestamp(item.recordedAtUtc)} · {item.partNumber ?? "No part"} / {item.operation ?? "No operation"} · {item.revisionReason || "Initial declaration"}</p>)}</details>}
+    {!loading && !error && history.length > 0 && <details><summary>Ideal cycle revision history</summary>{history.map(item => <p key={item.cycleRevisionId}>Revision {item.revisionNumber}: {item.idealCycleSeconds} seconds/piece · {item.enteredBy} · {formatReportTimestamp(item.recordedAtUtc)} · {item.productionOrder ?? "No order"} · {item.partNumber ?? "No part"} / {item.operation ?? "No operation"} · {item.revisionReason || "Initial declaration"}</p>)}</details>}
   </section>;
 }
