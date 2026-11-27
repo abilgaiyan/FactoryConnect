@@ -102,6 +102,7 @@ app.MapSupervisorProductionEntryEndpoints();
 app.MapSupervisorShiftTargetEndpoints();
 app.MapSupervisorShiftIdealCycleEndpoints();
 app.MapPartMasterEndpoints();
+app.MapOperationMasterEndpoints();
 app.MapCncShiftEvidencePreviewEndpoints();
 app.MapMachineEvidenceProfileEndpoints();
 
