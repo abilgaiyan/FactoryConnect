@@ -105,9 +105,9 @@ export function OperationMaster() {
       <form onSubmit={e => { e.preventDefault(); if (!saving) void save(); }}>
         <fieldset disabled={saving}>
           <legend>{editing ? "Edit operation" : "Create or update operation"}</legend>
-          <label>Operation code<input required maxLength={200} readOnly={editing} value={form.operationCode} onChange={e => setForm({ ...form, operationCode: e.target.value })} /></label>
-          <label>Operation name<input required maxLength={200} value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} /></label>
-          <label>Cycle override (seconds)<input type="number" min="0.001" max="86400" step="0.001" value={form.idealCycleSeconds} onChange={e => setForm({ ...form, idealCycleSeconds: e.target.value })} /></label>
+          <label>Operation code<input required maxLength={200} readOnly={editing} placeholder="e.g. OP-10" value={form.operationCode} onChange={e => setForm({ ...form, operationCode: e.target.value })} /></label>
+          <label>Operation name<input required maxLength={200} placeholder="e.g. Gear hobbing" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} /></label>
+          <label>Cycle override (seconds)<input type="number" min="0.001" max="86400" step="0.001" placeholder="e.g. 450 (optional)" value={form.idealCycleSeconds} onChange={e => setForm({ ...form, idealCycleSeconds: e.target.value })} /></label>
           <label><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} />Active</label>
           <button type="submit">{saving ? "Saving…" : "Save operation"}</button>
           <button type="button" onClick={() => { setForm(empty); setEditing(false); }}>Clear</button>
