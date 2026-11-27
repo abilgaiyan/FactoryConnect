@@ -61,9 +61,9 @@ export function DowntimeReasonAdministration() {
       </tr>)}</tbody></table>}
     <fieldset disabled={busy}>
       <legend>{reasons.some(reason => reason.reasonCode === code) ? 'Edit reason' : 'New reason'}</legend>
-      <label>Reason code <input value={code} maxLength={100} disabled={reasons.some(reason => reason.reasonCode === code)} onChange={event => setCode(event.target.value)} /></label>
-      <label>Display name <input value={name} maxLength={200} onChange={event => setName(event.target.value)} /></label>
-      <label>Description <textarea value={description} maxLength={1000} onChange={event => setDescription(event.target.value)} /></label>
+      <label>Reason code <input placeholder="e.g. M0001" value={code} maxLength={100} disabled={reasons.some(reason => reason.reasonCode === code)} onChange={event => setCode(event.target.value)} /></label>
+      <label>Display name <input placeholder="e.g. Tool change" value={name} maxLength={200} onChange={event => setName(event.target.value)} /></label>
+      <label>Description <textarea placeholder="e.g. Replace worn gear cutting tool" value={description} maxLength={1000} onChange={event => setDescription(event.target.value)} /></label>
       <label className="production-backdate"><input type="checkbox" checked={active} onChange={event => setActive(event.target.checked)} /> Active</label>
       <button type="button" disabled={!code.trim() || !name.trim()} onClick={() => void save()}>Save reason</button>
       <button type="button" onClick={clear}>Clear</button>
