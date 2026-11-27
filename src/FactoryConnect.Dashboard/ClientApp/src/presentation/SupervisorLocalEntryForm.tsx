@@ -16,6 +16,42 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
   const [order, setOrder] = useState("");
   const [part, setPart] = useState("");
   const [operation, setOperation] = useState("");
+  const [masterParts, setMasterParts] = useState<{partNumber: string; displayName: string}[]>([]);
+  const [masterOperations, setMasterOperations] = useState<{operationCode: string; displayName: string}[]>([]);
+  const [partPage, setPartPage] = useState(0);
+  const [operationPage, setOperationPage] = useState(0);
+  const [masterPart, setMasterPart] = useState("");
+  const [partError, setPartError] = useState("");
+  const [operationError, setOperationError] = useState("");
+  const [partLoading, setPartLoading] = useState(true);
+  const [operationLoading, setOperationLoading] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    setPartLoading(true); setMasterParts([]); setPartError("");
+    void fetch("/api/supervisor/v1/parts?offset=" + partPage * 25 + "&limit=25", {signal: controller.signal, cache: "no-store", redirect: "error"})
+      .then(async response => {
+        if (!response.ok) throw new Error("Part master unavailable (HTTP " + response.status + ")");
+        const data: unknown = await response.json();
+        if (!Array.isArray(data) || !data.every(p => p && typeof p.partNumber === "string" && typeof p.displayName === "string" && p.isActive === true)) throw new Error("Invalid part master response");
+        if (!controller.signal.aborted) setMasterParts(data);
+      }).catch(e => { if (!controller.signal.aborted) setPartError(String(e)); })
+      .finally(() => { if (!controller.signal.aborted) setPartLoading(false); });
+    return () => controller.abort();
+  }, [partPage]);
+  useEffect(() => {
+    if (!masterPart) return;
+    const controller = new AbortController();
+    setOperationLoading(true); setMasterOperations([]); setOperationError("");
+    void fetch("/api/supervisor/v1/operations?partNumber=" + encodeURIComponent(masterPart) + "&offset=" + operationPage * 25 + "&limit=25", {signal: controller.signal, cache: "no-store", redirect: "error"})
+      .then(async response => {
+        if (!response.ok) throw new Error("Operation master unavailable (HTTP " + response.status + ")");
+        const data: unknown = await response.json();
+        if (!Array.isArray(data) || !data.every(o => o && o.partNumber === masterPart && typeof o.operationCode === "string" && typeof o.displayName === "string" && o.isActive === true)) throw new Error("Invalid operation master response");
+        if (!controller.signal.aborted) setMasterOperations(data);
+      }).catch(e => { if (!controller.signal.aborted) setOperationError(String(e)); })
+      .finally(() => { if (!controller.signal.aborted) setOperationLoading(false); });
+    return () => controller.abort();
+  }, [masterPart, operationPage]);
   const [note, setNote] = useState("");
   const [good, setGood] = useState("");
   const [rejected, setRejected] = useState("");
@@ -155,7 +191,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
       if (!response.ok) throw new Error(`Save not confirmed (HTTP ${response.status}). Do not submit a new entry until reconciled.`);
       // A successful POST is durable even if the subsequent list refresh fails.
       // Never present a read failure as a failed write or offer a duplicate retry.
-      setPendingId(null); setOrder(""); setPart(""); setOperation(""); setNote(""); setGood(""); setRejected("");
+      setPendingId(null); setOrder(""); setPart(""); setOperation(""); setMasterPart(""); setMasterOperations([]); setOperationPage(0); setNote(""); setGood(""); setRejected("");
       try {
         await refresh();
         setStatus("Entry saved to SQL. It is not published as CNC evidence or OEE.");
@@ -173,12 +209,35 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
     <h2>Supervisor production entry · local commissioning</h2>
     <p>Saving requires an explicitly enabled loopback-only API. This entry records supervisor-declared quantities, not accepted CNC quantity or OEE. A failed save may be ambiguous; verify entries before trying again.</p>
     <form onSubmit={event => { void save(event); }}>
-      <label>Production order<input required maxLength={200} value={order} onChange={event => { setOrder(event.target.value); setPendingId(null); }} /></label>
-      <label>Part number<input required maxLength={200} value={part} onChange={event => { setPart(event.target.value); setPendingId(null); }} /></label>
-      <label>Operation<input required maxLength={200} value={operation} onChange={event => { setOperation(event.target.value); setPendingId(null); }} /></label>
-      <label>Good quantity<input required type="number" min="0" step="1" value={good} onChange={event => { setGood(event.target.value); setPendingId(null); }} /></label>
-      <label>Rejected quantity<input required type="number" min="0" step="1" value={rejected} onChange={event => { setRejected(event.target.value); setPendingId(null); }} /></label>
-      <label>Note<textarea maxLength={2000} value={note} onChange={event => { setNote(event.target.value); setPendingId(null); }} /></label>
+      <label>Production order<input placeholder="e.g. WO-2026-001" required maxLength={200} value={order} onChange={event => { setOrder(event.target.value); setPendingId(null); }} /></label>
+      <fieldset disabled={loading || Boolean(pendingId)}>
+        <legend>Choose from masters (optional)</legend>
+        {partError && <p role="alert">{partError}</p>}
+        <label>Master part<select value={masterPart} disabled={partLoading} onChange={e => {
+          setMasterPart(e.target.value); setPart(e.target.value); setOperation(""); setMasterOperations([]); setOperationPage(0); setOperationError("");
+        }}><option value="">Manual entry</option>
+          {masterPart && !masterParts.some(p => p.partNumber === masterPart) && <option value={masterPart}>{masterPart}</option>}
+          {masterParts.map(p => <option key={p.partNumber} value={p.partNumber}>{p.partNumber} — {p.displayName}</option>)}
+        </select></label>
+        <button type="button" disabled={partLoading || partPage === 0} onClick={() => setPartPage(v => v - 1)}>Previous parts</button>
+        <button type="button" disabled={partLoading || masterParts.length < 25} onClick={() => setPartPage(v => v + 1)}>Next parts</button>
+        {masterPart && <>
+          {operationError && <p role="alert">{operationError}</p>}
+          <label>Master operation<select disabled={operationLoading} value={operation} onChange={e => setOperation(e.target.value)}>
+            <option value="">Select operation</option>
+            {operation && !masterOperations.some(o => o.operationCode === operation) && <option value={operation}>{operation}</option>}
+            {masterOperations.map(o => <option key={o.operationCode} value={o.operationCode}>{o.operationCode} — {o.displayName}</option>)}
+          </select></label>
+          <button type="button" disabled={operationLoading || operationPage === 0} onClick={() => setOperationPage(v => v - 1)}>Previous operations</button>
+          <button type="button" disabled={operationLoading || masterOperations.length < 25} onClick={() => setOperationPage(v => v + 1)}>Next operations</button>
+        </>}
+      </fieldset>
+      <label>Part number<input placeholder="e.g. GEAR-001" required maxLength={200} value={part} onChange={event => { setPart(event.target.value); setMasterPart(""); setMasterOperations([]); setOperationPage(0); setPendingId(null); }} /></label>
+      <label>Operation<input placeholder="e.g. OP-10" required maxLength={200} value={operation} onChange={event => { setOperation(event.target.value); setPendingId(null); }} /></label>
+      <label>Good quantity<input placeholder="e.g. 118" required type="number" min="0" step="1" value={good} onChange={event => { setGood(event.target.value); setPendingId(null); }} /></label>
+      <label>Rejected quantity<input placeholder="e.g. 2" required type="number" min="0" step="1" value={rejected} onChange={event => { setRejected(event.target.value); setPendingId(null); }} /></label>
+      <label>Note<textarea placeholder="e.g. First-piece inspection completed" maxLength={2000} value={note} onChange={event => { setNote(event.target.value); setPendingId(null); }} /></label>
+      { /^\d+$/.test(good) && /^\d+$/.test(rejected) && Number.isSafeInteger(Number(good)) && Number.isSafeInteger(Number(rejected)) && <p>Declared total: {(BigInt(good) + BigInt(rejected)).toString()} pieces</p>}
       <button type="submit" disabled={loading}>{loading ? "Saving…" : pendingId ? "Retry same entry" : "Save production entry"}</button>
       <button type="button" disabled={loading} onClick={() => { setEntriesReadState("loading"); void refresh().then(() => setStatus("Entries refreshed."), error => { setEntriesReadState("error"); setStatus(String(error)); }); }}>Refresh entries</button>
     </form>
