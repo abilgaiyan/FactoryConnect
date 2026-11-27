@@ -82,6 +82,9 @@ public sealed class SqlServerSupervisorShiftIdealCycleStore
                 FROM dbo.SupervisorShiftIdealCycle WITH (UPDLOCK, HOLDLOCK)
                 WHERE MachineId = @Machine AND ShiftScheduleAssignmentId = @Assignment
                   AND ShiftStartsAtUtc = @Starts AND ShiftEndsAtUtc = @Ends
+                  AND ((ProductionOrder = @Order) OR (ProductionOrder IS NULL AND @Order IS NULL))
+                  AND ((PartNumber = @Part) OR (PartNumber IS NULL AND @Part IS NULL))
+                  AND ((Operation = @Operation) OR (Operation IS NULL AND @Operation IS NULL))
                 ORDER BY RevisionNumber DESC;
 
                 IF (@Head IS NULL AND @Expected IS NOT NULL)
@@ -144,7 +147,7 @@ public sealed class SqlServerSupervisorShiftIdealCycleStore
             FROM dbo.SupervisorShiftIdealCycle
             WHERE MachineId = @Machine AND ShiftScheduleAssignmentId = @Assignment
               AND ShiftStartsAtUtc = @Starts AND ShiftEndsAtUtc = @Ends
-            ORDER BY RevisionNumber ASC;
+            ORDER BY ProductionOrder, PartNumber, Operation, RevisionNumber ASC;
             """;
         command.Parameters.Add("@Machine", SqlDbType.UniqueIdentifier).Value = machineId;
         AddText(command, "@Assignment", assignmentId, 200);
