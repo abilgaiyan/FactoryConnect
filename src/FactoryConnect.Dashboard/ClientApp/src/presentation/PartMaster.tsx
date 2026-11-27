@@ -52,10 +52,10 @@ export function PartMaster() {
     <form onSubmit={e => { e.preventDefault(); if (!saving) void save(); }}>
       <fieldset disabled={saving}>
         <legend>{editing ? "Edit part" : "Create or update part"}</legend>
-        <label>Part number<input required maxLength={200} readOnly={editing} value={form.partNumber} onChange={e => setForm({ ...form, partNumber: e.target.value })} /></label>
-        <label>Part name<input required maxLength={200} value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} /></label>
-        <label>Description<input maxLength={1000} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
-        <label>Default ideal cycle (seconds)<input required type="number" min="0.001" max="86400" step="0.001" value={form.idealCycleSeconds} onChange={e => setForm({ ...form, idealCycleSeconds: e.target.value })} /></label>
+        <label>Part number<input required maxLength={200} readOnly={editing} placeholder="e.g. GEAR-001" value={form.partNumber} onChange={e => setForm({ ...form, partNumber: e.target.value })} /></label>
+        <label>Part name<input required maxLength={200} placeholder="e.g. Transmission gear" value={form.displayName} onChange={e => setForm({ ...form, displayName: e.target.value })} /></label>
+        <label>Description<input maxLength={1000} placeholder="e.g. CNC machined helical gear" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+        <label>Default ideal cycle (seconds)<input required type="number" min="0.001" max="86400" step="0.001" placeholder="e.g. 600" value={form.idealCycleSeconds} onChange={e => setForm({ ...form, idealCycleSeconds: e.target.value })} /></label>
         <label className="production-backdate"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} />Active</label>
         <button type="submit">{saving ? "Saving…" : "Save part"}</button>
         <button type="button" onClick={() => { setForm(empty); setEditing(false); }}>Clear</button>
