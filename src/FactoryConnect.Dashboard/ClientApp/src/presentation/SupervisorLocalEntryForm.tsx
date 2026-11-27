@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { SupervisorLocalReviewPanel } from "./SupervisorLocalReviewPanel";
+import { SupervisorDeclaredIdealTime } from "./SupervisorDeclaredIdealTime";
 import { SupervisorEntryReadiness } from "./SupervisorEntryReadiness";
 
 type Entry = {
@@ -285,6 +286,7 @@ export function SupervisorLocalEntryForm({ scope }: { readonly scope: Scope }) {
         </tr>)}</tbody>
       </table>
     </section>}
+    {entriesReadState === "ready" && entries.length > 0 && <SupervisorDeclaredIdealTime scope={scope} entries={entries} />}
     {entriesReadState === "ready" && <SupervisorLocalReviewPanel scope={scope} entries={entries} />}
     {entriesReadState !== "ready" ? null : entries.length === 0 ? <p>No saved entries returned for this exact shift. This does not prove zero production.</p> :
       filteredEntries.length === 0 ? <p>No saved entries match the review filters. Clear the filters to see all entries for this shift.</p> :
