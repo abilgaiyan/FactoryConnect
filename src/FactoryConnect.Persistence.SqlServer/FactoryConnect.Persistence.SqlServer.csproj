@@ -4,6 +4,7 @@
     <AssemblyName>FactoryConnect.Persistence.SqlServer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Sql\047_SupervisorCycleReview.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.047_SupervisorCycleReview.sql" />
     <EmbeddedResource Include="Sql\046_SupervisorCycleContextRevisions.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.046_SupervisorCycleContextRevisions.sql" />
     <EmbeddedResource Include="Sql\044_PartMaster.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.044_PartMaster.sql" />
     <EmbeddedResource Include="Sql\045_OperationMaster.sql" LogicalName="FactoryConnect.Persistence.SqlServer.Sql.045_OperationMaster.sql" />
