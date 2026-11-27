@@ -287,6 +287,32 @@ foreach (var partPath in new[] { "/api/admin/v1/parts", "/api/supervisor/v1/part
     });
 }
 
+// Explicit local Operation Master routes only.
+foreach (var operationPath in new[] { "/api/admin/v1/operations", "/api/supervisor/v1/operations" })
+{
+    var methods = operationPath == "/api/admin/v1/operations"
+        ? new[] { HttpMethods.Get, HttpMethods.Put } : new[] { HttpMethods.Get };
+    app.MapMethods(operationPath, methods, async (HttpContext context, IConfiguration configuration, ReportingGateway gateway) =>
+    {
+        if (!configuration.GetValue<bool>("LocalOperationMaster:EnableGateway") ||
+            context.Connection.RemoteIpAddress is not { } remote ||
+            !System.Net.IPAddress.IsLoopback(remote) ||
+            context.Request.Headers.ContainsKey("Forwarded") ||
+            context.Request.Headers.Keys.Any(static key => key.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+        if (!string.Equals(context.Request.Path.Value, operationPath, StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        await gateway.ForwardAsync(context, operationPath.TrimStart('/') + context.Request.QueryString.Value,
+            HttpMethods.IsPut(context.Request.Method) ? HttpMethod.Put : HttpMethod.Get).ConfigureAwait(false);
+    });
+}
+
 app.MapGet("/health/live", () => Results.Ok(new
 {
     status = "ok",
