@@ -45,6 +45,8 @@ async function choose(h, label, value) { await act(async () => { const el = cont
 async function load(h) { await choose(h,'Machine / reporting processor','0'); await h.changeInput(control(h,'Production business date','input'),day); await h.click(button(h,'Load shift occurrences')); }
 async function selectOccurrence(h, index = 1) { const select = control(h,'Exact shift occurrence'); await choose(h,'Exact shift occurrence',select.options[index].value); }
 function mockFetch(t, fetcher) { const previous = globalThis.fetch; globalThis.fetch = (url, options) => {
+  if (String(url).startsWith('/api/supervisor/v1/parts?') || String(url).startsWith('/api/supervisor/v1/operations?'))
+    return Promise.resolve(Response.json([]));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && (String(url).includes('/entries?') || String(url).includes('/reviews?') || String(url).includes('/shift-targets?')))
     return Promise.resolve(Response.json([]));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/accepted-shift-production?'))
