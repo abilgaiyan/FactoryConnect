@@ -118,6 +118,9 @@ public sealed class SqlServerTestDatabaseFixture : IAsyncLifetime
                 SqlMigrationCatalog.Load().Migrations.Single(migration => migration.MigrationId == 28).CanonicalSql);
             await ExecuteSchemaAsync(databaseConnection,
                 SqlMigrationCatalog.Load().Migrations.Single(migration => migration.MigrationId == 31).CanonicalSql);
+            foreach (var id in new[] { 44, 45, 48 })
+                await ExecuteSchemaAsync(databaseConnection,
+                    SqlMigrationCatalog.Load().Migrations.Single(migration => migration.MigrationId == id).CanonicalSql);
         }
         catch
         {
