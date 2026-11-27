@@ -49,6 +49,8 @@ function mockFetch(t, fetcher) { const previous = globalThis.fetch; globalThis.f
     return Promise.resolve(Response.json([]));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && (String(url).includes('/entries?') || String(url).includes('/reviews?') || String(url).includes('/shift-targets?')))
     return Promise.resolve(Response.json([]));
+  if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/accepted-ideal-time?'))
+    return Promise.resolve(Response.json({ publicationId: null, cycleRevisionId: null, idealProductionSeconds: null, status: 'publication-unavailable' }));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/accepted-shift-production?'))
     return Promise.resolve(Response.json({ classification: 'AcceptedProductionUnavailable', reason: 'NoQualifiedPublicationForShift' }));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/quantity-source-cut?'))
