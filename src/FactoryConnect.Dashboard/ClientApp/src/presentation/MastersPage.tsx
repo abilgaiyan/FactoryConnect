@@ -1,3 +1,4 @@
+import { OperationMaster } from "./OperationMaster.tsx";
 import { PartMaster } from "./PartMaster.tsx";
 import { ScheduleMaster } from "./ScheduleMaster.tsx";
 import { DowntimeReasonAdministration } from "./DowntimeReasonAdministration.tsx";
@@ -14,6 +15,7 @@ export default function MastersPage() {
     </section>
     <ScheduleMaster />
     <PartMaster />
+    <OperationMaster />
     <DowntimeReasonAdministration />
   </section>;
 }
