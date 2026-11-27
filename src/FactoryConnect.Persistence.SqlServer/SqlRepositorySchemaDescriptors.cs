@@ -81,7 +81,34 @@ internal static class SqlRepositorySchemaDescriptors
                     ["InstanceId", "Quality"])] }
             : table).ToImmutableArray());
 
-    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster(), OperationMaster(), SupervisorCycleReview()]);
+    public static SqlSchemaDescriptor Current { get; } = new([.. Post041.Tables, LocalUser(), PartMaster(), OperationMaster(), SupervisorCycleReview(), SupervisorCycleDefaultSnapshot()]);
+
+    private static SqlTableDescriptor SupervisorCycleDefaultSnapshot() => Table(
+        "SupervisorCycleDefaultSnapshot",
+        columns:
+        [
+            Column("SnapshotId", "uniqueidentifier"),
+            Column("MachineId", "uniqueidentifier"),
+            Column("ShiftScheduleAssignmentId", "nvarchar", 200, collation: BinaryCollation),
+            Column("ShiftId", "nvarchar", 200, collation: BinaryCollation),
+            DateTimeOffset("ShiftStartsAtUtc", 7),
+            DateTimeOffset("ShiftEndsAtUtc", 7),
+            Column("ProductionOrder", "nvarchar", 200, collation: BinaryCollation) with { IsNullable = true },
+            Column("PartNumber", "nvarchar", 200, collation: BinaryCollation),
+            Column("Operation", "nvarchar", 200, collation: BinaryCollation) with { IsNullable = true },
+            Decimal("PartSeconds", 18, 3),
+            Decimal("OperationSeconds", 18, 3) with { IsNullable = true },
+            DateTimeOffset("CapturedAtUtc", 7)
+        ],
+        primaryKey: PrimaryKey("PK_SupervisorCycleDefaultSnapshot", "SnapshotId"),
+        checks:
+        [
+            Check("CK_SupervisorCycleDefaultSnapshot_Part", "([PartSeconds]>(0) AND [PartSeconds]<=(86400))"),
+            Check("CK_SupervisorCycleDefaultSnapshot_Operation", "([OperationSeconds] IS NULL OR [Operation] IS NOT NULL AND [OperationSeconds]>(0) AND [OperationSeconds]<=(86400))"),
+            Check("CK_SupervisorCycleDefaultSnapshot_Utc", "(datepart(tzoffset,[ShiftStartsAtUtc])=(0) AND datepart(tzoffset,[ShiftEndsAtUtc])=(0) AND datepart(tzoffset,[CapturedAtUtc])=(0))"),
+            Check("CK_SupervisorCycleDefaultSnapshot_Interval", "([ShiftEndsAtUtc]>[ShiftStartsAtUtc])"),
+            Check("CK_SupervisorCycleDefaultSnapshot_Keys", "(len(ltrim(rtrim([ShiftScheduleAssignmentId])))>(0) AND len(ltrim(rtrim([ShiftId])))>(0) AND len(ltrim(rtrim([PartNumber])))>(0))")
+        ]);
 
     private static SqlTableDescriptor SupervisorCycleReview() => Table(
         "SupervisorCycleReview",
