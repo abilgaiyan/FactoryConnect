@@ -47,6 +47,9 @@ jobs:
       - name: Build
         run: dotnet build FactoryConnect.sln --configuration Release --no-restore
 
+      - name: Build accepted ideal-time acceptance runner
+        run: dotnet build tools/AcceptedIdealTimeAcceptance/AcceptedIdealTimeAcceptance.csproj --configuration Release
+
       - name: Ensure Linux timezone data for Windows/IANA conversion tests
         run: |
           sudo apt-get update -qq
