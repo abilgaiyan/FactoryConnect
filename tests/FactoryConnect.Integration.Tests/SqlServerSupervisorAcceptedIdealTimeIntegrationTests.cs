@@ -67,9 +67,33 @@ public sealed class SqlServerSupervisorAcceptedIdealTimeIntegrationTests
         Assert.Equal(publication, before.PublicationId);
         Assert.Null(before.CycleRevisionId);
 
-        await new SqlServerSupervisorCycleReviewStore(database.ConnectionString).AppendAsync(
-            new SupervisorCycleReview(Guid.NewGuid(), cycle, SupervisorCycleReviewDecision.Accepted,
-                "reviewer", start.AddHours(1)));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var reviewStore = new SqlServerSupervisorCycleReviewStore(database.ConnectionString);
+        var review = new SupervisorCycleReview(Guid.NewGuid(), cycle, SupervisorCycleReviewDecision.Accepted,
+            "reviewer", start.AddHours(1));
+        var reads = Enumerable.Range(0, 8).Select(_ =>
+            reader.ReadAsync(machine, "assignment", "shift", start, end, timeout.Token)).ToArray();
+        var write = reviewStore.AppendAsync(review, timeout.Token);
+        var concurrent = await Task.WhenAll(reads);
+        Assert.True(await write);
+        foreach (var result in concurrent)
+        {
+            Assert.Equal(publication, result.PublicationId);
+            Assert.Equal("accepted-quantity-preview", result.Status);
+            if (result.CycleSource == "accepted-override")
+            {
+                Assert.Equal(57600m, result.IdealProductionSeconds);
+                Assert.Equal(cycle, result.CycleRevisionId);
+                Assert.Null(result.DefaultSnapshotId);
+            }
+            else
+            {
+                Assert.Equal(expectedSource, result.CycleSource);
+                Assert.Equal((decimal)expectedSeconds, result.IdealProductionSeconds);
+                Assert.Equal(snapshot, result.DefaultSnapshotId);
+                Assert.Null(result.CycleRevisionId);
+            }
+        }
         var after = await reader.ReadAsync(machine, "assignment", "shift", start, end);
         Assert.Equal(57600m, after.IdealProductionSeconds);
         Assert.Equal("accepted-override", after.CycleSource);
