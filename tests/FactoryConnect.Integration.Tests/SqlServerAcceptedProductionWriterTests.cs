@@ -98,6 +98,17 @@ public sealed class SqlServerAcceptedProductionWriterTests
             Assert.Equal(1L, (long)(await verify.ExecuteScalarAsync())!);
         }
 
+        var qualityReader = new SqlServerAcceptedShiftQualityReader(database.ConnectionString);
+        var quality = await qualityReader.ReadAsync(publication);
+        Assert.NotNull(quality);
+        Assert.Equal(receipt, quality.ReceiptId);
+        Assert.Equal(verification, quality.VerificationId);
+        Assert.Equal(11L, quality.ProducedQuantity);
+        Assert.Equal(10L, quality.GoodQuantity);
+        Assert.Equal(1L, quality.RejectedQuantity);
+        Assert.Equal(10m / 11m, quality.QualityRatio);
+        Assert.Null(await qualityReader.ReadAsync(Guid.NewGuid()));
+
         var replay = await Assert.ThrowsAsync<SqlException>(
             () => ExecutePublicationAsync(Guid.NewGuid()));
         Assert.Equal(51039, replay.Number);
