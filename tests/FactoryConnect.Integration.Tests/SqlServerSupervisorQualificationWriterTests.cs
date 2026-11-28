@@ -66,6 +66,25 @@ public sealed class SqlServerSupervisorQualificationWriterTests
         verify.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
         verify.Parameters.Add("@revision", System.Data.SqlDbType.UniqueIdentifier).Value = revision;
         Assert.Equal(expected ? 1L : 0L, (long)(await verify.ExecuteScalarAsync())!);
+        var verifier = new SqlServerSupervisorVerificationWriter(database.ConnectionString);
+        var verification = Guid.NewGuid();
+        Assert.False(await verifier.VerifyAsync(receipt, Guid.NewGuid(), 12, "population", "test-authority"));
+        Assert.False(await verifier.VerifyAsync(receipt, Guid.NewGuid(), 13, "population", "independent-authority"));
+        Assert.False(await verifier.VerifyAsync(receipt, Guid.NewGuid(), 12, "wrong-population", "independent-authority"));
+        Assert.False(await verifier.VerifyAsync(Guid.NewGuid(), Guid.NewGuid(), 12, "population", "independent-authority"));
+        Assert.Equal(expected, await verifier.VerifyAsync(receipt, verification, 12, "population", "independent-authority"));
+        Assert.False(await verifier.VerifyAsync(receipt, Guid.NewGuid(), 12, "population", "independent-authority"));
+        await using (var check = new SqlCommand("""
+            SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedProductionVerification
+            WHERE VerificationId = @verification AND ReceiptId = @receipt
+              AND VerifiedProducedQuantity = 12 AND Coverage = N'Complete'
+              AND AuthorityReference = N'independent-authority'
+            """, connection))
+        {
+            check.Parameters.Add("@verification", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
+            check.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
+            Assert.Equal(expected ? 1L : 0L, (long)(await check.ExecuteScalarAsync())!);
+        }
         await using var count = new SqlCommand("""
             SELECT (SELECT COUNT_BIG(*) FROM dbo.SupervisorProductionQualificationReceipt),
                    (SELECT COUNT_BIG(*) FROM dbo.SupervisorAcceptedShiftProduction),
@@ -75,6 +94,6 @@ public sealed class SqlServerSupervisorQualificationWriterTests
         Assert.True(await reader.ReadAsync());
         Assert.Equal(expected ? 1L : 0L, reader.GetInt64(0));
         Assert.Equal(0L, reader.GetInt64(1));
-        Assert.Equal(0L, reader.GetInt64(2));
+        Assert.Equal(expected ? 1L : 0L, reader.GetInt64(2));
     }
 }
