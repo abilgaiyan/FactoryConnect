@@ -1,14 +1,15 @@
 namespace FactoryConnect.Persistence.SqlServer;
 
 public sealed record SupervisorAcceptedIdealTimeResult(
-    Guid? PublicationId, Guid? CycleRevisionId, decimal? IdealProductionSeconds, string Status);
+    Guid? PublicationId, Guid? CycleRevisionId, decimal? IdealProductionSeconds, string Status, string? CycleSource = null, Guid? DefaultSnapshotId = null);
 
 /// <summary>Diagnostic only: a planning cycle is not qualified reference-time authority.</summary>
 public static class SupervisorAcceptedIdealTime
 {
     public static SupervisorAcceptedIdealTimeResult Calculate(
         AcceptedShiftProductionRead? production,
-        IEnumerable<SupervisorShiftIdealCycleRevision> revisions)
+        IEnumerable<SupervisorShiftIdealCycleRevision> revisions,
+        IEnumerable<SupervisorCycleReview> reviews, SupervisorCycleDefaultSnapshot? snapshot, DateTimeOffset asOfUtc)
     {
         ArgumentNullException.ThrowIfNull(revisions);
         if (production is null)
@@ -21,24 +22,16 @@ public static class SupervisorAcceptedIdealTime
             string.IsNullOrWhiteSpace(production.Operation))
             return new(production.PublicationId, null, null, "publication-inapplicable");
 
-        var candidates = revisions.Where(r =>
-            r.MachineId == production.MachineId &&
-            r.ShiftScheduleAssignmentId == production.ShiftScheduleAssignmentId &&
-            r.ShiftId == production.ShiftId &&
-            r.ShiftStartsAtUtc == production.ShiftStartsAtUtc &&
-            r.ShiftEndsAtUtc == production.ShiftEndsAtUtc &&
-            r.ProductionOrder == production.ProductionOrder &&
-            r.PartNumber == production.PartNumber &&
-            r.Operation == production.Operation).ToArray();
-        if (candidates.Length == 0)
-            return new(production.PublicationId, null, null, "cycle-unmatched");
-        var head = candidates.Max(r => r.RevisionNumber);
-        var matches = candidates.Where(r => r.RevisionNumber == head).ToArray();
-        if (matches.Length != 1 || head <= 0 || matches[0].CycleRevisionId == Guid.Empty ||
-            matches[0].IdealCycleSeconds <= 0 || matches[0].IdealCycleSeconds > 86400m)
-            return new(production.PublicationId, null, null, "cycle-unmatched");
-        return new(production.PublicationId, matches[0].CycleRevisionId,
-            production.AcceptedProducedQuantity * matches[0].IdealCycleSeconds,
-            "accepted-quantity-preview");
+        var context = new SupervisorShiftIdealCycleRevision(Guid.Empty, production.MachineId,
+            production.ShiftScheduleAssignmentId, production.ShiftId, production.ShiftStartsAtUtc,
+            production.ShiftEndsAtUtc, 0, 0m, production.ProductionOrder, production.PartNumber,
+            production.Operation, null, "", production.PublishedAtUtc);
+        var effective = SupervisorEffectiveCycleSelection.Select(context, revisions, reviews, snapshot, asOfUtc);
+        if (effective.Seconds is not decimal seconds)
+            return new(production.PublicationId, null, null, "cycle-unmatched", effective.Source);
+        return new(production.PublicationId,
+            effective.Source == "accepted-override" ? effective.EvidenceId : null,
+            production.AcceptedProducedQuantity * seconds, "accepted-quantity-preview", effective.Source,
+            effective.Source == "accepted-override" ? null : effective.EvidenceId);
     }
 }
