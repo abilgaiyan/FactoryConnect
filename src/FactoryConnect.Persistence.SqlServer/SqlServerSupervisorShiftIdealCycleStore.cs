@@ -138,7 +138,15 @@ public sealed class SqlServerSupervisorShiftIdealCycleStore
             throw new ArgumentException("Invalid exact shift occurrence.");
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        return await ListCoreAsync(connection, null, machineId, assignmentId, startsAtUtc, endsAtUtc, cancellationToken);
+    }
+
+    internal static async Task<IReadOnlyList<SupervisorShiftIdealCycleRevision>> ListCoreAsync(SqlConnection connection, SqlTransaction? transaction,
+        Guid machineId, string assignmentId, DateTimeOffset startsAtUtc,
+        DateTimeOffset endsAtUtc, CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT CycleRevisionId, MachineId, ShiftScheduleAssignmentId, ShiftId,
                    ShiftStartsAtUtc, ShiftEndsAtUtc, RevisionNumber, IdealCycleSeconds,

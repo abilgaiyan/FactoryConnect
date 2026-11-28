@@ -89,7 +89,7 @@ public sealed class SqlServerSupervisorCycleDefaultStore(string connectionString
         return captured;
     }
 
-    private static async Task<SupervisorCycleDefaultSnapshot?> ReadCoreAsync(SqlConnection connection,
+    internal static async Task<SupervisorCycleDefaultSnapshot?> ReadCoreAsync(SqlConnection connection,
         SqlTransaction? transaction, SupervisorCycleContext context, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();

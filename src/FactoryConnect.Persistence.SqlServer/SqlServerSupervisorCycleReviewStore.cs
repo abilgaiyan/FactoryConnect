@@ -55,7 +55,16 @@ public sealed class SqlServerSupervisorCycleReviewStore(string connectionString)
             throw new ArgumentException("Invalid review scope or cut.");
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
+        return await ListCoreAsync(connection, null, machineId, assignmentId, shiftId, startsAtUtc, endsAtUtc, asOfUtc, cancellationToken);
+    }
+
+    internal static async Task<IReadOnlyList<SupervisorCycleReview>> ListCoreAsync(SqlConnection connection, SqlTransaction? transaction,
+        Guid machineId, string assignmentId,
+        string shiftId, DateTimeOffset startsAtUtc, DateTimeOffset endsAtUtc,
+        DateTimeOffset asOfUtc, CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT r.ReviewId, r.CycleRevisionId, r.IsAccepted, r.ReviewedBy, r.ReviewedAtUtc
             FROM dbo.SupervisorCycleReview r
