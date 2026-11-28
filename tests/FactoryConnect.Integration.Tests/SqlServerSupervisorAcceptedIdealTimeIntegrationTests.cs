@@ -25,14 +25,21 @@ public sealed class SqlServerSupervisorAcceptedIdealTimeIntegrationTests
         var cycle = Guid.NewGuid();
         var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var end = start.AddHours(8);
-        // Synthetic projection fixture: tests reader behavior, not publication ancestry.
+        // Seed qualified receipt and independent verification; publish through the actual writer.
         await using (var setup = new SqlCommand("""
-            INSERT dbo.SupervisorAcceptedShiftProduction
-                (PublicationId, MachineId, ShiftScheduleAssignmentId, ShiftId,
-                 ShiftStartsAtUtc, ShiftEndsAtUtc, ProductionOrder, PartNumber, Operation,
-                 QuantityUnit, AcceptedProducedQuantity, Coverage, AuthorityReference, PublishedAtUtc)
-            VALUES (@publication, @machine, N'assignment', N'shift', @start, @end,
-                    N'WO-1', N'GEAR-1', N'OP-10', N'pieces', 120, N'Complete', N'test-only', @end);
+            DECLARE @receipt uniqueidentifier = NEWID(), @verification uniqueidentifier = NEWID();
+            INSERT dbo.SupervisorProductionQualificationReceipt
+                (ReceiptId, EvidenceId, EvidenceKind, PopulationKey, MachineId,
+                 ShiftScheduleAssignmentId, ShiftId, ShiftStartsAtUtc, ShiftEndsAtUtc,
+                 ProductionOrder, PartNumber, Operation, QuantityUnit, ProducedQuantity,
+                 GoodQuantity, RejectedQuantity, QualificationDecision, AuthorityReference, QualifiedAtUtc)
+            VALUES (@receipt, NEWID(), N'SupervisorRevision', N'population', @machine,
+                    N'assignment', N'shift', @start, @end, N'WO-1', N'GEAR-1', N'OP-10',
+                    N'pieces', 120, 114, 6, N'Qualified', N'test-only', @end);
+            INSERT dbo.SupervisorAcceptedProductionVerification
+                (VerificationId, ReceiptId, VerifiedProducedQuantity, Coverage, AuthorityReference, VerifiedAtUtc)
+            VALUES (@verification, @receipt, 120, N'Complete', N'test-only', @end);
+            EXEC dbo.PublishSupervisorAcceptedProduction @publication, @receipt, @verification;
             INSERT dbo.SupervisorCycleDefaultSnapshot
                 (SnapshotId, MachineId, ShiftScheduleAssignmentId, ShiftId,
                  ShiftStartsAtUtc, ShiftEndsAtUtc, ProductionOrder, PartNumber, Operation,
