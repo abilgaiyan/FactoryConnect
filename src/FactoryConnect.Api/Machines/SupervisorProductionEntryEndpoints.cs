@@ -220,14 +220,33 @@ public static class SupervisorProductionEntryEndpoints
             var production = await new SqlServerAcceptedShiftProductionReader(connectionString)
                 .ReadAsync(machineId, assignmentId, shiftId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken);
             if (production is null)
-                return Results.Ok(SupervisorAcceptedIdealTime.Calculate(null, Array.Empty<SupervisorShiftIdealCycleRevision>()));
+                return Results.Ok(SupervisorAcceptedIdealTime.Calculate(null, Array.Empty<SupervisorShiftIdealCycleRevision>(), Array.Empty<SupervisorCycleReview>(), null, DateTimeOffset.UtcNow));
             if (production.MachineId != machineId || production.ShiftScheduleAssignmentId != assignmentId ||
                 production.ShiftId != shiftId || production.ShiftStartsAtUtc != shiftStartsAtUtc ||
                 production.ShiftEndsAtUtc != shiftEndsAtUtc)
                 return Results.Problem(statusCode: 503, title: "Accepted production scope mismatch");
+            var cut = DateTimeOffset.UtcNow;
             var cycles = await new SqlServerSupervisorShiftIdealCycleStore(connectionString)
                 .ListAsync(machineId, assignmentId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken);
-            return Results.Ok(SupervisorAcceptedIdealTime.Calculate(production, cycles));
+            var reviews = await new SqlServerSupervisorCycleReviewStore(connectionString)
+                .ListAsync(machineId, assignmentId, shiftId, shiftStartsAtUtc, shiftEndsAtUtc, cut, cancellationToken);
+            SupervisorCycleDefaultSnapshot? snapshot = null;
+            if (!string.IsNullOrWhiteSpace(production.PartNumber))
+            {
+                var cycleContext = new SupervisorCycleContext(machineId, assignmentId, shiftId,
+                    shiftStartsAtUtc, shiftEndsAtUtc, production.ProductionOrder, production.PartNumber, production.Operation);
+                try
+                {
+                    SqlServerSupervisorCycleDefaultStore.Validate(cycleContext);
+                    snapshot = await new SqlServerSupervisorCycleDefaultStore(connectionString)
+                        .ReadAsync(cycleContext, cancellationToken);
+                }
+                catch (ArgumentException)
+                {
+                    return Results.Ok(new SupervisorAcceptedIdealTimeResult(production.PublicationId, null, null, "publication-inapplicable"));
+                }
+            }
+            return Results.Ok(SupervisorAcceptedIdealTime.Calculate(production, cycles, reviews, snapshot, cut));
         }
         catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
         {
