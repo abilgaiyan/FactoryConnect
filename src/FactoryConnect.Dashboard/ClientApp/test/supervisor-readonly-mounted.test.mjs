@@ -49,6 +49,8 @@ function mockFetch(t, fetcher) { const previous = globalThis.fetch; globalThis.f
     return Promise.resolve(Response.json([]));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && (String(url).includes('/entries?') || String(url).includes('/reviews?') || String(url).includes('/shift-targets?')))
     return Promise.resolve(Response.json([]));
+  if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/accepted-quality?'))
+    return Promise.resolve(Response.json({ status: 'quality-unavailable' }));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/accepted-ideal-time?'))
     return Promise.resolve(Response.json({ publicationId: null, cycleRevisionId: null, idealProductionSeconds: null, status: 'publication-unavailable' }));
   if (String(url).startsWith('/api/supervisor/v1/machines/') && String(url).includes('/accepted-shift-production?'))
@@ -305,4 +307,29 @@ test('production workspace exposes CNC preview for the selected occurrence witho
   assert.equal('streamKeyHex' in previews[0],false);
   await h.click(button(h,'Technical details'));
   assert.equal(button(h,'Inspect CNC evidence'),undefined);
+});
+
+test('accepted Quality displays verified quantities and clears them on unavailable refresh', async t => {
+  const { SupervisorAcceptedIdealTime } = await vite.ssrLoadModule('/src/presentation/SupervisorAcceptedIdealTime.tsx');
+  const previous = globalThis.fetch;
+  let available = true;
+  globalThis.fetch = async url => String(url).includes('/accepted-quality?')
+    ? Response.json(available ? { publicationId: source.machineId, receiptId: moxa.machineId,
+        verificationId: '11111111-1111-1111-1111-111111111111',
+        producedQuantity: 120, goodQuantity: 114, rejectedQuantity: 6, qualityRatio: 0.95 }
+      : { status: 'quality-unavailable' })
+    : Response.json({ publicationId: null, cycleRevisionId: null, idealProductionSeconds: null, status: 'publication-unavailable' });
+  t.after(() => { globalThis.fetch = previous; });
+  const h = await mountInDom(React.createElement(SupervisorAcceptedIdealTime, {
+    scope: { machineId: source.machineId, shiftScheduleAssignmentId: first.shiftScheduleAssignmentId,
+      shiftId: first.shiftId, startsAtUtc: first.startsAtUtc, endsAtUtc: first.endsAtUtc }
+  }));
+  t.after(() => h.dispose());
+  const quality = () => h.document.querySelector('[aria-label="Accepted shift Quality"]').textContent;
+  assert.match(quality(), /95\.00%/);
+  assert.match(quality(), /Produced 120 · Good 114 · Rejected 6/);
+  available = false;
+  await h.click(button(h, 'Refresh accepted Quality'));
+  assert.match(quality(), /No verified Quality evidence/);
+  assert.doesNotMatch(quality(), /95\.00%/);
 });
