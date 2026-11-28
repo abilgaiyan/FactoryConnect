@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 type Scope = { machineId: string; shiftScheduleAssignmentId: string; shiftId: string; startsAtUtc: string; endsAtUtc: string };
-type Preview = { publicationId: string | null; cycleRevisionId: string | null; idealProductionSeconds: number | null; status: string };
+type Preview = { publicationId: string | null; cycleRevisionId: string | null; idealProductionSeconds: number | null; status: string; cycleSource?: string | null; defaultSnapshotId?: string | null };
 const isId = (value: unknown): value is string => typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) &&
   value !== "00000000-0000-0000-0000-000000000000";
@@ -18,7 +18,8 @@ export function SupervisorAcceptedIdealTime({ scope }: { scope: Scope }) {
       if (!response.ok) throw new Error("Accepted ideal time unavailable (HTTP " + response.status + ")");
       const data = await response.json() as Preview;
       const valid = data && (data.status === "accepted-quantity-preview"
-        ? isId(data.publicationId) && isId(data.cycleRevisionId) &&
+        ? isId(data.publicationId) && (data.cycleSource === "accepted-override" ? isId(data.cycleRevisionId) && data.defaultSnapshotId == null :
+          ["operation-default", "part-default"].includes(data.cycleSource ?? "") && isId(data.defaultSnapshotId) && data.cycleRevisionId === null) &&
           typeof data.idealProductionSeconds === "number" && Number.isFinite(data.idealProductionSeconds) && data.idealProductionSeconds >= 0
         : ["publication-unavailable", "publication-inapplicable", "cycle-unmatched"].includes(data.status) &&
           data.idealProductionSeconds === null && data.cycleRevisionId === null &&
@@ -32,13 +33,13 @@ export function SupervisorAcceptedIdealTime({ scope }: { scope: Scope }) {
   const preview = current?.preview;
   return <section aria-label="Accepted ideal production time">
     <h3>Accepted ideal production time</h3>
-    <p>Accepted quantity × matching planning cycle. Diagnostic only; not qualified Performance or OEE.</p>
+    <p>Accepted quantity × reviewed correction or captured master default. Diagnostic only; not qualified Performance or OEE.</p>
     <button type="button" onClick={() => setRefresh(n => n + 1)}>Refresh accepted ideal time</button>
     {current?.error ? <p role="alert">{current.error}</p> : !preview ? <p role="status">Loading accepted ideal time…</p> :
       preview.status === "accepted-quantity-preview" && preview.idealProductionSeconds !== null ? <>
         <p><strong>{(preview.idealProductionSeconds / 60).toFixed(2)} minutes</strong></p>
-        <p>Publication {preview.publicationId} · Cycle revision {preview.cycleRevisionId}</p>
+        <p>Publication {preview.publicationId} · {preview.cycleSource === "accepted-override" ? `Accepted cycle revision ${preview.cycleRevisionId}` : `${preview.cycleSource === "operation-default" ? "Operation" : "Part"} default snapshot ${preview.defaultSnapshotId}`}</p>
       </> : <p role="status">Unavailable: {preview.status === "publication-unavailable" ? "No accepted publication" :
-        preview.status === "cycle-unmatched" ? "No unique matching cycle" : "Publication context or unit not applicable"}. This does not mean zero production.</p>}
+        preview.status === "cycle-unmatched" ? "No eligible effective cycle" : "Publication context or unit not applicable"}. This does not mean zero production.</p>}
   </section>;
 }
