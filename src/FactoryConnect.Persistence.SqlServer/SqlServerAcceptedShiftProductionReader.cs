@@ -36,7 +36,16 @@ public sealed class SqlServerAcceptedShiftProductionReader
             throw new ArgumentException("Invalid exact shift occurrence.");
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        return await ReadCoreAsync(connection, null, machineId, assignmentId, shiftId, startsAtUtc, endsAtUtc, cancellationToken);
+    }
+
+    internal static async Task<AcceptedShiftProductionRead?> ReadCoreAsync(SqlConnection connection, SqlTransaction? transaction,
+        Guid machineId, string assignmentId, string shiftId,
+        DateTimeOffset startsAtUtc, DateTimeOffset endsAtUtc,
+        CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT PublicationId, MachineId, ShiftScheduleAssignmentId, ShiftId,
                    ShiftStartsAtUtc, ShiftEndsAtUtc, ProductionOrder, PartNumber,
