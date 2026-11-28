@@ -21,6 +21,32 @@ public sealed class SqlServerAcceptedShiftQualityReader(string connectionString)
         await connection.OpenAsync(cancellationToken);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
             IsolationLevel.Serializable, cancellationToken);
+        var result = await ReadCoreAsync(connection, transaction, publicationId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    public async Task<AcceptedShiftQualityRead?> ReadForShiftAsync(Guid machineId, string assignmentId,
+        string shiftId, DateTimeOffset startsAtUtc, DateTimeOffset endsAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        SqlServerSupervisorCycleDefaultStore.Validate(new SupervisorCycleContext(machineId,
+            assignmentId, shiftId, startsAtUtc, endsAtUtc, null, "validation", null));
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        var publication = await SqlServerAcceptedShiftProductionReader.ReadCoreAsync(connection, transaction,
+            machineId, assignmentId, shiftId, startsAtUtc, endsAtUtc, cancellationToken);
+        var result = publication is null ? null : await ReadCoreAsync(connection, transaction,
+            publication.PublicationId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
+    private static async Task<AcceptedShiftQualityRead?> ReadCoreAsync(SqlConnection connection,
+        SqlTransaction transaction, Guid publicationId, CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -59,7 +85,6 @@ public sealed class SqlServerAcceptedShiftQualityReader(string connectionString)
                     result = null;
             }
         }
-        await transaction.CommitAsync(cancellationToken);
         return result;
     }
 }
