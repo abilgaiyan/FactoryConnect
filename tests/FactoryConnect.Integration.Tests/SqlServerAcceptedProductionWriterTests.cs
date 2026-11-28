@@ -42,6 +42,7 @@ public sealed class SqlServerAcceptedProductionWriterTests
         var receipt = Guid.NewGuid();
         var verification = Guid.NewGuid();
         var publication = Guid.NewGuid();
+        var machine = Guid.NewGuid();
         await using (var setup = new SqlCommand("""
             INSERT dbo.SupervisorProductionQualificationReceipt
                 (ReceiptId, EvidenceId, EvidenceKind, PopulationKey, MachineId,
@@ -64,7 +65,7 @@ public sealed class SqlServerAcceptedProductionWriterTests
         {
             setup.Parameters.Add("@receipt", System.Data.SqlDbType.UniqueIdentifier).Value = receipt;
             setup.Parameters.Add("@evidence", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
-            setup.Parameters.Add("@machine", System.Data.SqlDbType.UniqueIdentifier).Value = Guid.NewGuid();
+            setup.Parameters.Add("@machine", System.Data.SqlDbType.UniqueIdentifier).Value = machine;
             setup.Parameters.Add("@verification", System.Data.SqlDbType.UniqueIdentifier).Value = verification;
             await setup.ExecuteNonQueryAsync();
         }
@@ -108,6 +109,10 @@ public sealed class SqlServerAcceptedProductionWriterTests
         Assert.Equal(1L, quality.RejectedQuantity);
         Assert.Equal(10m / 11m, quality.QualityRatio);
         Assert.Null(await qualityReader.ReadAsync(Guid.NewGuid()));
+        var starts = new DateTimeOffset(2026, 11, 17, 2, 0, 0, TimeSpan.Zero);
+        var ends = starts.AddHours(8.5);
+        Assert.Equal(quality, await qualityReader.ReadForShiftAsync(machine, "assignment-one", "shift-1", starts, ends));
+        Assert.Null(await qualityReader.ReadForShiftAsync(machine, "assignment-one", "other-shift", starts, ends));
 
         var replay = await Assert.ThrowsAsync<SqlException>(
             () => ExecutePublicationAsync(Guid.NewGuid()));

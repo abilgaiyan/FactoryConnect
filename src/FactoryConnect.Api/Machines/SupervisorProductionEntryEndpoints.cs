@@ -33,6 +33,9 @@ public static class SupervisorProductionEntryEndpoints
         endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-ideal-time", ReadAcceptedIdealTimeAsync)
             .RequireAuthorization("OperationalRead").WithName("ReadLocalAcceptedIdealTime")
             .WithGroupName("supervisor-local-v1");
+        endpoints.MapGet("/api/supervisor/v1/machines/{machineId:guid}/accepted-quality", ReadAcceptedQualityAsync)
+            .RequireAuthorization("OperationalRead").WithName("ReadLocalAcceptedQuality")
+            .WithGroupName("supervisor-local-v1");
         endpoints.MapPost("/api/supervisor/v1/machines/{machineId:guid}/entries", CreateAsync).RequireAuthorization("SupervisorWrite")
             .WithName("CreateLocalSupervisorProductionEntry")
             .WithGroupName("supervisor-local-v1")
@@ -197,6 +200,37 @@ public static class SupervisorProductionEntryEndpoints
         catch (Microsoft.Data.SqlClient.SqlException)
         {
             return Results.Problem(statusCode: 503, title: "Supervisor entry SQL write unavailable");
+        }
+    }
+
+    private static async Task<IResult> ReadAcceptedQualityAsync(
+        Guid machineId, string assignmentId, string shiftId,
+        DateTimeOffset shiftStartsAtUtc, DateTimeOffset shiftEndsAtUtc,
+        HttpContext context, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (!CommissioningAccess.Allows(context, configuration))
+            return Results.Problem(statusCode: 403, title: "Local commissioning access required");
+        if (machineId == Guid.Empty || string.IsNullOrWhiteSpace(assignmentId) || assignmentId.Length > 200 ||
+            string.IsNullOrWhiteSpace(shiftId) || shiftId.Length > 200 ||
+            shiftStartsAtUtc.Offset != TimeSpan.Zero || shiftEndsAtUtc.Offset != TimeSpan.Zero ||
+            shiftStartsAtUtc >= shiftEndsAtUtc || shiftEndsAtUtc - shiftStartsAtUtc > TimeSpan.FromDays(1))
+            return Results.BadRequest(new { reason = "InvalidExactShift" });
+        var connectionString = configuration["Commissioning:ReadOnlyConnectionString"];
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return Results.Problem(statusCode: 503, title: "Commissioning SQL reader not configured");
+        try
+        {
+            var result = await new SqlServerAcceptedShiftQualityReader(connectionString)
+                .ReadForShiftAsync(machineId, assignmentId, shiftId, shiftStartsAtUtc, shiftEndsAtUtc, cancellationToken);
+            return result is null ? Results.Ok(new { status = "quality-unavailable" }) : Results.Ok(result);
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest(new { reason = "InvalidExactShift" });
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
+        {
+            return Results.Problem(statusCode: 503, title: "Accepted quality evidence unavailable");
         }
     }
 
