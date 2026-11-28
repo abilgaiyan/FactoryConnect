@@ -46,11 +46,13 @@ public sealed class SqlServerAcceptedProductionWriterTests
             INSERT dbo.SupervisorProductionQualificationReceipt
                 (ReceiptId, EvidenceId, EvidenceKind, PopulationKey, MachineId,
                  ShiftScheduleAssignmentId, ShiftId, ShiftStartsAtUtc, ShiftEndsAtUtc,
+                 ProductionOrder, PartNumber, Operation,
                  QuantityUnit, ProducedQuantity, GoodQuantity, RejectedQuantity,
                  QualificationDecision, AuthorityReference, QualifiedAtUtc)
             VALUES (@receipt, @evidence, N'SupervisorRevision', N'population-one',
                     @machine, N'assignment-one', N'shift-1',
                     '2026-11-17T02:00:00+00:00', '2026-11-17T10:30:00+00:00',
+                    N'WO-1', N'GEAR-1', N'OP-10',
                     N'pieces', 11, 10, 1, N'Qualified', N'test-only',
                     '2026-11-17T11:00:00+00:00');
             INSERT dbo.SupervisorAcceptedProductionVerification
@@ -87,6 +89,8 @@ public sealed class SqlServerAcceptedProductionWriterTests
                 ON s.PublicationId = p.PublicationId
             WHERE p.PublicationId = @publication AND s.ReceiptId = @receipt
               AND p.AcceptedProducedQuantity = 11 AND p.Coverage = N'Complete'
+              AND p.ProductionOrder = N'WO-1' AND p.PartNumber = N'GEAR-1'
+              AND p.Operation = N'OP-10'
             """, connection))
         {
             verify.Parameters.Add("@publication", System.Data.SqlDbType.UniqueIdentifier).Value = publication;
